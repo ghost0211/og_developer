@@ -26,6 +26,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   execute: [sql: string];
   openSql: [sql: string];
+  debug: [sql: string];
 }>();
 
 const loading = ref(false);
@@ -131,6 +132,13 @@ function execute() {
   emit("execute", sql);
 }
 
+function debug() {
+  const sql = sqlDraft.value.trim();
+  if (!sql) return;
+  close();
+  emit("debug", sql);
+}
+
 function canEditParameter(parameter: RoutineParameterValue): boolean {
   return acceptsRoutineInput(parameter);
 }
@@ -219,6 +227,9 @@ function canEditParameter(parameter: RoutineParameterValue): boolean {
         <Button variant="outline" @click="close">{{ t("dangerDialog.cancel") }}</Button>
         <Button variant="outline" :disabled="!sqlDraft.trim()" @click="openSql">
           {{ t("contextMenu.openInSqlEditor") }}
+        </Button>
+        <Button v-if="props.databaseType === 'opengauss'" variant="outline" :disabled="!sqlDraft.trim()" @click="debug">
+          {{ t("contextMenu.debugProcedure") }}
         </Button>
         <Button :disabled="!sqlDraft.trim()" @click="execute">
           {{ t("contextMenu.executeProcedure") }}

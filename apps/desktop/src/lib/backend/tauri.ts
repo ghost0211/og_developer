@@ -1618,6 +1618,108 @@ export async function listOpengaussPackageSubprograms(connectionId: string, data
   return invoke("list_opengauss_package_subprograms", { connectionId, database, schema, package: packageName });
 }
 
+// ---------------------------------------------------------------------------
+// openGauss PL debugger
+// ---------------------------------------------------------------------------
+
+export interface OpenGaussDebugTarget {
+  oid: number;
+  schema: string;
+  name: string;
+  kind: string;
+  signature?: string;
+}
+
+export interface OpenGaussDebugPosition {
+  funcoid: number;
+  funcname: string;
+  lineno?: number | null;
+  query: string;
+  finished: boolean;
+}
+
+export interface OpenGaussDebugCodeLine {
+  lineno?: number | null;
+  query: string;
+  canbreak: boolean;
+}
+
+export interface OpenGaussDebugLocal {
+  varname: string;
+  vartype: string;
+  value?: string | null;
+  packageName?: string | null;
+  isconst: boolean;
+}
+
+export interface OpenGaussDebugBreakpoint {
+  breakpointno: number;
+  funcoid: number;
+  lineno: number;
+  query: string;
+  enable: boolean;
+}
+
+export interface OpenGaussDebugBacktraceFrame {
+  frameno: number;
+  funcname: string;
+  lineno?: number | null;
+  query: string;
+  funcoid: number;
+}
+
+export interface OpenGaussDebugStartResult {
+  sessionId: string;
+  target: OpenGaussDebugTarget;
+  position: OpenGaussDebugPosition;
+  code: OpenGaussDebugCodeLine[];
+  breakpoints: OpenGaussDebugBreakpoint[];
+}
+
+export async function opengaussDebugStart(params: { connectionId: string; database: string; schema: string; kind: string; name: string; signature?: string; callSql: string }): Promise<OpenGaussDebugStartResult> {
+  return invoke("opengauss_debug_start", params);
+}
+
+export async function opengaussDebugStep(sessionId: string, action: "next" | "step" | "finish" | "continue"): Promise<OpenGaussDebugPosition> {
+  return invoke("opengauss_debug_step", { sessionId, action });
+}
+
+export async function opengaussDebugLocals(sessionId: string): Promise<OpenGaussDebugLocal[]> {
+  return invoke("opengauss_debug_locals", { sessionId });
+}
+
+export async function opengaussDebugBreakpoints(sessionId: string): Promise<OpenGaussDebugBreakpoint[]> {
+  return invoke("opengauss_debug_breakpoints", { sessionId });
+}
+
+export async function opengaussDebugSetVar(sessionId: string, name: string, value: string): Promise<boolean> {
+  return invoke("opengauss_debug_set_var", { sessionId, name, value });
+}
+
+export async function opengaussDebugBacktrace(sessionId: string): Promise<OpenGaussDebugBacktraceFrame[]> {
+  return invoke("opengauss_debug_backtrace", { sessionId });
+}
+
+export async function opengaussDebugAddBreakpoint(sessionId: string, lineno: number): Promise<OpenGaussDebugBreakpoint[]> {
+  return invoke("opengauss_debug_add_breakpoint", { sessionId, lineno });
+}
+
+export async function opengaussDebugDeleteBreakpoint(sessionId: string, breakpointno: number): Promise<OpenGaussDebugBreakpoint[]> {
+  return invoke("opengauss_debug_delete_breakpoint", { sessionId, breakpointno });
+}
+
+export async function opengaussDebugToggleBreakpoint(sessionId: string, breakpointno: number, enable: boolean): Promise<OpenGaussDebugBreakpoint[]> {
+  return invoke("opengauss_debug_toggle_breakpoint", { sessionId, breakpointno, enable });
+}
+
+export async function opengaussDebugStop(sessionId: string): Promise<void> {
+  return invoke("opengauss_debug_stop", { sessionId });
+}
+
+export async function opengaussDebugCallResult(sessionId: string): Promise<string | null> {
+  return invoke("opengauss_debug_call_result", { sessionId });
+}
+
 export async function listSequences(connectionId: string, database: string, schema: string, withLastValues: boolean): Promise<SequenceInfo[]> {
   return invoke("list_sequences", {
     connectionId,

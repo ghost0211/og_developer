@@ -44,7 +44,7 @@ import { createSidebarActionTarget, findSidebarActionTarget, matchesSidebarActio
 import { syncSidebarTreeNodeExpansion } from "@/lib/sidebar/sidebarTreeExpansion";
 import type { SidebarDangerDialogRequest } from "@/lib/sidebar/sidebarDangerDialog";
 import { resetSidebarTreeDialogState } from "./sidebarTreeDialogState";
-import { SidebarDangerConfirmDialog, SidebarDdlViewDialog, SidebarObjectSourceDialog, SidebarProcedureExecutionDialog, SidebarVisibleDatabasesDialog, SidebarVisibleSchemasDialog } from "./sidebarAsyncDialogs";
+import { SidebarDangerConfirmDialog, SidebarDdlViewDialog, SidebarObjectSourceDialog, SidebarPlDebugDialog, SidebarProcedureExecutionDialog, SidebarVisibleDatabasesDialog, SidebarVisibleSchemasDialog } from "./sidebarAsyncDialogs";
 import { sortConnectionListForDisplay } from "@/lib/sidebar/connectionListSort";
 import { sidebarDisplayTableName } from "@/lib/sidebar/sidebarTableNameDisplay";
 import { alignedSidebarCommentLabelWidths, isSidebarCommentAlignableNode, sidebarTreeNaturalContentWidth, sidebarTreeNodeComment, usesFullWidthTreeLabel } from "@/lib/sidebar/sidebarTreeItemLayout";
@@ -88,6 +88,8 @@ const sidebarObjectSourceTarget = ref<{ node: TreeNode; initialEditing: boolean 
 const sidebarObjectSourceOpen = ref(false);
 const sidebarProcedureTarget = ref<TreeNode | null>(null);
 const sidebarProcedureOpen = ref(false);
+const sidebarDebugTarget = ref<{ connectionId: string; database: string; schema?: string; kind: string; routineName: string; signature?: string; callSql: string } | null>(null);
+const sidebarDebugOpen = ref(false);
 const sidebarVisibleDatabasesTarget = ref<TreeNode | null>(null);
 const sidebarVisibleDatabasesOpen = ref(false);
 const sidebarVisibleSchemasTarget = ref<TreeNode | null>(null);
@@ -1402,6 +1404,21 @@ async function executeSidebarProcedureSql(sql: string) {
   await queryStore.executeTabSql(tabId, sql);
 }
 
+function debugSidebarProcedureSql(sql: string) {
+  const target = sidebarProcedureTarget.value;
+  if (!target?.connectionId || !target.database || !sql) return;
+  sidebarDebugTarget.value = {
+    connectionId: target.connectionId,
+    database: target.database,
+    schema: target.schema,
+    kind: target.type === "function" ? "function" : "procedure",
+    routineName: target.objectName || target.label,
+    signature: target.signature,
+    callSql: sql,
+  };
+  sidebarDebugOpen.value = true;
+}
+
 async function refreshSidebarActionTarget() {
   const target = sidebarObjectSourceTarget.value?.node || sidebarDdlTarget.value || sidebarInstallExtensionTarget.value;
   if (!target) return;
@@ -1424,6 +1441,10 @@ watch(sidebarObjectSourceOpen, (open) => {
 
 watch(sidebarProcedureOpen, (open) => {
   if (!open) sidebarProcedureTarget.value = null;
+});
+
+watch(sidebarDebugOpen, (open) => {
+  if (!open) sidebarDebugTarget.value = null;
 });
 
 watch(sidebarVisibleDatabasesOpen, (open) => {
@@ -1924,6 +1945,19 @@ defineExpose({ focusSearch, createNewGroup, collapseAllTreeNodes });
       :routine-name="sidebarProcedureTarget.label"
       @open-sql="openSidebarProcedureSql"
       @execute="executeSidebarProcedureSql"
+      @debug="debugSidebarProcedureSql"
+    />
+
+    <SidebarPlDebugDialog
+      v-if="sidebarDebugTarget"
+      v-model:open="sidebarDebugOpen"
+      :connection-id="sidebarDebugTarget.connectionId"
+      :database="sidebarDebugTarget.database"
+      :schema="sidebarDebugTarget.schema"
+      :kind="sidebarDebugTarget.kind"
+      :routine-name="sidebarDebugTarget.routineName"
+      :signature="sidebarDebugTarget.signature"
+      :call-sql="sidebarDebugTarget.callSql"
     />
 
     <SidebarVisibleDatabasesDialog v-if="sidebarVisibleDatabasesTarget?.connectionId" v-model:open="sidebarVisibleDatabasesOpen" :connection-id="sidebarVisibleDatabasesTarget.connectionId" :connection-name="sidebarVisibleDatabasesTarget.label" />

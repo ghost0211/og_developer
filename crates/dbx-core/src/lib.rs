@@ -51,6 +51,7 @@ pub mod nacos;
 #[cfg(all(target_os = "windows", target_env = "gnu"))]
 mod nanosleep_stub;
 pub mod object_source_sql;
+pub mod opengauss_debug;
 pub mod path_utils;
 pub mod plugins;
 pub mod process;

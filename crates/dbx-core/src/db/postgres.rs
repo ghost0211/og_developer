@@ -884,6 +884,16 @@ fn psql_line_context(position: usize, query: &str) -> Option<String> {
     None
 }
 
+/// Error rendering for debugger commands (LINE context included).
+pub fn debug_error_to_string(err: &tokio_postgres::Error) -> String {
+    let context = err.as_db_error().and_then(pg_error_line_context);
+    let base = err.as_db_error().map(ToString::to_string).unwrap_or_else(|| err.to_string());
+    match context {
+        Some(context) => format!("{base}\n{context}"),
+        None => base,
+    }
+}
+
 fn pg_error_from_sources(err: &(dyn std::error::Error + 'static)) -> Option<String> {
     let mut current = Some(err);
     while let Some(source) = current {
@@ -1502,26 +1512,38 @@ async fn stream_query_rows_text_on_client(
 }
 
 pub async fn connect(url: &str, fallback_timeout: Duration) -> Result<Pool, String> {
+    connect_with_pool_size(url, fallback_timeout, 10).await
+}
+
+/// Connect with a custom pool size. Debug sessions use max_size=1 so a checked
+/// out client is a pinned, dedicated session (og developer).
+pub async fn connect_with_pool_size(url: &str, fallback_timeout: Duration, max_size: usize) -> Result<Pool, String> {
     #[cfg(all(windows, target_vendor = "win7"))]
     {
-        connect_with_optional_local_timezone(url, fallback_timeout, None).await
+        connect_with_optional_local_timezone(url, fallback_timeout, None, max_size).await
     }
 
     #[cfg(not(all(windows, target_vendor = "win7")))]
     {
         let timezone = iana_time_zone::get_timezone().unwrap_or_else(|_| "UTC".to_string());
-        connect_with_local_timezone(url, fallback_timeout, &timezone).await
+        connect_with_local_timezone(url, fallback_timeout, &timezone, max_size).await
     }
 }
 
-async fn connect_with_local_timezone(url: &str, fallback_timeout: Duration, timezone: &str) -> Result<Pool, String> {
-    connect_with_optional_local_timezone(url, fallback_timeout, Some(timezone)).await
+async fn connect_with_local_timezone(
+    url: &str,
+    fallback_timeout: Duration,
+    timezone: &str,
+    max_size: usize,
+) -> Result<Pool, String> {
+    connect_with_optional_local_timezone(url, fallback_timeout, Some(timezone), max_size).await
 }
 
 async fn connect_with_optional_local_timezone(
     url: &str,
     fallback_timeout: Duration,
     timezone: Option<&str>,
+    max_size: usize,
 ) -> Result<Pool, String> {
     let url_with_keepalive = inject_postgres_keepalive_params(url);
     let postgres_url = postgres_connection_url(&url_with_keepalive)?;
@@ -1552,7 +1574,7 @@ async fn connect_with_optional_local_timezone(
             mgr_config,
         );
         let pool = Pool::builder(mgr)
-            .max_size(10)
+            .max_size(max_size)
             .runtime(Runtime::Tokio1)
             .wait_timeout(Some(timeout))
             .create_timeout(Some(timeout))
@@ -7170,7 +7192,7 @@ mod tests {
     #[ignore = "requires DBX_TEST_POSTGRES_URL pointing at a PostgreSQL database"]
     async fn automatic_invalid_timezone_keeps_connected_server_default() {
         let url = std::env::var("DBX_TEST_POSTGRES_URL").expect("DBX_TEST_POSTGRES_URL");
-        let pool = connect_with_local_timezone(&url, Duration::from_secs(5), "Invalid/DBX_Timezone")
+        let pool = connect_with_local_timezone(&url, Duration::from_secs(5), "Invalid/DBX_Timezone", 10)
             .await
             .expect("automatic local timezone rejection must not reject a valid connection");
         let client = pool.get().await.expect("checkout postgres");
@@ -7184,7 +7206,7 @@ mod tests {
         let url = std::env::var("DBX_TEST_POSTGRES_URL").expect("DBX_TEST_POSTGRES_URL");
         let separator = if url.contains('?') { '&' } else { '?' };
         let explicit_url = format!("{url}{separator}options=-c%20TimeZone%3DAsia%2FShanghai");
-        let pool = connect_with_local_timezone(&explicit_url, Duration::from_secs(5), "UTC")
+        let pool = connect_with_local_timezone(&explicit_url, Duration::from_secs(5), "UTC", 10)
             .await
             .expect("valid explicit timezone");
         let client = pool.get().await.expect("checkout postgres");
@@ -7192,7 +7214,7 @@ mod tests {
         assert_eq!(timezone, "Asia/Shanghai");
 
         let invalid_url = format!("{url}{separator}options=-c%20TimeZone%3DInvalid%2FDBX_Timezone");
-        let error = connect_with_local_timezone(&invalid_url, Duration::from_secs(5), "UTC")
+        let error = connect_with_local_timezone(&invalid_url, Duration::from_secs(5), "UTC", 10)
             .await
             .expect_err("invalid explicit timezone must remain a connection error");
         assert!(error.contains("Invalid/DBX_Timezone") || error.contains("time zone"), "{error}");
@@ -7202,8 +7224,9 @@ mod tests {
     #[ignore = "requires DBX_TEST_POSTGRES_URL pointing at a PostgreSQL database"]
     async fn valid_automatic_timezone_is_applied_normally() {
         let url = std::env::var("DBX_TEST_POSTGRES_URL").expect("DBX_TEST_POSTGRES_URL");
-        let pool =
-            connect_with_local_timezone(&url, Duration::from_secs(5), "UTC").await.expect("valid automatic timezone");
+        let pool = connect_with_local_timezone(&url, Duration::from_secs(5), "UTC", 10)
+            .await
+            .expect("valid automatic timezone");
         let client = pool.get().await.expect("checkout postgres");
         let timezone: String = client.query_one("SHOW timezone", &[]).await.unwrap().get(0);
         assert_eq!(timezone, "UTC");

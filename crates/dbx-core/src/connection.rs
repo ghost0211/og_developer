@@ -233,6 +233,9 @@ pub struct AppState {
     /// Used to reconstruct a TLS connector compatible with the original connection when cancelling.
     postgres_cancel_contexts: Arc<RwLock<HashMap<String, db::postgres::PostgresCancelContext>>>,
     pub transaction_sessions: Arc<RwLock<HashMap<String, TransactionSession>>>,
+    /// openGauss PL debugger sessions (dbe_pldebugger two-session model),
+    /// keyed by debug session id.
+    pub opengauss_debug_sessions: Arc<RwLock<HashMap<String, Arc<crate::opengauss_debug::OpenGaussDebugSession>>>>,
     #[cfg(feature = "mq-admin")]
     pub mq_registry: crate::mq::MqAdminRegistry,
 }
@@ -1081,6 +1084,7 @@ impl AppState {
             duckdb_worker_max_processes: AtomicUsize::new(DUCKDB_WORKER_MAX_PROCESSES_DEFAULT),
             postgres_cancel_contexts: Arc::new(RwLock::new(HashMap::new())),
             transaction_sessions: Arc::new(RwLock::new(HashMap::new())),
+            opengauss_debug_sessions: Arc::new(RwLock::new(HashMap::new())),
             #[cfg(feature = "mq-admin")]
             mq_registry: crate::mq::MqAdminRegistry::new(),
         }

@@ -3366,5 +3366,27 @@ export async function refreshConnections(): Promise<void> {
   // Web mode doesn't maintain persistent connection pools - no-op
 }
 
+// ---------------------------------------------------------------------------
+// openGauss PL debugger — desktop only (requires pinned sessions)
+// ---------------------------------------------------------------------------
+
+export type { OpenGaussDebugBacktraceFrame, OpenGaussDebugBreakpoint, OpenGaussDebugCodeLine, OpenGaussDebugLocal, OpenGaussDebugPosition, OpenGaussDebugStartResult, OpenGaussDebugTarget } from "@/lib/backend/tauri";
+
+const plDebuggerWebUnsupported = (): never => {
+  throw new Error("PL debugger requires the desktop app");
+};
+
+export const opengaussDebugStart = plDebuggerWebUnsupported as unknown as typeof import("@/lib/backend/tauri").opengaussDebugStart;
+export const opengaussDebugStep = plDebuggerWebUnsupported as unknown as typeof import("@/lib/backend/tauri").opengaussDebugStep;
+export const opengaussDebugLocals = plDebuggerWebUnsupported as unknown as typeof import("@/lib/backend/tauri").opengaussDebugLocals;
+export const opengaussDebugSetVar = plDebuggerWebUnsupported as unknown as typeof import("@/lib/backend/tauri").opengaussDebugSetVar;
+export const opengaussDebugBacktrace = plDebuggerWebUnsupported as unknown as typeof import("@/lib/backend/tauri").opengaussDebugBacktrace;
+export const opengaussDebugBreakpoints = plDebuggerWebUnsupported as unknown as typeof import("@/lib/backend/tauri").opengaussDebugBreakpoints;
+export const opengaussDebugAddBreakpoint = plDebuggerWebUnsupported as unknown as typeof import("@/lib/backend/tauri").opengaussDebugAddBreakpoint;
+export const opengaussDebugDeleteBreakpoint = plDebuggerWebUnsupported as unknown as typeof import("@/lib/backend/tauri").opengaussDebugDeleteBreakpoint;
+export const opengaussDebugToggleBreakpoint = plDebuggerWebUnsupported as unknown as typeof import("@/lib/backend/tauri").opengaussDebugToggleBreakpoint;
+export const opengaussDebugStop = plDebuggerWebUnsupported as unknown as typeof import("@/lib/backend/tauri").opengaussDebugStop;
+export const opengaussDebugCallResult = plDebuggerWebUnsupported as unknown as typeof import("@/lib/backend/tauri").opengaussDebugCallResult;
+
 export * from "@/lib/backend/mq-http";
 export * from "@/lib/backend/mqtt-http";
