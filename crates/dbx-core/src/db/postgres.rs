@@ -2621,6 +2621,7 @@ fn list_object_routines_sql(include_timestamps: bool, has_proc_prokind: bool, ha
      WHERE n.nspname = $1 AND NOT p.proisagg AND NOT p.proiswindow"
 }
 
+#[cfg(test)]
 fn list_objects_sql(
     include_timestamps: bool,
     has_proc_prokind: bool,

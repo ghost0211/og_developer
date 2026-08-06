@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ConnectionConfig } from "@/types/database";
 import {
   GAUSSDB_M_JDBC_DRIVER_CLASS,
+  OPENGAUSS_JDBC_DRIVER_CLASS,
   connectionObjectTreeNodeSchema,
   connectionObjectTreeQuerySchema,
   connectionQueryExecutionSchema,
@@ -10,10 +11,12 @@ import {
   connectionUsesDatabaseObjectTreeMode,
   effectiveDatabaseTypeForConnection,
   gaussdbConnectionMode,
+  opengaussConnectionMode,
   gaussdbIdentifierQuoteOverride,
   gaussdbIdentifierQuoteStyle,
   inferJdbcDialect,
   setGaussdbConnectionMode,
+  setOpengaussConnectionMode,
   setGaussdbIdentifierQuoteStyle,
   supportsGaussdbIdentifierQuoteStyle,
 } from "@/lib/database/jdbcDialect";
@@ -199,6 +202,32 @@ describe("GaussDB connection mode", () => {
     setGaussdbConnectionMode(connection, "native");
     expect(connection.driver_profile).toBe("gaussdb");
     expect(connection.jdbc_driver_class).toBeUndefined();
+  });
+});
+
+describe("openGauss connection mode", () => {
+  it("defaults to native and configures the official JDBC driver for jdbc mode", () => {
+    const connection = { db_type: "opengauss", driver_profile: "opengauss", driver_label: "openGauss" } as ConnectionConfig;
+
+    expect(opengaussConnectionMode(connection)).toBe("native");
+    setOpengaussConnectionMode(connection, "jdbc");
+    expect(connection.driver_profile).toBe("opengauss-jdbc");
+    expect(connection.jdbc_driver_class).toBe(OPENGAUSS_JDBC_DRIVER_CLASS);
+    expect(opengaussConnectionMode(connection)).toBe("jdbc");
+
+    setOpengaussConnectionMode(connection, "native");
+    expect(connection.driver_profile).toBe("opengauss");
+    expect(connection.jdbc_driver_class).toBeUndefined();
+    expect(opengaussConnectionMode(connection)).toBe("native");
+  });
+
+  it("does not switch other database types to jdbc mode", () => {
+    const connection = { db_type: "gaussdb", driver_profile: "opengauss-jdbc" } as ConnectionConfig;
+    expect(opengaussConnectionMode(connection)).toBe("native");
+
+    const postgres = { db_type: "postgres", driver_profile: "postgres" } as ConnectionConfig;
+    setOpengaussConnectionMode(postgres, "jdbc");
+    expect(postgres.driver_profile).toBe("postgres");
   });
 });
 

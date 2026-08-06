@@ -37,6 +37,16 @@ pub const JDBC_PLUGIN_NOT_INSTALLED: &str =
 pub const PRESTOSQL_JDBC_DRIVER_CLASS: &str = "io.prestosql.jdbc.PrestoDriver";
 pub const GAUSSDB_M_JDBC_DRIVER_PROFILE: &str = "gaussdb-m";
 pub const GAUSSDB_M_JDBC_DRIVER_CLASS: &str = "com.huawei.gaussdb.jdbc.Driver";
+/// openGauss connections can route through the official JDBC driver instead of
+/// the native PostgreSQL protocol. The native wire protocol (tokio-postgres)
+/// cannot complete openGauss's default SHA256 password authentication, while
+/// the official driver supports it (AUTH_REQ_SHA256/MD5_SHA256encode).
+///
+/// The auto-provisioned artifact is org.opengauss:opengauss-jdbc from Maven
+/// Central, which keeps the upstream pgJDBC branding: driver class
+/// org.postgresql.Driver and the jdbc:postgresql:// URL scheme.
+pub const OPENGAUSS_JDBC_DRIVER_PROFILE: &str = "opengauss-jdbc";
+pub const OPENGAUSS_JDBC_DRIVER_CLASS: &str = "org.postgresql.Driver";
 const SQLSERVER_LEGACY_DRIVER_INSTALL_HINT: &str =
     "Install the SQL Server legacy compatibility component from Driver Manager, or open the connection settings and enable SQL Server legacy compatibility mode again.";
 const DEFAULT_AGENT_CONNECT_TIMEOUT_SECS: u64 = 30;
@@ -668,6 +678,37 @@ pub fn gaussdb_m_jdbc_config_for_endpoint(config: &ConnectionConfig, host: &str,
     }
     jdbc_config.connection_string = Some(jdbc_url);
     jdbc_config.jdbc_driver_class = Some(GAUSSDB_M_JDBC_DRIVER_CLASS.to_string());
+    jdbc_config
+}
+
+pub fn opengauss_uses_jdbc_driver(config: &ConnectionConfig) -> bool {
+    config.db_type == DatabaseType::OpenGauss
+        && config
+            .driver_profile
+            .as_deref()
+            .is_some_and(|profile| profile.eq_ignore_ascii_case(OPENGAUSS_JDBC_DRIVER_PROFILE))
+}
+
+pub fn opengauss_jdbc_config_for_endpoint(config: &ConnectionConfig, host: &str, port: u16) -> ConnectionConfig {
+    let mut jdbc_config = config.clone();
+    // redacted_connection_url_with_host yields opengauss://… for OpenGauss, but
+    // the Maven-published official driver only accepts jdbc:postgresql:// URLs.
+    let native_url = config.redacted_connection_url_with_host(host, port);
+    let mut jdbc_url = format!("jdbc:postgresql://{}", native_url.trim_start_matches("opengauss://"));
+    let raw_params = config.url_params.as_deref().unwrap_or("").trim().trim_start_matches('?');
+    let explicit_sslmode = raw_params.split('&').find_map(|part| {
+        let (key, value) = part.split_once('=')?;
+        key.trim().eq_ignore_ascii_case("sslmode").then(|| value.trim().to_ascii_lowercase())
+    });
+    let sslmode =
+        explicit_sslmode.unwrap_or_else(|| if config.ssl { "require".to_string() } else { "prefer".to_string() });
+    let params = upsert_connection_url_param(Some(raw_params), "sslmode", &sslmode);
+    if !params.is_empty() {
+        jdbc_url.push('?');
+        jdbc_url.push_str(&params);
+    }
+    jdbc_config.connection_string = Some(jdbc_url);
+    jdbc_config.jdbc_driver_class = Some(OPENGAUSS_JDBC_DRIVER_CLASS.to_string());
     jdbc_config
 }
 
@@ -1799,6 +1840,10 @@ impl AppState {
             }
             DatabaseType::Gaussdb if gaussdb_uses_m_jdbc_driver(&db_config) => {
                 let jdbc_config = gaussdb_m_jdbc_config_for_endpoint(&db_config, &host, port);
+                self.external_driver_pool("jdbc", &jdbc_config).await?
+            }
+            DatabaseType::OpenGauss if opengauss_uses_jdbc_driver(&db_config) => {
+                let jdbc_config = opengauss_jdbc_config_for_endpoint(&db_config, &host, port);
                 self.external_driver_pool("jdbc", &jdbc_config).await?
             }
             DatabaseType::Postgres
@@ -4961,12 +5006,14 @@ mod tests {
         database_connection_config, database_connection_config_with_catalog,
         gaussdb_identifier_quote_from_query_result, gaussdb_m_jdbc_config_for_endpoint, gaussdb_uses_m_jdbc_driver,
         metadata_connection_config, mysql_metadata_fallback_url, mysql_pool_setup_queries,
-        oceanbase_mysql_query_timeout_sql, oceanbase_mysql_setup_queries, prestosql_jdbc_config_for_endpoint,
-        redacted_connection_url_for_endpoint, redis_sentinel_transport_id, redis_sentinel_transport_prefix,
-        sqlserver_legacy_agent_config, sqlserver_legacy_driver_error, sqlserver_uses_legacy_driver,
-        task_client_session_id, upsert_connection_url_param, uses_bare_mysql_pool, uses_tcp_probe,
-        validate_connection_url_params, validate_h2_database_path, AppState, MysqlMode, PoolKind,
-        GAUSSDB_M_JDBC_DRIVER_CLASS, GAUSSDB_M_JDBC_DRIVER_PROFILE, PRESTOSQL_JDBC_DRIVER_CLASS,
+        oceanbase_mysql_query_timeout_sql, oceanbase_mysql_setup_queries, opengauss_jdbc_config_for_endpoint,
+        opengauss_uses_jdbc_driver, prestosql_jdbc_config_for_endpoint, redacted_connection_url_for_endpoint,
+        redis_sentinel_transport_id, redis_sentinel_transport_prefix, sqlserver_legacy_agent_config,
+        sqlserver_legacy_driver_error, sqlserver_uses_legacy_driver, task_client_session_id,
+        upsert_connection_url_param, uses_bare_mysql_pool, uses_tcp_probe, validate_connection_url_params,
+        validate_h2_database_path, AppState, MysqlMode, PoolKind, GAUSSDB_M_JDBC_DRIVER_CLASS,
+        GAUSSDB_M_JDBC_DRIVER_PROFILE, OPENGAUSS_JDBC_DRIVER_CLASS, OPENGAUSS_JDBC_DRIVER_PROFILE,
+        PRESTOSQL_JDBC_DRIVER_CLASS,
     };
     use crate::agent_connection::{
         agent_connect_params, mongo_legacy_error_with_auth_hint, mongo_uses_legacy_driver,
@@ -5169,6 +5216,53 @@ mod tests {
 
         config.driver_profile = Some("gaussdb".to_string());
         assert!(!gaussdb_uses_m_jdbc_driver(&config));
+    }
+
+    #[test]
+    fn opengauss_jdbc_profile_uses_official_driver_url_and_class() {
+        let mut config = mysql_config(Some("业务库"));
+        config.db_type = DatabaseType::OpenGauss;
+        config.host = "db.internal".to_string();
+        config.port = 5432;
+        config.driver_profile = Some(OPENGAUSS_JDBC_DRIVER_PROFILE.to_string());
+        config.url_params = Some("currentSchema=app".to_string());
+
+        assert!(opengauss_uses_jdbc_driver(&config));
+        let jdbc = opengauss_jdbc_config_for_endpoint(&config, "127.0.0.1", 15432);
+        assert_eq!(
+            jdbc.connection_string.as_deref(),
+            Some("jdbc:postgresql://127.0.0.1:15432/%E4%B8%9A%E5%8A%A1%E5%BA%93?currentSchema=app&sslmode=prefer")
+        );
+        assert_eq!(jdbc.jdbc_driver_class.as_deref(), Some(OPENGAUSS_JDBC_DRIVER_CLASS));
+
+        config.driver_profile = Some("opengauss".to_string());
+        assert!(!opengauss_uses_jdbc_driver(&config));
+
+        // GaussDB connections must not be claimed by the openGauss JDBC profile.
+        config.db_type = DatabaseType::Gaussdb;
+        config.driver_profile = Some(OPENGAUSS_JDBC_DRIVER_PROFILE.to_string());
+        assert!(!opengauss_uses_jdbc_driver(&config));
+    }
+
+    #[test]
+    fn opengauss_jdbc_url_normalizes_sslmode() {
+        let mut config = mysql_config(Some("postgres"));
+        config.db_type = DatabaseType::OpenGauss;
+        config.driver_profile = Some(OPENGAUSS_JDBC_DRIVER_PROFILE.to_string());
+
+        config.ssl = true;
+        config.url_params = None;
+        assert_eq!(
+            opengauss_jdbc_config_for_endpoint(&config, "db.internal", 5432).connection_string.as_deref(),
+            Some("jdbc:postgresql://db.internal:5432/postgres?sslmode=require")
+        );
+
+        config.ssl = false;
+        config.url_params = Some("?sslmode=disable&currentSchema=app".to_string());
+        assert_eq!(
+            opengauss_jdbc_config_for_endpoint(&config, "db.internal", 5432).connection_string.as_deref(),
+            Some("jdbc:postgresql://db.internal:5432/postgres?currentSchema=app&sslmode=disable")
+        );
     }
 
     #[test]

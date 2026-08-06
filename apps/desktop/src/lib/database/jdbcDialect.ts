@@ -6,10 +6,18 @@ type JdbcDialectConnection = Pick<ConnectionConfig, "db_type"> & Partial<Pick<Co
 
 export type GaussdbIdentifierQuoteStyle = "auto" | "double" | "backtick";
 export type GaussdbConnectionMode = "native" | "m-jdbc";
+export type OpengaussConnectionMode = "native" | "jdbc";
 
 const GAUSSDB_IDENTIFIER_QUOTE_STYLE_KEY = "gaussdbIdentifierQuoteStyle";
 export const GAUSSDB_M_JDBC_DRIVER_PROFILE = "gaussdb-m";
 export const GAUSSDB_M_JDBC_DRIVER_CLASS = "com.huawei.gaussdb.jdbc.Driver";
+// og developer: openGauss can route through the official JDBC driver, whose
+// SHA256 password authentication the native PostgreSQL wire protocol lacks.
+// The auto-provisioned Maven artifact org.opengauss:opengauss-jdbc keeps
+// upstream pgJDBC branding (org.postgresql.Driver + jdbc:postgresql://).
+export const OPENGAUSS_JDBC_DRIVER_PROFILE = "opengauss-jdbc";
+export const OPENGAUSS_JDBC_DRIVER_CLASS = "org.postgresql.Driver";
+export const OPENGAUSS_JDBC_DRIVER_COORDINATE = "org.opengauss:opengauss-jdbc:6.0.0";
 
 const DATABASE_AS_EXECUTION_SCHEMA_TYPES = new Set<DatabaseType>(["hive", "spark"]);
 
@@ -96,6 +104,18 @@ export function gaussdbIdentifierQuoteOverride(connection: JdbcDialectConnection
 
 export function gaussdbConnectionMode(connection: JdbcDialectConnection | undefined): GaussdbConnectionMode {
   return connection?.db_type === "gaussdb" && connection.driver_profile?.toLowerCase() === GAUSSDB_M_JDBC_DRIVER_PROFILE ? "m-jdbc" : "native";
+}
+
+export function opengaussConnectionMode(connection: JdbcDialectConnection | undefined): OpengaussConnectionMode {
+  return connection?.db_type === "opengauss" && connection.driver_profile?.toLowerCase() === OPENGAUSS_JDBC_DRIVER_PROFILE ? "jdbc" : "native";
+}
+
+export function setOpengaussConnectionMode(connection: JdbcDialectConnection, mode: OpengaussConnectionMode) {
+  if (connection.db_type !== "opengauss") return;
+  connection.driver_profile = mode === "jdbc" ? OPENGAUSS_JDBC_DRIVER_PROFILE : "opengauss";
+  connection.driver_label = "openGauss";
+  connection.jdbc_driver_class = mode === "jdbc" ? OPENGAUSS_JDBC_DRIVER_CLASS : undefined;
+  connection.connection_string = undefined;
 }
 
 export function setGaussdbConnectionMode(connection: JdbcDialectConnection, mode: GaussdbConnectionMode) {

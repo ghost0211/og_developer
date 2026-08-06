@@ -104,7 +104,22 @@ import { translateBackendError } from "@/i18n/backend-errors";
 import { applyHiveKerberosSubmitConfig, hiveKerberosFormConfig, type HiveKerberosAuthMode } from "@/lib/database/hiveKerberosOptions";
 import { hasCloudflareD1Credentials, isCloudflareD1Connection, normalizeCloudflareD1Connection } from "@/lib/connection/cloudflareD1";
 import { buildElasticsearchExternalConfig, elasticsearchConnectionModeFromConfig, elasticsearchConnectivityCheckPathFromConfig, elasticsearchKibanaBasePathFromConfig, type ElasticsearchConnectionMode } from "@/lib/connection/elasticsearchKibanaProxy";
-import { GAUSSDB_M_JDBC_DRIVER_CLASS, gaussdbConnectionMode, gaussdbIdentifierQuoteStyle, setGaussdbConnectionMode, setGaussdbIdentifierQuoteStyle, supportsGaussdbIdentifierQuoteStyle, type GaussdbConnectionMode, type GaussdbIdentifierQuoteStyle } from "@/lib/database/jdbcDialect";
+import {
+  GAUSSDB_M_JDBC_DRIVER_CLASS,
+  OPENGAUSS_JDBC_DRIVER_CLASS,
+  OPENGAUSS_JDBC_DRIVER_COORDINATE,
+  OPENGAUSS_JDBC_DRIVER_PROFILE,
+  gaussdbConnectionMode,
+  gaussdbIdentifierQuoteStyle,
+  opengaussConnectionMode,
+  setGaussdbConnectionMode,
+  setGaussdbIdentifierQuoteStyle,
+  setOpengaussConnectionMode,
+  supportsGaussdbIdentifierQuoteStyle,
+  type GaussdbConnectionMode,
+  type GaussdbIdentifierQuoteStyle,
+  type OpengaussConnectionMode,
+} from "@/lib/database/jdbcDialect";
 import { normalizeStoredConnectionDatabase } from "@/lib/database/sqliteNamespace";
 
 type DbOption = { value: string; label: string };
@@ -224,13 +239,13 @@ const defaultForm = (): ConnectionForm => ({
   name: "",
   note: "",
   db_type: "opengauss",
-  driver_profile: "opengauss",
+  driver_profile: OPENGAUSS_JDBC_DRIVER_PROFILE,
   driver_label: "openGauss",
   url_params: "",
   agent_java_options: [],
   host: "127.0.0.1",
   port: 5432,
-  username: "root",
+  username: "gaussdb",
   password: "",
   database: undefined,
   color: "",
@@ -246,7 +261,7 @@ const defaultForm = (): ConnectionForm => ({
   sysdba: false,
   oracle_connection_type: "service_name",
   connection_string: undefined,
-  jdbc_driver_class: undefined,
+  jdbc_driver_class: OPENGAUSS_JDBC_DRIVER_CLASS,
   jdbc_driver_paths: [],
   redis_connection_mode: "standalone",
   redis_sentinel_master: "",
@@ -469,6 +484,15 @@ const gaussdbDriverMode = computed<GaussdbConnectionMode>({
   },
 });
 const isGaussdbMJdbcConnection = computed(() => gaussdbDriverMode.value === "m-jdbc");
+const showOpengaussConnectionMode = computed(() => form.value.db_type === "opengauss");
+const opengaussDriverMode = computed<OpengaussConnectionMode>({
+  get: () => opengaussConnectionMode(form.value),
+  set: (mode) => {
+    setOpengaussConnectionMode(form.value, mode);
+    resetTestState();
+  },
+});
+const isOpengaussJdbcConnection = computed(() => opengaussDriverMode.value === "jdbc");
 const showGaussdbIdentifierQuoteStyle = computed(() => supportsGaussdbIdentifierQuoteStyle(form.value));
 const gaussdbQuoteStyle = computed<GaussdbIdentifierQuoteStyle>({
   get: () => gaussdbIdentifierQuoteStyle(form.value),
@@ -1726,6 +1750,36 @@ async function ensureRequiredGaussdbMJdbcRuntime(config: ConnectionConfig): Prom
   if (status.installed && status.compatible) return;
   testResult.value = { ok: true, message: t("connection.gaussdbMJdbcPluginInstalling") };
   await api.installJdbcPlugin();
+}
+
+// og developer: JDBC mode auto-provisions everything. The JDBC plugin is
+// installed on demand and, when no driver jar was picked manually, the
+// official opengauss-jdbc driver is fetched from Maven Central — this is
+// what makes the official driver effectively built in.
+async function ensureRequiredOpengaussJdbcRuntime(config: ConnectionConfig): Promise<void> {
+  if (opengaussConnectionMode(config) !== "jdbc") return;
+  const status = await api.jdbcPluginStatus();
+  if (!(status.installed && status.compatible)) {
+    testResult.value = { ok: true, message: t("connection.opengaussJdbcPluginInstalling") };
+    await api.installJdbcPlugin();
+  }
+  if ((config.jdbc_driver_paths ?? []).length) return;
+  const existing = jdbcDrivers.value.find((driver) => /opengauss/i.test(driver.name) || /opengauss/i.test(driver.path));
+  if (existing) {
+    config.jdbc_driver_paths = [existing.path];
+    form.value.jdbc_driver_paths = [...config.jdbc_driver_paths];
+    jdbcDriverPathsInput.value = config.jdbc_driver_paths.join("\n");
+    return;
+  }
+  testResult.value = { ok: true, message: t("connection.opengaussJdbcDriverInstalling") };
+  const installed = await api.installJdbcDriverFromMaven(OPENGAUSS_JDBC_DRIVER_COORDINATE);
+  const paths = installed.map((driver) => driver.path).filter(Boolean);
+  if (paths.length) {
+    config.jdbc_driver_paths = paths;
+    form.value.jdbc_driver_paths = [...paths];
+    jdbcDriverPathsInput.value = paths.join("\n");
+    await loadJdbcDrivers();
+  }
 }
 
 async function installSqlServerLegacyCompatibilityComponentIfNeeded(): Promise<boolean> {
@@ -3139,6 +3193,7 @@ async function testConnection() {
     config = connectionConfigForSubmit(editingId.value || draftTestConnectionId.value);
     await ensureRequiredAgentDriverInstalled(config);
     await ensureRequiredGaussdbMJdbcRuntime(config);
+    await ensureRequiredOpengaussJdbcRuntime(config);
     await ensureRequiredJdbcxDriverInstalled(config);
     const result = await testConnectionWithTimeout(config, runId);
     if (runId !== testRunId) return;
@@ -3606,7 +3661,7 @@ function connectionConfigForSubmit(id: string, generatedName = ""): ConnectionCo
   } else {
     config.ca_cert_path = config.ca_cert_path?.trim() || "";
   }
-  if (jdbcBackedDatabaseTypes.has(config.db_type) || gaussdbConnectionMode(config) === "m-jdbc") {
+  if (jdbcBackedDatabaseTypes.has(config.db_type) || gaussdbConnectionMode(config) === "m-jdbc" || opengaussConnectionMode(config) === "jdbc") {
     if (config.db_type === "jdbc") {
       if (config.driver_profile === "dremio") {
         applyDremioJdbcMetadata(config);
@@ -3627,13 +3682,17 @@ function connectionConfigForSubmit(id: string, generatedName = ""): ConnectionCo
     } else if (config.db_type === "gaussdb") {
       config.connection_string = undefined;
       config.jdbc_driver_class = GAUSSDB_M_JDBC_DRIVER_CLASS;
+    } else if (config.db_type === "opengauss") {
+      config.connection_string = undefined;
+      config.jdbc_driver_class = OPENGAUSS_JDBC_DRIVER_CLASS;
     }
     config.jdbc_driver_class = config.jdbc_driver_class?.trim() || undefined;
     config.jdbc_driver_paths = jdbcDriverPathsInput.value
       .split(/\r?\n/)
       .map((path) => path.trim())
       .filter(Boolean);
-  } else if (config.db_type === "gaussdb") {
+  } else if (config.db_type === "gaussdb" || config.db_type === "opengauss") {
+    // Native-protocol GaussDB/openGauss connections carry no JDBC state.
     config.connection_string = undefined;
     config.jdbc_driver_class = undefined;
     config.jdbc_driver_paths = [];
@@ -4542,12 +4601,14 @@ async function save() {
       const updated = withSavedDatabaseInfo(connectionConfigForSubmit(editingId.value), databaseInfoForSave);
       await ensureRequiredAgentDriverInstalled(updated);
       await ensureRequiredGaussdbMJdbcRuntime(updated);
+      await ensureRequiredOpengaussJdbcRuntime(updated);
       await store.updateConnection(updated);
       store.stopEditing();
     } else {
       const config = withSavedDatabaseInfo(connectionConfigForSubmit(draftTestConnectionId.value), databaseInfoForSave);
       await ensureRequiredAgentDriverInstalled(config);
       await ensureRequiredGaussdbMJdbcRuntime(config);
+      await ensureRequiredOpengaussJdbcRuntime(config);
       await store.addConnection(config);
       draftTestConnectionId.value = uuid();
       if (config.db_type === "jdbc") {
@@ -7029,6 +7090,60 @@ function openExternalUrl(url: string) {
                     </div>
                     <div class="flex items-center justify-between gap-3">
                       <p class="text-xs leading-5 text-muted-foreground">{{ t("connection.gaussdbMJdbcDriverHint") }}</p>
+                      <Button type="button" variant="outline" size="sm" class="shrink-0" @click="openJdbcDriverManager">
+                        <FolderOpen class="h-3.5 w-3.5" />
+                        {{ t("toolbar.driverManager") }}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+                <div v-if="showOpengaussConnectionMode" class="grid grid-cols-4 items-start gap-4">
+                  <Label :class="connectionLabelSmallPaddedClass">{{ t("connection.opengaussConnectionMode") }}</Label>
+                  <div class="col-span-3 grid gap-1">
+                    <Select v-model="opengaussDriverMode">
+                      <SelectTrigger class="h-9">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="jdbc">{{ t("connection.opengaussConnectionModeJdbc") }}</SelectItem>
+                        <SelectItem value="native">{{ t("connection.opengaussConnectionModeNative") }}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p class="text-xs leading-5 text-muted-foreground">
+                      {{ isOpengaussJdbcConnection ? t("connection.opengaussConnectionModeJdbcHint") : t("connection.opengaussConnectionModeNativeHint") }}
+                    </p>
+                  </div>
+                </div>
+                <div v-if="isOpengaussJdbcConnection" class="grid grid-cols-4 items-start gap-4">
+                  <Label :class="connectionLabelSmallPaddedClass">{{ t("connection.opengaussJdbcDriver") }}</Label>
+                  <div class="col-span-3 space-y-2">
+                    <Select v-if="jdbcDriverSelectItems.length > 0" :model-value="selectedJdbcDriverPath" @update:model-value="onJdbcDriverSelect">
+                      <SelectTrigger class="h-9">
+                        <SelectValue :placeholder="t('connection.jdbcDriverSelectPlaceholder')" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem v-for="driver in jdbcDriverSelectItems" :key="driver.id" :value="driver.id">
+                          {{ driver.label }}
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <div class="flex items-start gap-1">
+                      <textarea
+                        v-model="jdbcDriverPathsInput"
+                        class="flex min-h-12 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                        :placeholder="t('connection.opengaussJdbcDriverPlaceholder')"
+                      />
+                      <Tooltip v-if="isDesktop">
+                        <TooltipTrigger as-child>
+                          <Button type="button" variant="outline" size="icon" class="h-9 w-9 shrink-0" @click="browseJdbcDriverPaths">
+                            <FolderOpen class="h-4 w-4" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>{{ t("connection.jdbcDriverBrowse") }}</TooltipContent>
+                      </Tooltip>
+                    </div>
+                    <div class="flex items-center justify-between gap-3">
+                      <p class="text-xs leading-5 text-muted-foreground">{{ t("connection.opengaussJdbcDriverHint") }}</p>
                       <Button type="button" variant="outline" size="sm" class="shrink-0" @click="openJdbcDriverManager">
                         <FolderOpen class="h-3.5 w-3.5" />
                         {{ t("toolbar.driverManager") }}
