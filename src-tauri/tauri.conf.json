@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "DBX",
-  "version": "0.5.76",
-  "identifier": "com.dbx.app",
+  "productName": "og developer",
+  "version": "0.1.0",
+  "identifier": "com.ogdeveloper.app",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "DBX",
+        "title": "og developer",
         "width": 1280,
         "height": 800,
         "minWidth": 900,
@@ -38,14 +38,21 @@
     "createUpdaterArtifacts": true,
     "fileAssociations": [
       {
-        "ext": ["sql"],
+        "ext": [
+          "sql"
+        ],
         "name": "SQL Script",
         "description": "SQL script",
         "role": "Editor",
         "mimeType": "application/sql"
       },
       {
-        "ext": ["db", "sqlite", "sqlite3", "duckdb"],
+        "ext": [
+          "db",
+          "sqlite",
+          "sqlite3",
+          "duckdb"
+        ],
         "name": "Database File",
         "description": "Database file",
         "role": "Editor"
@@ -60,17 +67,28 @@
         "template": "windows/nsis/installer.nsi"
       }
     },
-    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"]
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
   },
   "plugins": {
     "deep-link": {
       "desktop": {
-        "schemes": ["dbx"]
+        "schemes": [
+          "dbx"
+        ]
       }
     },
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDkxNEYyMzE3QkJCNkM3REYKUldUZng3YTdGeU5Qa1NnTUZCRVhJVkxsOWZKQWFPVCtacUgySlNlcjRDU2RmZElCQnphd25pYUMK",
-      "endpoints": ["https://dl.dbxio.com/releases/latest/latest.json", "https://github.com/t8y2/dbx/releases/latest/download/latest.json"]
+      "endpoints": [
+        "https://dl.dbxio.com/releases/latest/latest.json",
+        "https://github.com/t8y2/dbx/releases/latest/download/latest.json"
+      ]
     }
   }
 }

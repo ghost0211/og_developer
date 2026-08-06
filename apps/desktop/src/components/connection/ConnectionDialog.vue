@@ -223,13 +223,13 @@ function initialConfigTab(): ConfigTab {
 const defaultForm = (): ConnectionForm => ({
   name: "",
   note: "",
-  db_type: "mysql",
-  driver_profile: "mysql",
-  driver_label: "MySQL",
+  db_type: "opengauss",
+  driver_profile: "opengauss",
+  driver_label: "openGauss",
   url_params: "",
   agent_java_options: [],
   host: "127.0.0.1",
-  port: 3306,
+  port: 5432,
   username: "root",
   password: "",
   database: undefined,
@@ -564,7 +564,7 @@ const keepaliveEnabled = computed({
 });
 const selectedTransportLayerId = ref<string | null>(null);
 const draggedTransportLayerId = ref<string | null>(null);
-const selectedType = ref("mysql");
+const selectedType = ref("opengauss");
 const customDriverName = ref("");
 const mongoUseUrl = ref(false);
 const jdbcDriverPathsInput = ref("");
@@ -2630,12 +2630,19 @@ assertCompleteDatabaseCategories(
   dbCategoryDefinitions.map((category) => category.optionValues),
 );
 
+// og developer is a dedicated openGauss tool: only openGauss is offered in
+// the connection picker. The full upstream dbx option set below is kept
+// intact for reference and can be re-enabled by widening this allowlist.
+const ENABLED_DATABASE_TYPES = new Set<string>(["opengauss"]);
+
 const dbCategories = computed<DbCategory[]>(() => {
-  return dbCategoryDefinitions.map((category) => ({
-    key: category.key,
-    title: t(category.titleKey),
-    options: dbOptions.filter((option) => category.optionValues.includes(option.value)),
-  }));
+  return dbCategoryDefinitions
+    .map((category) => ({
+      key: category.key,
+      title: t(category.titleKey),
+      options: dbOptions.filter((option) => category.optionValues.includes(option.value) && ENABLED_DATABASE_TYPES.has(option.value)),
+    }))
+    .filter((category) => category.options.length > 0);
 });
 
 function matchesDbOption(option: DbOption, keyword: string, categoryTitle = "") {

@@ -1,6 +1,6 @@
 export default {
   app: {
-    name: "DBX",
+    name: "og developer",
   },
   auth: {
     rateLimited: "Please try again in {seconds}s",
