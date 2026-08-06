@@ -34,14 +34,17 @@ dollar-quoted 例程体）。
 
 `crates/dbx-core/src/schema.rs` 的 `postgres_object_source_sql_inner` 原先对这些
 对象类型一律返回 `SELECT NULL WHERE FALSE`。新增 openGauss 专属分支：
-- `PACKAGE` → 查 `gs_package.pkgspecsrc`；`PACKAGE_BODY` → 查 `pkgbodydeclsrc`；
-  存的是完整 CREATE 文本就原样返回，只存声明片段则包一层 `CREATE OR REPLACE ...`；
-- `SYNONYM` → 由 `pg_synonym` 重建 `CREATE OR REPLACE SYNONYM x FOR y;`。
-返回的源码可直接编辑后回存执行（配合修复 1，编译不再被切碎）。
+- `SYNONYM` → 由 `pg_synonym` 重建 `CREATE OR REPLACE SYNONYM x FOR y;`；
+- `PACKAGE` / `PACKAGE_BODY` → 由 `gs_package` 重建可执行 DDL。
 
-> **待真机验证**：`gs_package.pkgspecsrc / pkgbodydeclsrc` 存放的到底是完整 CREATE
-> 文本还是声明片段，需要在真实 openGauss 实例上确认；两种情况代码都兼容，但展示
-> 效果以真机为准。
+> **已真机验证（openGauss-lite 7.0.0-RC3）**：`gs_package` 存的是规范化形式
+> ` PACKAGE  DECLARE  <声明> end `（并非原始 CREATE 文本），body 初始化段在
+> `pkgbodyinitsrc`（` INSTANTIATION begin...END`）。补丁按此重建 DDL：剥掉
+> `PACKAGE DECLARE` 包装和尾部裸 `END`，拼上 `CREATE OR REPLACE PACKAGE [BODY]
+> 模式.名 AS ... END 名;`，含初始化段时先拼接 `pkgbodyinitsrc`。
+> spec/body/含初始化段的 body 均已在真机回环执行验证通过。
+
+返回的源码可直接编辑后回存执行（配合修复 1，编译不再被切碎）。
 
 ### 4. A 兼容模式类型支持
 
