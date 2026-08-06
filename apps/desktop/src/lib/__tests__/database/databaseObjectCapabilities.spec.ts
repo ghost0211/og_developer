@@ -6,9 +6,15 @@ describe("databaseObjectCapabilities", () => {
     expect(sidebarObjectKindsForDatabase("dameng")).toEqual(expect.arrayContaining(["MATERIALIZED_VIEW", "SEQUENCE", "PACKAGE", "PACKAGE_BODY"]));
   });
 
-  it("exposes synonyms for Xugu only", () => {
+  it("exposes synonyms for Xugu and openGauss only", () => {
     expect(sidebarObjectKindsForDatabase("xugu")).toContain("SYNONYM");
+    expect(sidebarObjectKindsForDatabase("opengauss")).toContain("SYNONYM");
     expect(sidebarObjectKindsForDatabase("postgres")).not.toContain("SYNONYM");
+  });
+
+  it("exposes packages and synonyms for openGauss", () => {
+    expect(sidebarObjectKindsForDatabase("opengauss")).toEqual(expect.arrayContaining(["TABLE", "VIEW", "MATERIALIZED_VIEW", "PROCEDURE", "FUNCTION", "SEQUENCE", "SYNONYM", "PACKAGE", "PACKAGE_BODY"]));
+    expect(sidebarObjectKindsForDatabase("postgres")).not.toContain("PACKAGE");
   });
 
   it("exposes only tables for HBase namespaces", () => {

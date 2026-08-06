@@ -6552,6 +6552,40 @@ fn postgres_object_source_sql_inner(
                 sql_string(name)
             )
         }
+        // openGauss stores package sources in gs_package. Specs/bodies saved as
+        // full CREATE text pass through untouched; declaration-only fragments get
+        // a CREATE OR REPLACE wrapper so the result is directly re-executable.
+        db::ObjectSourceKind::Package | db::ObjectSourceKind::PackageBody if unwrap_opengauss_record => {
+            let (source_column, keyword) = if matches!(kind, db::ObjectSourceKind::Package) {
+                ("pkgspecsrc", "PACKAGE")
+            } else {
+                ("pkgbodydeclsrc", "PACKAGE BODY")
+            };
+            format!(
+                "SELECT CASE \
+                   WHEN p.{source_column} ~* '^[[:space:]]*CREATE' THEN p.{source_column} \
+                   ELSE 'CREATE OR REPLACE {keyword} ' || p.{source_column} \
+                 END \
+                 FROM pg_catalog.gs_package p \
+                 JOIN pg_catalog.pg_namespace n ON n.oid = p.pkgnamespace \
+                 WHERE n.nspname = {} AND p.pkgname = {} AND p.{source_column} IS NOT NULL \
+                 ORDER BY p.oid LIMIT 1",
+                sql_string(schema),
+                sql_string(name)
+            )
+        }
+        db::ObjectSourceKind::Synonym if unwrap_opengauss_record => {
+            format!(
+                "SELECT format('CREATE OR REPLACE SYNONYM %I.%I FOR %I.%I;', \
+                   n.nspname, s.synname, s.synobjschema, s.synobjname) \
+                 FROM pg_catalog.pg_synonym s \
+                 JOIN pg_catalog.pg_namespace n ON n.oid = s.synnamespace \
+                 WHERE n.nspname = {} AND s.synname = {} \
+                 ORDER BY s.oid LIMIT 1",
+                sql_string(schema),
+                sql_string(name)
+            )
+        }
         db::ObjectSourceKind::Trigger
         | db::ObjectSourceKind::Synonym
         | db::ObjectSourceKind::Package
@@ -7485,6 +7519,43 @@ mod object_source_tests {
         assert_eq!(
             postgres_function_object_source_sql_without_prokind("public", "recalc_score", true),
             "SELECT (pg_get_functiondef(p.oid)).definition FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.proname = 'recalc_score' AND NOT p.proisagg AND NOT p.proiswindow ORDER BY p.oid LIMIT 1"
+        );
+    }
+
+    #[test]
+    fn builds_opengauss_package_source_sql_from_gs_package() {
+        let spec_sql = opengauss_object_source_sql("hr", "emp_pkg", &ObjectSourceKind::Package, None);
+        assert!(spec_sql.contains("pg_catalog.gs_package"));
+        assert!(spec_sql.contains("p.pkgspecsrc"));
+        assert!(spec_sql.contains("CREATE OR REPLACE PACKAGE "));
+        assert!(spec_sql.contains("n.nspname = 'hr'"));
+        assert!(spec_sql.contains("p.pkgname = 'emp_pkg'"));
+
+        let body_sql = opengauss_object_source_sql("hr", "emp_pkg", &ObjectSourceKind::PackageBody, None);
+        assert!(body_sql.contains("p.pkgbodydeclsrc"));
+        assert!(body_sql.contains("CREATE OR REPLACE PACKAGE BODY "));
+    }
+
+    #[test]
+    fn builds_opengauss_synonym_source_sql_from_pg_synonym() {
+        let sql = opengauss_object_source_sql("hr", "emp_alias", &ObjectSourceKind::Synonym, None);
+        assert!(sql.contains("pg_catalog.pg_synonym"));
+        assert!(sql.contains("CREATE OR REPLACE SYNONYM"));
+        assert!(sql.contains("s.synobjschema"));
+        assert!(sql.contains("s.synobjname"));
+        assert!(sql.contains("n.nspname = 'hr'"));
+        assert!(sql.contains("s.synname = 'emp_alias'"));
+    }
+
+    #[test]
+    fn vanilla_postgres_package_and_synonym_source_sql_stay_unsupported() {
+        assert_eq!(
+            postgres_object_source_sql("public", "emp_pkg", &ObjectSourceKind::Package, None),
+            "SELECT NULL WHERE FALSE"
+        );
+        assert_eq!(
+            postgres_object_source_sql("public", "emp_alias", &ObjectSourceKind::Synonym, None),
+            "SELECT NULL WHERE FALSE"
         );
     }
 

@@ -2627,11 +2627,41 @@ fn list_objects_sql(
     has_proc_prosp: bool,
     has_function_identity_arguments: bool,
 ) -> String {
-    let sql = format!(
-        "{} UNION ALL {} ORDER BY sort_order, object_name",
+    list_objects_sql_full(
+        include_timestamps,
+        has_proc_prokind,
+        has_proc_prosp,
+        has_function_identity_arguments,
+        false,
+        false,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn list_objects_sql_full(
+    include_timestamps: bool,
+    has_proc_prokind: bool,
+    has_proc_prosp: bool,
+    has_function_identity_arguments: bool,
+    has_gs_package_catalog: bool,
+    has_pg_synonym_catalog: bool,
+) -> String {
+    let mut sql = format!(
+        "{} UNION ALL {}",
         list_object_relations_sql(include_timestamps),
         list_object_routines_sql(include_timestamps, has_proc_prokind, has_proc_prosp)
     );
+    // openGauss-only object families. Their catalogs do not exist on vanilla
+    // PostgreSQL, so the UNION arms are appended only when detected.
+    if has_gs_package_catalog {
+        sql.push_str(" UNION ALL ");
+        sql.push_str(opengauss_packages_sql());
+    }
+    if has_pg_synonym_catalog {
+        sql.push_str(" UNION ALL ");
+        sql.push_str(opengauss_synonyms_sql());
+    }
+    sql.push_str(" ORDER BY sort_order, object_name");
     if has_function_identity_arguments {
         sql
     } else {
@@ -2640,6 +2670,78 @@ fn list_objects_sql(
         // overloads instead of making the whole schema browser unavailable.
         sql.replace("pg_get_function_identity_arguments(p.oid)", "pg_get_function_arguments(p.oid)")
     }
+}
+
+/// openGauss stores package specs and bodies in pg_catalog.gs_package. Emit one
+/// row for the spec plus another for the body when its declaration source is
+/// present, mirroring how Oracle-family databases surface PACKAGE/PACKAGE_BODY.
+fn opengauss_packages_sql() -> &'static str {
+    "SELECT p.pkgname AS object_name, \
+       'PACKAGE' AS object_type, \
+       NULL::text AS object_comment, \
+       NULL::text AS created_at, \
+       NULL::text AS updated_at, \
+       NULL::text AS parent_schema, \
+       NULL::text AS parent_name, \
+       NULL::text AS signature, \
+       5 AS sort_order \
+     FROM pg_catalog.gs_package p \
+     JOIN pg_catalog.pg_namespace n ON n.oid = p.pkgnamespace \
+     WHERE n.nspname = $1 \
+     UNION ALL \
+     SELECT p.pkgname AS object_name, \
+       'PACKAGE_BODY' AS object_type, \
+       NULL::text AS object_comment, \
+       NULL::text AS created_at, \
+       NULL::text AS updated_at, \
+       NULL::text AS parent_schema, \
+       NULL::text AS parent_name, \
+       NULL::text AS signature, \
+       5 AS sort_order \
+     FROM pg_catalog.gs_package p \
+     JOIN pg_catalog.pg_namespace n ON n.oid = p.pkgnamespace \
+     WHERE n.nspname = $1 AND p.pkgbodydeclsrc IS NOT NULL"
+}
+
+/// openGauss synonyms live in pg_catalog.pg_synonym (not present in vanilla
+/// PostgreSQL). The comment column carries the referenced target so the sidebar
+/// can show what each synonym points at.
+fn opengauss_synonyms_sql() -> &'static str {
+    "SELECT s.synname AS object_name, \
+       'SYNONYM' AS object_type, \
+       ('FOR ' || s.synobjschema || '.' || s.synobjname)::text AS object_comment, \
+       NULL::text AS created_at, \
+       NULL::text AS updated_at, \
+       NULL::text AS parent_schema, \
+       NULL::text AS parent_name, \
+       NULL::text AS signature, \
+       6 AS sort_order \
+     FROM pg_catalog.pg_synonym s \
+     JOIN pg_catalog.pg_namespace n ON n.oid = s.synnamespace \
+     WHERE n.nspname = $1"
+}
+
+fn postgres_has_pg_catalog_relation_sql(relation_name: &str) -> String {
+    format!(
+        "SELECT EXISTS ( \
+           SELECT 1 \
+           FROM pg_catalog.pg_class c \
+           JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
+           WHERE n.nspname = 'pg_catalog' \
+             AND c.relname = '{}' \
+         )",
+        relation_name.replace('\'', "''")
+    )
+}
+
+async fn postgres_has_pg_catalog_relation(
+    client: &deadpool_postgres::Client,
+    relation_name: &str,
+) -> Result<bool, String> {
+    let row = postgres_query_one_cached(client, &postgres_has_pg_catalog_relation_sql(relation_name), &[])
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(pg_row_try_bool(&row, 0).unwrap_or(false))
 }
 
 fn postgres_has_function_identity_arguments_sql() -> &'static str {
@@ -2697,8 +2799,17 @@ async fn list_objects_rows(
     has_proc_prokind: bool,
     has_proc_prosp: bool,
     has_function_identity_arguments: bool,
+    has_gs_package_catalog: bool,
+    has_pg_synonym_catalog: bool,
 ) -> Result<Vec<Row>, String> {
-    let sql = list_objects_sql(include_timestamps, has_proc_prokind, has_proc_prosp, has_function_identity_arguments);
+    let sql = list_objects_sql_full(
+        include_timestamps,
+        has_proc_prokind,
+        has_proc_prosp,
+        has_function_identity_arguments,
+        has_gs_package_catalog,
+        has_pg_synonym_catalog,
+    );
     postgres_query_cached(client, &sql, &[&schema]).await.map_err(|e| e.to_string())
 }
 
@@ -2709,6 +2820,10 @@ pub async fn list_objects(pool: &Pool, schema: &str) -> Result<Vec<ObjectInfo>, 
     // PostgreSQL 11's prokind. Treat prosp as an extra procedure signal.
     let has_proc_prosp = postgres_proc_has_prosp(&client).await?;
     let has_function_identity_arguments = postgres_has_function_identity_arguments(&client).await?;
+    // openGauss-specific catalogs. Vanilla PostgreSQL lacks both, so these
+    // probes keep the extra UNION arms strictly scoped to openGauss servers.
+    let has_gs_package_catalog = postgres_has_pg_catalog_relation(&client, "gs_package").await?;
+    let has_pg_synonym_catalog = postgres_has_pg_catalog_relation(&client, "pg_synonym").await?;
     let rows = match list_objects_rows(
         &client,
         schema,
@@ -2716,6 +2831,8 @@ pub async fn list_objects(pool: &Pool, schema: &str) -> Result<Vec<ObjectInfo>, 
         has_proc_prokind,
         has_proc_prosp,
         has_function_identity_arguments,
+        has_gs_package_catalog,
+        has_pg_synonym_catalog,
     )
     .await
     {
@@ -2729,6 +2846,8 @@ pub async fn list_objects(pool: &Pool, schema: &str) -> Result<Vec<ObjectInfo>, 
                 has_proc_prokind,
                 has_proc_prosp,
                 has_function_identity_arguments,
+                has_gs_package_catalog,
+                has_pg_synonym_catalog,
             )
             .await
             {
@@ -6363,6 +6482,35 @@ mod tests {
         let sql = list_objects_sql(false, false, false, false);
         assert!(sql.contains("pg_get_function_arguments(p.oid) AS signature"));
         assert!(!sql.contains("pg_get_function_identity_arguments"));
+    }
+
+    #[test]
+    fn opengauss_list_objects_sql_includes_packages_and_synonyms() {
+        let sql = list_objects_sql_full(false, true, false, true, true, true);
+        assert!(sql.contains("pg_catalog.gs_package"));
+        assert!(sql.contains("'PACKAGE' AS object_type"));
+        assert!(sql.contains("'PACKAGE_BODY' AS object_type"));
+        assert!(sql.contains("p.pkgbodydeclsrc IS NOT NULL"));
+        assert!(sql.contains("pg_catalog.pg_synonym"));
+        assert!(sql.contains("'SYNONYM' AS object_type"));
+        assert!(sql.contains("s.synobjschema || '.' || s.synobjname"));
+        assert!(sql.ends_with("ORDER BY sort_order, object_name"));
+    }
+
+    #[test]
+    fn vanilla_postgres_list_objects_sql_omits_opengauss_catalogs() {
+        let sql = list_objects_sql(false, true, false, true);
+        assert!(!sql.contains("gs_package"));
+        assert!(!sql.contains("pg_synonym"));
+        assert!(!sql.contains("PACKAGE"));
+        assert!(!sql.contains("SYNONYM"));
+    }
+
+    #[test]
+    fn postgres_has_pg_catalog_relation_sql_scopes_to_pg_catalog() {
+        let sql = postgres_has_pg_catalog_relation_sql("gs_package");
+        assert!(sql.contains("n.nspname = 'pg_catalog'"));
+        assert!(sql.contains("c.relname = 'gs_package'"));
     }
 
     #[test]

@@ -138,7 +138,10 @@ impl Default for SqlDialectProfile {
 
 impl SqlDialectProfile {
     fn for_database_type(db_type: DatabaseType) -> Self {
-        if matches!(db_type, DatabaseType::Gaussdb) {
+        // openGauss shares GaussDB's PL/SQL heritage: package/procedure bodies
+        // use Oracle-style blocks, scripts may terminate blocks with a `/` line,
+        // and dollar-quoted routine bodies are also valid.
+        if matches!(db_type, DatabaseType::Gaussdb | DatabaseType::OpenGauss) {
             return Self::gaussdb();
         }
 
@@ -3139,6 +3142,14 @@ SELECT 2;";
         assert!(gaussdb.supports_slash_line_block_delimiter);
         assert!(gaussdb.supports_postgres_dollar_quoted_routines);
 
+        // openGauss uses the same PL/SQL-aware profile as GaussDB so package
+        // bodies and `/`-terminated scripts are not chopped at inner semicolons.
+        let opengauss = SqlDialectProfile::for_database_type(DatabaseType::OpenGauss);
+        assert_eq!(opengauss, SqlDialectProfile::gaussdb());
+        assert!(opengauss.supports_oracle_plsql_blocks);
+        assert!(opengauss.supports_slash_line_block_delimiter);
+        assert!(opengauss.supports_postgres_dollar_quoted_routines);
+
         let sql_server = SqlDialectProfile::for_database_type(DatabaseType::SqlServer);
         assert_eq!(sql_server, SqlDialectProfile::sql_server());
         assert!(sql_server.supports_go_batch_separator);
@@ -3147,6 +3158,57 @@ SELECT 2;";
         let sap_hana = SqlDialectProfile::for_database_type(DatabaseType::SapHana);
         assert_eq!(sap_hana, SqlDialectProfile::sap_hana());
         assert!(sap_hana.supports_hana_do_blocks);
+    }
+
+    #[test]
+    fn opengauss_split_keeps_package_spec_and_body_with_slash_terminators() {
+        let sql = "\
+CREATE OR REPLACE PACKAGE emp_pkg AS
+    PROCEDURE raise_salary(emp_id INTEGER, amount NUMERIC);
+    FUNCTION get_salary(emp_id INTEGER) RETURN NUMERIC;
+END emp_pkg;
+/
+CREATE OR REPLACE PACKAGE BODY emp_pkg AS
+    PROCEDURE raise_salary(emp_id INTEGER, amount NUMERIC) AS
+    BEGIN
+        UPDATE employees SET salary = salary + amount WHERE id = emp_id;
+    END;
+    FUNCTION get_salary(emp_id INTEGER) RETURN NUMERIC AS
+        v_salary NUMERIC;
+    BEGIN
+        SELECT salary INTO v_salary FROM employees WHERE id = emp_id;
+        RETURN v_salary;
+    END;
+END emp_pkg;
+/
+SELECT 1 AS after_package;";
+
+        let statements = split_sql_statements_for_database(sql, DatabaseType::OpenGauss);
+        assert_eq!(statements.len(), 3);
+        assert!(statements[0].starts_with("CREATE OR REPLACE PACKAGE emp_pkg AS"));
+        assert!(statements[0].contains("FUNCTION get_salary(emp_id INTEGER) RETURN NUMERIC;"));
+        assert!(statements[1].starts_with("CREATE OR REPLACE PACKAGE BODY emp_pkg AS"));
+        assert!(statements[1].contains("UPDATE employees SET salary = salary + amount WHERE id = emp_id;"));
+        assert_eq!(statements[2], "SELECT 1 AS after_package");
+    }
+
+    #[test]
+    fn opengauss_split_keeps_package_body_without_slash_terminator() {
+        let sql = "\
+CREATE OR REPLACE PACKAGE BODY emp_pkg AS
+    PROCEDURE raise_salary(emp_id INTEGER, amount NUMERIC) AS
+    BEGIN
+        UPDATE employees SET salary = salary + amount WHERE id = emp_id;
+    END;
+END emp_pkg;
+
+SELECT 2 AS after_package;";
+
+        let statements = split_sql_statements_for_database(sql, DatabaseType::OpenGauss);
+        assert_eq!(statements.len(), 2);
+        assert!(statements[0].starts_with("CREATE OR REPLACE PACKAGE BODY emp_pkg AS"));
+        assert!(statements[0].ends_with("END emp_pkg;"));
+        assert_eq!(statements[1], "SELECT 2 AS after_package");
     }
 
     #[test]

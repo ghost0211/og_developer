@@ -28,7 +28,24 @@ types:
     category: "DECIMAL"
     has_precision: true
     aliases: ["DECIMAL"]
+  # A-compatibility (Oracle-style) types below
+  - name: "NUMBER"
+    category: "DECIMAL"
+    has_precision: true
+  - name: "BINARY_INTEGER"
+    category: "INTEGER"
+    aliases: ["PLS_INTEGER"]
+  - name: "BINARY_FLOAT"
+    category: "FLOAT"
+  - name: "BINARY_DOUBLE"
+    category: "FLOAT"
   - name: "VARCHAR"
+    category: "STRING"
+    has_length: true
+  - name: "VARCHAR2"
+    category: "STRING"
+    has_length: true
+  - name: "NVARCHAR2"
     category: "STRING"
     has_length: true
   - name: "CHAR"
@@ -39,6 +56,10 @@ types:
   - name: "CLOB"
     category: "STRING"
   - name: "BYTEA"
+    category: "BINARY"
+  - name: "RAW"
+    category: "BINARY"
+  - name: "BLOB"
     category: "BINARY"
   - name: "BOOLEAN"
     category: "BOOLEAN"
@@ -55,6 +76,10 @@ types:
     category: "UUID"
   - name: "JSON"
     category: "JSON"
+  - name: "JSONB"
+    category: "JSON"
+  - name: "INTERVAL"
+    category: "INTERVAL"
 
 ddl_capabilities:
   add_column: true

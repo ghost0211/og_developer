@@ -14,6 +14,8 @@ const TABLE_VIEW_MV_OBJECTS: SidebarObjectKind[] = ["TABLE", "VIEW", "MATERIALIZ
 const ROUTINE_OBJECTS: SidebarObjectKind[] = ["TABLE", "VIEW", "PROCEDURE", "FUNCTION"];
 
 const POSTGRES_OBJECTS: SidebarObjectKind[] = ["TABLE", "VIEW", "MATERIALIZED_VIEW", "PROCEDURE", "FUNCTION", "SEQUENCE"];
+// openGauss adds Oracle-style packages and synonyms (gs_package / pg_synonym catalogs).
+const OPENGAUSS_OBJECTS: SidebarObjectKind[] = [...POSTGRES_OBJECTS, "SYNONYM", "PACKAGE", "PACKAGE_BODY"];
 const POSTGRES_LIKE_OBJECTS: SidebarObjectKind[] = ["TABLE", "VIEW", "MATERIALIZED_VIEW", "PROCEDURE", "FUNCTION"];
 const ORACLE_OBJECTS: SidebarObjectKind[] = ["TABLE", "VIEW", "MATERIALIZED_VIEW", "PROCEDURE", "FUNCTION", "PACKAGE", "PACKAGE_BODY"];
 const DAMENG_OBJECTS: SidebarObjectKind[] = ["TABLE", "VIEW", "MATERIALIZED_VIEW", "PROCEDURE", "FUNCTION", "SEQUENCE", "PACKAGE", "PACKAGE_BODY"];
@@ -24,7 +26,7 @@ const DATABASE_TYPE_OBJECTS = new Map<DatabaseType, SidebarObjectKind[]>([
   ["postgres", POSTGRES_OBJECTS],
   ["gaussdb", POSTGRES_OBJECTS],
   ["kwdb", POSTGRES_OBJECTS],
-  ["opengauss", POSTGRES_OBJECTS],
+  ["opengauss", OPENGAUSS_OBJECTS],
   // postgres like
   ["kingbase", POSTGRES_LIKE_OBJECTS],
   ["highgo", POSTGRES_LIKE_OBJECTS],
