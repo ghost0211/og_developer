@@ -3367,26 +3367,62 @@ export async function refreshConnections(): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// openGauss PL debugger — desktop only (requires pinned sessions)
+// openGauss PL debugger
 // ---------------------------------------------------------------------------
 
 export type { OpenGaussDebugBacktraceFrame, OpenGaussDebugBreakpoint, OpenGaussDebugCodeLine, OpenGaussDebugLocal, OpenGaussDebugPosition, OpenGaussDebugStartResult, OpenGaussDebugTarget } from "@/lib/backend/tauri";
 
-const plDebuggerWebUnsupported = (): never => {
-  throw new Error("PL debugger requires the desktop app");
-};
+export async function opengaussDebugStart(params: { connectionId: string; database: string; schema: string; kind: string; name: string; signature?: string; callSql: string }): Promise<import("@/lib/backend/tauri").OpenGaussDebugStartResult> {
+  return post("/api/debug/start", {
+    connection_id: params.connectionId,
+    database: params.database,
+    schema: params.schema,
+    kind: params.kind,
+    name: params.name,
+    signature: params.signature,
+    call_sql: params.callSql,
+  });
+}
 
-export const opengaussDebugStart = plDebuggerWebUnsupported as unknown as typeof import("@/lib/backend/tauri").opengaussDebugStart;
-export const opengaussDebugStep = plDebuggerWebUnsupported as unknown as typeof import("@/lib/backend/tauri").opengaussDebugStep;
-export const opengaussDebugLocals = plDebuggerWebUnsupported as unknown as typeof import("@/lib/backend/tauri").opengaussDebugLocals;
-export const opengaussDebugSetVar = plDebuggerWebUnsupported as unknown as typeof import("@/lib/backend/tauri").opengaussDebugSetVar;
-export const opengaussDebugBacktrace = plDebuggerWebUnsupported as unknown as typeof import("@/lib/backend/tauri").opengaussDebugBacktrace;
-export const opengaussDebugBreakpoints = plDebuggerWebUnsupported as unknown as typeof import("@/lib/backend/tauri").opengaussDebugBreakpoints;
-export const opengaussDebugAddBreakpoint = plDebuggerWebUnsupported as unknown as typeof import("@/lib/backend/tauri").opengaussDebugAddBreakpoint;
-export const opengaussDebugDeleteBreakpoint = plDebuggerWebUnsupported as unknown as typeof import("@/lib/backend/tauri").opengaussDebugDeleteBreakpoint;
-export const opengaussDebugToggleBreakpoint = plDebuggerWebUnsupported as unknown as typeof import("@/lib/backend/tauri").opengaussDebugToggleBreakpoint;
-export const opengaussDebugStop = plDebuggerWebUnsupported as unknown as typeof import("@/lib/backend/tauri").opengaussDebugStop;
-export const opengaussDebugCallResult = plDebuggerWebUnsupported as unknown as typeof import("@/lib/backend/tauri").opengaussDebugCallResult;
+export async function opengaussDebugStep(sessionId: string, action: "next" | "step" | "finish" | "continue"): Promise<import("@/lib/backend/tauri").OpenGaussDebugPosition> {
+  return post("/api/debug/step", { session_id: sessionId, action });
+}
+
+export async function opengaussDebugLocals(sessionId: string): Promise<import("@/lib/backend/tauri").OpenGaussDebugLocal[]> {
+  return post("/api/debug/locals", { session_id: sessionId });
+}
+
+export async function opengaussDebugSetVar(sessionId: string, name: string, value: string): Promise<boolean> {
+  return post("/api/debug/set-var", { session_id: sessionId, name, value });
+}
+
+export async function opengaussDebugBacktrace(sessionId: string): Promise<import("@/lib/backend/tauri").OpenGaussDebugBacktraceFrame[]> {
+  return post("/api/debug/backtrace", { session_id: sessionId });
+}
+
+export async function opengaussDebugBreakpoints(sessionId: string): Promise<import("@/lib/backend/tauri").OpenGaussDebugBreakpoint[]> {
+  return post("/api/debug/breakpoints", { session_id: sessionId });
+}
+
+export async function opengaussDebugAddBreakpoint(sessionId: string, lineno: number): Promise<import("@/lib/backend/tauri").OpenGaussDebugBreakpoint[]> {
+  return post("/api/debug/breakpoints/add", { session_id: sessionId, lineno });
+}
+
+export async function opengaussDebugDeleteBreakpoint(sessionId: string, breakpointno: number): Promise<import("@/lib/backend/tauri").OpenGaussDebugBreakpoint[]> {
+  return post("/api/debug/breakpoints/delete", { session_id: sessionId, breakpointno });
+}
+
+export async function opengaussDebugToggleBreakpoint(sessionId: string, breakpointno: number, enable: boolean): Promise<import("@/lib/backend/tauri").OpenGaussDebugBreakpoint[]> {
+  return post("/api/debug/breakpoints/toggle", { session_id: sessionId, breakpointno, enable });
+}
+
+export async function opengaussDebugStop(sessionId: string): Promise<void> {
+  return post("/api/debug/stop", { session_id: sessionId });
+}
+
+export async function opengaussDebugCallResult(sessionId: string): Promise<string | null> {
+  return post("/api/debug/call-result", { session_id: sessionId });
+}
 
 export * from "@/lib/backend/mq-http";
 export * from "@/lib/backend/mqtt-http";
