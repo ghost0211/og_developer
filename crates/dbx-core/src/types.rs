@@ -310,6 +310,10 @@ pub struct QueryResult {
     pub rows: Vec<Vec<serde_json::Value>>,
     pub affected_rows: u64,
     pub execution_time_ms: u128,
+    /// Server-side output lines (openGauss gms_output/dbms_output buffer,
+    /// drained on the same session right after execution).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub messages: Vec<String>,
     #[serde(default)]
     pub truncated: bool,
     #[serde(default)]

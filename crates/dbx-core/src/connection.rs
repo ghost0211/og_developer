@@ -5347,6 +5347,7 @@ mod tests {
             rows: vec![vec![serde_json::json!("M")]],
             affected_rows: 0,
             execution_time_ms: 1,
+            messages: Vec::new(),
             truncated: false,
             session_id: None,
             has_more: false,

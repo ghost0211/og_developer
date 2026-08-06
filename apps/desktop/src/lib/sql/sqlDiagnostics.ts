@@ -1,6 +1,10 @@
 export interface SqlErrorLocation {
   line: number;
   column: number;
+  /** True when the location refers to a server-internal (PL/SQL block) query
+   *  rather than the submitted statement, e.g. psql-style `LINE n:` + caret
+   *  synthesized from an internal error position. */
+  internal?: boolean;
 }
 
 function toZeroBased(value: string | undefined): number | null {
@@ -25,7 +29,7 @@ export function parseSqlErrorLocation(message: string): SqlErrorLocation | null 
     const caretLine = lines.slice(index + 1).find((line) => line.includes("^"));
     const line = toZeroBased(lineMatch[1]);
     const caretIndex = caretLine?.indexOf("^") ?? -1;
-    if (line != null && caretIndex >= 0) return { line, column: caretIndex };
+    if (line != null && caretIndex >= 0) return { line, column: caretIndex, internal: true };
   }
 
   return null;

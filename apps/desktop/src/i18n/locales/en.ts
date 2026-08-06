@@ -1105,6 +1105,7 @@ export default {
     noTable: "No result table returned",
     noSql: "SQL unavailable",
     navigationHint: "Click a row to preview its SQL; double-click to focus it in the editor.",
+    outputHint: "DBMS_OUTPUT output",
     statuses: {
       pending: "Pending",
       running: "Running",

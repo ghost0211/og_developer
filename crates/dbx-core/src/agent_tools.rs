@@ -1218,6 +1218,7 @@ for line in sys.stdin:
             rows,
             affected_rows,
             execution_time_ms: 1,
+            messages: Vec::new(),
             truncated: false,
             session_id: None,
             has_more: false,

@@ -354,6 +354,7 @@ fn query_result(
         rows: result.rows,
         affected_rows,
         execution_time_ms,
+        messages: Vec::new(),
         truncated,
         session_id: None,
         has_more: false,

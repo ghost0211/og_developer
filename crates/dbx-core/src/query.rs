@@ -1365,6 +1365,9 @@ async fn do_execute_typed(
             let schema = schema.map(|s| s.to_string());
             let max_rows = options.max_rows;
             let prefer_text_protocol = postgres_prefers_text_protocol(pool_db_type);
+            // og developer: drain gms_output/dbms_output lines after executions
+            // on openGauss-family servers (same session, see postgres.rs).
+            let drain_opengauss_output = matches!(pool_db_type, Some(DatabaseType::OpenGauss | DatabaseType::Gaussdb));
             let execution_mode = options.execution_mode;
             let cancel_context = state.get_postgres_cancel_context(pool_key).await;
             drop(connections);
@@ -1389,6 +1392,7 @@ async fn do_execute_typed(
                     operation_budget.clone(),
                     cancel_context,
                     prefer_text_protocol,
+                    drain_opengauss_output,
                 )
                 .await
             } else {
@@ -1400,6 +1404,7 @@ async fn do_execute_typed(
                     operation_budget.clone(),
                     cancel_context,
                     prefer_text_protocol,
+                    drain_opengauss_output,
                 )
                 .await
             }
@@ -2480,6 +2485,7 @@ fn error_query_result(message: String) -> db::QueryResult {
         rows: vec![vec![serde_json::Value::String(message)]],
         affected_rows: 0,
         execution_time_ms: 0,
+        messages: Vec::new(),
         truncated: false,
         session_id: None,
         has_more: false,
@@ -2497,6 +2503,7 @@ fn empty_query_result(execution_time_ms: u128) -> db::QueryResult {
         rows: vec![],
         affected_rows: 0,
         execution_time_ms,
+        messages: Vec::new(),
         truncated: false,
         session_id: None,
         has_more: false,
@@ -2727,6 +2734,7 @@ pub async fn execute_statements(
         rows: vec![],
         affected_rows: total_affected,
         execution_time_ms: start.elapsed().as_millis(),
+        messages: Vec::new(),
         truncated: false,
         session_id: None,
         has_more: false,
@@ -3228,6 +3236,7 @@ async fn exec_tx_pg_inner(
             rows: vec![],
             affected_rows: total_affected,
             execution_time_ms: start.elapsed().as_millis(),
+            messages: Vec::new(),
             truncated: false,
             session_id: None,
             has_more: false,
@@ -3320,6 +3329,7 @@ async fn exec_tx_mysql_inner(
         rows: vec![],
         affected_rows: total_affected,
         execution_time_ms: start.elapsed().as_millis(),
+        messages: Vec::new(),
         truncated: false,
         session_id: None,
         has_more: false,
@@ -3386,6 +3396,7 @@ async fn exec_tx_sqlite_inner(
                 rows: vec![],
                 affected_rows: total_affected,
                 execution_time_ms: start.elapsed().as_millis(),
+                messages: Vec::new(),
                 truncated: false,
                 session_id: None,
                 has_more: false,
@@ -3460,6 +3471,7 @@ async fn exec_tx_explicit_inner(
         rows: vec![],
         affected_rows: total_affected,
         execution_time_ms: start.elapsed().as_millis(),
+        messages: Vec::new(),
         truncated: false,
         session_id: None,
         has_more: false,
@@ -3527,6 +3539,7 @@ async fn exec_tx_none_inner(
         rows: vec![],
         affected_rows: total_affected,
         execution_time_ms: start.elapsed().as_millis(),
+        messages: Vec::new(),
         truncated: false,
         session_id: None,
         has_more: false,
@@ -3993,6 +4006,7 @@ async fn execute_manual_txn_postgres_statement(
             rows: vec![],
             affected_rows: affected,
             execution_time_ms: 0,
+            messages: Vec::new(),
             truncated: false,
             session_id: None,
             has_more: false,
@@ -4035,6 +4049,7 @@ async fn execute_manual_txn_mysql_statement(
             rows: data,
             affected_rows: 0,
             execution_time_ms: start.elapsed().as_millis(),
+            messages: Vec::new(),
             truncated,
             session_id: None,
             has_more: false,
@@ -4053,6 +4068,7 @@ async fn execute_manual_txn_mysql_statement(
             rows: vec![],
             affected_rows,
             execution_time_ms: 0,
+            messages: Vec::new(),
             truncated: false,
             session_id: None,
             has_more: false,
@@ -4088,6 +4104,7 @@ pub async fn commit_manual_transaction(state: &AppState, txn_session_id: &str) -
         rows: vec![],
         affected_rows: 0,
         execution_time_ms: 0,
+        messages: Vec::new(),
         truncated: false,
         session_id: None,
         has_more: false,
@@ -4115,6 +4132,7 @@ pub async fn rollback_manual_transaction(state: &AppState, txn_session_id: &str)
         rows: vec![],
         affected_rows: 0,
         execution_time_ms: 0,
+        messages: Vec::new(),
         truncated: false,
         session_id: None,
         has_more: false,
@@ -4903,6 +4921,7 @@ for line in sys.stdin:
             rows: vec![vec![serde_json::json!(value)]],
             affected_rows: 0,
             execution_time_ms: 1,
+            messages: Vec::new(),
             truncated: false,
             session_id: None,
             has_more: false,
@@ -5430,6 +5449,7 @@ for line in sys.stdin:
                 rows: vec![],
                 affected_rows: 0,
                 execution_time_ms: 0,
+                messages: Vec::new(),
                 truncated: false,
                 session_id: None,
                 has_more: false,
@@ -5454,6 +5474,7 @@ for line in sys.stdin:
                 rows: vec![],
                 affected_rows: 0,
                 execution_time_ms: 0,
+                messages: Vec::new(),
                 truncated: false,
                 session_id: None,
                 has_more: false,
@@ -6145,6 +6166,7 @@ for line in sys.stdin:
             ]],
             affected_rows: 0,
             execution_time_ms: 0,
+            messages: Vec::new(),
             truncated: false,
             session_id: None,
             has_more: false,

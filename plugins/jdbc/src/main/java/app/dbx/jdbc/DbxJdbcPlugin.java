@@ -266,9 +266,59 @@ public final class DbxJdbcPlugin {
             }
             return "Missing Java class " + className + ". Install the required runtime dependency.";
         }
-        return trimmed.equals(error.getClass().getName()) || trimmed.equals(error.getClass().getSimpleName())
+        String result = trimmed.equals(error.getClass().getName()) || trimmed.equals(error.getClass().getSimpleName())
             ? null
             : trimmed;
+        if (result != null && error instanceof SQLException) {
+            // og developer: pgJDBC/openGauss drivers report the failing PL/SQL
+            // block position via ServerErrorMessage (loaded reflectively — the
+            // plugin stays driver-agnostic). Synthesize psql-style LINE context
+            // so the editor can mark the exact line.
+            String lineContext = internalErrorLineContext(error);
+            if (lineContext != null) {
+                return result + "\n" + lineContext;
+            }
+        }
+        return result;
+    }
+
+    private static String internalErrorLineContext(Throwable error) {
+        try {
+            Method getServerErrorMessage = error.getClass().getMethod("getServerErrorMessage");
+            Object serverError = getServerErrorMessage.invoke(error);
+            if (serverError == null) {
+                return null;
+            }
+            Method getInternalPosition = serverError.getClass().getMethod("getInternalPosition");
+            Method getInternalQuery = serverError.getClass().getMethod("getInternalQuery");
+            Object positionValue = getInternalPosition.invoke(serverError);
+            Object queryValue = getInternalQuery.invoke(serverError);
+            if (!(positionValue instanceof Number position) || !(queryValue instanceof String query)) {
+                return null;
+            }
+            return psqlLineContext(position.intValue(), query);
+        } catch (ReflectiveOperationException | SecurityException ignored) {
+            return null;
+        }
+    }
+
+    private static String psqlLineContext(int position, String query) {
+        if (position <= 0) {
+            return null;
+        }
+        String[] lines = query.split("\n", -1);
+        int offset = 0;
+        for (int index = 0; index < lines.length; index++) {
+            String line = lines[index];
+            int lineLength = line.getBytes(StandardCharsets.UTF_8).length;
+            if (position <= offset + lineLength) {
+                int byteColumn = position - offset;
+                int caretChars = new String(line.getBytes(StandardCharsets.UTF_8), 0, Math.max(byteColumn - 1, 0), StandardCharsets.UTF_8).length();
+                return "LINE " + (index + 1) + ": " + line + "\n" + " ".repeat(caretChars) + "^";
+            }
+            offset += lineLength + 1;
+        }
+        return null;
     }
 
     private static JsonNode handle(String method, JsonNode params, JsonNode connection) throws Exception {
@@ -651,6 +701,10 @@ public final class DbxJdbcPlugin {
         long start = System.nanoTime();
         Connection conn = openConnection(connection);
         applyExecutionContext(connection, conn, database, schema);
+        boolean drainOpenGaussOutput = openGaussOutputSupported(connection);
+        if (drainOpenGaussOutput) {
+            enableOpenGaussOutput(conn);
+        }
         JdbcDriverQuirks quirks = driverQuirks(connection);
         try (Statement statement = conn.createStatement()) {
             applyStatementOptions(statement, maxRows, fetchSize, timeoutSecs, quirks);
@@ -688,11 +742,65 @@ public final class DbxJdbcPlugin {
             result.put("affected_rows", columns.isEmpty() ? Math.max(executed.updateCount(), 0) : 0);
             result.put("execution_time_ms", (System.nanoTime() - start) / 1_000_000);
             result.put("truncated", truncated);
+            if (drainOpenGaussOutput) {
+                ArrayNode messages = drainOpenGaussOutput(conn);
+                if (!messages.isEmpty()) {
+                    result.set("messages", messages);
+                }
+            }
             return result;
         }
     }
 
     private record ExecutedStatement(ResultSet resultSet, int updateCount) {
+    }
+
+    // og developer: gms_output/dbms_output buffer drain for openGauss. The
+    // buffer is session-scoped, so enable runs right after opening the
+    // connection and the drain right after the user's statement on the same
+    // connection. enable() is idempotent and does not purge buffered lines.
+    private static final String[] OPENGAUSS_OUTPUT_ENABLE_SQLS = { "call gms_output.enable(20000)", "call dbms_output.enable(20000)" };
+    private static final String[] OPENGAUSS_OUTPUT_DRAIN_SQLS =
+        { "select lines from gms_output.get_lines(null, 1000)", "select lines from dbms_output.get_lines(null, 1000)" };
+
+    private static boolean openGaussOutputSupported(JsonNode connection) {
+        String profile = optionalText(connection, "driver_profile");
+        if (profile != null && profile.equalsIgnoreCase("opengauss-jdbc")) {
+            return true;
+        }
+        String url = optionalText(connection, "connection_string");
+        return url != null && url.toLowerCase(Locale.ROOT).startsWith("jdbc:opengauss:");
+    }
+
+    private static void enableOpenGaussOutput(Connection conn) {
+        for (String sql : OPENGAUSS_OUTPUT_ENABLE_SQLS) {
+            try (Statement statement = conn.createStatement()) {
+                statement.execute(sql);
+                return;
+            } catch (SQLException ignored) {
+            }
+        }
+    }
+
+    private static ArrayNode drainOpenGaussOutput(Connection conn) {
+        ArrayNode lines = MAPPER.createArrayNode();
+        for (String sql : OPENGAUSS_OUTPUT_DRAIN_SQLS) {
+            try (Statement statement = conn.createStatement(); ResultSet rs = statement.executeQuery(sql)) {
+                if (rs.next()) {
+                    java.sql.Array array = rs.getArray(1);
+                    if (array != null && array.getArray() instanceof Object[] values) {
+                        for (Object value : values) {
+                            if (value != null) {
+                                lines.add(value.toString());
+                            }
+                        }
+                    }
+                }
+                return lines;
+            } catch (SQLException ignored) {
+            }
+        }
+        return lines;
     }
 
     private static final class QuerySession {

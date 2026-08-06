@@ -1381,6 +1381,9 @@ defineExpose({ focusSearch, refreshData, refreshQueryEditorCompletionCache, hand
                     <div class="min-w-0">
                       <div class="truncate font-mono text-[11px] text-foreground">{{ item.sql || t("executionSummary.noSql") }}</div>
                       <div v-if="item.error" class="mt-0.5 truncate text-[11px] text-destructive">{{ item.error }}</div>
+                      <div v-if="item.messages?.length" class="mt-0.5 space-y-0.5" :title="t('executionSummary.outputHint')">
+                        <div v-for="(line, messageIndex) in item.messages" :key="messageIndex" class="whitespace-pre-wrap break-all font-mono text-[11px] text-emerald-700 dark:text-emerald-300">{{ line }}</div>
+                      </div>
                     </div>
                     <div>
                       <span

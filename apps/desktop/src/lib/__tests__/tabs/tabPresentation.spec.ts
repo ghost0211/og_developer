@@ -234,6 +234,15 @@ describe("execution summary", () => {
       { status: "error", isError: true },
     ]);
   });
+
+  it("carries server output lines into the summary item", () => {
+    const withOutput = { columns: [], rows: [], affected_rows: 1, execution_time_ms: 3, messages: ["hello ogdev", "第二行"] };
+    const withoutOutput = { columns: [], rows: [], affected_rows: 1, execution_time_ms: 1 };
+
+    const items = executionSummaryItems({ results: [withOutput, withoutOutput] });
+    expect(items[0].messages).toEqual(["hello ogdev", "第二行"]);
+    expect(items[1].messages).toBeUndefined();
+  });
 });
 
 describe("statement execution markers", () => {

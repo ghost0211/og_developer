@@ -6765,6 +6765,7 @@ mod tests {
             rows,
             affected_rows: 0,
             execution_time_ms: 0,
+            messages: Vec::new(),
             truncated: false,
             session_id: None,
             has_more: false,

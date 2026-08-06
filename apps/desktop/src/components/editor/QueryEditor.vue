@@ -2208,8 +2208,19 @@ async function resolveSqlHoverTooltip(currentView: EditorViewType, pos: number) 
 function sqlErrorDecorationRange(currentState: import("@codemirror/state").EditorState) {
   if (!props.executionError) return [];
   if (!props.executionErrorSql || props.executionErrorSql !== currentState.doc.toString()) return [];
-  const location = parseSqlErrorLocation(props.executionError);
-  if (!location) return [];
+  const parsed = parseSqlErrorLocation(props.executionError);
+  if (!parsed) return [];
+  // openGauss PL/compile errors carry LINE n relative to the internal block
+  // query (" DECLARE begin\n…"). Map internal line 1 onto the block's first
+  // DECLARE/BEGIN line in the editor so the marker lands on the right row.
+  let location = parsed;
+  if (parsed.internal) {
+    const docLines = currentState.doc.toString().split(/\r?\n/);
+    const blockStart = docLines.findIndex((line) => /^\s*(?:declare|begin)\b/i.test(line));
+    if (blockStart >= 0) {
+      location = { ...parsed, line: blockStart + parsed.line };
+    }
+  }
   const offset = lineColumnToOffset(currentState.doc.toString(), location);
   if (offset == null) return [];
   return [

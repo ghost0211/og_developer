@@ -353,6 +353,8 @@ export interface ExecutionSummaryItem {
   executionTimeMs: number;
   hasTabularResult: boolean;
   isError: boolean;
+  /** Server-side output lines for this statement (openGauss gms_output). */
+  messages?: string[];
 }
 
 export function executionSummaryItems(tab: Pick<QueryTab, "result" | "results" | "batchSqlExecution">): ExecutionSummaryItem[] {
@@ -375,6 +377,7 @@ export function executionSummaryItems(tab: Pick<QueryTab, "result" | "results" |
         executionTimeMs: item.executionTimeMs ?? result?.execution_time_ms ?? 0,
         hasTabularResult: (result?.columns.length ?? 0) > 0,
         isError: item.status === "error",
+        messages: result?.messages?.length ? result.messages : undefined,
       };
     });
   }
@@ -395,6 +398,7 @@ export function executionSummaryItems(tab: Pick<QueryTab, "result" | "results" |
       executionTimeMs: result.execution_time_ms,
       hasTabularResult: result.columns.length > 0,
       isError,
+      messages: result.messages?.length ? result.messages : undefined,
     };
   });
 }

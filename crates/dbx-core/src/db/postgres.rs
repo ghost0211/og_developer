@@ -841,11 +841,47 @@ fn escape_tsvector_lexeme(value: &str) -> String {
 }
 
 fn pg_error_to_string(err: tokio_postgres::Error) -> String {
-    err.as_db_error().map(ToString::to_string).unwrap_or_else(|| err.to_string())
+    let context = err.as_db_error().and_then(pg_error_line_context);
+    let base = err.as_db_error().map(ToString::to_string).unwrap_or_else(|| err.to_string());
+    match context {
+        Some(context) => format!("{base}\n{context}"),
+        None => base,
+    }
 }
 
 fn pg_db_error_to_string(err: &tokio_postgres::error::DbError) -> String {
-    format!("{err} (SQLSTATE {})", err.code().code())
+    let base = format!("{err} (SQLSTATE {})", err.code().code());
+    match pg_error_line_context(err) {
+        Some(context) => format!("{base}\n{context}"),
+        None => base,
+    }
+}
+
+/// Synthesizes psql-style `LINE n: <text>` + caret context from a server error
+/// position so PL/compile errors can be mapped back to source lines
+/// (og developer). Mirrors what gsql/psql print for internal positions.
+fn pg_error_line_context(db_error: &tokio_postgres::error::DbError) -> Option<String> {
+    let tokio_postgres::error::ErrorPosition::Internal { position, query } = db_error.position()? else {
+        return None;
+    };
+    psql_line_context(*position as usize, query)
+}
+
+fn psql_line_context(position: usize, query: &str) -> Option<String> {
+    if position == 0 {
+        return None;
+    }
+    let mut offset = 0usize;
+    for (index, line) in query.split('\n').enumerate() {
+        let line_len = line.len();
+        if position <= offset + line_len {
+            let byte_column = position - offset;
+            let caret_chars = line[..byte_column.saturating_sub(1)].chars().count();
+            return Some(format!("LINE {}: {}\n{}^", index + 1, line, " ".repeat(caret_chars)));
+        }
+        offset += line_len + 1;
+    }
+    None
 }
 
 fn pg_error_from_sources(err: &(dyn std::error::Error + 'static)) -> Option<String> {
@@ -1066,6 +1102,7 @@ async fn execute_select_prepared(
         rows: result_rows,
         affected_rows: 0,
         execution_time_ms: start.elapsed().as_millis(),
+        messages: Vec::new(),
         truncated,
         session_id: None,
         has_more: false,
@@ -1153,6 +1190,7 @@ async fn execute_select_text(
         rows: result_rows,
         affected_rows: 0,
         execution_time_ms: start.elapsed().as_millis(),
+        messages: Vec::new(),
         truncated,
         session_id: None,
         has_more: false,
@@ -3568,12 +3606,45 @@ pub async fn execute_query_with_max_rows(
             rows: vec![],
             affected_rows: affected,
             execution_time_ms: start.elapsed().as_millis(),
+            messages: Vec::new(),
             truncated: false,
             session_id: None,
             has_more: false,
             elasticsearch_raw_body: None,
         })
     }
+}
+
+/// openGauss gms_output/dbms_output buffer drain (og developer). The buffer is
+/// session-scoped, so enable + drain must run on the same client that executed
+/// the user's statement. enable() is idempotent and does not purge buffered
+/// lines (verified on openGauss 7.0), so calling it before every execution is
+/// safe and needs no per-session tracking.
+const OPENGAUSS_OUTPUT_ENABLE_SQLS: [&str; 2] = ["call gms_output.enable(20000)", "call dbms_output.enable(20000)"];
+const OPENGAUSS_OUTPUT_DRAIN_SQLS: [&str; 2] =
+    ["select lines from gms_output.get_lines(null, 1000)", "select lines from dbms_output.get_lines(null, 1000)"];
+
+async fn opengauss_output_enable(client: &deadpool_postgres::Client) -> bool {
+    for sql in OPENGAUSS_OUTPUT_ENABLE_SQLS {
+        if client.execute(sql, &[]).await.is_ok() {
+            return true;
+        }
+    }
+    false
+}
+
+async fn drain_opengauss_output_lines(client: &deadpool_postgres::Client) -> Vec<String> {
+    for sql in OPENGAUSS_OUTPUT_DRAIN_SQLS {
+        match client.query_opt(sql, &[]).await {
+            Ok(Some(row)) => {
+                let lines: Vec<String> = row.try_get(0).unwrap_or_default();
+                return lines;
+            }
+            Ok(None) => return vec![],
+            Err(_) => continue,
+        }
+    }
+    vec![]
 }
 
 pub async fn execute_query_with_max_rows_and_cancel(
@@ -3584,10 +3655,12 @@ pub async fn execute_query_with_max_rows_and_cancel(
     budget: DbOperationBudget,
     cancel_context: Option<PostgresCancelContext>,
     prefer_text_protocol: bool,
+    drain_opengauss_output: bool,
 ) -> Result<QueryResult, String> {
     let client = checkout_postgres_client(pool, cancel_token.as_ref(), budget.checkout_timeout).await?;
+    let output_enabled = drain_opengauss_output && opengauss_output_enable(&client).await;
     let pg_cancel_token = client.cancel_token();
-    wait_postgres_query(
+    let mut result = wait_postgres_query(
         pg_cancel_token,
         cancel_context,
         cancel_token,
@@ -3595,7 +3668,11 @@ pub async fn execute_query_with_max_rows_and_cancel(
         budget.cancel_timeout,
         execute_query_with_max_rows_inner(&client, sql, max_rows, prefer_text_protocol),
     )
-    .await
+    .await?;
+    if output_enabled {
+        result.messages = drain_opengauss_output_lines(&client).await;
+    }
+    Ok(result)
 }
 
 fn postgres_read_only_transaction_setup(schema: Option<&str>) -> Vec<(String, &'static str)> {
@@ -3844,10 +3921,12 @@ pub async fn execute_query_with_schema_and_max_rows_and_cancel(
     budget: DbOperationBudget,
     cancel_context: Option<PostgresCancelContext>,
     prefer_text_protocol: bool,
+    drain_opengauss_output: bool,
 ) -> Result<QueryResult, String> {
     let start = Instant::now();
     let checkout_start = Instant::now();
     let client = checkout_postgres_client(pool, cancel_token.as_ref(), budget.checkout_timeout).await?;
+    let output_enabled = drain_opengauss_output && opengauss_output_enable(&client).await;
     log::info!(
         "[postgres][execute_with_schema:pool:done] elapsed_ms={} total_ms={} schema={}",
         checkout_start.elapsed().as_millis(),
@@ -3901,7 +3980,11 @@ pub async fn execute_query_with_schema_and_max_rows_and_cancel(
     );
 
     let reset_result = reset_postgres_search_path(&client, budget.cleanup_timeout, start).await;
-    merge_postgres_query_and_reset_result(result, reset_result)
+    let mut result = merge_postgres_query_and_reset_result(result, reset_result)?;
+    if output_enabled {
+        result.messages = drain_opengauss_output_lines(&client).await;
+    }
+    Ok(result)
 }
 
 async fn reset_postgres_search_path(
@@ -4149,6 +4232,7 @@ async fn execute_query_with_max_rows_inner(
             rows: vec![],
             affected_rows: affected,
             execution_time_ms: start.elapsed().as_millis(),
+            messages: Vec::new(),
             truncated: false,
             session_id: None,
             has_more: false,
@@ -6741,6 +6825,26 @@ mod tests {
     }
 
     #[test]
+    fn psql_line_context_maps_internal_position_to_line_and_caret() {
+        // Real shape captured from openGauss 7.0 for a broken CREATE FUNCTION:
+        // internalQuery = " DECLARE begin\n  select no_col into v from no_tbl;\n  return 1;\nend",
+        // internalPosition = 37 → line 2, caret under 'v' (column 22).
+        let query = " DECLARE begin\n  select no_col into v from no_tbl;\n  return 1;\nend";
+        let context = psql_line_context(37, query).expect("context");
+        let mut lines = context.split('\n');
+        assert_eq!(lines.next(), Some("LINE 2:   select no_col into v from no_tbl;"));
+        assert_eq!(lines.next(), Some("                     ^"));
+
+        // Position on the first line.
+        let first = psql_line_context(3, query).expect("first line");
+        assert!(first.starts_with("LINE 1:  DECLARE begin\n  ^"));
+
+        // Out-of-range and zero positions produce no context.
+        assert!(psql_line_context(0, query).is_none());
+        assert!(psql_line_context(query.len() + 10, query).is_none());
+    }
+
+    #[test]
     fn postgres_has_namespaced_relation_sql_targets_custom_schema() {
         let sql = postgres_has_namespaced_relation_sql("dbe_pldeveloper", "gs_source");
         assert!(sql.contains("n.nspname = 'dbe_pldeveloper'"));
@@ -6799,6 +6903,7 @@ mod tests {
             ]],
             affected_rows: 0,
             execution_time_ms: 0,
+            messages: Vec::new(),
             truncated: false,
             session_id: None,
             has_more: false,

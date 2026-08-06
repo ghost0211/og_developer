@@ -1106,6 +1106,7 @@ export default withEnglishFallback({
     noTable: "未返回结果表",
     noSql: "无法获取 SQL",
     navigationHint: "单击预览对应 SQL，双击在编辑器中聚焦并选中。",
+    outputHint: "DBMS_OUTPUT 输出",
     statuses: {
       pending: "等待",
       running: "执行中",

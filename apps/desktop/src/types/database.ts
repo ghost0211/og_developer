@@ -616,6 +616,9 @@ export interface QueryResult {
   mongo_copy_documents?: unknown[];
   affected_rows: number;
   execution_time_ms: number;
+  /** Server-side output lines (openGauss gms_output/dbms_output buffer,
+   *  drained on the same session right after execution). */
+  messages?: string[];
   /** Whether a backend-reported result total is exact. */
   total_is_exact?: boolean;
   truncated?: boolean;
