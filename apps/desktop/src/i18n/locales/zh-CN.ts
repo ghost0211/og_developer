@@ -640,6 +640,7 @@ export default withEnglishFallback({
       driverName: "驱动",
       driverVersion: "驱动版本",
       jdbcVersion: "JDBC 版本",
+      sqlCompatibility: "兼容模式",
       identifierCase: {
         lower: "小写",
         upper: "大写",

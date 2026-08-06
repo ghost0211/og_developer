@@ -1,3 +1,10 @@
+[env]
+# Enable SQLite's built-in math functions for rusqlite's bundled libsqlite3.
+LIBSQLITE3_FLAGS = "SQLITE_ENABLE_MATH_FUNCTIONS"
+
+[target.x86_64-pc-windows-msvc]
+linker = "lld-link"
+
 # dbx 体量的全量 debug 构建产物可超过 30G，曾导致磁盘耗尽。
 # 限制 dev 构建的调试信息体积；需要完整调试信息时用：
 #   CARGO_PROFILE_DEV_DEBUG=true cargo build ...

@@ -151,6 +151,7 @@ enum ConnectionDatabaseInfoSource {
     ExternalDriver { config: Arc<ConnectionConfig>, session: Arc<PluginDriverSession> },
     NativeMysql(db::mysql::MySqlPool),
     NativeHBase(db::hbase_driver::HBaseClient),
+    NativeOpengauss(deadpool_postgres::Pool),
 }
 
 /// Held connection for a manual transaction session
@@ -3693,6 +3694,9 @@ impl AppState {
                     })
                 }
                 Some(PoolKind::Mysql(pool, _)) => Some(ConnectionDatabaseInfoSource::NativeMysql(pool.clone())),
+                Some(PoolKind::Postgres(pool)) if crate::schema::is_opengauss_family_config(&config) => {
+                    Some(ConnectionDatabaseInfoSource::NativeOpengauss(pool.clone()))
+                }
                 Some(PoolKind::HBase(client)) => Some(ConnectionDatabaseInfoSource::NativeHBase(client.clone())),
                 _ => None,
             }
@@ -3711,10 +3715,50 @@ impl AppState {
                         Some(db::connection_timeout()),
                     )
                     .await?;
-                Ok(database_info_from_protocol_value(&response))
+                let mut info = database_info_from_protocol_value(&response);
+                // og developer: JDBC connections do not report the openGauss
+                // compatibility mode; detect it over the same session.
+                if crate::schema::is_opengauss_family_config(&config) {
+                    let compatibility = session
+                        .invoke_with_timeout::<db::QueryResult>(
+                            "executeQuery",
+                            serde_json::json!({
+                                "connection": config.as_ref(),
+                                "sql": db::postgres::GAUSSDB_COMPATIBILITY_SQL,
+                                "database": config.effective_database().unwrap_or(""),
+                                "schema": null,
+                                "maxRows": 1,
+                                "timeoutSecs": 5,
+                            }),
+                            Some(db::connection_timeout()),
+                        )
+                        .await
+                        .ok()
+                        .and_then(|result| db::postgres::sql_compatibility_from_query_result(&result));
+                    if let Some(compatibility) = compatibility {
+                        info.get_or_insert_with(DatabaseConnectionInfo::default).sql_compatibility =
+                            Some(compatibility);
+                    }
+                }
+                Ok(info)
             }
             Some(ConnectionDatabaseInfoSource::NativeMysql(pool)) => {
                 db::mysql::database_connection_info(&pool, db::mysql::protocol_product_name(&config)).await.map(Some)
+            }
+            Some(ConnectionDatabaseInfoSource::NativeOpengauss(pool)) => {
+                // og developer: surface the openGauss compatibility mode so the
+                // sidebar and editor can adapt.
+                let compatibility = db::postgres::postgres_sql_compatibility(&pool).await;
+                Ok(Some(DatabaseConnectionInfo {
+                    product_name: Some(
+                        if config.db_type == DatabaseType::Gaussdb { "GaussDB" } else { "openGauss" }.to_string(),
+                    ),
+                    current_database: database
+                        .map(str::to_string)
+                        .or_else(|| config.effective_database().map(str::to_string)),
+                    sql_compatibility: compatibility,
+                    ..Default::default()
+                }))
             }
             Some(ConnectionDatabaseInfoSource::NativeHBase(client)) => {
                 db::hbase_driver::database_connection_info(&client).await

@@ -9,6 +9,7 @@ import {
   connectionShouldDiscoverJdbcSchemas,
   connectionShouldLoadIdentifierQuote,
   connectionUsesDatabaseObjectTreeMode,
+  codeMirrorSqlDialectForConnection,
   effectiveDatabaseTypeForConnection,
   gaussdbConnectionMode,
   opengaussConnectionMode,
@@ -228,6 +229,15 @@ describe("openGauss connection mode", () => {
     const postgres = { db_type: "postgres", driver_profile: "postgres" } as ConnectionConfig;
     setOpengaussConnectionMode(postgres, "jdbc");
     expect(postgres.driver_profile).toBe("postgres");
+  });
+
+  it("adapts the editor SQL dialect to the compatibility mode", () => {
+    expect(codeMirrorSqlDialectForConnection({ db_type: "opengauss" })).toBe("postgres");
+    expect(codeMirrorSqlDialectForConnection({ db_type: "opengauss", database_info: { sqlCompatibility: "A" } })).toBe("postgres");
+    expect(codeMirrorSqlDialectForConnection({ db_type: "opengauss", database_info: { sqlCompatibility: "PG" } })).toBe("postgres");
+    // B mode speaks MySQL syntax (dolphin), M mode SQL Server syntax (shark).
+    expect(codeMirrorSqlDialectForConnection({ db_type: "opengauss", database_info: { sqlCompatibility: "B" } })).toBe("mysql");
+    expect(codeMirrorSqlDialectForConnection({ db_type: "opengauss", database_info: { sqlCompatibility: "M" } })).toBe("sqlserver");
   });
 });
 

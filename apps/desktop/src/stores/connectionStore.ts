@@ -1381,7 +1381,7 @@ export const useConnectionStore = defineStore("connection", () => {
 
   function supportedSidebarObjectTypes(config?: ConnectionConfig): DatabaseObjectTreeKind[] {
     const dbType = effectiveDatabaseTypeForConnection(config);
-    return sidebarObjectKindsForDatabase(dbType);
+    return sidebarObjectKindsForDatabase(dbType, config?.database_info?.sqlCompatibility);
   }
 
   function sortSidebarSchemaInfos(schemas: readonly SchemaInfo[]): SchemaInfo[] {

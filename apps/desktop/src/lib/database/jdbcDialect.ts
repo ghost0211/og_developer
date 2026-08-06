@@ -217,6 +217,14 @@ export function codeMirrorSqlDialectForConnection(connection?: JdbcDialectConnec
   if (isJdbcAseProfile(connection)) return "sqlserver";
   const databaseType = effectiveDatabaseTypeForConnection(connection);
   if (databaseType === "clickhouse") return "clickhouse";
+  if (databaseType === "opengauss") {
+    // og developer: adapt editor highlighting to the compatibility mode —
+    // B mode speaks MySQL syntax (dolphin), M mode SQL Server syntax (shark).
+    const compatibility = connection?.database_info?.sqlCompatibility?.trim().toUpperCase();
+    if (compatibility === "B") return "mysql";
+    if (compatibility === "M") return "sqlserver";
+    return "postgres";
+  }
   return codeMirrorSqlDialect(databaseType);
 }
 

@@ -6143,7 +6143,7 @@ async fn connection_config(state: &AppState, connection_id: &str) -> Option<Conn
     state.configs.read().await.get(connection_id).cloned()
 }
 
-fn is_opengauss_family_config(config: &ConnectionConfig) -> bool {
+pub(crate) fn is_opengauss_family_config(config: &ConnectionConfig) -> bool {
     matches!(config.db_type, DatabaseType::OpenGauss | DatabaseType::Gaussdb)
         || matches!(config.driver_profile.as_deref(), Some("opengauss" | "gaussdb"))
 }

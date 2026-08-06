@@ -3019,6 +3019,7 @@ const databaseInfoLabelKeys: Record<DatabaseInfoField, string> = {
   driverName: "connection.databaseInfo.driverName",
   driverVersion: "connection.databaseInfo.driverVersion",
   jdbcVersion: "connection.databaseInfo.jdbcVersion",
+  sqlCompatibility: "connection.databaseInfo.sqlCompatibility",
 };
 function databaseInfoFieldLabel(field: DatabaseInfoField): string {
   return t(databaseInfoLabelKeys[field]);

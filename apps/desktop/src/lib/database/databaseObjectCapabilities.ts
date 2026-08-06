@@ -16,6 +16,28 @@ const ROUTINE_OBJECTS: SidebarObjectKind[] = ["TABLE", "VIEW", "PROCEDURE", "FUN
 const POSTGRES_OBJECTS: SidebarObjectKind[] = ["TABLE", "VIEW", "MATERIALIZED_VIEW", "PROCEDURE", "FUNCTION", "SEQUENCE"];
 // openGauss adds Oracle-style packages and synonyms (gs_package / pg_synonym catalogs).
 const OPENGAUSS_OBJECTS: SidebarObjectKind[] = [...POSTGRES_OBJECTS, "SYNONYM", "PACKAGE", "PACKAGE_BODY"];
+
+// Compatibility-mode rules verified on a live openGauss 7.0 instance:
+// - CREATE PACKAGE succeeds only in A mode ("Package only allowed create in A compatibility")
+//   even though the gs_package catalog exists in every mode;
+// - CREATE SYNONYM works in both A and PG modes;
+// - CREATE EVENT is supported only in B mode.
+// When the mode is unknown (legacy connections, detection failed) every group
+// stays visible so nothing disappears unexpectedly.
+function opengaussObjectsForCompatibility(sqlCompatibility?: string): SidebarObjectKind[] {
+  const base: SidebarObjectKind[] = [...POSTGRES_OBJECTS, "SYNONYM"];
+  switch (sqlCompatibility?.trim().toUpperCase()) {
+    case "A":
+      return [...base, "PACKAGE", "PACKAGE_BODY"];
+    case "B":
+    case "C":
+    case "M":
+    case "PG":
+      return base;
+    default:
+      return [...base, "PACKAGE", "PACKAGE_BODY"];
+  }
+}
 const POSTGRES_LIKE_OBJECTS: SidebarObjectKind[] = ["TABLE", "VIEW", "MATERIALIZED_VIEW", "PROCEDURE", "FUNCTION"];
 const ORACLE_OBJECTS: SidebarObjectKind[] = ["TABLE", "VIEW", "MATERIALIZED_VIEW", "PROCEDURE", "FUNCTION", "PACKAGE", "PACKAGE_BODY"];
 const DAMENG_OBJECTS: SidebarObjectKind[] = ["TABLE", "VIEW", "MATERIALIZED_VIEW", "PROCEDURE", "FUNCTION", "SEQUENCE", "PACKAGE", "PACKAGE_BODY"];
@@ -79,8 +101,9 @@ export function databaseObjectCapabilities(dbType?: DatabaseType): DatabaseObjec
   };
 }
 
-export function sidebarObjectKindsForDatabase(dbType?: DatabaseType): SidebarObjectKind[] {
+export function sidebarObjectKindsForDatabase(dbType?: DatabaseType, sqlCompatibility?: string): SidebarObjectKind[] {
   if (!dbType) return [...TABLE_VIEW_OBJECTS];
+  if (dbType === "opengauss") return opengaussObjectsForCompatibility(sqlCompatibility);
   return DATABASE_TYPE_OBJECTS.get(dbType) ?? [...ROUTINE_OBJECTS];
 }
 

@@ -196,6 +196,8 @@ export interface DatabaseConnectionInfo {
   driverName?: string;
   driverVersion?: string;
   jdbcVersion?: string;
+  /** openGauss-family compatibility mode (A/B/C/PG/M) detected from datcompatibility. */
+  sqlCompatibility?: string;
 }
 
 export interface ConnectionTestResult {

@@ -7,7 +7,7 @@ export interface DatabaseInfoRow {
   value: string;
 }
 
-const DATABASE_INFO_FIELDS: readonly DatabaseInfoField[] = ["productName", "productVersion", "currentDatabase", "serverComment", "serverCharset", "serverCollation", "unquotedIdentifierCase", "quotedIdentifierCase", "driverName", "driverVersion", "jdbcVersion"];
+const DATABASE_INFO_FIELDS: readonly DatabaseInfoField[] = ["productName", "productVersion", "currentDatabase", "sqlCompatibility", "serverComment", "serverCharset", "serverCollation", "unquotedIdentifierCase", "quotedIdentifierCase", "driverName", "driverVersion", "jdbcVersion"];
 const IDENTIFIER_CASES = new Set<IdentifierCase>(["lower", "upper", "mixed"]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -43,6 +43,7 @@ export function normalizeDatabaseConnectionInfo(value: unknown, fallbackProductN
     driverName: nonBlankString(source.driverName),
     driverVersion: nonBlankString(source.driverVersion),
     jdbcVersion: nonBlankString(source.jdbcVersion),
+    sqlCompatibility: nonBlankString(source.sqlCompatibility)?.toUpperCase(),
   };
   return DATABASE_INFO_FIELDS.some((key) => result[key] !== undefined) ? result : undefined;
 }

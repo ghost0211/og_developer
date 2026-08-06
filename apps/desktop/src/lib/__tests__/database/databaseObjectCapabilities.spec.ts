@@ -17,6 +17,19 @@ describe("databaseObjectCapabilities", () => {
     expect(sidebarObjectKindsForDatabase("postgres")).not.toContain("PACKAGE");
   });
 
+  it("scopes openGauss packages to A compatibility mode", () => {
+    // Live-verified: CREATE PACKAGE succeeds only in A mode; synonyms work everywhere.
+    expect(sidebarObjectKindsForDatabase("opengauss", "A")).toContain("PACKAGE");
+    expect(sidebarObjectKindsForDatabase("opengauss", "A")).toContain("SYNONYM");
+    for (const mode of ["B", "C", "M", "PG"]) {
+      expect(sidebarObjectKindsForDatabase("opengauss", mode)).not.toContain("PACKAGE");
+      expect(sidebarObjectKindsForDatabase("opengauss", mode)).not.toContain("PACKAGE_BODY");
+      expect(sidebarObjectKindsForDatabase("opengauss", mode)).toContain("SYNONYM");
+    }
+    // Unknown mode keeps every group visible as a safe fallback.
+    expect(sidebarObjectKindsForDatabase("opengauss", undefined)).toContain("PACKAGE");
+  });
+
   it("exposes only tables for HBase namespaces", () => {
     expect(sidebarObjectKindsForDatabase("hbase")).toEqual(["TABLE"]);
   });

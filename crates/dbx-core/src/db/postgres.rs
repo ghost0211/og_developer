@@ -45,6 +45,28 @@ pub async fn gaussdb_identifier_quote(pool: &Pool) -> Option<String> {
     gaussdb_identifier_quote_for_compatibility_mode(&compatibility_mode).map(str::to_string)
 }
 
+/// Returns the openGauss-family database compatibility mode (A/B/C/PG/M)
+/// using the datcompatibility attribute of the current database. Failures are
+/// swallowed as `None` so detection never breaks the connection flow.
+pub async fn postgres_sql_compatibility(pool: &Pool) -> Option<String> {
+    let timeout = super::connection_timeout();
+    let client = checkout_postgres_client(pool, None, timeout).await.ok()?;
+    let row = tokio::time::timeout(timeout, client.query_opt(GAUSSDB_COMPATIBILITY_SQL, &[])).await.ok()?.ok()??;
+    row.try_get::<_, String>(0).ok().map(|value| value.trim().to_string()).filter(|value| !value.is_empty())
+}
+
+/// Parses a sql_compatibility value from a generic query result (used by the
+/// external-driver/JDBC path where rows come back as cell values).
+pub(crate) fn sql_compatibility_from_query_result(result: &crate::db::QueryResult) -> Option<String> {
+    result
+        .rows
+        .first()
+        .and_then(|row| row.first())
+        .and_then(|cell| cell.as_str())
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
 pub(crate) fn gaussdb_identifier_quote_for_compatibility_mode(compatibility_mode: &str) -> Option<&'static str> {
     match compatibility_mode.trim().to_ascii_uppercase().as_str() {
         "M" | "B" | "MYSQL" => Some("`"),

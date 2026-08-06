@@ -639,6 +639,7 @@ export default {
       driverName: "Driver",
       driverVersion: "Driver version",
       jdbcVersion: "JDBC version",
+      sqlCompatibility: "Compatibility mode",
       identifierCase: {
         lower: "Lowercase",
         upper: "Uppercase",

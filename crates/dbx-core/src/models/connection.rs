@@ -36,6 +36,11 @@ pub struct DatabaseConnectionInfo {
     pub driver_version: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub jdbc_version: Option<String>,
+    /// openGauss-family compatibility mode (A/B/C/PG/M), detected from the
+    /// database's datcompatibility attribute. Drives dialect behavior and
+    /// object-tree visibility in og developer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sql_compatibility: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
