@@ -64,4 +64,4 @@
 3. ~~兼容模式感知~~ ✅ 已完成（datcompatibility 探测 → 树节点显隐/编辑器方言/信息面板；A/PG 规则已真机验证，B/M 按手册实现——注意：openGauss-lite 7.0.0-RC3 镜像连接 B 模式库会崩溃，无法真机验证 B）
 4. ~~P0 树补齐~~ ✅ 已完成本轮核心项：包内层级（propackageid 关联，包下挂子程序）✅、无效对象标记（gs_source.status='f' + 失败幽灵节点）✅、gs_source 源码（优先原始文本、gs_package 兜底）✅、JOB 节点（pg_job 只读列表）✅；待做：TYPE/增量 MV/回收站/目录对象等次要节点
 5. ~~DBMS_OUTPUT 面板 + 编译错误行定位~~ ✅ 已完成（QueryResult.messages + 原生/JDBC 双路 drain + 执行摘要输出行；psql 风格 LINE 上下文合成 + 编辑器块内偏移映射）
-6. 调试器（技术预研已在真机验证 API 齐全）→ 7. Profiler/监控 → 8. 打包
+6. ~~调试器~~ ✅ 已完成（dbe_pldebugger 双会话模型，后端真机全流程集成测试通过：turn_on→attach→断点→单步→变量→栈→完成；PlDebugDialog 图形界面，执行对话框加“调试”入口）→ 7. Profiler/监控 → 8. 打包
