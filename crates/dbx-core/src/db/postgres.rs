@@ -2657,6 +2657,7 @@ fn list_objects_sql(
         has_function_identity_arguments,
         false,
         false,
+        false,
     )
 }
 
@@ -2668,6 +2669,7 @@ fn list_objects_sql_full(
     has_function_identity_arguments: bool,
     has_gs_package_catalog: bool,
     has_pg_synonym_catalog: bool,
+    has_pg_job_catalog: bool,
 ) -> String {
     let mut sql = format!(
         "{} UNION ALL {}",
@@ -2683,6 +2685,10 @@ fn list_objects_sql_full(
     if has_pg_synonym_catalog {
         sql.push_str(" UNION ALL ");
         sql.push_str(opengauss_synonyms_sql());
+    }
+    if has_pg_job_catalog {
+        sql.push_str(" UNION ALL ");
+        sql.push_str(opengauss_jobs_sql());
     }
     sql.push_str(" ORDER BY sort_order, object_name");
     if has_function_identity_arguments {
@@ -2744,15 +2750,39 @@ fn opengauss_synonyms_sql() -> &'static str {
      WHERE n.nspname = $1"
 }
 
+/// openGauss scheduled jobs live in the shared pg_job catalog (DBMS_JOB).
+/// Scoped to the current database and schema; the comment carries schedule
+/// state for quick scanning in the sidebar.
+fn opengauss_jobs_sql() -> &'static str {
+    "SELECT j.job_name AS object_name, \
+       'JOB' AS object_type, \
+       (CASE WHEN j.enable THEN 'enabled' ELSE 'disabled' END || \
+         COALESCE(' · every ' || j.interval, '') || \
+         COALESCE(' · next: ' || j.next_run_date::text, ''))::text AS object_comment, \
+       j.start_date::text AS created_at, \
+       NULL::text AS updated_at, \
+       NULL::text AS parent_schema, \
+       NULL::text AS parent_name, \
+       NULL::text AS signature, \
+       7 AS sort_order \
+     FROM pg_catalog.pg_job j \
+     WHERE j.nspname::text = $1 AND j.dbname = current_database()::name"
+}
+
 fn postgres_has_pg_catalog_relation_sql(relation_name: &str) -> String {
+    postgres_has_namespaced_relation_sql("pg_catalog", relation_name)
+}
+
+fn postgres_has_namespaced_relation_sql(namespace: &str, relation_name: &str) -> String {
     format!(
         "SELECT EXISTS ( \
            SELECT 1 \
            FROM pg_catalog.pg_class c \
            JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
-           WHERE n.nspname = 'pg_catalog' \
+           WHERE n.nspname = '{}' \
              AND c.relname = '{}' \
          )",
+        namespace.replace('\'', "''"),
         relation_name.replace('\'', "''")
     )
 }
@@ -2762,6 +2792,17 @@ async fn postgres_has_pg_catalog_relation(
     relation_name: &str,
 ) -> Result<bool, String> {
     let row = postgres_query_one_cached(client, &postgres_has_pg_catalog_relation_sql(relation_name), &[])
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(pg_row_try_bool(&row, 0).unwrap_or(false))
+}
+
+async fn postgres_has_namespaced_relation(
+    client: &deadpool_postgres::Client,
+    namespace: &str,
+    relation_name: &str,
+) -> Result<bool, String> {
+    let row = postgres_query_one_cached(client, &postgres_has_namespaced_relation_sql(namespace, relation_name), &[])
         .await
         .map_err(|e| e.to_string())?;
     Ok(pg_row_try_bool(&row, 0).unwrap_or(false))
@@ -2824,6 +2865,7 @@ async fn list_objects_rows(
     has_function_identity_arguments: bool,
     has_gs_package_catalog: bool,
     has_pg_synonym_catalog: bool,
+    has_pg_job_catalog: bool,
 ) -> Result<Vec<Row>, String> {
     let sql = list_objects_sql_full(
         include_timestamps,
@@ -2832,6 +2874,7 @@ async fn list_objects_rows(
         has_function_identity_arguments,
         has_gs_package_catalog,
         has_pg_synonym_catalog,
+        has_pg_job_catalog,
     );
     postgres_query_cached(client, &sql, &[&schema]).await.map_err(|e| e.to_string())
 }
@@ -2847,6 +2890,10 @@ pub async fn list_objects(pool: &Pool, schema: &str) -> Result<Vec<ObjectInfo>, 
     // probes keep the extra UNION arms strictly scoped to openGauss servers.
     let has_gs_package_catalog = postgres_has_pg_catalog_relation(&client, "gs_package").await?;
     let has_pg_synonym_catalog = postgres_has_pg_catalog_relation(&client, "pg_synonym").await?;
+    // dbe_pldeveloper.gs_source tracks compilation status of PL objects
+    // (openGauss only); used to flag invalid objects in the sidebar.
+    let has_gs_source = postgres_has_namespaced_relation(&client, "dbe_pldeveloper", "gs_source").await?;
+    let has_pg_job_catalog = postgres_has_pg_catalog_relation(&client, "pg_job").await?;
     let rows = match list_objects_rows(
         &client,
         schema,
@@ -2856,6 +2903,7 @@ pub async fn list_objects(pool: &Pool, schema: &str) -> Result<Vec<ObjectInfo>, 
         has_function_identity_arguments,
         has_gs_package_catalog,
         has_pg_synonym_catalog,
+        has_pg_job_catalog,
     )
     .await
     {
@@ -2871,6 +2919,7 @@ pub async fn list_objects(pool: &Pool, schema: &str) -> Result<Vec<ObjectInfo>, 
                 has_function_identity_arguments,
                 has_gs_package_catalog,
                 has_pg_synonym_catalog,
+                has_pg_job_catalog,
             )
             .await
             {
@@ -2882,7 +2931,7 @@ pub async fn list_objects(pool: &Pool, schema: &str) -> Result<Vec<ObjectInfo>, 
         }
     };
 
-    Ok(rows
+    let mut objects: Vec<ObjectInfo> = rows
         .iter()
         .map(|row| ObjectInfo {
             name: pg_row_try_string(row, 0),
@@ -2896,7 +2945,88 @@ pub async fn list_objects(pool: &Pool, schema: &str) -> Result<Vec<ObjectInfo>, 
             parent_name: row.try_get::<_, Option<String>>(6).ok().flatten().filter(|s| !s.is_empty()),
             signature: row.try_get::<_, Option<String>>(7).ok().flatten(),
         })
-        .collect())
+        .collect();
+    if has_gs_source {
+        enrich_objects_with_gs_source_validity(&client, schema, &mut objects).await;
+    }
+    Ok(objects)
+}
+
+/// Latest compile status per PL object from dbe_pldeveloper.gs_source.
+/// gs_source records every compilation attempt (including failures), so the
+/// newest row per (schema, name, type) decides validity.
+const OPENGAUSS_GS_SOURCE_STATUS_SQL: &str = "SELECT s.name, s.type, s.status \
+     FROM ( \
+       SELECT DISTINCT ON (s.nspid, s.name, s.type) s.nspid, s.name, s.type, s.status \
+       FROM dbe_pldeveloper.gs_source s \
+       JOIN pg_catalog.pg_namespace n ON n.oid = s.nspid \
+       WHERE n.nspname = $1 \
+       ORDER BY s.nspid, s.name, s.type, s.id DESC \
+     ) s";
+
+fn gs_source_type_to_object_kind(source_type: &str) -> Option<&'static str> {
+    match source_type.trim().to_ascii_lowercase().as_str() {
+        "package" => Some("PACKAGE"),
+        "package body" => Some("PACKAGE_BODY"),
+        "function" => Some("FUNCTION"),
+        "procedure" => Some("PROCEDURE"),
+        _ => None,
+    }
+}
+
+/// Marks PL objects invalid from gs_source and appends ghost entries for
+/// objects whose latest compilation failed (they exist only in gs_source —
+/// openGauss DDL is atomic, so a failed CREATE leaves no catalog entry, just
+/// like Oracle's INVALID objects minus the lazy-invalidation part).
+/// Best-effort: any error is logged and ignored.
+async fn enrich_objects_with_gs_source_validity(
+    client: &deadpool_postgres::Client,
+    schema: &str,
+    objects: &mut Vec<ObjectInfo>,
+) {
+    let rows = match postgres_query_cached(client, OPENGAUSS_GS_SOURCE_STATUS_SQL, &[&schema]).await {
+        Ok(rows) => rows,
+        Err(error) => {
+            log::debug!("[postgres][list_objects:gs_source-enrich] skipped: {error}");
+            return;
+        }
+    };
+    let mut latest: HashMap<(String, String), bool> = HashMap::new();
+    for row in &rows {
+        let name = pg_row_try_string(row, 0);
+        let source_type = pg_row_try_string(row, 1);
+        let status = pg_row_try_string(row, 2);
+        if let Some(kind) = gs_source_type_to_object_kind(&source_type) {
+            latest.insert((name, kind.to_string()), status.eq_ignore_ascii_case("t"));
+        }
+    }
+    if latest.is_empty() {
+        return;
+    }
+    let mut present: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
+    for object in objects.iter_mut() {
+        let key = (object.name.clone(), object.object_type.clone());
+        if let Some(valid) = latest.get(&key) {
+            object.valid = Some(*valid);
+            present.insert(key);
+        }
+    }
+    for ((name, kind), valid) in latest {
+        if !valid && !present.contains(&(name.clone(), kind.clone())) {
+            objects.push(ObjectInfo {
+                name,
+                object_type: kind,
+                schema: Some(schema.to_string()),
+                valid: Some(false),
+                comment: Some("failed compilation".to_string()),
+                created_at: None,
+                updated_at: None,
+                parent_schema: None,
+                parent_name: None,
+                signature: None,
+            });
+        }
+    }
 }
 
 pub async fn list_object_statistics(pool: &Pool, schema: &str) -> Result<Vec<ObjectStatistics>, String> {
@@ -4314,6 +4444,52 @@ fn postgres_functions_sql(has_proc_prokind: bool) -> &'static str {
              JOIN pg_namespace n ON n.oid = p.pronamespace \
              WHERE n.nspname = $1 AND NOT p.proisagg AND NOT p.proiswindow \
              ORDER BY p.proname"
+}
+
+/// openGauss keeps package subprograms in pg_proc with propackageid pointing
+/// at gs_package. Used to expand package nodes in the sidebar.
+fn opengauss_package_subprograms_sql(has_proc_prokind: bool, has_function_identity_arguments: bool) -> String {
+    let kind_expr =
+        if has_proc_prokind { "CASE p.prokind WHEN 'p' THEN 'PROCEDURE' ELSE 'FUNCTION' END" } else { "'FUNCTION'" };
+    let args_expr = if has_function_identity_arguments {
+        "pg_get_function_identity_arguments(p.oid)"
+    } else {
+        "pg_get_function_arguments(p.oid)"
+    };
+    format!(
+        "SELECT p.proname AS name, \
+           {kind_expr} AS function_type, \
+           pg_get_function_result(p.oid) AS data_type, \
+           ''::text AS definition, \
+           {args_expr} AS arguments \
+         FROM pg_catalog.pg_proc p \
+         JOIN pg_catalog.gs_package pkg ON pkg.oid = p.propackageid \
+         JOIN pg_catalog.pg_namespace n ON n.oid = pkg.pkgnamespace \
+         WHERE n.nspname = $1 AND pkg.pkgname = $2 \
+         ORDER BY p.proname, {args_expr}"
+    )
+}
+
+pub async fn list_opengauss_package_subprograms(
+    pool: &Pool,
+    schema: &str,
+    package: &str,
+) -> Result<Vec<FunctionInfo>, String> {
+    let client = checkout_postgres_client(pool, None, super::connection_timeout()).await?;
+    let has_proc_prokind = postgres_proc_has_prokind(&client).await?;
+    let has_function_identity_arguments = postgres_has_function_identity_arguments(&client).await?;
+    let sql = opengauss_package_subprograms_sql(has_proc_prokind, has_function_identity_arguments);
+    let rows = postgres_query_cached(&client, &sql, &[&schema, &package]).await.map_err(|e| e.to_string())?;
+    Ok(rows
+        .iter()
+        .map(|row| FunctionInfo {
+            name: pg_row_try_string(row, 0),
+            function_type: pg_row_try_string(row, 1),
+            data_type: pg_row_try_string(row, 2),
+            definition: pg_row_try_string(row, 3),
+            arguments: pg_row_try_string(row, 4),
+        })
+        .collect())
 }
 
 pub async fn list_functions(pool: &Pool, schema: &str) -> Result<Vec<FunctionInfo>, String> {
@@ -6509,7 +6685,7 @@ mod tests {
 
     #[test]
     fn opengauss_list_objects_sql_includes_packages_and_synonyms() {
-        let sql = list_objects_sql_full(false, true, false, true, true, true);
+        let sql = list_objects_sql_full(false, true, false, true, true, true, false);
         assert!(sql.contains("pg_catalog.gs_package"));
         assert!(sql.contains("'PACKAGE' AS object_type"));
         assert!(sql.contains("'PACKAGE_BODY' AS object_type"));
@@ -6517,7 +6693,18 @@ mod tests {
         assert!(sql.contains("pg_catalog.pg_synonym"));
         assert!(sql.contains("'SYNONYM' AS object_type"));
         assert!(sql.contains("s.synobjschema || '.' || s.synobjname"));
+        assert!(!sql.contains("pg_job"));
         assert!(sql.ends_with("ORDER BY sort_order, object_name"));
+    }
+
+    #[test]
+    fn opengauss_list_objects_sql_includes_jobs_when_catalog_present() {
+        let sql = list_objects_sql_full(false, true, false, true, false, false, true);
+        assert!(sql.contains("pg_catalog.pg_job j"));
+        assert!(sql.contains("'JOB' AS object_type"));
+        assert!(sql.contains("j.nspname::text = $1"));
+        assert!(sql.contains("j.dbname = current_database()::name"));
+        assert!(sql.contains("j.next_run_date"));
     }
 
     #[test]
@@ -6534,6 +6721,44 @@ mod tests {
         let sql = postgres_has_pg_catalog_relation_sql("gs_package");
         assert!(sql.contains("n.nspname = 'pg_catalog'"));
         assert!(sql.contains("c.relname = 'gs_package'"));
+    }
+
+    #[test]
+    fn gs_source_validity_sql_reads_latest_status_per_object() {
+        assert!(OPENGAUSS_GS_SOURCE_STATUS_SQL.contains("dbe_pldeveloper.gs_source"));
+        assert!(OPENGAUSS_GS_SOURCE_STATUS_SQL.contains("DISTINCT ON (s.nspid, s.name, s.type)"));
+        assert!(OPENGAUSS_GS_SOURCE_STATUS_SQL.contains("ORDER BY s.nspid, s.name, s.type, s.id DESC"));
+    }
+
+    #[test]
+    fn gs_source_type_maps_to_object_kinds() {
+        assert_eq!(gs_source_type_to_object_kind("package"), Some("PACKAGE"));
+        assert_eq!(gs_source_type_to_object_kind("package body"), Some("PACKAGE_BODY"));
+        assert_eq!(gs_source_type_to_object_kind("function"), Some("FUNCTION"));
+        assert_eq!(gs_source_type_to_object_kind("procedure"), Some("PROCEDURE"));
+        assert_eq!(gs_source_type_to_object_kind("PACKAGE "), Some("PACKAGE"));
+        assert_eq!(gs_source_type_to_object_kind("trigger"), None);
+    }
+
+    #[test]
+    fn postgres_has_namespaced_relation_sql_targets_custom_schema() {
+        let sql = postgres_has_namespaced_relation_sql("dbe_pldeveloper", "gs_source");
+        assert!(sql.contains("n.nspname = 'dbe_pldeveloper'"));
+        assert!(sql.contains("c.relname = 'gs_source'"));
+    }
+
+    #[test]
+    fn opengauss_package_subprograms_sql_joins_proc_to_package() {
+        let sql = opengauss_package_subprograms_sql(true, true);
+        assert!(sql.contains("pg_catalog.gs_package pkg ON pkg.oid = p.propackageid"));
+        assert!(sql.contains("CASE p.prokind WHEN 'p' THEN 'PROCEDURE' ELSE 'FUNCTION' END"));
+        assert!(sql.contains("pg_get_function_identity_arguments(p.oid) AS arguments"));
+        assert!(sql.contains("n.nspname = $1 AND pkg.pkgname = $2"));
+
+        let legacy = opengauss_package_subprograms_sql(false, false);
+        assert!(legacy.contains("'FUNCTION' AS function_type"));
+        assert!(legacy.contains("pg_get_function_arguments(p.oid) AS arguments"));
+        assert!(!legacy.contains("prokind"));
     }
 
     #[test]

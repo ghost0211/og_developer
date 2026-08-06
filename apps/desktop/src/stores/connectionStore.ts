@@ -4825,6 +4825,46 @@ export const useConnectionStore = defineStore("connection", () => {
     }
   }
 
+  // og developer: expands an openGauss package node with its subprograms
+  // (pg_proc.propackageid → gs_package). Children reuse function/procedure
+  // node types so they render with the familiar icons.
+  async function loadOpengaussPackageSubprograms(connectionId: string, database: string, packageName: string, schema: string | undefined, nodeId: string) {
+    const node = findNode(treeNodes.value, nodeId);
+    if (!node) return;
+
+    const load = beginTreeNodeLoad(node);
+    try {
+      const querySchema = metadataQuerySchema(connectionId, database, schema);
+      const subprograms = await api.listOpengaussPackageSubprograms(connectionId, database, querySchema, packageName);
+      const targetNode = treeNodeLoadTarget(load);
+      if (!targetNode) return;
+      setChildren(
+        targetNode,
+        subprograms.map((sub) => {
+          const args = sub.arguments?.trim() ?? "";
+          const objectType = sub.function_type?.toUpperCase().includes("PROC") ? "PROCEDURE" : "FUNCTION";
+          return {
+            id: `${nodeId}:${sub.name}:${args}:${objectType}`,
+            label: args ? `${sub.name}(${args})` : sub.name,
+            type: (objectType === "PROCEDURE" ? "procedure" : "function") as TreeNode["type"],
+            objectName: sub.name,
+            signature: args || undefined,
+            connectionId,
+            database,
+            schema,
+            parentName: packageName,
+            isExpanded: false,
+            children: undefined,
+          };
+        }),
+      );
+      targetNode.isExpanded = true;
+    } catch {
+      // Older servers without the catalogs fail the query; keep the node a leaf.
+      node.children = undefined;
+    }
+  }
+
   async function loadColumns(connectionId: string, database: string, table: string, schema?: string, nodeId?: string, catalog?: string) {
     const parentId = nodeId ?? (schema ? `${connectionId}:${database}:${schema}:${table}:__columns` : `${connectionId}:${database}:${table}:__columns`);
     const node = findNode(treeNodes.value, parentId);
@@ -5195,6 +5235,8 @@ export const useConnectionStore = defineStore("connection", () => {
       await loadPartitions(node.connectionId, node.database, node.tableName, node.schema, node.id, node.catalog);
     } else if (node.type === "group-table-subpartitions" && node.connectionId && hasTreeNodeDatabaseContext(node) && node.tableName) {
       await loadSubpartitions(node.connectionId, node.database, node.tableName, node.schema, node.id, node.catalog);
+    } else if (node.type === "package" && node.connectionId && hasTreeNodeDatabaseContext(node) && node.objectName) {
+      await loadOpengaussPackageSubprograms(node.connectionId, node.database, node.objectName, node.schema, node.id);
     } else if (objectTypesForGroupNode(node.type)) {
       await loadObjectGroupChildren(node, options);
     } else if (node.type === "group-partitions") {

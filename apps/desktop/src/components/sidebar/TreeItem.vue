@@ -289,6 +289,8 @@ function getIconInfo(node: TreeNode): { icon: any; colorClass: string } | null {
       return { icon: Package, colorClass: "text-cyan-500" };
     case "package-body":
       return { icon: FileCode, colorClass: "text-cyan-400" };
+    case "job":
+      return { icon: CalendarClock, colorClass: "text-orange-500" };
     case "type":
       return { icon: Braces, colorClass: "text-violet-500" };
     case "type-body":
@@ -309,6 +311,8 @@ function getIconInfo(node: TreeNode): { icon: any; colorClass: string } | null {
       return { icon: Link2, colorClass: "text-sky-500" };
     case "group-packages":
       return { icon: Package, colorClass: "text-cyan-500" };
+    case "group-jobs":
+      return { icon: CalendarClock, colorClass: "text-orange-500" };
     case "group-types":
       return { icon: Braces, colorClass: "text-violet-500" };
     case "group-partitions":

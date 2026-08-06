@@ -2493,6 +2493,7 @@ export default withEnglishFallback({
     sequences: "序列",
     synonyms: "同义词",
     packages: "包",
+    jobs: "作业",
     types: "类型",
     gridfs: "GridFS",
     buckets: "Buckets",

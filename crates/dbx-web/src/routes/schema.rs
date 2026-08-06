@@ -517,6 +517,33 @@ pub async fn list_functions(
 }
 
 #[derive(Deserialize)]
+pub struct OpengaussPackageSubprogramsQuery {
+    pub connection_id: String,
+    pub database: Option<String>,
+    pub schema: Option<String>,
+    pub package: Option<String>,
+}
+
+pub async fn list_opengauss_package_subprograms(
+    State(state): State<Arc<WebState>>,
+    Query(q): Query<OpengaussPackageSubprogramsQuery>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let database = q.database.as_deref().unwrap_or("");
+    let schema = q.schema.as_deref().unwrap_or("");
+    let package = q.package.as_deref().unwrap_or("");
+    let result = dbx_core::schema::list_opengauss_package_subprograms_core(
+        &state.app,
+        &q.connection_id,
+        database,
+        schema,
+        package,
+    )
+    .await
+    .map_err(AppError::from)?;
+    Ok(Json(serde_json::to_value(result).map_err(|e| AppError::from(e.to_string()))?))
+}
+
+#[derive(Deserialize)]
 pub struct SequenceQuery {
     pub connection_id: String,
     pub database: Option<String>,

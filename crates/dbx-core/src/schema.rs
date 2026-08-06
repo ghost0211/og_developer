@@ -5802,6 +5802,29 @@ pub async fn list_functions_core(
     .await
 }
 
+pub async fn list_opengauss_package_subprograms_core(
+    state: &AppState,
+    connection_id: &str,
+    database: &str,
+    schema: &str,
+    package: &str,
+) -> Result<Vec<db::FunctionInfo>, String> {
+    retry_metadata_connection(state, connection_id, Some(database), || async {
+        let pool_key = state.get_or_create_metadata_pool_for_session(connection_id, Some(database), None).await?;
+        let db_config = connection_config(state, connection_id).await;
+        let connections = state.connections.read().await;
+        let pool = connections.get(&pool_key).ok_or("Pool not found")?;
+
+        match pool {
+            PoolKind::Postgres(p) if db_config.as_ref().is_some_and(is_opengauss_family_config) => {
+                db::postgres::list_opengauss_package_subprograms(p, schema, package).await
+            }
+            _ => Ok(vec![]),
+        }
+    })
+    .await
+}
+
 pub async fn list_sequences_core(
     state: &AppState,
     connection_id: &str,
@@ -6373,6 +6396,45 @@ fn opengauss_object_source_sql(
     postgres_object_source_sql_inner(schema, name, kind, signature, true, true)
 }
 
+/// openGauss stores package sources in gs_package in a normalized form
+/// (' PACKAGE  DECLARE  <decls> end '), not the original CREATE text, so the
+/// source is reconstructed: strip the PACKAGE/DECLARE wrapper and the trailing
+/// bare END, then rebuild CREATE OR REPLACE around the remainder. Bodies with
+/// an initialization section carry it in pkgbodyinitsrc as
+/// (' INSTANTIATION  begin ... END'), appended before the closing END.
+/// (Reconstruction verified by round-trip execution on openGauss 7.0.)
+/// Used as fallback when dbe_pldeveloper.gs_source is unavailable.
+fn opengauss_package_source_fallback_sql(schema: &str, name: &str, kind: &db::ObjectSourceKind) -> String {
+    if matches!(kind, db::ObjectSourceKind::PackageBody) {
+        format!(
+            "SELECT 'CREATE OR REPLACE PACKAGE BODY ' || quote_ident(n.nspname) || '.' || quote_ident(p.pkgname) || ' AS' || E'\\n' || \
+               regexp_replace(regexp_replace(p.pkgbodydeclsrc, '^\\s*PACKAGE\\s+DECLARE\\s*', '', 'i'), '\\s*end\\s*;?\\s*$', '', 'i') || \
+               CASE WHEN p.pkgbodyinitsrc IS NOT NULL AND length(btrim(p.pkgbodyinitsrc)) > 0 \
+                 THEN E'\\n' || regexp_replace(regexp_replace(p.pkgbodyinitsrc, '^\\s*INSTANTIATION\\s*', '', 'i'), '\\s*end\\s*;?\\s*$', '', 'i') \
+                 ELSE '' END || \
+               E'\\nEND ' || quote_ident(p.pkgname) || ';' \
+             FROM pg_catalog.gs_package p \
+             JOIN pg_catalog.pg_namespace n ON n.oid = p.pkgnamespace \
+             WHERE n.nspname = {} AND p.pkgname = {} AND p.pkgbodydeclsrc IS NOT NULL \
+             ORDER BY p.oid LIMIT 1",
+            sql_string(schema),
+            sql_string(name)
+        )
+    } else {
+        format!(
+            "SELECT 'CREATE OR REPLACE PACKAGE ' || quote_ident(n.nspname) || '.' || quote_ident(p.pkgname) || ' AS' || E'\\n' || \
+               regexp_replace(regexp_replace(p.pkgspecsrc, '^\\s*PACKAGE\\s+DECLARE\\s*', '', 'i'), '\\s*end\\s*;?\\s*$', '', 'i') || \
+               E'\\nEND ' || quote_ident(p.pkgname) || ';' \
+             FROM pg_catalog.gs_package p \
+             JOIN pg_catalog.pg_namespace n ON n.oid = p.pkgnamespace \
+             WHERE n.nspname = {} AND p.pkgname = {} \
+             ORDER BY p.oid LIMIT 1",
+            sql_string(schema),
+            sql_string(name)
+        )
+    }
+}
+
 fn opengauss_sequence_object_source_sql(schema: &str, name: &str, include_cache: bool) -> String {
     let cache_clause = if include_cache {
         "'    cache ' || COALESCE((pg_sequence_last_value(c.oid)).cache_value::text, '1') || E'\\n' || "
@@ -6552,42 +6614,23 @@ fn postgres_object_source_sql_inner(
                 sql_string(name)
             )
         }
-        // openGauss stores package sources in gs_package in a normalized form
-        // (' PACKAGE  DECLARE  <decls> end '), not the original CREATE text, so
-        // the source is reconstructed: strip the PACKAGE/DECLARE wrapper and the
-        // trailing bare END, then rebuild CREATE OR REPLACE around the remainder.
-        // Bodies with an initialization section carry it in pkgbodyinitsrc as
-        // (' INSTANTIATION  begin ... END'), appended before the closing END.
-        // (Reconstruction verified by round-trip execution on openGauss 7.0.)
+        // openGauss keeps the *original* CREATE text of PL objects in
+        // dbe_pldeveloper.gs_source (including failed compilations), which is
+        // strictly better for an editor round-trip than the normalized
+        // gs_package form. gs_source may be missing on older builds, so callers
+        // fall back to the gs_package reconstruction on error.
         db::ObjectSourceKind::Package | db::ObjectSourceKind::PackageBody if unwrap_opengauss_record => {
-            if matches!(kind, db::ObjectSourceKind::Package) {
-                format!(
-                    "SELECT 'CREATE OR REPLACE PACKAGE ' || quote_ident(n.nspname) || '.' || quote_ident(p.pkgname) || ' AS' || E'\\n' || \
-                       regexp_replace(regexp_replace(p.pkgspecsrc, '^\\s*PACKAGE\\s+DECLARE\\s*', '', 'i'), '\\s*end\\s*;?\\s*$', '', 'i') || \
-                       E'\\nEND ' || quote_ident(p.pkgname) || ';' \
-                     FROM pg_catalog.gs_package p \
-                     JOIN pg_catalog.pg_namespace n ON n.oid = p.pkgnamespace \
-                     WHERE n.nspname = {} AND p.pkgname = {} \
-                     ORDER BY p.oid LIMIT 1",
-                    sql_string(schema),
-                    sql_string(name)
-                )
-            } else {
-                format!(
-                    "SELECT 'CREATE OR REPLACE PACKAGE BODY ' || quote_ident(n.nspname) || '.' || quote_ident(p.pkgname) || ' AS' || E'\\n' || \
-                       regexp_replace(regexp_replace(p.pkgbodydeclsrc, '^\\s*PACKAGE\\s+DECLARE\\s*', '', 'i'), '\\s*end\\s*;?\\s*$', '', 'i') || \
-                       CASE WHEN p.pkgbodyinitsrc IS NOT NULL AND length(btrim(p.pkgbodyinitsrc)) > 0 \
-                         THEN E'\\n' || regexp_replace(regexp_replace(p.pkgbodyinitsrc, '^\\s*INSTANTIATION\\s*', '', 'i'), '\\s*end\\s*;?\\s*$', '', 'i') \
-                         ELSE '' END || \
-                       E'\\nEND ' || quote_ident(p.pkgname) || ';' \
-                     FROM pg_catalog.gs_package p \
-                     JOIN pg_catalog.pg_namespace n ON n.oid = p.pkgnamespace \
-                     WHERE n.nspname = {} AND p.pkgname = {} AND p.pkgbodydeclsrc IS NOT NULL \
-                     ORDER BY p.oid LIMIT 1",
-                    sql_string(schema),
-                    sql_string(name)
-                )
-            }
+            let source_type = if matches!(kind, db::ObjectSourceKind::Package) { "package" } else { "package body" };
+            format!(
+                "SELECT s.src \
+                 FROM dbe_pldeveloper.gs_source s \
+                 JOIN pg_catalog.pg_namespace n ON n.oid = s.nspid \
+                 WHERE n.nspname = {} AND s.name = {} AND s.type = '{}' \
+                 ORDER BY s.id DESC LIMIT 1",
+                sql_string(schema),
+                sql_string(name),
+                source_type
+            )
         }
         db::ObjectSourceKind::Synonym if unwrap_opengauss_record => {
             format!(
@@ -7353,6 +7396,18 @@ async fn postgres_object_source(
         }
         Err(primary_err)
             if unwrap_opengauss_record
+                && matches!(object_type, db::ObjectSourceKind::Package | db::ObjectSourceKind::PackageBody) =>
+        {
+            // dbe_pldeveloper.gs_source missing or has no row for this object:
+            // rebuild the source from the normalized gs_package form instead.
+            let fallback_sql = opengauss_package_source_fallback_sql(schema, name, object_type);
+            db::postgres::execute_query(pool, &fallback_sql)
+                .await
+                .and_then(first_string_cell)
+                .map_err(|fallback_err| format!("{primary_err}; gs_package fallback failed: {fallback_err}"))
+        }
+        Err(primary_err)
+            if unwrap_opengauss_record
                 && matches!(object_type, db::ObjectSourceKind::Sequence)
                 && opengauss_sequence_cache_metadata_error(&primary_err) =>
         {
@@ -7539,7 +7594,23 @@ mod object_source_tests {
 
     #[test]
     fn builds_opengauss_package_source_sql_from_gs_package() {
+        // Primary source: dbe_pldeveloper.gs_source keeps the original CREATE text.
         let spec_sql = opengauss_object_source_sql("hr", "emp_pkg", &ObjectSourceKind::Package, None);
+        assert!(spec_sql.contains("dbe_pldeveloper.gs_source"));
+        assert!(spec_sql.contains("s.src"));
+        assert!(spec_sql.contains("s.type = 'package'"));
+        assert!(spec_sql.contains("n.nspname = 'hr'"));
+        assert!(spec_sql.contains("s.name = 'emp_pkg'"));
+        assert!(spec_sql.contains("ORDER BY s.id DESC"));
+
+        let body_sql = opengauss_object_source_sql("hr", "emp_pkg", &ObjectSourceKind::PackageBody, None);
+        assert!(body_sql.contains("dbe_pldeveloper.gs_source"));
+        assert!(body_sql.contains("s.type = 'package body'"));
+    }
+
+    #[test]
+    fn opengauss_package_fallback_sql_rebuilds_from_gs_package() {
+        let spec_sql = opengauss_package_source_fallback_sql("hr", "emp_pkg", &ObjectSourceKind::Package);
         assert!(spec_sql.contains("pg_catalog.gs_package"));
         assert!(spec_sql.contains("p.pkgspecsrc"));
         assert!(spec_sql.contains("CREATE OR REPLACE PACKAGE "));
@@ -7548,7 +7619,7 @@ mod object_source_tests {
         assert!(spec_sql.contains("p.pkgname = 'emp_pkg'"));
         assert!(!spec_sql.contains("INSTANTIATION"));
 
-        let body_sql = opengauss_object_source_sql("hr", "emp_pkg", &ObjectSourceKind::PackageBody, None);
+        let body_sql = opengauss_package_source_fallback_sql("hr", "emp_pkg", &ObjectSourceKind::PackageBody);
         assert!(body_sql.contains("p.pkgbodydeclsrc"));
         assert!(body_sql.contains("CREATE OR REPLACE PACKAGE BODY "));
         assert!(body_sql.contains("p.pkgbodyinitsrc"));

@@ -475,6 +475,18 @@ pub async fn list_functions(
 }
 
 #[tauri::command]
+pub async fn list_opengauss_package_subprograms(
+    state: State<'_, Arc<AppState>>,
+    connection_id: String,
+    database: String,
+    schema: String,
+    package: String,
+) -> Result<Vec<db::FunctionInfo>, String> {
+    dbx_core::schema::list_opengauss_package_subprograms_core(&state, &connection_id, &database, &schema, &package)
+        .await
+}
+
+#[tauri::command]
 pub async fn list_sequences(
     state: State<'_, Arc<AppState>>,
     connection_id: String,

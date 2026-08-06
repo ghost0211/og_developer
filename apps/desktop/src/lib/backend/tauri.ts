@@ -1614,6 +1614,10 @@ export async function listFunctions(connectionId: string, database: string, sche
   return invoke("list_functions", { connectionId, database, schema });
 }
 
+export async function listOpengaussPackageSubprograms(connectionId: string, database: string, schema: string, packageName: string): Promise<FunctionInfo[]> {
+  return invoke("list_opengauss_package_subprograms", { connectionId, database, schema, package: packageName });
+}
+
 export async function listSequences(connectionId: string, database: string, schema: string, withLastValues: boolean): Promise<SequenceInfo[]> {
   return invoke("list_sequences", {
     connectionId,

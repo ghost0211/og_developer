@@ -371,6 +371,7 @@ async fn main() {
         .route("/schema/partitions", get(routes::schema::list_partitions))
         .route("/schema/subpartitions", get(routes::schema::list_subpartitions))
         .route("/schema/functions", get(routes::schema::list_functions))
+        .route("/schema/opengauss-package-subprograms", get(routes::schema::list_opengauss_package_subprograms))
         .route("/schema/sequences", get(routes::schema::list_sequences))
         .route("/schema/rules", get(routes::schema::list_rules))
         .route("/schema/owners", get(routes::schema::list_owners))

@@ -1584,6 +1584,7 @@ pub fn run() {
             commands::schema::list_subpartitions,
             commands::schema::get_table_ddl,
             commands::schema::list_functions,
+            commands::schema::list_opengauss_package_subprograms,
             commands::schema::list_sequences,
             commands::schema::list_rules,
             commands::schema::list_owners,

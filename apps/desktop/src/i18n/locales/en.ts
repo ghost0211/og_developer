@@ -2492,6 +2492,7 @@ export default {
     sequences: "Sequences",
     synonyms: "Synonyms",
     packages: "Packages",
+    jobs: "Jobs",
     types: "Types",
     gridfs: "GridFS",
     buckets: "Buckets",

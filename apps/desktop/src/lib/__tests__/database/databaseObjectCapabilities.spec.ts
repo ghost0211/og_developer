@@ -30,6 +30,13 @@ describe("databaseObjectCapabilities", () => {
     expect(sidebarObjectKindsForDatabase("opengauss", undefined)).toContain("PACKAGE");
   });
 
+  it("exposes pg_job scheduled jobs for openGauss in every compatibility mode", () => {
+    for (const mode of ["A", "B", "C", "M", "PG", undefined]) {
+      expect(sidebarObjectKindsForDatabase("opengauss", mode)).toContain("JOB");
+    }
+    expect(sidebarObjectKindsForDatabase("postgres")).not.toContain("JOB");
+  });
+
   it("exposes only tables for HBase namespaces", () => {
     expect(sidebarObjectKindsForDatabase("hbase")).toEqual(["TABLE"]);
   });

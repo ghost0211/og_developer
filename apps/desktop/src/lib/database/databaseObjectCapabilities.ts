@@ -1,6 +1,6 @@
 import type { DatabaseType } from "@/types/database";
 
-export type SidebarObjectKind = "TABLE" | "VIEW" | "MATERIALIZED_VIEW" | "PROCEDURE" | "FUNCTION" | "TRIGGER" | "SEQUENCE" | "SYNONYM" | "PACKAGE" | "PACKAGE_BODY" | "TYPE" | "TYPE_BODY";
+export type SidebarObjectKind = "TABLE" | "VIEW" | "MATERIALIZED_VIEW" | "PROCEDURE" | "FUNCTION" | "TRIGGER" | "SEQUENCE" | "SYNONYM" | "PACKAGE" | "PACKAGE_BODY" | "TYPE" | "TYPE_BODY" | "JOB";
 
 export interface DatabaseObjectCapabilities {
   sidebarObjects: SidebarObjectKind[];
@@ -25,7 +25,8 @@ const OPENGAUSS_OBJECTS: SidebarObjectKind[] = [...POSTGRES_OBJECTS, "SYNONYM", 
 // When the mode is unknown (legacy connections, detection failed) every group
 // stays visible so nothing disappears unexpectedly.
 function opengaussObjectsForCompatibility(sqlCompatibility?: string): SidebarObjectKind[] {
-  const base: SidebarObjectKind[] = [...POSTGRES_OBJECTS, "SYNONYM"];
+  // pg_job (DBMS_JOB) is system infrastructure and exists in every mode.
+  const base: SidebarObjectKind[] = [...POSTGRES_OBJECTS, "SYNONYM", "JOB"];
   switch (sqlCompatibility?.trim().toUpperCase()) {
     case "A":
       return [...base, "PACKAGE", "PACKAGE_BODY"];
@@ -116,6 +117,7 @@ export function normalizeSidebarObjectKind(type: string): SidebarObjectKind {
   if (normalized.includes("TRIGGER")) return "TRIGGER";
   if (normalized.includes("TYPE")) return "TYPE";
   if (normalized.includes("MATERIALIZED_VIEW")) return "MATERIALIZED_VIEW";
+  if (normalized === "JOB") return "JOB";
   if (value.includes("VIEW")) return "VIEW";
   if (value.includes("SEQ")) return "SEQUENCE";
   if (value.includes("SYNONYM")) return "SYNONYM";
