@@ -6552,27 +6552,42 @@ fn postgres_object_source_sql_inner(
                 sql_string(name)
             )
         }
-        // openGauss stores package sources in gs_package. Specs/bodies saved as
-        // full CREATE text pass through untouched; declaration-only fragments get
-        // a CREATE OR REPLACE wrapper so the result is directly re-executable.
+        // openGauss stores package sources in gs_package in a normalized form
+        // (' PACKAGE  DECLARE  <decls> end '), not the original CREATE text, so
+        // the source is reconstructed: strip the PACKAGE/DECLARE wrapper and the
+        // trailing bare END, then rebuild CREATE OR REPLACE around the remainder.
+        // Bodies with an initialization section carry it in pkgbodyinitsrc as
+        // (' INSTANTIATION  begin ... END'), appended before the closing END.
+        // (Reconstruction verified by round-trip execution on openGauss 7.0.)
         db::ObjectSourceKind::Package | db::ObjectSourceKind::PackageBody if unwrap_opengauss_record => {
-            let (source_column, keyword) = if matches!(kind, db::ObjectSourceKind::Package) {
-                ("pkgspecsrc", "PACKAGE")
+            if matches!(kind, db::ObjectSourceKind::Package) {
+                format!(
+                    "SELECT 'CREATE OR REPLACE PACKAGE ' || quote_ident(n.nspname) || '.' || quote_ident(p.pkgname) || ' AS' || E'\\n' || \
+                       regexp_replace(regexp_replace(p.pkgspecsrc, '^\\s*PACKAGE\\s+DECLARE\\s*', '', 'i'), '\\s*end\\s*;?\\s*$', '', 'i') || \
+                       E'\\nEND ' || quote_ident(p.pkgname) || ';' \
+                     FROM pg_catalog.gs_package p \
+                     JOIN pg_catalog.pg_namespace n ON n.oid = p.pkgnamespace \
+                     WHERE n.nspname = {} AND p.pkgname = {} \
+                     ORDER BY p.oid LIMIT 1",
+                    sql_string(schema),
+                    sql_string(name)
+                )
             } else {
-                ("pkgbodydeclsrc", "PACKAGE BODY")
-            };
-            format!(
-                "SELECT CASE \
-                   WHEN p.{source_column} ~* '^[[:space:]]*CREATE' THEN p.{source_column} \
-                   ELSE 'CREATE OR REPLACE {keyword} ' || p.{source_column} \
-                 END \
-                 FROM pg_catalog.gs_package p \
-                 JOIN pg_catalog.pg_namespace n ON n.oid = p.pkgnamespace \
-                 WHERE n.nspname = {} AND p.pkgname = {} AND p.{source_column} IS NOT NULL \
-                 ORDER BY p.oid LIMIT 1",
-                sql_string(schema),
-                sql_string(name)
-            )
+                format!(
+                    "SELECT 'CREATE OR REPLACE PACKAGE BODY ' || quote_ident(n.nspname) || '.' || quote_ident(p.pkgname) || ' AS' || E'\\n' || \
+                       regexp_replace(regexp_replace(p.pkgbodydeclsrc, '^\\s*PACKAGE\\s+DECLARE\\s*', '', 'i'), '\\s*end\\s*;?\\s*$', '', 'i') || \
+                       CASE WHEN p.pkgbodyinitsrc IS NOT NULL AND length(btrim(p.pkgbodyinitsrc)) > 0 \
+                         THEN E'\\n' || regexp_replace(regexp_replace(p.pkgbodyinitsrc, '^\\s*INSTANTIATION\\s*', '', 'i'), '\\s*end\\s*;?\\s*$', '', 'i') \
+                         ELSE '' END || \
+                       E'\\nEND ' || quote_ident(p.pkgname) || ';' \
+                     FROM pg_catalog.gs_package p \
+                     JOIN pg_catalog.pg_namespace n ON n.oid = p.pkgnamespace \
+                     WHERE n.nspname = {} AND p.pkgname = {} AND p.pkgbodydeclsrc IS NOT NULL \
+                     ORDER BY p.oid LIMIT 1",
+                    sql_string(schema),
+                    sql_string(name)
+                )
+            }
         }
         db::ObjectSourceKind::Synonym if unwrap_opengauss_record => {
             format!(
@@ -7528,12 +7543,16 @@ mod object_source_tests {
         assert!(spec_sql.contains("pg_catalog.gs_package"));
         assert!(spec_sql.contains("p.pkgspecsrc"));
         assert!(spec_sql.contains("CREATE OR REPLACE PACKAGE "));
+        assert!(spec_sql.contains("PACKAGE\\s+DECLARE"));
         assert!(spec_sql.contains("n.nspname = 'hr'"));
         assert!(spec_sql.contains("p.pkgname = 'emp_pkg'"));
+        assert!(!spec_sql.contains("INSTANTIATION"));
 
         let body_sql = opengauss_object_source_sql("hr", "emp_pkg", &ObjectSourceKind::PackageBody, None);
         assert!(body_sql.contains("p.pkgbodydeclsrc"));
         assert!(body_sql.contains("CREATE OR REPLACE PACKAGE BODY "));
+        assert!(body_sql.contains("p.pkgbodyinitsrc"));
+        assert!(body_sql.contains("INSTANTIATION"));
     }
 
     #[test]
