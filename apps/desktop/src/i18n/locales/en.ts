@@ -1,6 +1,6 @@
 export default {
   app: {
-    name: "og developer",
+    name: "ogdeveloper",
   },
   auth: {
     rateLimited: "Please try again in {seconds}s",

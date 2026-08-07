@@ -1,6 +1,6 @@
 # Windows 构建指南（og developer）
 
-本文档面向在 Windows 10/11 上构建 og developer 桌面安装包（`.msi` / `.exe`）。
+本文档面向在 Windows 10/11 上构建 ogdeveloper 桌面安装包（`.msi` / `.exe`）。
 
 ## 1. 环境清单（装完核对一遍）
 
@@ -45,8 +45,8 @@ pnpm tauri build
 ## 4. 产物
 
 ```
-src-tauri/target/release/bundle/msi/og developer_0.1.0_x64_en-US.msi
-src-tauri/target/release/bundle/nsis/og developer_0.1.0_x64-setup.exe
+src-tauri/target/release/bundle/msi/ogdeveloper_0.1.0_x64_en-US.msi
+src-tauri/target/release/bundle/nsis/ogdeveloper_0.1.0_x64-setup.exe
 ```
 
 双击安装即可；`installMode: currentUser`，不需要管理员权限。

@@ -2,7 +2,7 @@ import { withEnglishFallback } from "./fallback";
 
 export default withEnglishFallback({
   app: {
-    name: "og developer",
+    name: "ogdeveloper",
   },
   auth: {
     rateLimited: "{seconds}초 후에 다시 시도해 주세요",

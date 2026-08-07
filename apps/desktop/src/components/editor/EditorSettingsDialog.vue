@@ -6289,7 +6289,7 @@ onUnmounted(() => {
                 <div class="flex items-start gap-3">
                   <AppLogo class="h-10 w-10 shrink-0" />
                   <div class="min-w-0 space-y-1">
-                    <div class="text-sm font-medium">og developer</div>
+                    <div class="text-sm font-medium">ogdeveloper</div>
                     <p class="text-sm text-muted-foreground">
                       {{ t("settings.aboutDescription") }}
                     </p>

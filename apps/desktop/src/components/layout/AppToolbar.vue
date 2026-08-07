@@ -2,7 +2,7 @@
 import { computed, ref, onMounted, onBeforeUnmount, h, nextTick, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { invoke } from "@tauri-apps/api/core";
-import { DatabaseZap, FilePlus2, Loader2, Moon, Sun, SunMoon, History, Bot, ArrowLeftRight, FileCode, BookMarked, GitCompareArrows, TableProperties, Settings, CloudDownload, Package, FileDown, FolderTree } from "@lucide/vue";
+import { DatabaseZap, FilePlus2, Loader2, Moon, Sun, SunMoon, History, Bot, ArrowLeftRight, FileCode, BookMarked, GitCompareArrows, TableProperties, Settings, CloudDownload, FileDown, FolderTree } from "@lucide/vue";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import LightDropdown from "@/components/ui/LightDropdown.vue";
@@ -370,15 +370,6 @@ const moreItems = computed(() => {
       disabled: !props.hasConnections,
     });
   }
-  if (!toolbarItems.value.driverManager) {
-    items.push({
-      value: "driver-store",
-      label: t("toolbar.driverManager"),
-      icon: Package,
-      action: () => emit("open-driver-store"),
-      disabled: false,
-    });
-  }
 
   // "More" menu items (individually toggleable)
   if (toolbarItems.value.sqlFile) {
@@ -436,15 +427,6 @@ const collapsedItems = computed(() => {
       disabled: !props.hasConnections,
     });
   }
-  if (toolbarItems.value.driverManager) {
-    items.push({
-      value: "driver-store",
-      label: props.agentDriverUpdateCount > 0 ? `${t("toolbar.driverManager")} (${props.agentDriverUpdateCount})` : t("toolbar.driverManager"),
-      icon: Package,
-      action: () => emit("open-driver-store"),
-      disabled: false,
-    });
-  }
   // Always include moreItems (may contain hidden left-side items + overflowed right items)
   if (moreItems.value.length > 0) {
     items.push(...moreItems.value);
@@ -496,13 +478,6 @@ const toolbarStyle = computed(() => {
       <Button v-if="toolbarItems.dataTransfer" variant="ghost" size="sm" :class="toolbarTextButtonClass" @click="emit('open-transfer')" :disabled="!hasConnections">
         <ArrowLeftRight class="h-3.5 w-3.5" />
         <span :class="toolbarTextLabelClass">{{ t("transfer.dataTransfer") }}</span>
-      </Button>
-
-      <Button v-if="toolbarItems.driverManager" variant="ghost" size="sm" :class="[toolbarTextButtonClass, { 'bg-accent': showDriverStore }]" @click="emit('open-driver-store')">
-        <Package class="h-3.5 w-3.5" />
-        <span :class="toolbarTextLabelClass">{{ t("toolbar.driverManager") }}</span>
-        <!-- 小圆点仅提示"有可更新驱动"，具体数量交给对话框内标签页红点展示，避免工具栏长期挂红数字。 -->
-        <span v-if="agentDriverUpdateCount > 0" class="ml-0.5 inline-block h-2 w-2 rounded-full bg-red-500" :aria-label="t('toolbar.updatableDriverCount')" :title="t('toolbar.updatableDriverCount')" />
       </Button>
 
       <LightDropdown
