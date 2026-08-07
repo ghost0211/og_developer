@@ -1391,6 +1391,28 @@ pub fn run() {
             state.set_duckdb_worker_max_processes(desktop_settings.duckdb_worker_max_processes);
             let state = Arc::new(state);
             app.manage(state.clone());
+            // og developer: seed the bundled openGauss JDBC driver into the
+            // driver store on first run, then check Maven Central for a newer
+            // release in the background (best-effort, offline-safe).
+            {
+                let plugins_root = state.plugins.root_dir().to_path_buf();
+                let resource_jar =
+                    app.path().resolve("resources/opengauss-jdbc-6.0.0.jar", tauri::path::BaseDirectory::Resource).ok();
+                tauri::async_runtime::spawn(async move {
+                    if let Some(jar) = resource_jar {
+                        if jar.exists() {
+                            if let Err(err) = dbx_core::jdbc::seed_bundled_opengauss_driver(&plugins_root, &jar) {
+                                log::warn!("[jdbc] bundled driver seed failed: {err}");
+                            }
+                        }
+                    }
+                    match dbx_core::jdbc::sync_opengauss_driver_from_maven(&plugins_root).await {
+                        Ok(Some(version)) => log::info!("[jdbc] openGauss driver updated to {version}"),
+                        Ok(None) => {}
+                        Err(err) => log::debug!("[jdbc] openGauss driver sync skipped: {err}"),
+                    }
+                });
+            }
             app.manage(commands::redis_pubsub_server::start_pubsub_server(state.clone()));
             app.manage(commands::saved_sql::SavedSqlStorageState { data_dir: data_dir.clone() });
             app.manage(commands::external_sql::ExternalSqlOpenState::default());

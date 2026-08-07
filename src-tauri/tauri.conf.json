@@ -73,6 +73,9 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
+    ],
+    "resources": [
+      "resources/opengauss-jdbc-6.0.0.jar"
     ]
   },
   "plugins": {

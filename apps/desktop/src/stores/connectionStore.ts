@@ -1379,9 +1379,58 @@ export const useConnectionStore = defineStore("connection", () => {
     return config?.db_type === "informix" ? `${version}-informix-owner-v2` : version;
   }
 
-  function supportedSidebarObjectTypes(config?: ConnectionConfig): DatabaseObjectTreeKind[] {
+  // og developer: per-database sql_compatibility cache (datcompatibility is a
+  // per-database attribute; the connection-level database_info only covers the
+  // default database). Populated lazily when database nodes expand.
+  const databaseCompatModes = ref(new Map<string, string>());
+  const databaseCompatProbeInflight = new Set<string>();
+
+  function databaseCompatMode(connectionId: string, database?: string, config?: ConnectionConfig): string | undefined {
+    if (database) {
+      const cached = databaseCompatModes.value.get(`${connectionId}|${database}`);
+      if (cached) return cached;
+    }
+    return config?.database_info?.sqlCompatibility;
+  }
+
+  function ensureDatabaseCompatMode(connectionId: string, database: string) {
+    const config = getConfig(connectionId);
+    if (config?.db_type !== "opengauss" || !database) return;
+    const key = `${connectionId}|${database}`;
+    if (databaseCompatModes.value.has(key) || databaseCompatProbeInflight.has(key)) return;
+    databaseCompatProbeInflight.add(key);
+    void api
+      .connectionDatabaseInfo(connectionId, database)
+      .then((info) => {
+        const mode = info?.sqlCompatibility?.trim().toUpperCase();
+        if (mode) {
+          const next = new Map(databaseCompatModes.value);
+          next.set(key, mode);
+          databaseCompatModes.value = next;
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => databaseCompatProbeInflight.delete(key));
+  }
+
+  // Awaited variant: loadTables waits for the first probe so the object groups
+  // are built with the correct mode on the very first expansion.
+  async function awaitDatabaseCompatMode(connectionId: string, database: string) {
+    const config = getConfig(connectionId);
+    if (config?.db_type !== "opengauss" || !database) return;
+    const key = `${connectionId}|${database}`;
+    if (databaseCompatModes.value.has(key)) return;
+    ensureDatabaseCompatMode(connectionId, database);
+    // Poll briefly; probes are single tiny queries on a metadata pool.
+    for (let attempt = 0; attempt < 40 && !databaseCompatModes.value.has(key); attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  }
+
+  function supportedSidebarObjectTypes(config?: ConnectionConfig, database?: string): DatabaseObjectTreeKind[] {
     const dbType = effectiveDatabaseTypeForConnection(config);
-    return sidebarObjectKindsForDatabase(dbType, config?.database_info?.sqlCompatibility);
+    const compat = config?.id ? databaseCompatMode(config.id, database, config) : config?.database_info?.sqlCompatibility;
+    return sidebarObjectKindsForDatabase(dbType, compat);
   }
 
   function sortSidebarSchemaInfos(schemas: readonly SchemaInfo[]): SchemaInfo[] {
@@ -4091,9 +4140,10 @@ export const useConnectionStore = defineStore("connection", () => {
   }
 
   async function loadTables(connectionId: string, database: string, schema?: string, options?: LoadTreeOptions) {
+    await awaitDatabaseCompatMode(connectionId, database);
     const configForScope = getConfig(connectionId);
     const simpleObjectDisplayForScope = useSettingsStore().editorSettings.sidebarObjectDisplay === "simple";
-    const objectTypesForScope = simpleObjectDisplayForScope ? supportedSidebarObjectTypes(configForScope) : undefined;
+    const objectTypesForScope = simpleObjectDisplayForScope ? supportedSidebarObjectTypes(configForScope, database) : undefined;
     const searchFilter = activeTreeLoadSearchFilter(options);
     const querySchemaForScope = connectionObjectTreeQuerySchema(configForScope, database, schema);
     const effectiveSchemaForScope = connectionObjectTreeNodeSchema(configForScope, database, schema);
@@ -4157,7 +4207,7 @@ export const useConnectionStore = defineStore("connection", () => {
             }
           }
 
-          const nonTableObjectTypes = simpleObjectDisplay ? supportedSidebarObjectTypes(config).filter((objectType) => objectType !== "TABLE") : [];
+          const nonTableObjectTypes = simpleObjectDisplay ? supportedSidebarObjectTypes(config, database).filter((objectType) => objectType !== "TABLE") : [];
           let children: TreeNode[];
           let nextObjectCount: number | undefined;
           if (simpleObjectDisplay) {
@@ -4182,7 +4232,7 @@ export const useConnectionStore = defineStore("connection", () => {
               connectionId,
               database,
               schema: effectiveSchema,
-              objectTypes: supportedSidebarObjectTypes(config),
+              objectTypes: supportedSidebarObjectTypes(config, database),
             });
             if (!schema && isPostgresLikeForExtensions(config?.db_type)) {
               children.push(buildExtensionManagementNode(connectionId, database));

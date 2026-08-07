@@ -2307,7 +2307,7 @@ watch(
       form.value = defaultForm();
       productionProtectionEnabled.value = false;
       selectedTransportLayerId.value = null;
-      selectedType.value = "mysql";
+      selectedType.value = "opengauss";
       customDriverName.value = "";
       resetMqFields();
       resetNacosFields();
@@ -2319,7 +2319,7 @@ watch(
       h2ConnectionMode.value = "file";
       dremioConnectionMode.value = "legacy";
       resetDremioConnectionUrls();
-      dialogStep.value = "select";
+      dialogStep.value = pickerAvailable.value ? "select" : "config";
       configTab.value = "connection";
     }
     resetTestState();
@@ -2688,6 +2688,9 @@ assertCompleteDatabaseCategories(
 // the connection picker. The full upstream dbx option set below is kept
 // intact for reference and can be re-enabled by widening this allowlist.
 const ENABLED_DATABASE_TYPES = new Set<string>(["opengauss"]);
+// og developer: with a single database type the picker step is skipped and
+// new connections open directly on the openGauss form.
+const pickerAvailable = computed(() => ENABLED_DATABASE_TYPES.size > 1);
 
 const dbCategories = computed<DbCategory[]>(() => {
   return dbCategoryDefinitions
@@ -3171,7 +3174,7 @@ const vConnectionDialogAutoFocus: ObjectDirective<HTMLInputElement> = {
 };
 
 function handleDialogEscape(event: KeyboardEvent) {
-  if (dialogStep.value !== "config" || editingId.value) return;
+  if (dialogStep.value !== "config" || editingId.value || !pickerAvailable.value) return;
   event.preventDefault();
   backToDatabasePicker();
 }
@@ -4283,7 +4286,7 @@ function resetForm() {
   form.value = defaultForm();
   selectedTransportLayerId.value = null;
   draggedTransportLayerId.value = null;
-  selectedType.value = "mysql";
+  selectedType.value = "opengauss";
   customDriverName.value = "";
   mongoUseUrl.value = false;
   resetMqFields();
@@ -5181,11 +5184,15 @@ function openExternalUrl(url: string) {
 
                 <div class="grid grid-cols-4 items-center gap-4">
                   <Label :class="connectionLabelClass">{{ t("connection.type") }}</Label>
-                  <button type="button" class="col-span-3 flex items-center gap-2 rounded-md border bg-muted/20 px-3 py-2 hover:bg-muted/40 cursor-pointer transition" @click="backToDatabasePicker()">
+                  <button v-if="pickerAvailable" type="button" class="col-span-3 flex items-center gap-2 rounded-md border bg-muted/20 px-3 py-2 hover:bg-muted/40 cursor-pointer transition" @click="backToDatabasePicker()">
                     <DatabaseIcon :db-type="selectedDbIcon" class="h-4 w-4 shrink-0" />
                     <span class="min-w-0 flex-1 truncate text-sm text-left">{{ selectedProfile().label }}</span>
                     <Pencil class="h-3 w-3 text-muted-foreground" />
                   </button>
+                  <div v-else class="col-span-3 flex items-center gap-2 rounded-md border bg-muted/20 px-3 py-2">
+                    <DatabaseIcon :db-type="selectedDbIcon" class="h-4 w-4 shrink-0" />
+                    <span class="min-w-0 flex-1 truncate text-sm text-left">{{ selectedProfile().label }}</span>
+                  </div>
                 </div>
 
                 <!-- OceanBase mode toggle -->
@@ -7507,7 +7514,7 @@ function openExternalUrl(url: string) {
 
         <DialogFooter class="flex min-w-0 shrink-0 items-center gap-2 sm:flex-nowrap">
           <div class="mr-auto flex min-w-0 flex-1 basis-0 items-center gap-2 overflow-hidden">
-            <Button v-if="!editingId" variant="outline" class="shrink-0" :disabled="isSaving" @click="backToDatabasePicker">
+            <Button v-if="!editingId && pickerAvailable" variant="outline" class="shrink-0" :disabled="isSaving" @click="backToDatabasePicker">
               <ArrowLeft class="h-4 w-4" />
               {{ t("connection.back") }}
             </Button>

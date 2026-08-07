@@ -550,7 +550,7 @@ export const DEFAULT_TOOLBAR_ITEMS: ToolbarItems = {
   sqlFile: true,
   schemaDiff: true,
   dataCompare: true,
-  checkUpdates: true,
+  checkUpdates: false,
   sqlLibrary: true,
   sqlFileTree: true,
   history: true,

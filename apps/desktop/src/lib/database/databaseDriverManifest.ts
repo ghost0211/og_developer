@@ -91,6 +91,12 @@ export function manifestDatabaseTypes(): DatabaseType[] {
   return DATABASE_DRIVER_ENTRIES.map((entry) => entry.dbType);
 }
 
+// og developer: database-type pickers inside settings (column templates,
+// variable syntax, …) only list openGauss.
+export function manifestDatabaseTypesForSettings(): DatabaseType[] {
+  return manifestDatabaseTypes().filter((dbType) => dbType === "opengauss");
+}
+
 export function usesAgentCursorForQuery(dbType?: DatabaseType): boolean {
   const runtimeMode = databaseRuntimeMode(dbType);
   return runtimeMode === "agent" || runtimeMode === "external";

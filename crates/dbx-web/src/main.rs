@@ -235,6 +235,20 @@ async fn main() {
         ))
     };
 
+    // og developer: keep the bundled openGauss JDBC driver fresh (best-effort,
+    // offline-safe). The desktop app additionally seeds the jar from its
+    // bundled resource; the web server only syncs from Maven Central.
+    {
+        let plugins_root = app_state.plugins.root_dir().to_path_buf();
+        tokio::spawn(async move {
+            match dbx_core::jdbc::sync_opengauss_driver_from_maven(&plugins_root).await {
+                Ok(Some(version)) => log::info!("openGauss JDBC driver updated to {version}"),
+                Ok(None) => {}
+                Err(err) => log::debug!("openGauss JDBC driver sync skipped: {err}"),
+            }
+        });
+    }
+
     // Password hash: env var takes priority, then database
     let password_disabled = std::env::var("DBX_DISABLE_PASSWORD")
         .map(|v| matches!(v.trim().to_lowercase().as_str(), "1" | "true" | "yes" | "on"))

@@ -344,6 +344,109 @@ pub fn list_system_fonts() -> Vec<String> {
 
 // ---- Internal helpers ----
 
+/// og developer: the app bundles the official openGauss JDBC driver so the
+/// driver manager shows a working default even before any download.
+pub const OPENGAUSS_JDBC_BUNDLED_VERSION: &str = "6.0.0";
+const OPENGAUSS_JDBC_MAVEN_METADATA_URL: &str =
+    "https://repo.maven.apache.org/maven2/org/opengauss/opengauss-jdbc/maven-metadata.xml";
+
+fn opengauss_driver_versions_present(drivers_dir: &Path) -> Vec<String> {
+    let mut versions = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(drivers_dir) {
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if let Some(version) = name.strip_prefix("opengauss-jdbc-").and_then(|rest| rest.strip_suffix(".jar")) {
+                versions.push(version.to_string());
+            }
+        }
+    }
+    versions
+}
+
+/// Copies the bundled opengauss-jdbc jar into the driver directory when no
+/// opengauss driver exists yet. Returns the seeded version, if any.
+pub fn seed_bundled_opengauss_driver(plugins_root: &Path, bundled_jar: &Path) -> Result<Option<String>, String> {
+    let drivers_dir = jdbc_drivers_dir(plugins_root);
+    std::fs::create_dir_all(&drivers_dir).map_err(|err| err.to_string())?;
+    if !opengauss_driver_versions_present(&drivers_dir).is_empty() {
+        return Ok(None);
+    }
+    let target = drivers_dir.join(format!("opengauss-jdbc-{OPENGAUSS_JDBC_BUNDLED_VERSION}.jar"));
+    std::fs::copy(bundled_jar, &target)
+        .map_err(|err| format!("Failed to seed bundled openGauss JDBC driver: {err}"))?;
+    log::info!("[jdbc] seeded bundled openGauss driver {}", target.display());
+    Ok(Some(OPENGAUSS_JDBC_BUNDLED_VERSION.to_string()))
+}
+
+/// Checks Maven Central for a newer opengauss-jdbc release and installs it
+/// directly over HTTP (no plugin resolver needed). Older seeded copies are
+/// removed so the driver manager shows exactly one openGauss driver.
+pub async fn sync_opengauss_driver_from_maven(plugins_root: &Path) -> Result<Option<String>, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|err| err.to_string())?;
+    let metadata = client
+        .get(OPENGAUSS_JDBC_MAVEN_METADATA_URL)
+        .header(reqwest::header::USER_AGENT, "og-developer-driver-sync")
+        .send()
+        .await
+        .and_then(|resp| resp.error_for_status())
+        .map_err(|err| format!("Failed to fetch opengauss-jdbc metadata: {err}"))?
+        .text()
+        .await
+        .map_err(|err| err.to_string())?;
+    let latest =
+        parse_maven_latest_version(&metadata).ok_or("opengauss-jdbc metadata has no latest/release version")?;
+
+    let drivers_dir = jdbc_drivers_dir(plugins_root);
+    std::fs::create_dir_all(&drivers_dir).map_err(|err| err.to_string())?;
+    let present = opengauss_driver_versions_present(&drivers_dir);
+    if present.iter().any(|version| version == &latest) {
+        return Ok(None);
+    }
+    if !crate::update::is_newer_version(&latest, present.iter().max().map(String::as_str).unwrap_or("0")) {
+        return Ok(None);
+    }
+
+    let jar_url = format!(
+        "https://repo.maven.apache.org/maven2/org/opengauss/opengauss-jdbc/{latest}/opengauss-jdbc-{latest}.jar"
+    );
+    let bytes = client
+        .get(&jar_url)
+        .header(reqwest::header::USER_AGENT, "og-developer-driver-sync")
+        .send()
+        .await
+        .and_then(|resp| resp.error_for_status())
+        .map_err(|err| format!("Failed to download opengauss-jdbc {latest}: {err}"))?
+        .bytes()
+        .await
+        .map_err(|err| err.to_string())?;
+    let target = drivers_dir.join(format!("opengauss-jdbc-{latest}.jar"));
+    std::fs::write(&target, &bytes).map_err(|err| format!("Failed to write {}: {err}", target.display()))?;
+    for version in present {
+        let _ = std::fs::remove_file(drivers_dir.join(format!("opengauss-jdbc-{version}.jar")));
+    }
+    log::info!("[jdbc] updated bundled openGauss driver to {latest}");
+    Ok(Some(latest))
+}
+
+fn parse_maven_latest_version(metadata: &str) -> Option<String> {
+    fn tag_value(text: &str, tag: &str) -> Option<String> {
+        let open = format!("<{tag}>");
+        let close = format!("</{tag}>");
+        let start = text.find(&open)? + open.len();
+        let end = text[start..].find(&close)? + start;
+        let value = text[start..end].trim();
+        if value.is_empty() {
+            None
+        } else {
+            Some(value.to_string())
+        }
+    }
+    tag_value(metadata, "release").or_else(|| tag_value(metadata, "latest"))
+}
+
 fn jdbc_drivers_dir(plugins_root: &Path) -> PathBuf {
     plugins_root.join("jdbc").join("drivers")
 }

@@ -342,9 +342,13 @@ const editInfiniteScrollMaxRows = ref(settingsStore.editorSettings.infiniteScrol
 const editRegexMaxMatchCount = ref(settingsStore.editorSettings.regexMaxMatchCount);
 const editAutoCalculateTotalRows = ref(settingsStore.editorSettings.autoCalculateTotalRows);
 const editTableColumnTemplateRows = ref<TableColumnTemplateGridRow[]>(tableColumnTemplateRowsFromSettings(settingsStore.editorSettings.tableColumnTemplateFields));
-const editTableColumnTemplateDatabaseType = ref<DatabaseType>(TABLE_COLUMN_TEMPLATE_DATABASE_TYPES[0] ?? "mysql");
+// og developer: settings pickers only offer openGauss dialects.
+const SETTINGS_DATABASE_TYPES = new Set(["opengauss"]);
+const settingsTableColumnTemplateDatabaseTypes = TABLE_COLUMN_TEMPLATE_DATABASE_TYPES.filter((dbType) => SETTINGS_DATABASE_TYPES.has(dbType));
+const settingsSqlVariableSyntaxDatabaseTypes = SQL_VARIABLE_SYNTAX_DATABASE_TYPES.filter((dbType) => SETTINGS_DATABASE_TYPES.has(dbType));
+const editTableColumnTemplateDatabaseType = ref<DatabaseType>(settingsTableColumnTemplateDatabaseTypes[0] ?? "opengauss");
 const editSqlVariableSyntaxOverrides = ref<SqlVariableSyntaxOverrides>(normalizeSqlVariableSyntaxOverrides(settingsStore.editorSettings.sqlVariableSyntaxOverrides));
-const editSqlVariableSyntaxDatabaseType = ref<DatabaseType>(SQL_VARIABLE_SYNTAX_DATABASE_TYPES[0] ?? "mysql");
+const editSqlVariableSyntaxDatabaseType = ref<DatabaseType>(settingsSqlVariableSyntaxDatabaseTypes[0] ?? "opengauss");
 
 function updateTableOpenPageSizeDraft(value: string | number) {
   editTableOpenPageSize.value = normalizeTableOpenPageSizeDraft(value);
@@ -3809,7 +3813,7 @@ onUnmounted(() => {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent class="max-h-72">
-                      <SelectItem v-for="dbType in SQL_VARIABLE_SYNTAX_DATABASE_TYPES" :key="dbType" :value="dbType">
+                      <SelectItem v-for="dbType in settingsSqlVariableSyntaxDatabaseTypes" :key="dbType" :value="dbType">
                         {{ dbType }}
                       </SelectItem>
                     </SelectContent>
@@ -4920,7 +4924,7 @@ onUnmounted(() => {
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent class="max-h-72">
-                          <SelectItem v-for="dbType in TABLE_COLUMN_TEMPLATE_DATABASE_TYPES" :key="dbType" :value="dbType">
+                          <SelectItem v-for="dbType in settingsTableColumnTemplateDatabaseTypes" :key="dbType" :value="dbType">
                             {{ dbType }}
                           </SelectItem>
                         </SelectContent>
@@ -6354,7 +6358,7 @@ onUnmounted(() => {
                     {{ t("settings.wechatGroupInvite") }}
                   </div>
                 </button>
-                <button type="button" class="rounded-lg border p-4 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" @click="openExternalUrl('https://github.com/t8y2/dbx')">
+                <button type="button" class="rounded-lg border p-4 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" @click="openExternalUrl('https://github.com/ghost0211/og_developer')">
                   <div class="text-xs font-medium uppercase tracking-wider text-muted-foreground">
                     {{ t("settings.project") }}
                   </div>
@@ -6363,7 +6367,7 @@ onUnmounted(() => {
                     {{ t("settings.openSource") }}
                     <ExternalLink class="ml-auto h-3.5 w-3.5 text-muted-foreground" />
                   </div>
-                  <div class="mt-1 text-sm text-primary">github.com/t8y2/dbx</div>
+                  <div class="mt-1 text-sm text-primary">github.com/ghost0211/og_developer</div>
                 </button>
                 <button type="button" class="rounded-lg border p-4 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" @click="openExternalUrl('https://dbxio.com')">
                   <div class="text-xs font-medium uppercase tracking-wider text-muted-foreground">

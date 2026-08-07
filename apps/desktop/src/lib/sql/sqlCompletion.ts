@@ -555,9 +555,34 @@ const ORACLE_SQL_KEYWORDS = Array.from(
   ]),
 );
 
+const OPENGAUSS_SQL_KEYWORDS = Array.from(
+  new Set([
+    ...POSTGRES_SQL_KEYWORDS,
+    // openGauss PL/developer objects
+    "PACKAGE",
+    "PACKAGE BODY",
+    "CREATE PACKAGE",
+    "CREATE OR REPLACE PACKAGE",
+    "CREATE SYNONYM",
+    "SYNONYM",
+    "PUBLIC SYNONYM",
+    "REPLACE",
+    "EDITIONABLE",
+    "NONEDITIONABLE",
+    "SHARING",
+    "PIPELINED",
+    "PARALLEL_ENABLE",
+    "DETERMINISTIC",
+    "AUTHID",
+    "ACCESSIBLE BY",
+  ]),
+);
+
 const DATABASE_SQL_KEYWORDS: Partial<Record<DatabaseType, string[]>> = {
   mysql: MYSQL_SQL_KEYWORDS,
   postgres: POSTGRES_SQL_KEYWORDS,
+  opengauss: OPENGAUSS_SQL_KEYWORDS,
+  gaussdb: POSTGRES_SQL_KEYWORDS,
   sqlite: SQLITE_SQL_KEYWORDS,
   rqlite: SQLITE_SQL_KEYWORDS,
   turso: SQLITE_SQL_KEYWORDS,
