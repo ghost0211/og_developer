@@ -4307,7 +4307,7 @@ function resetForm() {
   connectionUrlInput.value = "";
   appliedConnectionUrlInput.value = "";
   oracleTnsAdminPath.value = "";
-  dialogStep.value = "select";
+  dialogStep.value = pickerAvailable.value ? "select" : "config";
   dbSearchQuery.value = "";
   selectedDbCategory.value = "sql";
   configTab.value = "connection";
