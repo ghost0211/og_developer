@@ -186,7 +186,7 @@ fn ensure_plugin_protocol_compatible(manifest: &PluginManifest) -> Result<(), St
         return Ok(());
     }
     Err(format!(
-        "Plugin '{}' uses protocol version {}, but this DBX build supports protocol version {}",
+        "Plugin '{}' uses protocol version {}, but this ogdeveloper build supports protocol version {}",
         manifest.id, manifest.protocol_version, SUPPORTED_PLUGIN_PROTOCOL_VERSION
     ))
 }

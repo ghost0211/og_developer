@@ -614,7 +614,7 @@ impl SnippetSyncClient {
                 }
                 if !self.config.replace_legacy_snippet {
                     return Err(
-                        "This snippet contains a legacy unencrypted DBX snapshot. Use the secure migration action to create an encrypted replacement and delete the legacy snippet only after the new one is created."
+                        "This snippet contains a legacy unencrypted ogdeveloper snapshot. Use the secure migration action to create an encrypted replacement and delete the legacy snippet only after the new one is created."
                             .to_string(),
                     );
                 }
@@ -1138,7 +1138,8 @@ fn parse_legacy_dbx_snapshot(content: &str) -> Result<SyncSnapshot, String> {
         return Err("The selected snippet is not a DBX sync snapshot; refusing to replace or delete it.".to_string());
     }
     serde_json::from_str(content).map_err(|_| {
-        "The legacy DBX snapshot is incompatible with this version, so it will not be replaced or deleted.".to_string()
+        "The legacy ogdeveloper snapshot is incompatible with this version, so it will not be replaced or deleted."
+            .to_string()
     })
 }
 

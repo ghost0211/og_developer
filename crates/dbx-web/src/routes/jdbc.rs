@@ -131,6 +131,16 @@ pub async fn get_jdbc_plugin_status(State(state): State<Arc<WebState>>) -> Resul
 
 pub async fn install_jdbc_plugin(State(state): State<Arc<WebState>>) -> Result<Json<JdbcPluginStatus>, AppError> {
     let root = state.app.plugins.root_dir();
+    // og developer: a local plugin bundle (env var or alongside the binary)
+    // wins over the network download so offline deployments work.
+    if let Some(local_zip) = std::env::var("DBX_JDBC_PLUGIN_ZIP").ok().filter(|p| !p.trim().is_empty()).or_else(|| {
+        std::env::current_exe()
+            .ok()
+            .and_then(|exe| exe.parent().map(|dir| dir.join("jdbc-plugin.zip")))
+            .and_then(|p| p.exists().then(|| p.to_string_lossy().to_string()))
+    }) {
+        return Ok(Json(jdbc::install_jdbc_plugin_from_file(root, &local_zip).await.map_err(AppError::internal)?));
+    }
     let tx = progress_sender(&state, "global").await;
     Ok(Json(
         jdbc::install_jdbc_plugin_with_progress(root, |event| send_progress_event(&tx, event))

@@ -1953,7 +1953,7 @@ async function runSnippetAction(kind: "test" | "upload" | "download" | "migrate"
     snippetMessage.value = await action();
   } catch (e: any) {
     snippetMessage.value = e?.message || String(e);
-    if (kind === "upload" && snippetMessage.value.includes("legacy unencrypted DBX snapshot")) {
+    if (kind === "upload" && snippetMessage.value.includes("legacy unencrypted ogdeveloper snapshot")) {
       legacySnippetId.value = snippetId.value.trim();
     }
     snippetError.value = true;
@@ -4200,7 +4200,7 @@ onUnmounted(() => {
                 <div class="settings-appearance-choice-grid">
                   <Button type="button" variant="outline" class="settings-choice-card h-auto justify-start border p-3" :class="editIconTheme === 'default' ? 'dbx-choice-selected' : ''" @click="setIconTheme('default')">
                     <div class="flex items-center gap-3 text-left w-full min-w-0">
-                      <img src="/icon-preview-default.png" alt="DBX" class="h-12 w-12 shrink-0" />
+                      <img src="/icon-preview-default.png" alt="ogdeveloper" class="h-12 w-12 shrink-0" />
                       <TooltipProvider>
                         <Tooltip>
                           <TooltipTrigger as-child>
@@ -4222,7 +4222,7 @@ onUnmounted(() => {
                   </Button>
                   <Button type="button" variant="outline" class="settings-choice-card h-auto justify-start border p-3" :class="editIconTheme === 'black' ? 'dbx-choice-selected' : ''" @click="setIconTheme('black')">
                     <div class="flex items-center gap-3 text-left w-full min-w-0">
-                      <img src="/icon-preview-black.png" alt="DBX" class="h-12 w-12 shrink-0" />
+                      <img src="/icon-preview-black.png" alt="ogdeveloper" class="h-12 w-12 shrink-0" />
                       <TooltipProvider>
                         <Tooltip>
                           <TooltipTrigger as-child>

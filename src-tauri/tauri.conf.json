@@ -75,22 +75,22 @@
       "icons/icon.ico"
     ],
     "resources": [
-      "resources/opengauss-jdbc-6.0.0.jar"
+      "resources/opengauss-jdbc-6.0.0.jar",
+      "resources/jdbc-plugin.zip"
     ]
   },
   "plugins": {
     "deep-link": {
       "desktop": {
         "schemes": [
-          "dbx"
+          "ogdeveloper"
         ]
       }
     },
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDkxNEYyMzE3QkJCNkM3REYKUldUZng3YTdGeU5Qa1NnTUZCRVhJVkxsOWZKQWFPVCtacUgySlNlcjRDU2RmZElCQnphd25pYUMK",
+      "pubkey": "",
       "endpoints": [
-        "https://dl.dbxio.com/releases/latest/latest.json",
-        "https://github.com/t8y2/dbx/releases/latest/download/latest.json"
+        "https://github.com/ghost0211/og_developer/releases/latest/download/latest.json"
       ]
     }
   },

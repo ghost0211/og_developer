@@ -587,7 +587,7 @@ fn install_jdbc_plugin_zip(bytes: &[u8], plugin_dir: &Path) -> Result<(), String
     if manifest.protocol_version != SUPPORTED_PLUGIN_PROTOCOL_VERSION {
         let _ = std::fs::remove_dir_all(&temp_dir);
         return Err(format!(
-            "Downloaded JDBC plugin uses protocol version {}, but this DBX build supports protocol version {}",
+            "Downloaded JDBC plugin uses protocol version {}, but this ogdeveloper build supports protocol version {}",
             manifest.protocol_version, SUPPORTED_PLUGIN_PROTOCOL_VERSION
         ));
     }

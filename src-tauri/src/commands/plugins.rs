@@ -29,6 +29,13 @@ pub async fn install_jdbc_plugin(
 ) -> Result<JdbcPluginStatus, String> {
     let app_handle = app.clone();
     state.remove_external_driver_pools("jdbc").await;
+    // og developer: prefer the plugin bundle shipped inside the app so first
+    // connect works offline; fall back to the network download when absent.
+    if let Ok(bundled) = app.path().resolve("resources/jdbc-plugin.zip", tauri::path::BaseDirectory::Resource) {
+        if bundled.exists() {
+            return jdbc::install_jdbc_plugin_from_file(state.plugins.root_dir(), &bundled.to_string_lossy()).await;
+        }
+    }
     jdbc::install_jdbc_plugin_with_progress(state.plugins.root_dir(), move |event| {
         emit_agent_progress(&app_handle, event);
     })

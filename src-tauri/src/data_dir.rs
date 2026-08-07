@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 #[cfg(target_os = "windows")]
-const PORTABLE_MARKER: &str = "portable.dbx";
+const PORTABLE_MARKER: &str = "portable.ogdeveloper";
 #[cfg(target_os = "windows")]
 const INSTALLER_MARKER: &str = "uninstall.exe";
 

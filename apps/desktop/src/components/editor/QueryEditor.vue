@@ -2168,7 +2168,7 @@ async function resolveSqlHoverTooltip(currentView: EditorViewType, pos: number) 
         pos: range.from,
         end: range.to,
         create: () => ({
-          dom: createHoverDom(table.name, sqlObjectHoverDetail(table), sqlContent, metadataLoadFailed ? ["[DBX] Failed to load table structure — check connection"] : undefined),
+          dom: createHoverDom(table.name, sqlObjectHoverDetail(table), sqlContent, metadataLoadFailed ? ["Failed to load table structure — check connection"] : undefined),
         }),
       };
     }

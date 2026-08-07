@@ -134,7 +134,7 @@ export function clearDebugLogs() {
 
 export function getDebugLogText(): string {
   const entries = readEntries();
-  const header = [`DBX debug log`, `Exported: ${formatLocalTimestamp()}`, `User agent: ${navigator.userAgent}`, `Platform: ${navigator.platform}`, `Timezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone || "unknown"}`, ""];
+  const header = [`ogdeveloper debug log`, `Exported: ${formatLocalTimestamp()}`, `User agent: ${navigator.userAgent}`, `Platform: ${navigator.platform}`, `Timezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone || "unknown"}`, ""];
   const body = entries.map((entry) => `[${entry.timestamp}] [${entry.level.toUpperCase()}] ${entry.message}`);
   return [...header, ...body].join("\n");
 }

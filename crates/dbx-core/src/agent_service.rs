@@ -1635,7 +1635,7 @@ pub fn ensure_driver_app_version(
         return Ok(());
     }
     Err(format!(
-        "{db_type} driver {} requires DBX {} or newer. Current DBX version is {}.",
+        "{db_type} driver {} requires ogdeveloper {} or newer. Current ogdeveloper version is {}.",
         driver.version, driver.min_app_version, current_version
     ))
 }

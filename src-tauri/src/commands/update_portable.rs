@@ -184,7 +184,7 @@ pub(super) fn launch_portable_update_helper(archive: &[u8], version: &Version) -
     let current_exe =
         std::env::current_exe().map_err(|error| format!("Failed to locate the portable executable: {error}"))?;
     let exe_dir = current_exe.parent().ok_or_else(|| "Portable executable directory is unavailable.".to_string())?;
-    if !exe_dir.join("portable.dbx").is_file() {
+    if !exe_dir.join("portable.ogdeveloper").is_file() {
         return Err("Portable update marker is missing beside DBX.exe.".to_string());
     }
 

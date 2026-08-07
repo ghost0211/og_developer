@@ -99,7 +99,7 @@ async function submit() {
         </Button>
       </form>
 
-      <p class="text-center text-xs text-muted-foreground/50">Powered by DBX</p>
+      <p class="text-center text-xs text-muted-foreground/50">Powered by ogdeveloper</p>
     </div>
   </div>
 </template>

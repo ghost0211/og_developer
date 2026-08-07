@@ -2412,7 +2412,7 @@ function transportLayerDisplayName(layer: TransportLayerConfig, index: number): 
 
 const transportPathSegments = computed(() => {
   const layers = transportLayers.value.filter((layer) => layer.enabled !== false);
-  return ["DBX", ...layers.map(transportLayerDisplayName), form.value.host || "Database"];
+  return ["ogdeveloper", ...layers.map(transportLayerDisplayName), form.value.host || "Database"];
 });
 
 function defaultDatabaseForProfile() {
