@@ -610,6 +610,8 @@ export default withEnglishFallback({
     opengaussJdbcDriver: "openGauss JDBC 驱动",
     opengaussJdbcDriverPlaceholder: "留空将自动从 Maven 中央仓库下载官方驱动",
     opengaussJdbcDriverHint: "默认自动从 Maven 中央仓库下载官方驱动；也可手动选择本地 opengauss-jdbc.jar（需与服务端版本匹配）。",
+    opengaussJdbcBundledHint: "自动使用内置官方驱动（随应用更新，无需配置）。",
+    opengaussJdbcCustomize: "自定义驱动",
     opengaussJdbcPluginInstalling: "正在安装 JDBC 运行组件...",
     opengaussJdbcDriverInstalling: "正在下载官方 openGauss JDBC 驱动...",
     gaussdbIdentifierQuoteStyle: "标识符兼容模式",

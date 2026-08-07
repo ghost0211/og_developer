@@ -493,6 +493,14 @@ const opengaussDriverMode = computed<OpengaussConnectionMode>({
   },
 });
 const isOpengaussJdbcConnection = computed(() => opengaussDriverMode.value === "jdbc");
+// og developer: the bundled official driver is the default; the jar picker is
+// collapsed behind a "customize" toggle unless the connection already carries
+// explicit driver paths.
+const opengaussDriverCustomOpen = ref(false);
+const bundledOpengaussDriverLabel = computed(() => {
+  const driver = jdbcDrivers.value.find((entry) => /opengauss/i.test(entry.name) || /opengauss/i.test(entry.path));
+  return driver?.name || "";
+});
 const showGaussdbIdentifierQuoteStyle = computed(() => supportsGaussdbIdentifierQuoteStyle(form.value));
 const gaussdbQuoteStyle = computed<GaussdbIdentifierQuoteStyle>({
   get: () => gaussdbIdentifierQuoteStyle(form.value),
@@ -2291,6 +2299,7 @@ watch(
       resetDremioConnectionUrls(dremioConnectionMode.value, profile === "dremio" ? config.connection_string : undefined);
       mongoUseUrl.value = !!config.connection_string;
       jdbcDriverPathsInput.value = (config.jdbc_driver_paths || []).join("\n");
+      opengaussDriverCustomOpen.value = (config.jdbc_driver_paths || []).length > 0;
       jdbcManualClasspathOpen.value = config.db_type === "prestosql" || (config.jdbc_driver_paths || []).length > 0;
       customDriverName.value = isCustomCompatibleProfile() ? config.driver_label || "" : "";
       dialogStep.value = "config";
@@ -7125,38 +7134,49 @@ function openExternalUrl(url: string) {
                 <div v-if="isOpengaussJdbcConnection" class="grid grid-cols-4 items-start gap-4">
                   <Label :class="connectionLabelSmallPaddedClass">{{ t("connection.opengaussJdbcDriver") }}</Label>
                   <div class="col-span-3 space-y-2">
-                    <Select v-if="jdbcDriverSelectItems.length > 0" :model-value="selectedJdbcDriverPath" @update:model-value="onJdbcDriverSelect">
-                      <SelectTrigger class="h-9">
-                        <SelectValue :placeholder="t('connection.jdbcDriverSelectPlaceholder')" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem v-for="driver in jdbcDriverSelectItems" :key="driver.id" :value="driver.id">
-                          {{ driver.label }}
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <div class="flex items-start gap-1">
-                      <textarea
-                        v-model="jdbcDriverPathsInput"
-                        class="flex min-h-12 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                        :placeholder="t('connection.opengaussJdbcDriverPlaceholder')"
-                      />
-                      <Tooltip v-if="isDesktop">
-                        <TooltipTrigger as-child>
-                          <Button type="button" variant="outline" size="icon" class="h-9 w-9 shrink-0" @click="browseJdbcDriverPaths">
-                            <FolderOpen class="h-4 w-4" />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>{{ t("connection.jdbcDriverBrowse") }}</TooltipContent>
-                      </Tooltip>
-                    </div>
-                    <div class="flex items-center justify-between gap-3">
-                      <p class="text-xs leading-5 text-muted-foreground">{{ t("connection.opengaussJdbcDriverHint") }}</p>
-                      <Button type="button" variant="outline" size="sm" class="shrink-0" @click="openJdbcDriverManager">
-                        <FolderOpen class="h-3.5 w-3.5" />
-                        {{ t("toolbar.driverManager") }}
+                    <div v-if="!opengaussDriverCustomOpen" class="flex items-center justify-between gap-3 rounded-md border bg-muted/20 px-3 py-2">
+                      <p class="text-xs leading-5 text-muted-foreground">
+                        {{ t("connection.opengaussJdbcBundledHint") }}
+                        <span v-if="bundledOpengaussDriverLabel" class="font-mono">{{ bundledOpengaussDriverLabel }}</span>
+                      </p>
+                      <Button type="button" variant="ghost" size="sm" class="h-7 shrink-0 px-2 text-xs" @click="opengaussDriverCustomOpen = true">
+                        {{ t("connection.opengaussJdbcCustomize") }}
                       </Button>
                     </div>
+                    <template v-else>
+                      <Select v-if="jdbcDriverSelectItems.length > 0" :model-value="selectedJdbcDriverPath" @update:model-value="onJdbcDriverSelect">
+                        <SelectTrigger class="h-9">
+                          <SelectValue :placeholder="t('connection.jdbcDriverSelectPlaceholder')" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem v-for="driver in jdbcDriverSelectItems" :key="driver.id" :value="driver.id">
+                            {{ driver.label }}
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <div class="flex items-start gap-1">
+                        <textarea
+                          v-model="jdbcDriverPathsInput"
+                          class="flex min-h-12 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                          :placeholder="t('connection.opengaussJdbcDriverPlaceholder')"
+                        />
+                        <Tooltip v-if="isDesktop">
+                          <TooltipTrigger as-child>
+                            <Button type="button" variant="outline" size="icon" class="h-9 w-9 shrink-0" @click="browseJdbcDriverPaths">
+                              <FolderOpen class="h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>{{ t("connection.jdbcDriverBrowse") }}</TooltipContent>
+                        </Tooltip>
+                      </div>
+                      <div class="flex items-center justify-between gap-3">
+                        <p class="text-xs leading-5 text-muted-foreground">{{ t("connection.opengaussJdbcDriverHint") }}</p>
+                        <Button type="button" variant="outline" size="sm" class="shrink-0" @click="openJdbcDriverManager">
+                          <FolderOpen class="h-3.5 w-3.5" />
+                          {{ t("toolbar.driverManager") }}
+                        </Button>
+                      </div>
+                    </template>
                   </div>
                 </div>
                 <div v-if="showGaussdbIdentifierQuoteStyle" class="grid grid-cols-4 items-start gap-4">

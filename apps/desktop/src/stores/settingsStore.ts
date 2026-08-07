@@ -546,7 +546,7 @@ export interface ToolbarItems {
 
 export const DEFAULT_TOOLBAR_ITEMS: ToolbarItems = {
   dataTransfer: true,
-  driverManager: true,
+  driverManager: false,
   sqlFile: true,
   schemaDiff: true,
   dataCompare: true,

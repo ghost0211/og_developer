@@ -609,6 +609,8 @@ export default {
     opengaussJdbcDriver: "openGauss JDBC driver",
     opengaussJdbcDriverPlaceholder: "Leave empty to auto-download the official opengauss-jdbc driver",
     opengaussJdbcDriverHint: "Downloads the official driver from Maven Central by default; or pick a local opengauss-jdbc.jar matching the server version.",
+    opengaussJdbcBundledHint: "Uses the bundled official driver automatically (updated with the app, no setup needed).",
+    opengaussJdbcCustomize: "Custom driver",
     opengaussJdbcPluginInstalling: "Installing JDBC runtime...",
     opengaussJdbcDriverInstalling: "Downloading official openGauss JDBC driver...",
     gaussdbIdentifierQuoteStyle: "Identifier compatibility",
