@@ -4956,6 +4956,7 @@ export default {
     jdbcTab: "JDBC Drivers",
     securityTab: "Security",
     aboutTab: "About",
+    aboutDescription: "A dedicated database development tool for openGauss. Built on DBX, ships the official JDBC driver, and provides integrated PL/SQL development, debugging, and object management.",
     fontFamily: "Font Family",
     dataGridFontFamily: "Result Grid Font",
     dataGridFontFamilyDescription: "Applies to query results, table data, column headers, and inline cell editors.",

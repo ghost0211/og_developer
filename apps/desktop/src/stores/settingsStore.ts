@@ -862,11 +862,13 @@ function normalizeToolbarItems(items: Partial<ToolbarItems> | undefined): Toolba
   if (!items || typeof items !== "object") return { ...defaults };
   return {
     dataTransfer: items.dataTransfer ?? defaults.dataTransfer,
-    driverManager: items.driverManager ?? defaults.driverManager,
+    // og developer: the driver store page and updater are not part of this
+    // product — force them off even for settings persisted by older builds.
+    driverManager: false,
     sqlFile: items.sqlFile ?? defaults.sqlFile,
     schemaDiff: items.schemaDiff ?? defaults.schemaDiff,
     dataCompare: items.dataCompare ?? defaults.dataCompare,
-    checkUpdates: items.checkUpdates ?? defaults.checkUpdates,
+    checkUpdates: false,
     sqlLibrary: items.sqlLibrary ?? defaults.sqlLibrary,
     sqlFileTree: items.sqlFileTree ?? defaults.sqlFileTree,
     history: items.history ?? defaults.history,

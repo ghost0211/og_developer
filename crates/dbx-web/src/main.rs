@@ -197,7 +197,8 @@ async fn main() {
     // Data directory
     let data_dir = std::env::var("DBX_DATA_DIR").map(std::path::PathBuf::from).unwrap_or_else(|_| {
         let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-        std::path::PathBuf::from(home).join(".dbx-web")
+        // og developer: keep the web data directory distinct from upstream dbx-web.
+        std::path::PathBuf::from(home).join(".og-developer-web")
     });
     std::fs::create_dir_all(&data_dir).expect("Failed to create data directory");
 

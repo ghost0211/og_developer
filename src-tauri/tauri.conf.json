@@ -93,5 +93,6 @@
         "https://github.com/t8y2/dbx/releases/latest/download/latest.json"
       ]
     }
-  }
+  },
+  "mainBinaryName": "og-developer"
 }

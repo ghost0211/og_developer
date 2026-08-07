@@ -7171,10 +7171,6 @@ function openExternalUrl(url: string) {
                       </div>
                       <div class="flex items-center justify-between gap-3">
                         <p class="text-xs leading-5 text-muted-foreground">{{ t("connection.opengaussJdbcDriverHint") }}</p>
-                        <Button type="button" variant="outline" size="sm" class="shrink-0" @click="openJdbcDriverManager">
-                          <FolderOpen class="h-3.5 w-3.5" />
-                          {{ t("toolbar.driverManager") }}
-                        </Button>
                       </div>
                     </template>
                   </div>
