@@ -42,11 +42,59 @@ pub const GAUSSDB_M_JDBC_DRIVER_CLASS: &str = "com.huawei.gaussdb.jdbc.Driver";
 /// cannot complete openGauss's default SHA256 password authentication, while
 /// the official driver supports it (AUTH_REQ_SHA256/MD5_SHA256encode).
 ///
-/// The auto-provisioned artifact is org.opengauss:opengauss-jdbc from Maven
-/// Central, which keeps the upstream pgJDBC branding: driver class
-/// org.postgresql.Driver and the jdbc:postgresql:// URL scheme.
+/// The official driver changed its entry class and URL scheme between
+/// releases: 6.0 keeps pgJDBC branding (org.postgresql.Driver +
+/// jdbc:postgresql://) while 7.0 uses openGauss branding (org.opengauss.Driver
+/// + jdbc:opengauss://). The pairing is strict, so it is resolved by sniffing
+/// the selected jar.
 pub const OPENGAUSS_JDBC_DRIVER_PROFILE: &str = "opengauss-jdbc";
 pub const OPENGAUSS_JDBC_DRIVER_CLASS: &str = "org.postgresql.Driver";
+
+/// Driver style resolved from the selected jar.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OpenGaussJdbcDriverStyle {
+    /// 6.0-style: org.postgresql.Driver + jdbc:postgresql://
+    PgBranded,
+    /// 7.0-style: org.opengauss.Driver + jdbc:opengauss://
+    OpenGaussBranded,
+}
+
+impl OpenGaussJdbcDriverStyle {
+    pub fn driver_class(self) -> &'static str {
+        match self {
+            Self::PgBranded => "org.postgresql.Driver",
+            Self::OpenGaussBranded => "org.opengauss.Driver",
+        }
+    }
+    pub fn url_scheme(self) -> &'static str {
+        match self {
+            Self::PgBranded => "postgresql",
+            Self::OpenGaussBranded => "opengauss",
+        }
+    }
+}
+
+/// Sniffs the first existing jar in `paths` for the 7.0-style driver entry
+/// class. Defaults to the 6.0 pgJDBC-branded style (the bundled jar).
+pub fn opengauss_jdbc_driver_style_for_paths(paths: &[String]) -> OpenGaussJdbcDriverStyle {
+    for path in paths {
+        let trimmed = path.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let Ok(file) = std::fs::File::open(trimmed) else { continue };
+        let Ok(mut archive) = zip::ZipArchive::new(file) else { continue };
+        let has_opengauss_entry = archive.by_name("org/opengauss/Driver.class").is_ok();
+        let has_pg_entry = !has_opengauss_entry && archive.by_name("org/postgresql/Driver.class").is_ok();
+        if has_opengauss_entry {
+            return OpenGaussJdbcDriverStyle::OpenGaussBranded;
+        }
+        if has_pg_entry {
+            return OpenGaussJdbcDriverStyle::PgBranded;
+        }
+    }
+    OpenGaussJdbcDriverStyle::PgBranded
+}
 const SQLSERVER_LEGACY_DRIVER_INSTALL_HINT: &str =
     "Install the SQL Server legacy compatibility component from Driver Manager, or open the connection settings and enable SQL Server legacy compatibility mode again.";
 const DEFAULT_AGENT_CONNECT_TIMEOUT_SECS: u64 = 30;
@@ -695,10 +743,12 @@ pub fn opengauss_uses_jdbc_driver(config: &ConnectionConfig) -> bool {
 
 pub fn opengauss_jdbc_config_for_endpoint(config: &ConnectionConfig, host: &str, port: u16) -> ConnectionConfig {
     let mut jdbc_config = config.clone();
-    // redacted_connection_url_with_host yields opengauss://… for OpenGauss, but
-    // the Maven-published official driver only accepts jdbc:postgresql:// URLs.
+    // The driver entry class and URL scheme must match the selected jar:
+    // 6.0 ships org.postgresql.Driver + jdbc:postgresql://, 7.0 ships
+    // org.opengauss.Driver + jdbc:opengauss:// (strict pairing).
+    let style = opengauss_jdbc_driver_style_for_paths(&config.jdbc_driver_paths);
     let native_url = config.redacted_connection_url_with_host(host, port);
-    let mut jdbc_url = format!("jdbc:postgresql://{}", native_url.trim_start_matches("opengauss://"));
+    let mut jdbc_url = format!("jdbc:{}://{}", style.url_scheme(), native_url.trim_start_matches("opengauss://"));
     let raw_params = config.url_params.as_deref().unwrap_or("").trim().trim_start_matches('?');
     let explicit_sslmode = raw_params.split('&').find_map(|part| {
         let (key, value) = part.split_once('=')?;
@@ -712,7 +762,7 @@ pub fn opengauss_jdbc_config_for_endpoint(config: &ConnectionConfig, host: &str,
         jdbc_url.push_str(&params);
     }
     jdbc_config.connection_string = Some(jdbc_url);
-    jdbc_config.jdbc_driver_class = Some(OPENGAUSS_JDBC_DRIVER_CLASS.to_string());
+    jdbc_config.jdbc_driver_class = Some(style.driver_class().to_string());
     jdbc_config
 }
 
@@ -5055,13 +5105,13 @@ mod tests {
         gaussdb_identifier_quote_from_query_result, gaussdb_m_jdbc_config_for_endpoint, gaussdb_uses_m_jdbc_driver,
         metadata_connection_config, mysql_metadata_fallback_url, mysql_pool_setup_queries,
         oceanbase_mysql_query_timeout_sql, oceanbase_mysql_setup_queries, opengauss_jdbc_config_for_endpoint,
-        opengauss_uses_jdbc_driver, prestosql_jdbc_config_for_endpoint, redacted_connection_url_for_endpoint,
-        redis_sentinel_transport_id, redis_sentinel_transport_prefix, sqlserver_legacy_agent_config,
-        sqlserver_legacy_driver_error, sqlserver_uses_legacy_driver, task_client_session_id,
-        upsert_connection_url_param, uses_bare_mysql_pool, uses_tcp_probe, validate_connection_url_params,
-        validate_h2_database_path, AppState, MysqlMode, PoolKind, GAUSSDB_M_JDBC_DRIVER_CLASS,
-        GAUSSDB_M_JDBC_DRIVER_PROFILE, OPENGAUSS_JDBC_DRIVER_CLASS, OPENGAUSS_JDBC_DRIVER_PROFILE,
-        PRESTOSQL_JDBC_DRIVER_CLASS,
+        opengauss_jdbc_driver_style_for_paths, opengauss_uses_jdbc_driver, prestosql_jdbc_config_for_endpoint,
+        redacted_connection_url_for_endpoint, redis_sentinel_transport_id, redis_sentinel_transport_prefix,
+        sqlserver_legacy_agent_config, sqlserver_legacy_driver_error, sqlserver_uses_legacy_driver,
+        task_client_session_id, upsert_connection_url_param, uses_bare_mysql_pool, uses_tcp_probe,
+        validate_connection_url_params, validate_h2_database_path, AppState, MysqlMode, OpenGaussJdbcDriverStyle,
+        PoolKind, GAUSSDB_M_JDBC_DRIVER_CLASS, GAUSSDB_M_JDBC_DRIVER_PROFILE, OPENGAUSS_JDBC_DRIVER_CLASS,
+        OPENGAUSS_JDBC_DRIVER_PROFILE, PRESTOSQL_JDBC_DRIVER_CLASS,
     };
     use crate::agent_connection::{
         agent_connect_params, mongo_legacy_error_with_auth_hint, mongo_uses_legacy_driver,
@@ -5264,6 +5314,45 @@ mod tests {
 
         config.driver_profile = Some("gaussdb".to_string());
         assert!(!gaussdb_uses_m_jdbc_driver(&config));
+    }
+
+    fn write_fake_driver_jar(entry: &str) -> String {
+        let dir = std::env::temp_dir().join(format!("og-jdbc-style-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("driver.jar");
+        let file = std::fs::File::create(&path).unwrap();
+        let mut writer = zip::ZipWriter::new(file);
+        writer.start_file::<_, ()>(entry, zip::write::FileOptions::default()).unwrap();
+        use std::io::Write as _;
+        writer.write_all(b"x").unwrap();
+        writer.finish().unwrap();
+        path.to_string_lossy().to_string()
+    }
+
+    #[test]
+    fn opengauss_jdbc_style_sniffs_driver_entry_class() {
+        let v6 = write_fake_driver_jar("org/postgresql/Driver.class");
+        let v7 = write_fake_driver_jar("org/opengauss/Driver.class");
+        assert_eq!(opengauss_jdbc_driver_style_for_paths(&[v6]), OpenGaussJdbcDriverStyle::PgBranded);
+        assert_eq!(opengauss_jdbc_driver_style_for_paths(&[v7]), OpenGaussJdbcDriverStyle::OpenGaussBranded);
+        // Missing files and empty lists fall back to the bundled 6.0 style.
+        assert_eq!(
+            opengauss_jdbc_driver_style_for_paths(&["/nonexistent/driver.jar".to_string()]),
+            OpenGaussJdbcDriverStyle::PgBranded
+        );
+        assert_eq!(opengauss_jdbc_driver_style_for_paths(&[]), OpenGaussJdbcDriverStyle::PgBranded);
+    }
+
+    #[test]
+    fn opengauss_jdbc_config_matches_selected_jar_branding() {
+        let v7 = write_fake_driver_jar("org/opengauss/Driver.class");
+        let mut config = mysql_config(Some("postgres"));
+        config.db_type = DatabaseType::OpenGauss;
+        config.driver_profile = Some(OPENGAUSS_JDBC_DRIVER_PROFILE.to_string());
+        config.jdbc_driver_paths = vec![v7];
+        let jdbc = opengauss_jdbc_config_for_endpoint(&config, "db.internal", 5432);
+        assert_eq!(jdbc.jdbc_driver_class.as_deref(), Some("org.opengauss.Driver"));
+        assert!(jdbc.connection_string.as_deref().unwrap().starts_with("jdbc:opengauss://"));
     }
 
     #[test]

@@ -493,6 +493,12 @@ public final class DbxJdbcPlugin {
         T get() throws SQLException;
     }
 
+    // ogdeveloper: the official openGauss JDBC driver changed its entry class
+    // between releases (6.0 ships org.postgresql.Driver, 7.0 ships
+    // org.opengauss.Driver). When the configured class is absent from the
+    // selected jars, try the known alternatives, then ServiceLoader discovery.
+    private static final String[] KNOWN_OPENGAUSS_DRIVER_CLASSES = { "org.opengauss.Driver", "org.postgresql.Driver" };
+
     private static void registerDrivers(JsonNode connection) throws Exception {
         String driverKey = driverKey(connection);
         if (driverKey.equals(registeredDriverKey)) {
@@ -517,10 +523,40 @@ public final class DbxJdbcPlugin {
 
         String driverClass = optionalText(connection, "jdbc_driver_class");
         if (driverClass != null) {
-            Driver driver = (Driver) Class.forName(driverClass, true, loader).getDeclaredConstructor().newInstance();
-            DriverManager.registerDriver(new DriverShim(driver));
-            registeredDriverKey = driverKey;
-            return;
+            try {
+                Driver driver = (Driver) Class.forName(driverClass, true, loader).getDeclaredConstructor().newInstance();
+                DriverManager.registerDriver(new DriverShim(driver));
+                registeredDriverKey = driverKey;
+                return;
+            } catch (ClassNotFoundException missingConfigured) {
+                // ogdeveloper: the official openGauss JDBC driver changed its entry
+                // class between releases (6.0 ships org.postgresql.Driver, 7.0 ships
+                // org.opengauss.Driver). When the configured class is absent from the
+                // selected jars, try the known alternatives, then ServiceLoader
+                // discovery, and only then report the original error.
+                for (String candidate : KNOWN_OPENGAUSS_DRIVER_CLASSES) {
+                    if (candidate.equals(driverClass)) {
+                        continue;
+                    }
+                    try {
+                        Driver driver = (Driver) Class.forName(candidate, true, loader).getDeclaredConstructor().newInstance();
+                        DriverManager.registerDriver(new DriverShim(driver));
+                        registeredDriverKey = driverKey;
+                        return;
+                    } catch (ReflectiveOperationException ignored) {
+                    }
+                }
+                boolean discovered = false;
+                for (Driver driver : ServiceLoader.load(Driver.class, loader)) {
+                    DriverManager.registerDriver(new DriverShim(driver));
+                    discovered = true;
+                }
+                if (discovered) {
+                    registeredDriverKey = driverKey;
+                    return;
+                }
+                throw missingConfigured;
+            }
         }
 
         boolean loaded = false;
