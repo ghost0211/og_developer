@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use dbx_core::connection::AppState;
 use dbx_core::opengauss_debug::{
-    OpenGaussDebugBacktraceFrame, OpenGaussDebugBreakpoint, OpenGaussDebugCodeLine, OpenGaussDebugLocal,
-    OpenGaussDebugPosition, OpenGaussDebugStartResult,
+    OpenGaussDebugBacktraceFrame, OpenGaussDebugBreakpoint, OpenGaussDebugLocal, OpenGaussDebugPosition,
+    OpenGaussDebugStartResult,
 };
 use tauri::State;
 

@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use tauri::{Emitter, State};
+use tauri::{Emitter, Manager, State};
 
 use dbx_core::agent_service::AgentProgressEvent;
 use dbx_core::jdbc::{
