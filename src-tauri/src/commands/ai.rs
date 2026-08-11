@@ -120,7 +120,6 @@ pub async fn ai_stream(
 
 use dbx_core::agent_events::AgentEvent;
 use dbx_core::agent_loop::{run_agent_loop, AgentLoopContext};
-use dbx_core::ai_cli_agent::CliAgentCommandSpec;
 use dbx_core::models::connection::DatabaseType;
 
 #[tauri::command]
@@ -155,12 +154,7 @@ pub async fn ai_agent_stream(
     let parsed_db_type: DatabaseType =
         serde_json::from_str(&format!("\"{}\"", db_type)).map_err(|_| format!("Unknown database type: {db_type}"))?;
 
-    let cli_mcp_server_command = if is_cli_provider(&request.config.provider) {
-        let (program, args) = super::mcp::resolve_mcp_server_command().await?;
-        Some(CliAgentCommandSpec { program, args })
-    } else {
-        None
-    };
+    let cli_mcp_server_command = None;
     let cancelled = dbx_core::ai::register_stream(&session_id).await;
     let production_database = state
         .configs
@@ -246,10 +240,29 @@ fn resolve_cli_provider_config(mut config: AiConfig) -> AiConfig {
         return config;
     }
 
-    if let Some(path) = super::mcp::locate_command(command) {
+    if let Some(path) = locate_command_on_path(command) {
         *path_slot = Some(path);
     }
     config
+}
+
+/// Minimal PATH lookup formerly shared with the MCP command module.
+fn locate_command_on_path(command: &str) -> Option<String> {
+    let path_var = std::env::var_os("PATH")?;
+    for dir in std::env::split_paths(&path_var) {
+        let candidate = dir.join(command);
+        if candidate.is_file() {
+            return Some(candidate.to_string_lossy().to_string());
+        }
+        #[cfg(windows)]
+        for ext in ["exe", "cmd", "bat"] {
+            let candidate_ext = dir.join(format!("{command}.{ext}"));
+            if candidate_ext.is_file() {
+                return Some(candidate_ext.to_string_lossy().to_string());
+            }
+        }
+    }
+    None
 }
 
 fn is_explicit_cli_path(command: &str) -> bool {

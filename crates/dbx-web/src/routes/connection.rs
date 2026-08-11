@@ -368,31 +368,6 @@ pub async fn save_connections(
     Ok(Json(()))
 }
 
-pub async fn mcp_add_connection(
-    State(state): State<Arc<WebState>>,
-    Json(body): Json<McpAddConnectionRequest>,
-) -> Result<Json<ConnectionConfig>, AppError> {
-    let saved = state.app.storage.add_connection_for_mcp(body.config).await.map_err(AppError::from)?;
-    state.app.configs.write().await.insert(saved.id.clone(), saved.clone());
-    Ok(Json(saved))
-}
-
-pub async fn mcp_remove_connection(
-    State(state): State<Arc<WebState>>,
-    Json(body): Json<McpRemoveConnectionRequest>,
-) -> Result<Json<bool>, AppError> {
-    let connection_id = body.connection_id;
-    let removed = state.app.storage.remove_connection_for_mcp(&connection_id).await.map_err(AppError::from)?;
-    if removed {
-        state.app.configs.write().await.remove(&connection_id);
-        state.app.remove_connection_pools_detached(&connection_id).await;
-        state.app.nacos_registry.drop_connection(&connection_id).await;
-        #[cfg(feature = "mq-admin")]
-        state.app.mq_registry.drop_connection(&connection_id).await;
-    }
-    Ok(Json(removed))
-}
-
 pub async fn load_connections(State(state): State<Arc<WebState>>) -> Result<Json<Vec<ConnectionConfig>>, AppError> {
     let configs = state.app.storage.load_connections().await.map_err(AppError::from)?;
     let sync = sync_connection_configs(&state, &configs).await;

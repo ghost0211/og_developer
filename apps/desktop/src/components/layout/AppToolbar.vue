@@ -35,7 +35,6 @@ const props = defineProps<{
   checkingUpdates: boolean;
   hasUpdateAvailable: boolean;
   agentDriverUpdateCount: number;
-  hasMcpUpdateAvailable: boolean;
   hasConnections: boolean;
   hasSqlFileConnections: boolean;
 }>();

@@ -4,7 +4,7 @@ import type { Ref } from "vue";
 import type { EditorView as EditorViewType } from "@codemirror/view";
 import { useI18n } from "vue-i18n";
 import { translateBackendError } from "@/i18n/backend-errors";
-import { AlertTriangle, ArrowLeft, CheckCircle2, CircleHelp, Cloud, Copy, Download, ExternalLink, GripVertical, Loader2, Moon, Pencil, Plus, RefreshCw, RotateCcw, Search, Settings, Sun, SunMoon, Trash2, Upload, X } from "@lucide/vue";
+import { ArrowLeft, CheckCircle2, CircleHelp, Cloud, Copy, Download, ExternalLink, GripVertical, Loader2, Moon, Pencil, Plus, RefreshCw, RotateCcw, Search, Settings, Sun, SunMoon, Trash2, Upload, X } from "@lucide/vue";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -59,8 +59,6 @@ import { copyToClipboard } from "@/lib/common/clipboard";
 import { clearDebugLogs as clearStoredDebugLogs, downloadDebugLogs, getDebugLogBundleText } from "@/lib/backend/debugLog";
 import {
   aiTestConnection,
-  checkMcpServerStatus,
-  installMcpServer,
   forgetSnippetSavedToken,
   forgetWebdavSyncSecretsPassphrase,
   forgetWebdavSavedPassword,
@@ -85,7 +83,6 @@ import {
   webdavSyncTest,
   webdavSyncUpload,
   type AppSupportInfo,
-  type McpServerStatus,
   type SnippetProvider,
   type SnippetSyncConfig,
   type WebDavConfig,
@@ -101,7 +98,6 @@ import { currentExecutableStatementRange, type SqlTextRange } from "@/lib/sql/sq
 import { executableStatementRangeCacheForDoc, executableStatementRangeStartingAt, type ExecutableStatementRangeCache } from "@/lib/sql/executableStatementRangeCache";
 import { EMPTY_TABLE_COLUMN_TEMPLATE_DATA_TYPE, parseTableColumnTemplateFields, TABLE_COLUMN_TEMPLATE_DATABASE_TYPES } from "@/lib/table/tableColumnTemplates";
 import { DEFAULT_SQL_VARIABLE_SYNTAX_TOGGLES, normalizeSqlVariableSyntaxOverrides, SQL_VARIABLE_SYNTAX_DATABASE_TYPES, SQL_VARIABLE_SYNTAX_KEYS, SQL_VARIABLE_SYNTAX_TOKENS, type SqlVariableSyntaxOverrides, type SqlVariableSyntaxToggles } from "@/lib/sql/sqlVariableSyntax";
-import { beginMcpStatusRequest, mcpUpdateAvailability } from "@/lib/mcp/mcpUpdateStatus";
 import { isMacOS } from "@/lib/backend/platform";
 import { combineDataTypeForDatabase, dataTypeLengthInputValue, getDataTypeOptions, getDefaultLengthForType, isDataTypeLengthDisabled, splitDataType } from "@/lib/table/tableStructureEditorState";
 import { useToast } from "@/composables/useToast";
@@ -1640,71 +1636,6 @@ async function exportDebugLogs() {
   }, 1500);
 }
 
-// ---------- MCP Server ----------
-const mcpStatus = ref<McpServerStatus | null>(null);
-const mcpStatusLoading = ref(false);
-const mcpStatusError = ref("");
-const MCP_READONLY_STORAGE_KEY = "dbx-mcp-config-readonly";
-const MCP_SCOPE_CONNECTION_STORAGE_KEY = "dbx-mcp-config-scope-connection";
-const mcpPolicyLoading = ref(false);
-const mcpPolicyLoadError = ref("");
-const mcpInstalling = ref(false);
-const mcpInstallMessage = ref("");
-const mcpInstallError = ref(false);
-
-const mcpStatusLabel = computed(() => {
-  if (mcpStatusLoading.value) return t("settings.mcpChecking");
-  if (mcpStatusError.value) return t("settings.mcpStatusError");
-  if (!mcpStatus.value) return t("settings.mcpStatusUnknown");
-  if (!mcpStatus.value.installed) return t("settings.mcpNotInstalled");
-  if (mcpStatus.value.update_available) return t("settings.mcpUpdateAvailable");
-  return t("settings.mcpReady");
-});
-
-async function refreshMcpStatus() {
-  if (mcpStatusLoading.value) return;
-  mcpStatusLoading.value = true;
-  mcpStatusError.value = "";
-  const requestId = beginMcpStatusRequest();
-  try {
-    mcpStatus.value = await checkMcpServerStatus();
-    // 通知工具栏徽章同步：携带已获取的 update_available，避免根组件重复查询 npm registry。
-    window.dispatchEvent(
-      new CustomEvent("dbx-mcp-status-changed", {
-        detail: { updateAvailable: mcpUpdateAvailability(mcpStatus.value), requestId },
-      }),
-    );
-  } catch (e: any) {
-    mcpStatusError.value = e?.message || String(e);
-  } finally {
-    mcpStatusLoading.value = false;
-  }
-}
-
-async function installMcp() {
-  if (mcpInstalling.value) return;
-  mcpInstalling.value = true;
-  mcpInstallMessage.value = "";
-  mcpInstallError.value = false;
-  try {
-    const result = await installMcpServer();
-    mcpInstallMessage.value = result;
-    mcpInstallError.value = false;
-    // 安装成功后刷新状态
-    await refreshMcpStatus();
-  } catch (e: any) {
-    mcpInstallMessage.value = e?.message || String(e);
-    mcpInstallError.value = true;
-  } finally {
-    mcpInstalling.value = false;
-    // 3秒后清除消息
-    window.setTimeout(() => {
-      mcpInstallMessage.value = "";
-      mcpInstallError.value = false;
-    }, 3000);
-  }
-}
-
 // ---------- WebDAV Sync ----------
 const webdavEndpoint = ref(localStorage.getItem("dbx-webdav-endpoint") || "");
 const webdavUsername = ref(localStorage.getItem("dbx-webdav-username") || "");
@@ -2094,8 +2025,6 @@ watch(
       resetSettingsSearchState();
       void focusSettingsSearchInput();
       snippetSyncSettingsLoading.value = true;
-      mcpPolicyLoading.value = true;
-      mcpPolicyLoadError.value = "";
       aiConfigListMode.value = "list";
       aiEditConfigId.value = null;
       activeSettingsTab.value = props.initialTab || "appearance";
@@ -2103,24 +2032,6 @@ watch(
       oldPassword.value = "";
       newPassword.value = "";
       confirmNewPassword.value = "";
-      try {
-        await settingsStore.initMcpGlobalPolicy(true);
-        if (!settingsStore.mcpGlobalPolicy.configured && localStorage.getItem(MCP_READONLY_STORAGE_KEY) === "true") {
-          await settingsStore.updateMcpGlobalPolicy({ readOnly: true });
-        }
-        if (settingsStore.mcpGlobalPolicy.configured) localStorage.removeItem(MCP_READONLY_STORAGE_KEY);
-        localStorage.removeItem(MCP_SCOPE_CONNECTION_STORAGE_KEY);
-      } catch (e: any) {
-        mcpPolicyLoadError.value = e?.message || String(e);
-        toast(
-          t("settings.mcpPolicyLoadFailed", {
-            error: mcpPolicyLoadError.value,
-          }),
-          5000,
-        );
-      } finally {
-        mcpPolicyLoading.value = false;
-      }
       await settingsStore.initAiConfigs();
       await settingsStore.initDesktopSettings();
       editShowTrayIcon.value = settingsStore.desktopSettings.show_tray_icon;
@@ -2143,8 +2054,6 @@ watch(
       await refreshSnippetTokenStatus();
       await refreshSnippetSyncSettings();
       syncAiEditState();
-      if (!isWeb && activeSettingsTab.value === "mcp") void refreshMcpStatus();
-      if (!isWeb && activeSettingsTab.value === "ai" && aiIsCliProvider.value) void ensureCliMcpStatus();
       if (activeSettingsTab.value === "about") void refreshAppSupportInfo();
       await scrollToInitialSettingsSection();
     } else {
@@ -2203,8 +2112,6 @@ watch(snippetProvider, (provider) => {
 
 watch(activeSettingsTab, async (tab) => {
   void resetSettingsContentScroll();
-  if (tab === "mcp" && !mcpStatus.value && !mcpStatusLoading.value) void refreshMcpStatus();
-  if (tab === "ai" && aiIsCliProvider.value) void ensureCliMcpStatus();
   if (tab === "ai") {
     void loadMaxAgentTurnsSetting();
     void loadMaxRetriesSetting();
@@ -2585,9 +2492,6 @@ const aiEditCliEnvRows = computed(() => {
   if (aiIsPiAgentCli.value) return aiEditPiAgentCliEnvRows.value;
   return aiEditCodexCliEnvRows.value;
 });
-watch(aiIsCliProvider, (isCliProvider) => {
-  if (isCliProvider) void ensureCliMcpStatus();
-});
 const aiRequiresApiKey = computed(() => AI_PROVIDER_PRESETS[aiEditProvider.value].requiresApiKey);
 const aiUsesConfigurableAnthropicAuth = computed(() => aiEditProvider.value === "claude" || aiEditProvider.value === "anthropic-compatible" || (aiEditProvider.value === "custom" && aiAnthropicMessagesMode.value));
 const aiUsesCompatibleAnthropicApi = computed(() => aiEditProvider.value === "anthropic-compatible" || (aiEditProvider.value === "custom" && aiAnthropicMessagesMode.value));
@@ -2618,16 +2522,6 @@ const aiEndpointHint = computed(() => {
 });
 const aiSupportsApiStyle = computed(() => !aiIsCliProvider.value && (aiEditProvider.value === "openai" || aiEditProvider.value === "openai-compatible" || aiEditProvider.value === "custom"));
 const aiSupportsAnthropicApiStyle = computed(() => aiEditProvider.value === "custom");
-const aiCliMcpNeedsInstall = computed(() => aiIsCliProvider.value && (!mcpStatus.value || !mcpStatus.value.installed));
-const aiCliMcpCanInstall = computed(() => {
-  const status = mcpStatus.value;
-  return !mcpInstalling.value && !!status?.npm_available && (!status.installed || status.update_available);
-});
-const aiCliMcpActionLabel = computed(() => {
-  if (!mcpStatus.value?.installed) return t("settings.mcpInstallButton");
-  if (mcpStatus.value.update_available) return t("settings.mcpUpdateButton");
-  return t("settings.mcpUpToDate");
-});
 const aiCliEnvError = computed(() => cliEnvValidationError());
 const aiCliPathError = computed(() => {
   const path = aiEditCliPath.value.trim();
@@ -2728,7 +2622,6 @@ function aiSelectProvider(provider: AiProvider) {
   aiEditApiStyle.value = preset.apiStyle;
   aiEditEnableThinking.value = true;
   aiEditReasoningLevel.value = "default";
-  if (CLI_AI_PROVIDERS.has(provider)) void ensureCliMcpStatus();
 }
 
 function aiSelectApiStyle(style: AiApiStyle) {
@@ -2893,11 +2786,6 @@ async function copyAiTestError() {
   window.setTimeout(() => {
     aiTestErrorCopied.value = false;
   }, 1500);
-}
-
-async function ensureCliMcpStatus() {
-  if (isWeb || activeSettingsTab.value !== "ai" || !aiIsCliProvider.value || mcpStatus.value || mcpStatusLoading.value) return;
-  await refreshMcpStatus();
 }
 
 // ---------- CodeMirror preview ----------
@@ -5565,44 +5453,6 @@ onUnmounted(() => {
                       </SelectItem>
                     </SelectContent>
                   </Select>
-                </div>
-
-                <!-- CLI MCP Status -->
-                <div v-if="aiIsCliProvider && !isWeb" class="rounded-md border px-3 py-2.5 text-xs" :class="aiCliMcpNeedsInstall ? 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300' : 'border-green-500/30 bg-green-500/10 text-green-700 dark:text-green-300'">
-                  <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                    <div class="min-w-0 space-y-1">
-                      <div class="flex min-w-0 items-center gap-2 font-medium">
-                        <Loader2 v-if="mcpStatusLoading" class="h-3.5 w-3.5 shrink-0 animate-spin" />
-                        <AlertTriangle v-else-if="aiCliMcpNeedsInstall || mcpStatus?.error || mcpStatusError" class="h-3.5 w-3.5 shrink-0" />
-                        <CheckCircle2 v-else class="h-3.5 w-3.5 shrink-0" />
-                        <span>{{ t("ai.cliMcpRequiredTitle") }}</span>
-                        <Badge variant="outline" class="h-5 shrink-0 rounded-md border-current/30 px-1.5 text-[11px] font-normal">
-                          {{ mcpStatusLabel }}
-                        </Badge>
-                      </div>
-                      <p class="leading-relaxed">
-                        {{
-                          t("ai.cliMcpRequiredDescription", {
-                            provider: aiCliProviderLabel,
-                          })
-                        }}
-                      </p>
-                      <p v-if="mcpStatus?.error || mcpStatusError" class="select-text leading-relaxed">
-                        {{ mcpStatusError || mcpStatus?.error }}
-                      </p>
-                    </div>
-                    <div class="flex shrink-0 items-center gap-2">
-                      <Button type="button" size="sm" variant="outline" class="h-7 bg-background/80 px-2 text-xs" :disabled="mcpStatusLoading" @click="refreshMcpStatus">
-                        <Loader2 v-if="mcpStatusLoading" class="mr-1 h-3 w-3 animate-spin" />
-                        <RefreshCw v-else class="mr-1 h-3 w-3" />
-                        {{ t("settings.mcpRefresh") }}
-                      </Button>
-                      <Button v-if="aiCliMcpNeedsInstall || mcpStatus?.update_available" type="button" size="sm" class="h-7 px-2 text-xs" :disabled="!aiCliMcpCanInstall" @click="installMcp">
-                        <Loader2 v-if="mcpInstalling" class="mr-1 h-3 w-3 animate-spin" />
-                        {{ mcpInstalling ? t("settings.mcpInstalling") : aiCliMcpActionLabel }}
-                      </Button>
-                    </div>
-                  </div>
                 </div>
 
                 <!-- Authentication -->

@@ -31,7 +31,6 @@ const emit = defineEmits<{
   "show-history": [];
   "import-config": [];
   "open-github": [];
-  "open-mcp-guide": [];
 }>();
 
 const { t } = useI18n();

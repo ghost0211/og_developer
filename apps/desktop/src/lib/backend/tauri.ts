@@ -191,13 +191,6 @@ export interface DesktopSettings {
   sidebar_table_page_size?: number | null;
 }
 
-export interface McpGlobalPolicy {
-  readOnly: boolean;
-  allowDangerousSql: boolean;
-  allowedConnectionIds: string[] | null;
-  configured: boolean;
-}
-
 export interface SavedSqlSyncEntry {
   folderName?: string;
   fileName: string;
@@ -547,14 +540,6 @@ export async function loadDesktopSettings(): Promise<DesktopSettings> {
 
 export async function saveDesktopSettings(settings: DesktopSettings): Promise<void> {
   return invoke("save_desktop_settings", { settings });
-}
-
-export async function loadMcpGlobalPolicy(): Promise<McpGlobalPolicy> {
-  return invoke("load_mcp_global_policy");
-}
-
-export async function saveMcpGlobalPolicy(policy: Omit<McpGlobalPolicy, "configured">): Promise<void> {
-  return invoke("save_mcp_global_policy", { policy });
 }
 
 export async function loadMaxAgentTurns(): Promise<number> {
@@ -2011,31 +1996,6 @@ export type UpdateDownloadSource = "official" | "cnb";
 export interface UpdateDownloadProgress {
   downloaded: number;
   total: number | null;
-}
-
-export interface McpServerStatus {
-  installed: boolean;
-  npm_available: boolean;
-  node_path: string | null;
-  node_version: string | null;
-  current_version: string | null;
-  latest_version: string | null;
-  update_available: boolean;
-  bin_path: string | null;
-  native_bin_path: string | null;
-  script_path: string | null;
-  data_dir: string | null;
-  install_command: string;
-  update_command: string;
-  error: string | null;
-}
-
-export async function checkMcpServerStatus(): Promise<McpServerStatus> {
-  return invoke("check_mcp_server_status");
-}
-
-export async function installMcpServer(): Promise<string> {
-  return invoke("install_mcp_server");
 }
 
 export async function checkForUpdates(locale?: string, source?: UpdateDownloadSource): Promise<UpdateInfo> {

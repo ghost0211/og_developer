@@ -62,7 +62,6 @@ import type {
   UpgradeAllAgentDriversResult,
   AgentUpdateBlocker,
   DesktopSettings,
-  McpGlobalPolicy,
   SavedSqlSyncRequest,
   DriverInstallProgress,
   JavaRuntimeConfig,
@@ -1484,19 +1483,6 @@ export async function loadDesktopSettings(): Promise<DesktopSettings> {
 
 export async function saveDesktopSettings(settings: DesktopSettings): Promise<void> {
   safeLocalStorageSet(DESKTOP_SETTINGS_STORAGE_KEY, JSON.stringify({ ...DEFAULT_DESKTOP_SETTINGS, ...settings }));
-}
-
-export async function loadMcpGlobalPolicy(): Promise<McpGlobalPolicy> {
-  return get("/api/app-settings/mcp-policy");
-}
-
-export async function saveMcpGlobalPolicy(policy: Omit<McpGlobalPolicy, "configured">): Promise<void> {
-  const res = await fetch(apiUrl("/api/app-settings/mcp-policy"), {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(policy),
-  });
-  if (!res.ok) throw await backendResponseError(res);
 }
 
 export async function loadMaxAgentTurns(): Promise<number> {
@@ -3295,29 +3281,6 @@ export async function checkForUpdates(locale?: string, source?: UpdateDownloadSo
 export async function fetchChangelog(lang?: string): Promise<import("@/lib/app/changelog").ChangelogData> {
   const query = lang ? `?lang=${encodeURIComponent(lang)}` : "";
   return get(`/api/changelog${query}`);
-}
-
-export async function checkMcpServerStatus(): Promise<import("@/lib/backend/tauri").McpServerStatus> {
-  return {
-    installed: false,
-    npm_available: false,
-    node_path: null,
-    node_version: null,
-    current_version: null,
-    latest_version: null,
-    update_available: false,
-    bin_path: null,
-    native_bin_path: null,
-    script_path: null,
-    data_dir: null,
-    install_command: "npm install -g @dbx-app/mcp-server@latest --registry=https://registry.npmjs.org",
-    update_command: "npm install -g @dbx-app/mcp-server@latest --registry=https://registry.npmjs.org",
-    error: "MCP Server status is only available in the desktop app.",
-  };
-}
-
-export async function installMcpServer(): Promise<string> {
-  throw new Error("MCP Server installation is only available in the desktop app.");
 }
 
 export async function getSystemProxyUrl(): Promise<string | null> {

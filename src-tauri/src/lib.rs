@@ -1428,7 +1428,7 @@ pub fn run() {
             open_connection_deep_links(app.handle(), startup_links);
 
             let app_handle = app.handle().clone();
-            commands::mcp_bridge::start(app_handle, state, data_dir);
+            let _ = &app_handle;
             eprintln!("[STARTUP] setup complete in {:?} (total {:?})", setup_start.elapsed(), startup_begin.elapsed());
             append_startup_probe(format!(
                 "setup tasks complete in {:?} total {:?}",
@@ -1519,8 +1519,6 @@ pub fn run() {
             commands::app_settings::get_driver_store_path,
             commands::app_settings::load_pinned_tree_node_ids,
             commands::app_settings::save_pinned_tree_node_ids,
-            commands::app_settings::load_mcp_global_policy,
-            commands::app_settings::save_mcp_global_policy,
             commands::app_settings::load_editor_settings,
             commands::app_settings::save_editor_settings,
             commands::app_settings::load_open_tabs_state,
@@ -2026,8 +2024,6 @@ pub fn run() {
             commands::history::load_history_connection_options,
             commands::history::clear_history,
             commands::history::delete_history_entry,
-            commands::mcp::check_mcp_server_status,
-            commands::mcp::install_mcp_server,
             commands::update::check_for_updates,
             commands::update::fetch_changelog,
             commands::update::get_system_proxy_url,

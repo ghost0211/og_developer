@@ -51,20 +51,6 @@ pub async fn save_pinned_tree_node_ids(
     Ok(Json(()))
 }
 
-pub async fn load_mcp_global_policy(
-    State(state): State<Arc<WebState>>,
-) -> Result<Json<McpGlobalPolicyState>, AppError> {
-    state.app.storage.load_mcp_global_policy().await.map(Json).map_err(AppError::from)
-}
-
-pub async fn save_mcp_global_policy(
-    State(state): State<Arc<WebState>>,
-    Json(policy): Json<McpGlobalPolicy>,
-) -> Result<Json<()>, AppError> {
-    state.app.storage.save_mcp_global_policy(&policy).await.map_err(AppError::from)?;
-    Ok(Json(()))
-}
-
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SaveMaxAgentTurnsRequest {

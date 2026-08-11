@@ -114,9 +114,6 @@ pub async fn mongo_find_documents(
     execution_id: Option<String>,
     mcp_request: Option<bool>,
 ) -> Result<MongoDocumentResult, String> {
-    if mcp_request == Some(true) {
-        crate::commands::mcp_bridge::ensure_mcp_read_allowed_by_id(state.inner(), &connection_id, &database).await?;
-    }
     crate::commands::document_cmd::document_find_documents(
         state,
         connection_id,
@@ -147,9 +144,6 @@ pub async fn mongo_find_one(
     mcp_request: Option<bool>,
 ) -> Result<MongoDocumentResult, String> {
     let app = state.inner().clone();
-    if mcp_request == Some(true) {
-        crate::commands::mcp_bridge::ensure_mcp_read_allowed_by_id(&app, &connection_id, &database).await?;
-    }
     run_cancellable(
         &app,
         execution_id,
@@ -178,9 +172,6 @@ pub async fn mongo_count_documents(
     mcp_request: Option<bool>,
 ) -> Result<u64, String> {
     let app = state.inner().clone();
-    if mcp_request == Some(true) {
-        crate::commands::mcp_bridge::ensure_mcp_read_allowed_by_id(&app, &connection_id, &database).await?;
-    }
     crate::commands::document_cmd::run_cancellable(
         &app,
         execution_id,
@@ -205,9 +196,6 @@ pub async fn mongo_server_version(
     mcp_request: Option<bool>,
 ) -> Result<String, String> {
     let app = state.inner().clone();
-    if mcp_request == Some(true) {
-        crate::commands::mcp_bridge::ensure_mcp_read_allowed_by_id(&app, &connection_id, &database).await?;
-    }
     run_cancellable(&app, execution_id, dbx_core::mongo_ops::mongo_server_version_core(&app, &connection_id, &database))
         .await
 }
@@ -223,9 +211,6 @@ pub async fn mongo_collection_stats(
     mcp_request: Option<bool>,
 ) -> Result<dbx_core::db::mongo_driver::MongoCollectionStatsResult, String> {
     let app = state.inner().clone();
-    if mcp_request == Some(true) {
-        crate::commands::mcp_bridge::ensure_mcp_read_allowed_by_id(&app, &connection_id, &database).await?;
-    }
     run_cancellable(
         &app,
         execution_id,
@@ -247,15 +232,6 @@ pub async fn mongo_aggregate_documents(
     mcp_request: Option<bool>,
 ) -> Result<MongoDocumentResult, String> {
     let app = state.inner().clone();
-    if mcp_request == Some(true) {
-        crate::commands::mcp_bridge::ensure_mcp_mongo_aggregate_allowed_by_id(
-            &app,
-            &connection_id,
-            &database,
-            &pipeline_json,
-        )
-        .await?;
-    }
     run_cancellable(
         &app,
         execution_id,
@@ -284,9 +260,6 @@ pub async fn mongo_distinct(
     mcp_request: Option<bool>,
 ) -> Result<MongoDocumentResult, String> {
     let app = state.inner().clone();
-    if mcp_request == Some(true) {
-        crate::commands::mcp_bridge::ensure_mcp_read_allowed_by_id(&app, &connection_id, &database).await?;
-    }
     run_cancellable(
         &app,
         execution_id,
@@ -312,15 +285,6 @@ pub async fn mongo_create_index(
     options_json: Option<String>,
     mcp_request: Option<bool>,
 ) -> Result<serde_json::Value, String> {
-    if mcp_request == Some(true) {
-        crate::commands::mcp_bridge::ensure_mcp_dangerous_write_allowed_by_id(
-            state.inner(),
-            &connection_id,
-            &database,
-            "Create index",
-        )
-        .await?;
-    }
     ensure_connection_writable(&state, &connection_id, "Create index").await?;
     let name = dbx_core::mongo_ops::mongo_create_index_core(
         &state,
@@ -344,15 +308,6 @@ pub async fn mongo_drop_indexes(
     single: bool,
     mcp_request: Option<bool>,
 ) -> Result<dbx_core::db::mongo_driver::MongoDropIndexesResult, String> {
-    if mcp_request == Some(true) {
-        crate::commands::mcp_bridge::ensure_mcp_dangerous_write_allowed_by_id(
-            state.inner(),
-            &connection_id,
-            &database,
-            "Drop indexes",
-        )
-        .await?;
-    }
     ensure_connection_writable(&state, &connection_id, "Drop indexes").await?;
     dbx_core::mongo_ops::mongo_drop_indexes_core(
         &state,
@@ -394,10 +349,6 @@ pub async fn mongo_insert_documents(
     docs_json: String,
     mcp_request: Option<bool>,
 ) -> Result<u64, String> {
-    if mcp_request == Some(true) {
-        crate::commands::mcp_bridge::ensure_mcp_write_allowed_by_id(state.inner(), &connection_id, &database, "Insert")
-            .await?;
-    }
     ensure_connection_writable(&state, &connection_id, "Insert").await?;
     dbx_core::mongo_ops::mongo_insert_documents_core(&state, &connection_id, &database, &collection, &docs_json).await
 }
@@ -436,16 +387,6 @@ pub async fn mongo_update_documents(
     options_json: Option<String>,
     mcp_request: Option<bool>,
 ) -> Result<u64, String> {
-    if mcp_request == Some(true) {
-        crate::commands::mcp_bridge::ensure_mcp_mongo_filtered_write_allowed_by_id(
-            state.inner(),
-            &connection_id,
-            &database,
-            "Update",
-            &filter_json,
-        )
-        .await?;
-    }
     ensure_connection_writable(&state, &connection_id, "Update").await?;
     dbx_core::mongo_ops::mongo_update_documents_core(
         &state,
@@ -491,16 +432,6 @@ pub async fn mongo_delete_documents(
     many: bool,
     mcp_request: Option<bool>,
 ) -> Result<u64, String> {
-    if mcp_request == Some(true) {
-        crate::commands::mcp_bridge::ensure_mcp_mongo_filtered_write_allowed_by_id(
-            state.inner(),
-            &connection_id,
-            &database,
-            "Delete",
-            &filter_json,
-        )
-        .await?;
-    }
     ensure_connection_writable(&state, &connection_id, "Delete").await?;
     dbx_core::mongo_ops::mongo_delete_documents_core(&state, &connection_id, &database, &collection, &filter_json, many)
         .await
@@ -517,16 +448,6 @@ pub async fn mongo_find_one_and_update(
     options_json: Option<String>,
     mcp_request: Option<bool>,
 ) -> Result<MongoDocumentResult, String> {
-    if mcp_request == Some(true) {
-        crate::commands::mcp_bridge::ensure_mcp_mongo_filtered_write_allowed_by_id(
-            state.inner(),
-            &connection_id,
-            &database,
-            "Update",
-            &filter_json,
-        )
-        .await?;
-    }
     ensure_connection_writable(&state, &connection_id, "Update").await?;
     dbx_core::mongo_ops::mongo_find_one_and_update_core(
         &state,
@@ -551,16 +472,6 @@ pub async fn mongo_find_one_and_replace(
     options_json: Option<String>,
     mcp_request: Option<bool>,
 ) -> Result<MongoDocumentResult, String> {
-    if mcp_request == Some(true) {
-        crate::commands::mcp_bridge::ensure_mcp_mongo_filtered_write_allowed_by_id(
-            state.inner(),
-            &connection_id,
-            &database,
-            "Update",
-            &filter_json,
-        )
-        .await?;
-    }
     ensure_connection_writable(&state, &connection_id, "Update").await?;
     dbx_core::mongo_ops::mongo_find_one_and_replace_core(
         &state,
@@ -584,16 +495,6 @@ pub async fn mongo_find_one_and_delete(
     options_json: Option<String>,
     mcp_request: Option<bool>,
 ) -> Result<MongoDocumentResult, String> {
-    if mcp_request == Some(true) {
-        crate::commands::mcp_bridge::ensure_mcp_mongo_filtered_write_allowed_by_id(
-            state.inner(),
-            &connection_id,
-            &database,
-            "Delete",
-            &filter_json,
-        )
-        .await?;
-    }
     ensure_connection_writable(&state, &connection_id, "Delete").await?;
     dbx_core::mongo_ops::mongo_find_one_and_delete_core(
         &state,
