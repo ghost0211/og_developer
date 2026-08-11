@@ -77,55 +77,6 @@ describe("MCP policy settings state", () => {
     expect(isMcpPolicyMutationBlocked({ loading: false, saving: false, loadError: "unavailable" })).toBe(true);
     expect(isMcpPolicyMutationBlocked({ loading: false, saving: false, loadError: "" })).toBe(false);
   });
-
-  it("guards the mutation entry point and wires the shared disabled state to policy controls", () => {
-    expect(settingsDialogSource).toContain("if (mcpPolicyControlsDisabled.value) return;");
-    expect(settingsDialogSource).toContain(':disabled="mcpPolicyControlsDisabled"');
-    expect(settingsDialogSource).toContain('@update:allowed-connection-ids="onMcpAllowedConnectionIdsChange"');
-
-    const loadingStart = settingsDialogSource.indexOf("mcpPolicyLoading.value = true;");
-    const policyLoad = settingsDialogSource.indexOf("await settingsStore.initMcpGlobalPolicy(true);");
-    const loadingEnd = settingsDialogSource.indexOf("mcpPolicyLoading.value = false;", policyLoad);
-    expect(loadingStart).toBeGreaterThan(-1);
-    expect(loadingStart).toBeLessThan(policyLoad);
-    expect(loadingEnd).toBeGreaterThan(policyLoad);
-  });
-
-  it("keeps translated mode descriptions in one responsive layout track", () => {
-    const descriptionStart = settingsDialogSource.indexOf("data-mcp-execution-mode-description");
-    const descriptionEnd = settingsDialogSource.indexOf("settings.mcpCapabilityTitle", descriptionStart);
-    const descriptionSource = settingsDialogSource.slice(descriptionStart, descriptionEnd);
-
-    expect(descriptionStart).toBeGreaterThan(-1);
-    expect(descriptionEnd).toBeGreaterThan(descriptionStart);
-    expect(descriptionSource).toContain('class="grid text-xs"');
-    expect(descriptionSource.match(/col-start-1 row-start-1/g)).toHaveLength(3);
-    expect(descriptionSource.match(/\? 'visible' : 'invisible'/g)).toHaveLength(3);
-  });
-
-  it("keeps execution mode cards accessible as a keyboard radio group", () => {
-    expect(settingsDialogSource).toContain('role="radiogroup" aria-labelledby="mcp-execution-mode-label"');
-    expect(settingsDialogSource.match(/role="radio"/g)).toHaveLength(3);
-    expect(settingsDialogSource).toContain(":aria-checked=\"mcpExecutionMode === 'safe_write'\"");
-    expect(settingsDialogSource).toContain("onMcpExecutionModeKeydown($event, 'safe_write')");
-  });
-
-  it("keeps MCP client config tabs on a single scrollable row", () => {
-    const tabsStart = settingsDialogSource.indexOf('<Tabs v-model="mcpConfigTab"');
-    const tabsEnd = settingsDialogSource.indexOf("</TabsList>", tabsStart);
-    const tabsSource = settingsDialogSource.slice(tabsStart, tabsEnd);
-
-    expect(tabsStart).toBeGreaterThan(-1);
-    expect(tabsEnd).toBeGreaterThan(tabsStart);
-    expect(tabsSource).toContain("overflow-x-auto");
-    expect(tabsSource).toContain("min-w-0");
-    expect(tabsSource).toContain("max-w-full");
-    expect(tabsSource).toContain("overscroll-x-contain");
-    expect(tabsSource).not.toContain("flex-wrap");
-    expect(tabsSource).not.toContain("grid-cols-");
-    expect(tabsSource.match(/flex-none shrink-0/g)).toHaveLength(8);
-    expect(tabsSource).not.toContain("min-w-0 px-");
-  });
 });
 
 describe("MCP connection search", () => {
