@@ -147,6 +147,59 @@ function returnsRoutineOutput(parameter: Pick<RoutineParameterValue, "mode">): b
   return parameter.mode === "OUT" || parameter.mode === "INOUT";
 }
 
+// ---------------------------------------------------------------------------
+// ogdeveloper: openGauss graphical routine invocation (PL/SQL Developer style)
+// ---------------------------------------------------------------------------
+
+/** Quotes each dotted segment so package members (pkg.proc) qualify correctly. */
+function qualifiedOpenGaussRoutineName(options: BuildRoutineExecutionSqlOptions): string {
+  const parts = options.routineName.split(".").filter(Boolean);
+  const qualified = options.schema ? [options.schema, ...parts] : parts;
+  return qualified.map((part) => quoteTableIdentifier("opengauss", part)).join(".");
+}
+
+/**
+ * Builds the execution script shown in the graphical call dialog:
+ * - function → SELECT * FROM schema.func(...) (grid shows the return value)
+ * - procedure → CALL schema.proc(...) with NULL placeholders for OUT/INOUT
+ *   outputs; openGauss returns the OUT/INOUT values as a result row.
+ *
+ * Note: we deliberately avoid gms_output.put_line capture on this path —
+ * gms_output.enable() followed by any put_line statement closes the native
+ * session on openGauss 7.0-lite through tokio-postgres (reproduced live).
+ * The JDBC plugin still captures DBMS_OUTPUT internally where it works.
+ */
+export function buildOpenGaussRoutineExecutionSql(options: BuildRoutineExecutionSqlOptions & { parameters: RoutineParameterValue[]; isFunction?: boolean }): string {
+  const routine = qualifiedOpenGaussRoutineName(options);
+  const sorted = [...options.parameters].sort((a, b) => a.ordinal - b.ordinal);
+
+  if (options.isFunction) {
+    const args = sorted.filter(shouldIncludeParameter).map((parameter) => routineParameterSqlValue("opengauss", parameter));
+    return `SELECT * FROM ${routine}(${args.join(", ")});`;
+  }
+
+  const args = sorted.map((parameter) => {
+    if (parameter.mode === "OUT") return "NULL";
+    return shouldIncludeParameter(parameter) ? routineParameterSqlValue("opengauss", parameter) : "NULL";
+  });
+  return `CALL ${routine}(${args.join(", ")});`;
+}
+
+/**
+ * Builds the direct CALL used for debugging (the debuggee parks on routine
+ * entry; openGauss returns OUT/INOUT values as a result row when NULL
+ * placeholders are passed).
+ */
+export function buildOpenGaussRoutineDebugCallSql(options: BuildRoutineExecutionSqlOptions & { parameters: RoutineParameterValue[] }): string {
+  const routine = qualifiedOpenGaussRoutineName(options);
+  const sorted = [...options.parameters].sort((a, b) => a.ordinal - b.ordinal);
+  const args = sorted.map((parameter) => {
+    if (parameter.mode === "OUT") return "NULL";
+    return shouldIncludeParameter(parameter) ? routineParameterSqlValue("opengauss", parameter) : "NULL";
+  });
+  return `CALL ${routine}(${args.join(", ")});`;
+}
+
 function routineArgumentSql(databaseType: DatabaseType | undefined, parameter: RoutineParameterValue, useNamedArguments: boolean): string {
   const value = routineParameterSqlValue(databaseType, parameter);
   if (!useNamedArguments) return value;

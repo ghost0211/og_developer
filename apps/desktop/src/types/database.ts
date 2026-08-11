@@ -870,6 +870,8 @@ export interface TreeNode {
   schema?: string;
   tableName?: string;
   objectName?: string;
+  /** Parent object name for hierarchical members (e.g. the package of a subprogram). */
+  parentName?: string;
   signature?: string;
   tableType?: string;
   comment?: string | null;

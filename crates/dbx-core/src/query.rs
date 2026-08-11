@@ -1365,9 +1365,6 @@ async fn do_execute_typed(
             let schema = schema.map(|s| s.to_string());
             let max_rows = options.max_rows;
             let prefer_text_protocol = postgres_prefers_text_protocol(pool_db_type);
-            // og developer: drain gms_output/dbms_output lines after executions
-            // on openGauss-family servers (same session, see postgres.rs).
-            let drain_opengauss_output = matches!(pool_db_type, Some(DatabaseType::OpenGauss | DatabaseType::Gaussdb));
             let execution_mode = options.execution_mode;
             let cancel_context = state.get_postgres_cancel_context(pool_key).await;
             drop(connections);
@@ -1392,7 +1389,6 @@ async fn do_execute_typed(
                     operation_budget.clone(),
                     cancel_context,
                     prefer_text_protocol,
-                    drain_opengauss_output,
                 )
                 .await
             } else {
@@ -1404,7 +1400,6 @@ async fn do_execute_typed(
                     operation_budget.clone(),
                     cancel_context,
                     prefer_text_protocol,
-                    drain_opengauss_output,
                 )
                 .await
             }

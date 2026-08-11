@@ -27,6 +27,7 @@ import {
   type SqlFormatterSettings,
   type SqlFormatterTabWidth,
 } from "@/lib/sql/sqlFormatterConfig";
+import { formatSqlText } from "@/lib/sql/sqlFormatter";
 
 type EditorViewInstance = import("@codemirror/view").EditorView;
 type CodeMirrorModules = {
@@ -67,6 +68,38 @@ let cmModules: CodeMirrorModules | null = null;
 let lastValidity: boolean | null = null;
 
 const settings = computed(() => normalizeSqlFormatterSettings(props.modelValue));
+
+// ogdeveloper: live sample preview — tweak options and watch a real openGauss
+// snippet reformat, instead of imagining what a dropdown value means.
+const DEFAULT_FORMATTER_SAMPLE = `create or replace procedure emp_pkg.raise_salary(emp_id in integer, amount in numeric) as
+begin
+update ogdev_emp set salary=salary+amount where id=emp_id and active=true;
+if amount>1000 then
+call gms_output.put_line('raise over 1000 for emp '||emp_id);
+end if;
+end;`;
+const formatterSample = ref(DEFAULT_FORMATTER_SAMPLE);
+const formattedSample = ref("");
+let formatterSampleTimer: ReturnType<typeof setTimeout> | undefined;
+let formatterSampleSeq = 0;
+
+watch(
+  [settings, formatterSample],
+  () => {
+    window.clearTimeout(formatterSampleTimer);
+    const seq = ++formatterSampleSeq;
+    formatterSampleTimer = setTimeout(() => {
+      formatSqlText(formatterSample.value, "postgres", settings.value)
+        .then((formatted) => {
+          if (seq === formatterSampleSeq) formattedSample.value = formatted;
+        })
+        .catch((error) => {
+          if (seq === formatterSampleSeq) formattedSample.value = `⚠ ${error?.message || error}`;
+        });
+    }, 150);
+  },
+  { immediate: true },
+);
 
 const caseOptions: { value: SqlFormatterCase; labelKey: string }[] = [
   { value: "upper", labelKey: "settings.sqlFormatterCaseUpper" },
@@ -502,6 +535,16 @@ onBeforeUnmount(() => {
       </TabsList>
 
       <TabsContent value="form" class="m-0 flex flex-col gap-4 pt-2">
+        <div class="grid gap-3 rounded-md border border-border/70 bg-muted/10 p-3 lg:grid-cols-2">
+          <div class="space-y-2">
+            <Label>{{ t("settings.sqlFormatterSample") }}</Label>
+            <textarea v-model="formatterSample" rows="8" spellcheck="false" class="min-h-32 w-full resize-y rounded-md border border-input bg-background px-3 py-2 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring" />
+          </div>
+          <div class="space-y-2">
+            <Label>{{ t("settings.sqlFormatterSamplePreview") }}</Label>
+            <pre class="max-h-64 min-h-32 overflow-auto whitespace-pre-wrap rounded-md border border-border/70 bg-background px-3 py-2 font-mono text-xs leading-5">{{ formattedSample }}</pre>
+          </div>
+        </div>
         <div class="grid gap-4 md:grid-cols-4">
           <div class="space-y-2">
             <Label>{{ t("settings.sqlFormatterKeywordCase") }}</Label>

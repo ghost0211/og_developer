@@ -4862,6 +4862,8 @@ export default withEnglishFallback({
     sqlFormatterAdvancedOptions: "高级选项",
     sqlFormatterParams: "参数替换",
     sqlFormatterParamTypes: "参数类型",
+    sqlFormatterSample: "样例 SQL（可直接编辑）",
+    sqlFormatterSamplePreview: "格式化预览",
     sqlFormatterEditorShortcuts: "快捷键",
     sqlFormatterShortcutAction: "功能",
     sqlFormatterShortcutEnabled: "启用",

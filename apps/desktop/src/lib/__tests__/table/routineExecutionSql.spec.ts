@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildProcedureExecutionSqlFromValues } from "@/lib/table/routineExecutionSql";
+import { buildOpenGaussRoutineDebugCallSql, buildOpenGaussRoutineExecutionSql, buildProcedureExecutionSqlFromValues } from "@/lib/table/routineExecutionSql";
 import { routineParametersFromResult, routineParametersQuery } from "@/lib/table/routineParameters";
 import type { QueryResult } from "@/types/database";
 
@@ -151,5 +151,50 @@ describe("SQL Server routine execution SQL", () => {
     expect(metadataSql).toContain("p.max_length AS max_length");
     expect(metadataSql).toContain("p.precision AS precision");
     expect(metadataSql).toContain("p.scale AS scale");
+  });
+});
+
+describe("openGauss graphical routine invocation", () => {
+  const param = (name: string, dataType: string, mode: "IN" | "OUT" | "INOUT", ordinal: number, value = "") => ({ name, dataType, mode, ordinal, value });
+
+  it("procedures with only IN inputs use CALL", () => {
+    const sql = buildOpenGaussRoutineExecutionSql({
+      databaseType: "opengauss",
+      schema: "public",
+      routineName: "dbg_demo",
+      parameters: [param("x", "integer", "IN", 1, "1")],
+    });
+    expect(sql).toBe('CALL "public"."dbg_demo"(1);');
+  });
+
+  it("procedures with OUT/INOUT params use CALL with NULL placeholders (values return as a row)", () => {
+    const sql = buildOpenGaussRoutineExecutionSql({
+      databaseType: "opengauss",
+      schema: "public",
+      routineName: "ogdev_out_demo",
+      parameters: [param("x", "int", "IN", 1, "4"), param("y", "numeric", "OUT", 2), param("z", "text", "INOUT", 3, "in")],
+    });
+    expect(sql).toBe('CALL "public"."ogdev_out_demo"(4, NULL, \'in\');');
+  });
+
+  it("functions use SELECT * FROM", () => {
+    const sql = buildOpenGaussRoutineExecutionSql({
+      databaseType: "opengauss",
+      schema: "public",
+      routineName: "emp_pkg.get_salary",
+      parameters: [param("emp_id", "integer", "IN", 1, "7")],
+      isFunction: true,
+    });
+    expect(sql).toBe('SELECT * FROM "public"."emp_pkg"."get_salary"(7);');
+  });
+
+  it("debug calls stay direct with NULL placeholders for OUT params", () => {
+    const sql = buildOpenGaussRoutineDebugCallSql({
+      databaseType: "opengauss",
+      schema: "public",
+      routineName: "ogdev_out_demo",
+      parameters: [param("x", "int", "IN", 1, "4"), param("y", "numeric", "OUT", 2), param("z", "text", "INOUT", 3, "in")],
+    });
+    expect(sql).toBe('CALL "public"."ogdev_out_demo"(4, NULL, \'in\');');
   });
 });

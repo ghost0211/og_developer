@@ -1314,7 +1314,7 @@ function openSidebarSettings(initialTab: string) {
 }
 
 function openSidebarProcedure(node: TreeNode) {
-  if (node.type !== "procedure" || !node.connectionId || !node.database) return;
+  if ((node.type !== "procedure" && node.type !== "function") || !node.connectionId || !node.database) return;
   beginSidebarAction();
   sidebarProcedureTarget.value = createSidebarActionTarget(node);
   sidebarProcedureOpen.value = true;
@@ -1430,7 +1430,7 @@ function debugSidebarProcedureSql(sql: string) {
     database: target.database,
     schema: target.schema,
     kind: target.type === "function" ? "function" : "procedure",
-    routineName: target.objectName || target.label,
+    routineName: target.parentName ? `${target.parentName}.${target.objectName || target.label}` : target.objectName || target.label,
     signature: target.signature,
     callSql: sql,
   };
@@ -1960,7 +1960,8 @@ defineExpose({ focusSearch, createNewGroup, collapseAllTreeNodes });
       :database="sidebarProcedureTarget.database"
       :database-type="effectiveDatabaseTypeForConnection(store.getConfig(sidebarProcedureTarget.connectionId))"
       :schema="sidebarProcedureTarget.schema"
-      :routine-name="sidebarProcedureTarget.label"
+      :routine-name="sidebarProcedureTarget.parentName ? `${sidebarProcedureTarget.parentName}.${sidebarProcedureTarget.objectName || sidebarProcedureTarget.label}` : sidebarProcedureTarget.objectName || sidebarProcedureTarget.label"
+      :routine-kind="sidebarProcedureTarget.type === 'function' ? 'function' : 'procedure'"
       @open-sql="openSidebarProcedureSql"
       @execute="executeSidebarProcedureSql"
       @debug="debugSidebarProcedureSql"

@@ -3582,6 +3582,12 @@ pub(crate) fn postgres_statement_returns_rows(sql: &str) -> bool {
     if starts_with_executable_sql_keyword(sql, &["SELECT", "SHOW", "EXPLAIN", "WITH", "TABLE"]) {
         return true;
     }
+    // ogdeveloper: openGauss CALL returns OUT/INOUT values as a result row;
+    // the prepared-query path surfaces them in the result grid, while
+    // client.execute() would silently discard them.
+    if starts_with_executable_sql_keyword(sql, &["CALL"]) {
+        return true;
+    }
 
     let Ok(statements) = Parser::parse_sql(&PostgreSqlDialect {}, sql) else {
         return false;
@@ -3637,38 +3643,6 @@ pub async fn execute_query_with_max_rows(
     }
 }
 
-/// openGauss gms_output/dbms_output buffer drain (og developer). The buffer is
-/// session-scoped, so enable + drain must run on the same client that executed
-/// the user's statement. enable() is idempotent and does not purge buffered
-/// lines (verified on openGauss 7.0), so calling it before every execution is
-/// safe and needs no per-session tracking.
-const OPENGAUSS_OUTPUT_ENABLE_SQLS: [&str; 2] = ["call gms_output.enable(20000)", "call dbms_output.enable(20000)"];
-const OPENGAUSS_OUTPUT_DRAIN_SQLS: [&str; 2] =
-    ["select lines from gms_output.get_lines(null, 1000)", "select lines from dbms_output.get_lines(null, 1000)"];
-
-async fn opengauss_output_enable(client: &deadpool_postgres::Client) -> bool {
-    for sql in OPENGAUSS_OUTPUT_ENABLE_SQLS {
-        if client.execute(sql, &[]).await.is_ok() {
-            return true;
-        }
-    }
-    false
-}
-
-async fn drain_opengauss_output_lines(client: &deadpool_postgres::Client) -> Vec<String> {
-    for sql in OPENGAUSS_OUTPUT_DRAIN_SQLS {
-        match client.query_opt(sql, &[]).await {
-            Ok(Some(row)) => {
-                let lines: Vec<String> = row.try_get(0).unwrap_or_default();
-                return lines;
-            }
-            Ok(None) => return vec![],
-            Err(_) => continue,
-        }
-    }
-    vec![]
-}
-
 pub async fn execute_query_with_max_rows_and_cancel(
     pool: &Pool,
     sql: &str,
@@ -3677,12 +3651,10 @@ pub async fn execute_query_with_max_rows_and_cancel(
     budget: DbOperationBudget,
     cancel_context: Option<PostgresCancelContext>,
     prefer_text_protocol: bool,
-    drain_opengauss_output: bool,
 ) -> Result<QueryResult, String> {
     let client = checkout_postgres_client(pool, cancel_token.as_ref(), budget.checkout_timeout).await?;
-    let output_enabled = drain_opengauss_output && opengauss_output_enable(&client).await;
     let pg_cancel_token = client.cancel_token();
-    let mut result = wait_postgres_query(
+    wait_postgres_query(
         pg_cancel_token,
         cancel_context,
         cancel_token,
@@ -3690,11 +3662,7 @@ pub async fn execute_query_with_max_rows_and_cancel(
         budget.cancel_timeout,
         execute_query_with_max_rows_inner(&client, sql, max_rows, prefer_text_protocol),
     )
-    .await?;
-    if output_enabled {
-        result.messages = drain_opengauss_output_lines(&client).await;
-    }
-    Ok(result)
+    .await
 }
 
 fn postgres_read_only_transaction_setup(schema: Option<&str>) -> Vec<(String, &'static str)> {
@@ -3943,12 +3911,10 @@ pub async fn execute_query_with_schema_and_max_rows_and_cancel(
     budget: DbOperationBudget,
     cancel_context: Option<PostgresCancelContext>,
     prefer_text_protocol: bool,
-    drain_opengauss_output: bool,
 ) -> Result<QueryResult, String> {
     let start = Instant::now();
     let checkout_start = Instant::now();
     let client = checkout_postgres_client(pool, cancel_token.as_ref(), budget.checkout_timeout).await?;
-    let output_enabled = drain_opengauss_output && opengauss_output_enable(&client).await;
     log::info!(
         "[postgres][execute_with_schema:pool:done] elapsed_ms={} total_ms={} schema={}",
         checkout_start.elapsed().as_millis(),
@@ -4002,11 +3968,7 @@ pub async fn execute_query_with_schema_and_max_rows_and_cancel(
     );
 
     let reset_result = reset_postgres_search_path(&client, budget.cleanup_timeout, start).await;
-    let mut result = merge_postgres_query_and_reset_result(result, reset_result)?;
-    if output_enabled {
-        result.messages = drain_opengauss_output_lines(&client).await;
-    }
-    Ok(result)
+    merge_postgres_query_and_reset_result(result, reset_result)
 }
 
 async fn reset_postgres_search_path(
@@ -5337,6 +5299,8 @@ mod tests {
 
     #[test]
     fn postgres_statement_returns_rows_for_returning_dml_only() {
+        assert!(postgres_statement_returns_rows("CALL \"public\".\"pkg\".\"proc\"(1, NULL)"));
+        assert!(postgres_statement_returns_rows("call simple_proc()"));
         for sql in [
             "INSERT INTO users (id) VALUES (1) RETURNING id",
             "UPDATE users SET name = 'Ada' RETURNING id, name",

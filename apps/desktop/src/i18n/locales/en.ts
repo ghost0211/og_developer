@@ -4864,6 +4864,8 @@ export default {
     sqlFormatterAdvancedOptions: "Advanced options",
     sqlFormatterParams: "Params",
     sqlFormatterParamTypes: "Param types",
+    sqlFormatterSample: "Sample SQL (editable)",
+    sqlFormatterSamplePreview: "Formatted preview",
     sqlFormatterEditorShortcuts: "Shortcuts",
     sqlFormatterShortcutAction: "Action",
     sqlFormatterShortcutEnabled: "Enabled",

@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Input } from "@/components/ui/input";
 import LightTooltip from "@/components/ui/LightTooltip.vue";
 import { loadRoutineParameters } from "@/lib/table/routineParameters";
-import { acceptsRoutineInput, buildProcedureExecutionSql, buildProcedureExecutionSqlFromValues, type RoutineParameterValue } from "@/lib/table/routineExecutionSql";
+import { acceptsRoutineInput, buildOpenGaussRoutineDebugCallSql, buildOpenGaussRoutineExecutionSql, buildProcedureExecutionSql, buildProcedureExecutionSqlFromValues, type RoutineParameterValue } from "@/lib/table/routineExecutionSql";
 import type { DatabaseType } from "@/types/database";
 
 const { t } = useI18n();
@@ -21,6 +21,7 @@ const props = defineProps<{
   databaseType?: DatabaseType;
   schema?: string;
   routineName: string;
+  routineKind?: "procedure" | "function";
 }>();
 
 const emit = defineEmits<{
@@ -36,7 +37,32 @@ const sqlDraft = ref("");
 const manualSqlDirty = ref(false);
 let loadToken = 0;
 
+// ogdeveloper: openGauss graphical invocation (PL/SQL Developer style) —
+// functions via SELECT, procedures with OUT/INOUT via an anonymous block with
+// labeled gms_output prints.
+const isOpenGaussRoutine = computed(() => props.databaseType === "opengauss");
+const openGaussExecutionSql = computed(() =>
+  buildOpenGaussRoutineExecutionSql({
+    databaseType: props.databaseType,
+    schema: props.schema,
+    routineName: props.routineName,
+    parameters: parameters.value,
+    isFunction: props.routineKind === "function",
+  }),
+);
+
+// The debuggee must call the routine directly (NULL placeholders for OUT).
+const openGaussDebugCallSql = computed(() =>
+  buildOpenGaussRoutineDebugCallSql({
+    databaseType: props.databaseType,
+    schema: props.schema,
+    routineName: props.routineName,
+    parameters: parameters.value,
+  }),
+);
+
 const generatedSql = computed(() => {
+  if (isOpenGaussRoutine.value) return openGaussExecutionSql.value;
   if (parameters.value.length) {
     return buildProcedureExecutionSqlFromValues({
       databaseType: props.databaseType,
@@ -133,7 +159,7 @@ function execute() {
 }
 
 function debug() {
-  const sql = sqlDraft.value.trim();
+  const sql = (isOpenGaussRoutine.value ? openGaussDebugCallSql.value : sqlDraft.value).trim();
   if (!sql) return;
   close();
   emit("debug", sql);

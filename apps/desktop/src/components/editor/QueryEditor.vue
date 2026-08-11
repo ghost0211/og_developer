@@ -94,6 +94,7 @@ import {
 import type { SqlHighlighter } from "@/lib/sql/sqlHighlighter";
 import { EDITOR_FONT_FAMILY_CSS_VAR, EDITOR_FONT_SIZE_CSS_VAR, loadEditorTheme, editorFontTheme, sqlCompletionTheme, sqlSemanticHighlightTheme } from "@/lib/editor/editorThemes";
 import { createStatementGutterMarkerDom, shouldShowStatementGutter } from "@/lib/editor/codemirrorStatementGutter";
+import { sqlBookmarkExtension } from "@/lib/editor/sqlBookmarks";
 import { createQueryEditorSearchKeymap } from "@/lib/editor/queryEditorSearchKeymap";
 import { appendSqlCompletionSpace } from "@/lib/editor/sqlCompletionInsertion";
 import { completionLabelPresentation } from "@/lib/editor/sqlCompletionPresentation";
@@ -4283,6 +4284,7 @@ onMounted(async () => {
         },
       }),
       runGutterComp.of(runStatementGutterExtension()),
+      sqlBookmarkExtension(),
       lineNumbers({
         domEventHandlers: {
           mousedown: selectSqlLineFromGutter,

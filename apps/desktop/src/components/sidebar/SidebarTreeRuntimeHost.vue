@@ -1679,7 +1679,7 @@ function openObjectSourceDialog(initialEditing: boolean) {
 
 function openProcedureExecution() {
   const node = activeNode.value;
-  if (node.type !== "procedure" || !node.connectionId || !node.database) return;
+  if ((node.type !== "procedure" && node.type !== "function") || !node.connectionId || !node.database) return;
   emit("open-procedure", node);
 }
 
@@ -4547,9 +4547,8 @@ function buildObjectSidebarMenu(context: SidebarMenuFactoryContext): boolean {
 
   // 8. Procedure / Function / Package
   if (node.type === "procedure" || node.type === "function") {
-    if (node.type === "procedure") {
-      items.push({ label: t("contextMenu.executeProcedure"), action: openProcedureExecution, icon: Play });
-    }
+    // ogdeveloper: graphical invocation for both procedures and functions.
+    items.push({ label: t("contextMenu.executeProcedure"), action: openProcedureExecution, icon: Play });
     items.push({ label: t("contextMenu.viewSource"), action: () => openObjectSourceDialog(false), icon: Code2 });
     if (canRenameObject.value) {
       items.push({
