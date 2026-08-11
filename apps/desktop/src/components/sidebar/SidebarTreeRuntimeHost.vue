@@ -4732,9 +4732,8 @@ function activateRuntimeNode(node: TreeNode) {
 // Publish the live tree node so a stale rendered row cannot reset expansion.
 function emitNodeToggled(node: TreeNode, wasExpanded: boolean, expandedOverride?: boolean) {
   const liveNode = findSidebarActionTarget(connectionStore.treeNodes, createSidebarActionTarget(node)) ?? node;
-  if (expandedOverride !== undefined) liveNode.isExpanded = expandedOverride;
   activeNode.value = liveNode;
-  emit("node-toggled", liveNode, wasExpanded);
+  emit("node-toggled", node, expandedOverride ?? !wasExpanded);
 }
 
 function activateActionTarget(target: SidebarActionTarget) {

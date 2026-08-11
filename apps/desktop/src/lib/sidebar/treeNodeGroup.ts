@@ -16,6 +16,7 @@ const treeGroupNodeTypes = new Set<TreeNodeType>([
   "group-sequences",
   "group-synonyms",
   "group-packages",
+  "group-jobs",
   "group-types",
   "group-partitions",
   "group-extensions",

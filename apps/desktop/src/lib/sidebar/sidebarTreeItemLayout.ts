@@ -10,6 +10,7 @@ const leafTypes: Set<TreeNodeType> = new Set([
   "synonym",
   "package",
   "package-body",
+  "job",
   "type",
   "type-body",
   "object-browser",

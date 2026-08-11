@@ -403,7 +403,17 @@ async function loadLocalTableSearchResults(parentNodeId: string, refresh = false
   }
 }
 
+// ogdeveloper: toggles mutate isExpanded without touching children, which the
+// pipeline below never tracks — bump this version on every toggle so the
+// computed re-runs. The conditional-return form survives minifier DCE.
+const treeExpansionVersion = ref(0);
+// ogdeveloper: this vue-virtual-scroller build does not prune pooled rows when
+// items shrink (collapse left stale children in the DOM). Remount the scroller
+// on shrink only — expands keep scroll position.
+const treeScrollerRemountKey = ref(0);
+
 const filteredNodes = computed(() => {
+  if (treeExpansionVersion.value < 0) return [];
   let nodes = displayedTreeNodes.value;
   if (showConnectedConnectionsOnly.value) {
     nodes = filterSidebarTreeToConnectedConnections(nodes, store.connectedIds);
@@ -675,6 +685,13 @@ watch(flatNodes, (nodes) => {
   stickyScrollTop.value = 0;
   void nextTick(scheduleSidebarScrollMetricsUpdate);
 });
+
+watch(
+  () => flatNodes.value.length,
+  (count, previous) => {
+    if (count < previous) treeScrollerRemountKey.value++;
+  },
+);
 
 const sidebarTreeOverflowClass = computed(() => (settingsStore.editorSettings.sidebarAllowHorizontalScroll ? "overflow-x-auto sidebar-tree-horizontal-scroll" : "overflow-x-hidden"));
 const sidebarTreeScrollerStyle = computed<CSSProperties>(() => ({ "--sidebar-tree-content-width": `${sidebarTreeContentWidth.value}px` }) as CSSProperties);
@@ -1186,9 +1203,10 @@ function onSearchToggle(node: TreeNode) {
   searchCollapsedIds.value = next;
 }
 
-function onNodeToggled(node: TreeNode, wasExpanded: boolean) {
+function onNodeToggled(node: TreeNode, expanded: boolean) {
   if (isTreeSearchFiltering.value) return;
-  syncSidebarTreeNodeExpansion(store.treeNodes, node, !wasExpanded);
+  syncSidebarTreeNodeExpansion(store.treeNodes, node, expanded);
+  treeExpansionVersion.value++;
 }
 
 function openSidebarContextMenu(event: MouseEvent, node: TreeNode, openContextMenu: (event: MouseEvent, itemsOverride?: ContextMenuItem[]) => void) {
@@ -1808,6 +1826,7 @@ defineExpose({ focusSearch, createNewGroup, collapseAllTreeNodes });
     <CustomContextMenu ref="sidebarContextMenuRef" :items="sidebarContextMenuItems" v-slot="contextMenuSlot">
       <div v-if="flatNodes.length > 0 && useVirtualTree" class="connection-tree-scroll-shell relative min-h-0 flex-1" :class="{ 'connection-tree-scroll-shell--horizontal-overflow': hasSidebarHorizontalOverflow }">
         <RecycleScroller
+          :key="treeScrollerRemountKey"
           ref="treeScrollerRef"
           class="sidebar-tree connection-tree-scroller h-full overflow-y-auto"
           :class="sidebarTreeOverflowClass"
@@ -1821,7 +1840,6 @@ defineExpose({ focusSearch, createNewGroup, collapseAllTreeNodes });
           key-field="id"
           type-field="poolType"
           list-class="connection-tree-content"
-          flow-mode
         >
           <template #default="{ item }">
             <TreeItem
