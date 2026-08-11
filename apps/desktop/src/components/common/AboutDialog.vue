@@ -1,0 +1,32 @@
+<script setup lang="ts">
+import { useI18n } from "vue-i18n";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+
+const { t } = useI18n();
+
+const open = defineModel<boolean>("open", { default: false });
+
+defineProps<{
+  appVersion: string;
+}>();
+</script>
+
+<template>
+  <Dialog v-model:open="open">
+    <DialogContent class="border border-border !bg-background text-foreground shadow-2xl !backdrop-blur-none sm:max-w-[440px]">
+      <DialogHeader>
+        <DialogTitle>{{ t("about.title") }}</DialogTitle>
+      </DialogHeader>
+      <div class="flex flex-col items-center gap-4 py-4 text-center">
+        <img src="/logo.png" alt="ogdeveloper" class="h-20 w-20" />
+        <div class="space-y-1">
+          <div class="text-lg font-semibold">ogdeveloper</div>
+          <div v-if="appVersion" class="font-mono text-sm text-muted-foreground">v{{ appVersion }}</div>
+        </div>
+        <p class="max-w-sm text-sm leading-6 text-muted-foreground">
+          {{ t("about.description") }}
+        </p>
+      </div>
+    </DialogContent>
+  </Dialog>
+</template>

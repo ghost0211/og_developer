@@ -3960,6 +3960,10 @@ export default withEnglishFallback({
     editVar: "点击编辑变量值",
     setVarFailed: "设置变量 {name} 失败",
   },
+  about: {
+    title: "关于",
+    description: "openGauss 专用数据库开发工具。内置官方 JDBC 驱动，提供对象管理、PL/SQL 开发调试、数据编辑与导出等一体化体验。",
+  },
   dangerDialog: {
     title: "危险操作",
     message: "此 SQL 语句可能不可逆地修改或删除数据，确认要执行吗？",

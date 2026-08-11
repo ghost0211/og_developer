@@ -113,6 +113,7 @@ const AiAssistant = defineAsyncComponent(() => import("@/components/editor/AiAss
 const QueryHistory = defineAsyncComponent(() => import("@/components/editor/QueryHistory.vue"));
 const SqlLibraryPanel = defineAsyncComponent(() => import("@/components/layout/SqlLibraryPanel.vue"));
 const SqlFilePanel = defineAsyncComponent(() => import("@/components/layout/SqlFilePanel.vue"));
+const AboutDialog = defineAsyncComponent(() => import("@/components/common/AboutDialog.vue"));
 const DriverStorePage = defineAsyncComponent(() => import("@/components/config/DriverStoreDialog.vue"));
 const EditorSettingsPage = defineAsyncComponent(() => import("@/components/editor/EditorSettingsDialog.vue"));
 const UpdateDialog = defineAsyncComponent(() => import("@/components/layout/UpdateDialog.vue"));
@@ -150,7 +151,6 @@ const {
   updateReady,
   activeTaskCount: activeUpdateTaskCount,
   hasUpdateAvailable,
-  openUrl,
   checkUpdates,
   openLatestRelease,
   downloadAndInstallUpdate,
@@ -1665,8 +1665,9 @@ function changeActiveSchema(schema: string | undefined) {
   if (tab) queryStore.updateSchema(tab.id, schema);
 }
 
-function openGitHub() {
-  openUrl("https://github.com/ghost0211/og_developer");
+const aboutDialogOpen = ref(false);
+function openAbout() {
+  aboutDialogOpen.value = true;
 }
 
 function setSidebarOpen(open: boolean) {
@@ -2329,7 +2330,7 @@ onUnmounted(() => {
           @toggle-history="toggleRightSidebarPanel('history')"
           @toggle-sql-library="toggleRightSidebarPanel('sqlLibrary')"
           @toggle-sql-file-panel="toggleRightSidebarPanel('sqlFile')"
-          @open-github="openGitHub"
+          @open-about="openAbout"
           @open-settings="openSettings('appearance')"
           @open-driver-store="openDriverStorePage"
           @check-updates="checkUpdates()"
@@ -2518,7 +2519,7 @@ onUnmounted(() => {
                 @new-query="newQuery"
                 @show-history="openRightSidebarPanel('history')"
                 @import-config="dialogs.onImportClick"
-                @open-github="openGitHub"
+                @open-about="openAbout"
               />
             </div>
           </div>
@@ -2717,17 +2718,5 @@ onUnmounted(() => {
     </TooltipProvider>
     <div id="dbx-query-editor-tooltip-root" class="fixed left-0 top-0 z-[70] h-0 w-0 overflow-visible" />
   </div>
+  <AboutDialog v-model:open="aboutDialogOpen" :app-version="appVersion" />
 </template>
-
-<style scoped>
-.toast-enter-active,
-.toast-leave-active {
-  transition: 0.25s ease;
-  transition-property: transform, opacity;
-}
-.toast-enter-from,
-.toast-leave-to {
-  opacity: 0;
-  transform: translateY(100%) scale(0.95);
-}
-</style>

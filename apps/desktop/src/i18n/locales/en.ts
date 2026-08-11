@@ -3961,6 +3961,10 @@ export default {
     editVar: "Click to edit the value",
     setVarFailed: "Failed to set variable {name}",
   },
+  about: {
+    title: "About",
+    description: "A dedicated database development tool for openGauss. Ships the official JDBC driver and provides object management, PL/SQL development and debugging, data editing, and export in one place.",
+  },
   dangerDialog: {
     title: "Dangerous Operation",
     message: "This SQL statement may modify or delete data irreversibly. Are you sure you want to execute it?",

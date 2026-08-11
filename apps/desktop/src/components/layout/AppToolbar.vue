@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, ref, onMounted, onBeforeUnmount, h, nextTick, watch } from "vue";
+import { computed, ref, onMounted, onBeforeUnmount, nextTick, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { invoke } from "@tauri-apps/api/core";
-import { DatabaseZap, FilePlus2, Loader2, Moon, Sun, SunMoon, History, Bot, ArrowLeftRight, FileCode, BookMarked, GitCompareArrows, TableProperties, Settings, CloudDownload, FileDown, FolderTree } from "@lucide/vue";
+import { DatabaseZap, FilePlus2, Loader2, Moon, Sun, SunMoon, History, Bot, ArrowLeftRight, FileCode, BookMarked, GitCompareArrows, TableProperties, Settings, CloudDownload, FileDown, FolderTree, Info } from "@lucide/vue";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import LightDropdown from "@/components/ui/LightDropdown.vue";
@@ -12,16 +12,6 @@ import { MAC_TRAFFIC_LIGHT_X, macTrafficLightInsetPaddingForScale, shouldReserve
 import { useToast } from "@/composables/useToast";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { isSystemAppThemeMode, type AppThemeMode } from "@/lib/app/appTheme";
-
-const GithubIcon = {
-  render() {
-    return h("svg", { class: "h-4 w-4", viewBox: "0 0 24 24", fill: "currentColor" }, [
-      h("path", {
-        d: "M12 0C5.37 0 0 5.37 0 12c0 5.3 3.438 9.8 8.205 11.387.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61-.546-1.387-1.333-1.756-1.333-1.756-1.09-.745.083-.729.083-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 21.795 24 17.295 24 12 24 5.37 18.627 0 12 0z",
-      }),
-    ]);
-  },
-};
 
 const props = defineProps<{
   isDark: boolean;
@@ -47,7 +37,7 @@ const emit = defineEmits<{
   "toggle-history": [];
   "toggle-sql-library": [];
   "toggle-sql-file-panel": [];
-  "open-github": [];
+  "open-about": [];
   "open-settings": [];
   "open-driver-store": [];
   "check-updates": [];
@@ -201,9 +191,9 @@ const collapsibleRightItemDefs = computed(() => {
   if (toolbarItems.value.github) {
     items.push({
       key: "github",
-      label: "GitHub",
-      icon: GithubIcon,
-      action: () => emit("open-github"),
+      label: t("about.title"),
+      icon: Info,
+      action: () => emit("open-about"),
       disabled: false,
     });
   }
@@ -578,15 +568,11 @@ const toolbarStyle = computed(() => {
 
       <Tooltip v-if="toolbarItems.github">
         <TooltipTrigger as-child>
-          <Button v-show="isRightItemVisible('github')" variant="ghost" size="icon" class="h-8 w-8 shrink-0" @click="emit('open-github')">
-            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
-              <path
-                d="M12 0C5.37 0 0 5.37 0 12c0 5.3 3.438 9.8 8.205 11.387.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61-.546-1.387-1.333-1.756-1.333-1.756-1.09-.745.083-.729.083-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 21.795 24 17.295 24 12 24 5.37 18.627 0 12 0z"
-              />
-            </svg>
+          <Button v-show="isRightItemVisible('github')" variant="ghost" size="icon" class="h-8 w-8 shrink-0" @click="emit('open-about')">
+            <Info class="h-4 w-4" />
           </Button>
         </TooltipTrigger>
-        <TooltipContent>GitHub</TooltipContent>
+        <TooltipContent>{{ t("about.title") }}</TooltipContent>
       </Tooltip>
     </div>
     <!-- /rightWrapper -->

@@ -62,7 +62,6 @@ import {
   forgetSnippetSavedToken,
   forgetWebdavSyncSecretsPassphrase,
   forgetWebdavSavedPassword,
-  getAppSupportInfo,
   loadMaxAgentTurns,
   saveMaxAgentTurns,
   loadMaxRetries,
@@ -82,7 +81,6 @@ import {
   webdavSyncSecretsStatus,
   webdavSyncTest,
   webdavSyncUpload,
-  type AppSupportInfo,
   type SnippetProvider,
   type SnippetSyncConfig,
   type WebDavConfig,
@@ -105,7 +103,6 @@ import type { DatabaseType, SqlSnippet } from "@/types/database";
 import { uuid } from "@/lib/common/utils";
 import { DEFAULT_SQL_SNIPPETS } from "@/lib/sql/sqlCompletion";
 import AiProviderLogo from "@/components/icons/AiProviderLogo.vue";
-import AppLogo from "@/components/icons/AppLogo.vue";
 import ScheduledDatabaseBackupSettings from "@/components/backup/ScheduledDatabaseBackupSettings.vue";
 import SqlFormatterSettingsPanel from "./SqlFormatterSettingsPanel.vue";
 import { APP_THEME_PALETTES, type AppCornerStyle, type AppThemeAppearance, type AppThemeMode, type AppThemePalette } from "@/lib/app/appTheme";
@@ -121,7 +118,6 @@ import { DEFAULT_WEB_DAV_AUTO_UPLOAD_INTERVAL_MINUTES, DEFAULT_WEB_DAV_REMOTE_PA
 import { apiUrl } from "@/lib/common/webPath";
 import { DEFAULT_DATA_GRID_FONT_FAMILY, DEFAULT_UI_FONT_FAMILY, normalizeCustomFontFamilyInput, readableFontFamily, SYSTEM_UI_FONT_FAMILY } from "@/lib/app/appFonts";
 import { buildFontFamilyOptions, displayFontFamily, isPresetFontFamily, loadSystemFontNames } from "@/lib/app/fontFamilyOptions";
-import { buildAppSupportInfoRows, formatAppSupportInfoForClipboard, type AppSupportInfoLabels } from "@/lib/app/supportInfo";
 import { DateTimePatterns, normalizeSupportedDateTimePattern } from "@/lib/dataGrid/columnFormatter";
 import { MAX_RESULT_PAGE_SIZE, MIN_RESULT_PAGE_SIZE } from "@/lib/dataGrid/paginationPageSize";
 import type { PromptTemplate } from "@/types/promptTemplate";
@@ -1361,20 +1357,6 @@ function setSidebarActivation(value: "single" | "double") {
 const activeSettingsTab = ref("appearance");
 const settingsContentScrollRef = ref<HTMLElement | null>(null);
 const isWeb = !isTauriRuntime();
-const appSupportInfo = ref<AppSupportInfo | null>(null);
-const appSupportInfoLoading = ref(false);
-const appSupportInfoError = ref("");
-const appSupportInfoCopied = ref(false);
-const appSupportInfoLabels = computed<AppSupportInfoLabels>(() => ({
-  appVersion: t("settings.supportInfoAppVersion"),
-  runtime: t("settings.supportInfoRuntime"),
-  runtimeDesktop: t("settings.supportInfoRuntimeDesktop"),
-  runtimeWeb: t("settings.supportInfoRuntimeWeb"),
-  operatingSystem: t("settings.supportInfoOperatingSystem"),
-  architecture: t("settings.supportInfoArchitecture"),
-  unknown: t("settings.supportInfoUnknown"),
-}));
-const appSupportInfoRows = computed(() => (appSupportInfo.value ? buildAppSupportInfoRows(appSupportInfo.value, appSupportInfoLabels.value) : []));
 const settingsCategoryNav = computed<{ value: SettingsCategory; label: string }[]>(() => [
   { value: "appearance", label: t("settings.appearanceTab") },
   { value: "editor", label: t("settings.editorTab") },
@@ -1388,7 +1370,6 @@ const settingsCategoryNav = computed<{ value: SettingsCategory; label: string }[
   ...(isWeb ? [] : [{ value: "sync" as const, label: t("settings.syncTab") }]),
   { value: "ai", label: t("settings.aiTab") },
   ...(isWeb ? [{ value: "security" as const, label: t("settings.securityTab") }] : []),
-  { value: "about", label: t("settings.aboutTab") },
 ]);
 const settingsTabsWithApplyFooter = new Set<SettingsCategory>(["editor", "formatter", "appearance", "navigation", "data", "shortcuts", "snippets"]);
 
@@ -1581,44 +1562,6 @@ async function copyDebugLogs() {
   window.setTimeout(() => {
     debugLogCopied.value = false;
   }, 1500);
-}
-
-function fallbackAppSupportInfo(): AppSupportInfo {
-  return {
-    appVersion: props.appVersion || "",
-    runtime: isWeb ? "web" : "desktop",
-    osName: "",
-    osVersion: null,
-    arch: "",
-  };
-}
-
-async function refreshAppSupportInfo() {
-  if (appSupportInfoLoading.value) return;
-  appSupportInfoLoading.value = true;
-  appSupportInfoError.value = "";
-  try {
-    appSupportInfo.value = await getAppSupportInfo();
-  } catch (e: any) {
-    appSupportInfo.value = appSupportInfo.value || fallbackAppSupportInfo();
-    appSupportInfoError.value = e?.message || String(e);
-  } finally {
-    appSupportInfoLoading.value = false;
-  }
-}
-
-async function copyAppSupportInfo() {
-  if (!appSupportInfo.value) await refreshAppSupportInfo();
-  if (!appSupportInfo.value) return;
-  try {
-    await copyToClipboard(formatAppSupportInfoForClipboard(appSupportInfo.value, appSupportInfoLabels.value));
-    appSupportInfoCopied.value = true;
-    window.setTimeout(() => {
-      appSupportInfoCopied.value = false;
-    }, 1500);
-  } catch (e: any) {
-    toast(t("grid.copyFailed", { message: e?.message || String(e) }), 5000);
-  }
 }
 
 function clearDebugLogs() {
@@ -2054,7 +1997,6 @@ watch(
       await refreshSnippetTokenStatus();
       await refreshSnippetSyncSettings();
       syncAiEditState();
-      if (activeSettingsTab.value === "about") void refreshAppSupportInfo();
       await scrollToInitialSettingsSection();
     } else {
       resetSettingsSearchState();
@@ -2120,7 +2062,6 @@ watch(activeSettingsTab, async (tab) => {
     await promptTemplateStore.ensureLoaded();
     editGlobalInstructions.value = promptTemplateStore.globalInstructions;
   }
-  if (tab === "about" && !appSupportInfo.value) void refreshAppSupportInfo();
   if (tab === "appearance") {
     checkLayoutDescTruncation();
     checkIconThemeDescTruncation();
@@ -5620,71 +5561,6 @@ onUnmounted(() => {
 
             <section v-else-if="activeSettingsTab === 'tunnels'" data-settings-search-id="tunnels" :class="['flex flex-col gap-5 py-2', settingsSearchTargetClass('tunnels')]">
               <TunnelProfileManager />
-            </section>
-
-            <section v-else-if="activeSettingsTab === 'about'" data-settings-search-id="about" :class="['flex flex-col gap-5 py-2', settingsSearchTargetClass('about')]">
-              <div class="rounded-lg border p-4">
-                <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div class="min-w-0 space-y-1">
-                    <Label>{{ t("settings.supportInfoTitle") }}</Label>
-                    <p class="text-sm text-muted-foreground">
-                      {{ t("settings.supportInfoDescription") }}
-                    </p>
-                  </div>
-                  <Button type="button" variant="outline" size="sm" class="shrink-0" :disabled="appSupportInfoLoading && !appSupportInfo" @click="copyAppSupportInfo">
-                    <Loader2 v-if="appSupportInfoLoading && !appSupportInfo" class="mr-1 h-3.5 w-3.5 animate-spin" />
-                    <CheckCircle2 v-else-if="appSupportInfoCopied" class="mr-1 h-3.5 w-3.5" />
-                    <Copy v-else class="mr-1 h-3.5 w-3.5" />
-                    {{ appSupportInfoCopied ? t("settings.supportInfoCopied") : t("settings.supportInfoCopy") }}
-                  </Button>
-                </div>
-                <div v-if="appSupportInfoRows.length" class="mt-4 grid gap-3 sm:grid-cols-2">
-                  <div v-for="row in appSupportInfoRows" :key="row.key" class="min-w-0 rounded-md bg-muted/30 px-3 py-2">
-                    <div class="text-xs font-medium text-muted-foreground">
-                      {{ row.label }}
-                    </div>
-                    <div class="mt-1 min-w-0 select-text break-words font-mono text-xs text-foreground">
-                      {{ row.value }}
-                    </div>
-                  </div>
-                </div>
-                <p v-else class="mt-4 text-sm text-muted-foreground">
-                  {{ t("settings.supportInfoLoading") }}
-                </p>
-                <p v-if="appSupportInfoError" class="mt-3 text-xs text-destructive">
-                  {{
-                    t("settings.supportInfoLoadFailed", {
-                      message: appSupportInfoError,
-                    })
-                  }}
-                </p>
-              </div>
-
-              <div class="rounded-lg border p-4">
-                <div class="flex items-start gap-3">
-                  <AppLogo class="h-10 w-10 shrink-0" />
-                  <div class="min-w-0 space-y-1">
-                    <div class="text-sm font-medium">ogdeveloper</div>
-                    <p class="text-sm text-muted-foreground">
-                      {{ t("settings.aboutDescription") }}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <div class="grid gap-3 sm:grid-cols-2">
-                <button type="button" class="rounded-lg border p-4 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" @click="openExternalUrl('https://github.com/ghost0211/og_developer')">
-                  <div class="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                    {{ t("settings.project") }}
-                  </div>
-                  <div class="mt-3 flex items-center gap-2 text-sm font-medium">
-                    <img src="https://cdn.simpleicons.org/github/181717" alt="GitHub" class="h-7 w-7 rounded-md bg-white p-1" />
-                    {{ t("settings.openSource") }}
-                    <ExternalLink class="ml-auto h-3.5 w-3.5 text-muted-foreground" />
-                  </div>
-                  <div class="mt-1 text-sm text-primary">github.com/ghost0211/og_developer</div>
-                </button>
-              </div>
             </section>
           </div>
 
