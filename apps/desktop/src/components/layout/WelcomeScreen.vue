@@ -30,7 +30,7 @@ const emit = defineEmits<{
   "new-query": [];
   "show-history": [];
   "import-config": [];
-  "open-github": [];
+  "open-about": [];
 }>();
 
 const { t } = useI18n();
@@ -140,7 +140,7 @@ function welcomeConnectionSubtitle(connection: ConnectionConfig): string {
       <div class="mt-2 flex items-center justify-center gap-3 text-[11px] text-muted-foreground/60">
         <span>ogdeveloper {{ appVersion ? "v" + appVersion : "" }}</span>
         <span>·</span>
-        <a href="#" class="hover:text-foreground transition-colors" @click.prevent="emit('open-github')">GitHub</a>
+        <a href="#" class="hover:text-foreground transition-colors" @click.prevent="emit('open-about')">{{ t("about.title") }}</a>
       </div>
     </div>
   </div>

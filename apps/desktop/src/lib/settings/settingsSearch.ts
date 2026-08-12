@@ -37,7 +37,7 @@ export interface SettingsSearchRoute {
 
 export type Translate = (key: string) => string;
 
-type ToolbarVisibilityItemKey = "dataTransfer" | "driverManager" | "sqlFile" | "schemaDiff" | "dataCompare" | "checkUpdates" | "sqlLibrary" | "sqlFileTree" | "history" | "ai" | "theme" | "github";
+type ToolbarVisibilityItemKey = "dataTransfer" | "driverManager" | "sqlFile" | "schemaDiff" | "dataCompare" | "checkUpdates" | "sqlLibrary" | "sqlFileTree" | "history" | "ai" | "theme";
 
 export type ToolbarVisibilityItem = { key: ToolbarVisibilityItemKey; titleKey: string; title?: never } | { key: ToolbarVisibilityItemKey; title: string; titleKey?: never };
 
@@ -56,7 +56,6 @@ export const TOOLBAR_VISIBILITY_ITEMS: readonly ToolbarVisibilityItem[] = [
   { key: "history", titleKey: "history.title" },
   { key: "ai", title: "AI" },
   { key: "theme", titleKey: "toolbar.theme" },
-  { key: "github", title: "GitHub" },
 ];
 
 export function toolbarVisibilityItemLabel(item: ToolbarVisibilityItem, translate: Translate): string {
@@ -208,8 +207,7 @@ export const SETTINGS_SEARCH_DEFINITIONS: readonly SettingsSearchDefinition[] = 
   { id: "ai-global-instructions", category: "ai", titleKey: "ai.globalInstructions", descriptionKey: "ai.globalInstructionsDescription", targetId: "ai" },
   { id: "security", category: "security", titleKey: "settings.securityTab", targetId: "security", visible: webOnly },
   { id: "security-password", category: "security", titleKey: "auth.changePassword", targetId: "security", visible: webOnly },
-  { id: "about-support", category: "about", titleKey: "settings.supportInfoTitle", descriptionKey: "settings.supportInfoDescription", targetId: "about" },
-  { id: "about-update", category: "about", titleKey: "settings.updateDownloadSource", descriptionKey: "settings.updateDownloadSourceDescription", targetId: "about" },
+  { id: "about", category: "about", titleKey: "about.title", descriptionKey: "about.description", targetId: "about" },
 ];
 
 export function resolveSettingsSearchEntries(definitions: readonly SettingsSearchDefinition[], context: SettingsSearchContext, translate: Translate, categoryLabels: Readonly<Record<SettingsCategory, string>>): SettingsSearchEntry[] {

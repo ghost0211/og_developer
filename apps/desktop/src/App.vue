@@ -2110,6 +2110,13 @@ function onLoginSuccess() {
   setupRequired.value = false;
   needsAuth.value = true;
   window.history.replaceState(null, "", webPath("/"));
+  // The mount-time version fetch 401s before login; retry once authenticated.
+  api
+    .getAppVersion()
+    .then((v) => {
+      appVersion.value = v;
+    })
+    .catch(() => {});
   void initApp();
 }
 
@@ -2330,7 +2337,6 @@ onUnmounted(() => {
           @toggle-history="toggleRightSidebarPanel('history')"
           @toggle-sql-library="toggleRightSidebarPanel('sqlLibrary')"
           @toggle-sql-file-panel="toggleRightSidebarPanel('sqlFile')"
-          @open-about="openAbout"
           @open-settings="openSettings('appearance')"
           @open-driver-store="openDriverStorePage"
           @check-updates="checkUpdates()"

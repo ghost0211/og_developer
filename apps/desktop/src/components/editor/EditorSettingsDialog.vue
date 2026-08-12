@@ -1302,6 +1302,7 @@ const settingsCategoryNav = computed<{ value: SettingsCategory; label: string }[
   ...(isWeb ? [] : [{ value: "sync" as const, label: t("settings.syncTab") }]),
   { value: "ai", label: t("settings.aiTab") },
   ...(isWeb ? [{ value: "security" as const, label: t("settings.securityTab") }] : []),
+  { value: "about", label: t("about.title") },
 ]);
 const settingsTabsWithApplyFooter = new Set<SettingsCategory>(["editor", "formatter", "appearance", "navigation", "data", "shortcuts", "snippets"]);
 
@@ -5393,6 +5394,19 @@ onUnmounted(() => {
             <section v-else-if="activeSettingsTab === 'tunnels'" data-settings-search-id="tunnels" :class="['flex flex-col gap-5 py-2', settingsSearchTargetClass('tunnels')]">
               <TunnelProfileManager />
             </section>
+
+            <section v-else-if="activeSettingsTab === 'about'" data-settings-search-id="about" :class="['py-2', settingsSearchTargetClass('about')]">
+              <div class="flex flex-col items-center gap-4 py-6 text-center">
+                <img src="/logo.png" alt="ogdeveloper" class="h-20 w-20" />
+                <div class="space-y-1">
+                  <div class="text-lg font-semibold">ogdeveloper</div>
+                  <div v-if="appVersion" class="font-mono text-sm text-muted-foreground">v{{ appVersion }}</div>
+                </div>
+                <p class="max-w-sm text-sm leading-6 text-muted-foreground">
+                  {{ t("about.description") }}
+                </p>
+              </div>
+            </section>
           </div>
 
           <DialogFooter v-if="hasSettingsApplyFooter(activeSettingsTab as SettingsCategory)" class="mx-0 mb-0 flex-row flex-wrap items-center justify-end gap-2 rounded-none border-t border-border/60 bg-transparent px-0 pb-0 pt-3 sm:flex-row sm:gap-2 [&>button]:w-auto [&>button]:shrink-0">
@@ -5472,12 +5486,6 @@ onUnmounted(() => {
             <div class="flex-1" />
             <Button variant="outline" @click="closeSettings">
               {{ t("common.close") }}
-            </Button>
-            <Button :disabled="!hasChanges() || hasApplyBlocker" @click="applySettings">
-              {{ t("settings.apply") }}
-            </Button>
-            <Button :disabled="!hasChanges() || hasApplyBlocker" @click="applySettingsAndClose">
-              {{ t("settings.applyAndClose") }}
             </Button>
           </DialogFooter>
         </div>

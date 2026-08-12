@@ -601,7 +601,7 @@ export default {
     gaussdbMJdbcDriverRequired: "GaussDB M mode requires the vendor JDBC driver. Select gaussdbjdbc.jar matching the server version.",
     gaussdbMJdbcPluginInstalling: "Installing JDBC runtime...",
     opengaussConnectionMode: "Connection mode",
-    opengaussConnectionModeJdbc: "Official JDBC driver (recommended)",
+    opengaussConnectionModeJdbc: "Official JDBC driver",
     opengaussConnectionModeNative: "Native protocol (built-in driver)",
     opengaussConnectionModeJdbcHint: "Uses the official opengauss-jdbc driver with SHA256 authentication support, downloaded automatically from Maven Central on first connect.",
     opengaussConnectionModeNativeHint: "Uses the built-in PostgreSQL-compatible protocol. Lightweight, but requires the server user to authenticate with md5 encryption (openGauss default sha256 is unsupported).",

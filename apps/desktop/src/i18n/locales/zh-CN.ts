@@ -602,7 +602,7 @@ export default withEnglishFallback({
     gaussdbMJdbcDriverRequired: "GaussDB M 模式需要厂商 JDBC 驱动。请选择与服务端版本匹配的 gaussdbjdbc.jar。",
     gaussdbMJdbcPluginInstalling: "正在安装 JDBC 运行组件...",
     opengaussConnectionMode: "连接模式",
-    opengaussConnectionModeJdbc: "官方 JDBC 驱动（推荐）",
+    opengaussConnectionModeJdbc: "官方 JDBC 驱动",
     opengaussConnectionModeNative: "原生协议（内置驱动）",
     opengaussConnectionModeJdbcHint: "使用官方 opengauss-jdbc 驱动，支持 openGauss 默认的 SHA256 认证，首次连接自动从 Maven 中央仓库下载，兼容性最佳。",
     opengaussConnectionModeNativeHint: "使用内置 PostgreSQL 兼容协议，轻量快速；需要服务端用户使用 md5 加密方式才能认证（openGauss 默认 sha256 不支持）。",

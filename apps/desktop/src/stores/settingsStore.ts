@@ -516,7 +516,6 @@ export interface ToolbarItems {
   history: boolean;
   ai: boolean;
   theme: boolean;
-  github: boolean;
   exclusiveRightSidebarPanels: boolean;
 }
 
@@ -532,7 +531,6 @@ export const DEFAULT_TOOLBAR_ITEMS: ToolbarItems = {
   history: true,
   ai: true,
   theme: true,
-  github: true,
   exclusiveRightSidebarPanels: true,
 };
 
@@ -850,7 +848,6 @@ function normalizeToolbarItems(items: Partial<ToolbarItems> | undefined): Toolba
     history: items.history ?? defaults.history,
     ai: items.ai ?? defaults.ai,
     theme: items.theme ?? defaults.theme,
-    github: items.github ?? defaults.github,
     // Saved settings from before right-sidebar exclusivity must adopt the new default.
     exclusiveRightSidebarPanels: items.exclusiveRightSidebarPanels !== false,
   };

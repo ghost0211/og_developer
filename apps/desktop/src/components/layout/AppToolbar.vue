@@ -2,7 +2,7 @@
 import { computed, ref, onMounted, onBeforeUnmount, nextTick, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { invoke } from "@tauri-apps/api/core";
-import { DatabaseZap, FilePlus2, Loader2, Moon, Sun, SunMoon, History, Bot, ArrowLeftRight, FileCode, BookMarked, GitCompareArrows, TableProperties, Settings, CloudDownload, FileDown, FolderTree, Info } from "@lucide/vue";
+import { DatabaseZap, FilePlus2, Loader2, Moon, Sun, SunMoon, History, Bot, ArrowLeftRight, FileCode, BookMarked, GitCompareArrows, TableProperties, Settings, CloudDownload, FileDown, FolderTree } from "@lucide/vue";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import LightDropdown from "@/components/ui/LightDropdown.vue";
@@ -37,7 +37,6 @@ const emit = defineEmits<{
   "toggle-history": [];
   "toggle-sql-library": [];
   "toggle-sql-file-panel": [];
-  "open-about": [];
   "open-settings": [];
   "open-driver-store": [];
   "check-updates": [];
@@ -185,15 +184,6 @@ const collapsibleRightItemDefs = computed(() => {
       label: t("toolbar.theme"),
       icon: themeTriggerIcon.value,
       action: cycleThemeMode,
-      disabled: false,
-    });
-  }
-  if (toolbarItems.value.github) {
-    items.push({
-      key: "github",
-      label: t("about.title"),
-      icon: Info,
-      action: () => emit("open-about"),
       disabled: false,
     });
   }
@@ -564,15 +554,6 @@ const toolbarStyle = computed(() => {
           </Button>
         </TooltipTrigger>
         <TooltipContent>{{ t("toolbar.theme") }}</TooltipContent>
-      </Tooltip>
-
-      <Tooltip v-if="toolbarItems.github">
-        <TooltipTrigger as-child>
-          <Button v-show="isRightItemVisible('github')" variant="ghost" size="icon" class="h-8 w-8 shrink-0" @click="emit('open-about')">
-            <Info class="h-4 w-4" />
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>{{ t("about.title") }}</TooltipContent>
       </Tooltip>
     </div>
     <!-- /rightWrapper -->
