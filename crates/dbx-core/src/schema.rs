@@ -3635,6 +3635,8 @@ for line in sys.stdin:
         assert!(!is_agent_postgres_metadata_fallback_config(&test_connection_config(DatabaseType::Uxdb)));
         assert!(!is_agent_postgres_metadata_fallback_config(&test_connection_config(DatabaseType::Postgres)));
         assert!(!is_agent_postgres_metadata_fallback_config(&test_connection_config(DatabaseType::Mysql)));
+        assert!(is_agent_postgres_metadata_fallback_config(&test_connection_config(DatabaseType::OpenGauss)));
+        assert!(is_agent_postgres_metadata_fallback_config(&test_connection_config(DatabaseType::Gaussdb)));
     }
 
     #[test]
@@ -4623,6 +4625,27 @@ async fn list_objects_once(
                 .await
                 .map(unpaged_object_list);
             }
+            if let Some(native_config) = db_config.as_ref().filter(|config| is_opengauss_family_config(config)) {
+                // The official openGauss/GaussDB JDBC plugin only exposes standard
+                // JDBC metadata (tables/procedures/functions); synonyms, packages,
+                // jobs and validity live in openGauss-specific catalogs, so list
+                // objects through the native wire driver instead.
+                match native_postgres_metadata_pool(state, connection_id, database, native_config).await {
+                    Ok(Some(pool)) => {
+                        return db::postgres::list_objects(&pool, schema).await.map(unpaged_object_list);
+                    }
+                    Ok(None) => {}
+                    Err(error) => {
+                        log::warn!(
+                            "[schema][external-driver:list_objects:native-fallback-failed] connection_id={} database={} schema={} error={}",
+                            connection_id,
+                            database,
+                            schema,
+                            error
+                        );
+                    }
+                }
+            }
             let mut params =
                 serde_json::json!({ "connection": config.as_ref(), "database": database, "schema": schema });
             if let Some(filter) = filter.map(str::trim).filter(|value| !value.is_empty()) {
@@ -4913,7 +4936,9 @@ fn is_agent_postgres_metadata_fallback_config(config: &ConnectionConfig) -> bool
     // HighGo and Vastbase can use the native PostgreSQL metadata path when their
     // agent returns no rows. UXDB is JDBC-only; opening a PostgreSQL fallback
     // connection there turns valid empty schemas into misleading DB errors.
-    matches!(config.db_type, DatabaseType::Highgo | DatabaseType::Vastbase)
+    // openGauss/GaussDB on the official JDBC driver also fall back to the native
+    // wire catalogs for synonyms/packages/jobs and DDL.
+    matches!(config.db_type, DatabaseType::Highgo | DatabaseType::Vastbase) || is_opengauss_family_config(config)
 }
 
 async fn native_postgres_metadata_pool(
@@ -6052,6 +6077,20 @@ async fn get_table_ddl_once(
                 drop(connections);
                 return external_driver_mysql_ddl(session, config.as_ref(), database, schema, table).await;
             }
+            if let Some(native_config) = db_config.as_ref().filter(|config| is_opengauss_family_config(config)) {
+                // The official openGauss/GaussDB JDBC plugin cannot render DDL;
+                // build it from the native wire-driver catalogs instead.
+                let native_config = native_config.clone();
+                drop(connections);
+                return match native_postgres_metadata_pool(state, connection_id, database, &native_config).await {
+                    Ok(Some(pool)) => match opengauss_table_ddl(&pool, schema, table).await {
+                        Ok(ddl) => Ok(ddl),
+                        Err(_) => pg_ddl(&pool, schema, table).await,
+                    },
+                    Ok(None) => Err("DDL not supported for this database type".to_string()),
+                    Err(error) => Err(error),
+                };
+            }
         }
         #[cfg(feature = "duckdb-sidecar")]
         if let Some(client) = extract_pool!(&connections, &pool_key, DuckDbWorker) {
@@ -6962,6 +7001,26 @@ async fn get_object_source_once(
     let source = {
         let connections = state.connections.read().await;
         if let Some(PoolKind::ExternalDriver { config, session, .. }) = connections.get(&pool_key) {
+            if db_config.as_ref().is_some_and(is_opengauss_family_config) {
+                // The official openGauss/GaussDB JDBC plugin cannot read object
+                // sources; serve them from the native wire-driver catalogs
+                // (pg_proc / gs_source, including ghost routines).
+                let native_config = db_config.clone().expect("opengauss family config present");
+                drop(connections);
+                let pool = native_postgres_metadata_pool(state, connection_id, database, &native_config)
+                    .await?
+                    .ok_or("Object source is not supported for this database type")?;
+                let source =
+                    postgres_object_source(&pool, schema, name, &object_type, signature, relation_name, true).await?;
+                let editable = if matches!(object_type, db::ObjectSourceKind::Trigger) { Some(false) } else { None };
+                return Ok(db::ObjectSource {
+                    name: name.to_string(),
+                    object_type,
+                    schema: if schema.is_empty() { None } else { Some(schema.to_string()) },
+                    source,
+                    editable,
+                });
+            }
             let config = config.clone();
             let session = session.clone();
             drop(connections);
