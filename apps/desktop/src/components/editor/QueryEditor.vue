@@ -94,7 +94,7 @@ import {
 import type { SqlHighlighter } from "@/lib/sql/sqlHighlighter";
 import { EDITOR_FONT_FAMILY_CSS_VAR, EDITOR_FONT_SIZE_CSS_VAR, loadEditorTheme, editorFontTheme, sqlCompletionTheme, sqlSemanticHighlightTheme } from "@/lib/editor/editorThemes";
 import { createStatementGutterMarkerDom, shouldShowStatementGutter } from "@/lib/editor/codemirrorStatementGutter";
-import { sqlBookmarkExtension } from "@/lib/editor/sqlBookmarks";
+import { setSqlBookmarkMenuLabels, showSqlBookmarkContextMenu, sqlBookmarkExtension, type SqlBookmarkMenuLabels } from "@/lib/editor/sqlBookmarks";
 import { createQueryEditorSearchKeymap } from "@/lib/editor/queryEditorSearchKeymap";
 import { appendSqlCompletionSpace } from "@/lib/editor/sqlCompletionInsertion";
 import { completionLabelPresentation } from "@/lib/editor/sqlCompletionPresentation";
@@ -215,6 +215,15 @@ function sqlStatementParameterOptions() {
 }
 const { isDark, themePalette } = useTheme();
 const { t } = useI18n();
+const bookmarkMenuLabels = computed<SqlBookmarkMenuLabels>(() => ({
+  add: t("bookmark.add"),
+  remove: t("bookmark.remove"),
+  removeShort: t("bookmark.remove"),
+  menu: t("bookmark.menu"),
+  empty: t("bookmark.empty"),
+  jumpTo: t("bookmark.jumpTo"),
+}));
+watch(bookmarkMenuLabels, (labels) => setSqlBookmarkMenuLabels(labels), { immediate: true });
 const { toast } = useToast();
 const snippetDatabaseType = computed(() => {
   const connection = props.connectionId ? connectionStore.getConfig(props.connectionId) : undefined;
@@ -4288,6 +4297,10 @@ onMounted(async () => {
       lineNumbers({
         domEventHandlers: {
           mousedown: selectSqlLineFromGutter,
+          contextmenu(view, line, event) {
+            event.preventDefault();
+            return showSqlBookmarkContextMenu(view, line.from, event as MouseEvent, bookmarkMenuLabels.value);
+          },
         },
       }),
       currentStatementFrameHighlighter,
