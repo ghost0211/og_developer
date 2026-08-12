@@ -142,8 +142,11 @@ const bookmarkMenuPlugin = ViewPlugin.fromClass(
       this.submenu.className = "cm-sql-bookmark-submenu";
       this.submenu.style.display = "none";
 
-      const editorEl = view.dom.closest(".cm-editor") ?? view.dom;
-      (editorEl.parentElement ?? editorEl).appendChild(this.dom);
+      // Append inside the editor (like CM tooltips): the baseTheme rules
+      // below are scoped to the editor element, so the menu must live under
+      // view.dom for them to match. position: fixed keeps it out of the
+      // editor's flex flow.
+      view.dom.appendChild(this.dom);
     }
 
     destroy() {

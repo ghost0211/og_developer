@@ -2656,7 +2656,7 @@ fn list_object_routines_sql(include_timestamps: bool, has_proc_prokind: bool, ha
        CASE WHEN p.prosp THEN 2 ELSE 3 END AS sort_order \
      FROM pg_catalog.pg_proc p \
      JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace \
-     WHERE n.nspname = $1 AND NOT p.proisagg AND NOT p.proiswindow";
+     WHERE n.nspname = $1 AND NOT p.proisagg AND NOT p.proiswindow{package_filter}";
         }
 
         return "SELECT p.proname AS object_name, \
@@ -2670,7 +2670,7 @@ fn list_object_routines_sql(include_timestamps: bool, has_proc_prokind: bool, ha
        CASE WHEN p.prosp THEN 2 ELSE 3 END AS sort_order \
      FROM pg_catalog.pg_proc p \
      JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace \
-     WHERE n.nspname = $1 AND NOT p.proisagg AND NOT p.proiswindow";
+     WHERE n.nspname = $1 AND NOT p.proisagg AND NOT p.proiswindow{package_filter}";
     }
 
     if include_timestamps {
@@ -2686,7 +2686,7 @@ fn list_object_routines_sql(include_timestamps: bool, has_proc_prokind: bool, ha
        3 AS sort_order \
      FROM pg_catalog.pg_proc p \
      JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace \
-     WHERE n.nspname = $1 AND NOT p.proisagg AND NOT p.proiswindow";
+     WHERE n.nspname = $1 AND NOT p.proisagg AND NOT p.proiswindow{package_filter}";
     }
 
     "SELECT p.proname AS object_name, \
@@ -2700,7 +2700,7 @@ fn list_object_routines_sql(include_timestamps: bool, has_proc_prokind: bool, ha
        3 AS sort_order \
      FROM pg_catalog.pg_proc p \
      JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace \
-     WHERE n.nspname = $1 AND NOT p.proisagg AND NOT p.proiswindow"
+     WHERE n.nspname = $1 AND NOT p.proisagg AND NOT p.proiswindow{package_filter}"
 }
 
 #[cfg(test)]
@@ -2718,6 +2718,7 @@ fn list_objects_sql(
         false,
         false,
         false,
+        false,
     )
 }
 
@@ -2730,7 +2731,12 @@ fn list_objects_sql_full(
     has_gs_package_catalog: bool,
     has_pg_synonym_catalog: bool,
     has_pg_job_catalog: bool,
+    has_proc_propackageid: bool,
 ) -> String {
+    // ogdeveloper: openGauss package subprograms are shown under their
+    // package node; exclude them from standalone listings.
+    let package_filter =
+        if has_proc_propackageid { " AND (p.propackageid = 0 OR p.propackageid IS NULL) " } else { "" };
     let mut sql = format!(
         "{} UNION ALL {}",
         list_object_relations_sql(include_timestamps),
@@ -2901,6 +2907,23 @@ async fn postgres_proc_has_prokind(client: &deadpool_postgres::Client) -> Result
     Ok(pg_row_try_bool(&row, 0).unwrap_or(false))
 }
 
+fn postgres_proc_has_propackageid_sql() -> &'static str {
+    "SELECT EXISTS ( \
+       SELECT 1 \
+       FROM pg_catalog.pg_attribute \
+       WHERE attrelid = 'pg_catalog.pg_proc'::regclass \
+         AND attname = 'propackageid' \
+         AND NOT attisdropped \
+     )"
+}
+
+async fn postgres_proc_has_propackageid(client: &deadpool_postgres::Client) -> Result<bool, String> {
+    let row = postgres_query_one_cached(client, postgres_proc_has_propackageid_sql(), &[])
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(pg_row_try_bool(&row, 0).unwrap_or(false))
+}
+
 fn postgres_proc_has_prosp_sql() -> &'static str {
     "SELECT EXISTS ( \
        SELECT 1 \
@@ -2926,6 +2949,7 @@ async fn list_objects_rows(
     has_gs_package_catalog: bool,
     has_pg_synonym_catalog: bool,
     has_pg_job_catalog: bool,
+    has_proc_propackageid: bool,
 ) -> Result<Vec<Row>, String> {
     let sql = list_objects_sql_full(
         include_timestamps,
@@ -2935,6 +2959,7 @@ async fn list_objects_rows(
         has_gs_package_catalog,
         has_pg_synonym_catalog,
         has_pg_job_catalog,
+        has_proc_propackageid,
     );
     postgres_query_cached(client, &sql, &[&schema]).await.map_err(|e| e.to_string())
 }
@@ -2942,6 +2967,8 @@ async fn list_objects_rows(
 pub async fn list_objects(pool: &Pool, schema: &str) -> Result<Vec<ObjectInfo>, String> {
     let client = checkout_postgres_client(pool, None, super::connection_timeout()).await?;
     let has_proc_prokind = postgres_proc_has_prokind(&client).await?;
+    // ogdeveloper: openGauss pg_proc.propackageid marks package members.
+    let has_proc_propackageid = postgres_proc_has_propackageid(&client).await?;
     // Some GaussDB-compatible catalogs expose prosp alongside, or instead of,
     // PostgreSQL 11's prokind. Treat prosp as an extra procedure signal.
     let has_proc_prosp = postgres_proc_has_prosp(&client).await?;
@@ -2964,6 +2991,7 @@ pub async fn list_objects(pool: &Pool, schema: &str) -> Result<Vec<ObjectInfo>, 
         has_gs_package_catalog,
         has_pg_synonym_catalog,
         has_pg_job_catalog,
+        has_proc_propackageid,
     )
     .await
     {
@@ -2980,6 +3008,7 @@ pub async fn list_objects(pool: &Pool, schema: &str) -> Result<Vec<ObjectInfo>, 
                 has_gs_package_catalog,
                 has_pg_synonym_catalog,
                 has_pg_job_catalog,
+                has_proc_propackageid,
             )
             .await
             {
@@ -4488,30 +4517,40 @@ fn postgres_trigger_definitions_sql() -> &'static str {
      ORDER BY t.tgname, t.oid"
 }
 
-fn postgres_functions_sql(has_proc_prokind: bool) -> &'static str {
+fn postgres_functions_sql(has_proc_prokind: bool, has_proc_propackageid: bool) -> &'static str {
+    // ogdeveloper: openGauss package subprograms live in pg_proc too; they are
+    // shown under the package node, so standalone listings must exclude them.
+    let package_filter =
+        if has_proc_propackageid { " AND (p.propackageid = 0 OR p.propackageid IS NULL) " } else { "" };
     if has_proc_prokind {
-        return "SELECT p.proname, \
+        return format!(
+            "SELECT p.proname, \
                     CASE p.prokind WHEN 'f' THEN 'FUNCTION' WHEN 'p' THEN 'PROCEDURE' ELSE 'FUNCTION' END, \
                     COALESCE(pg_get_function_result(p.oid), ''), \
                     pg_get_functiondef(p.oid), \
                     COALESCE(pg_get_function_arguments(p.oid), '') \
              FROM pg_proc p \
              JOIN pg_namespace n ON n.oid = p.pronamespace \
-             WHERE n.nspname = $1 AND p.prokind IN ('f', 'p') \
-             ORDER BY p.proname";
+             WHERE n.nspname = $1 AND p.prokind IN ('f', 'p'){package_filter} \
+             ORDER BY p.proname"
+        )
+        .leak();
     }
 
     // PostgreSQL 10 and older do not have pg_proc.prokind; procedures were
     // introduced with prokind, so the legacy path can only return functions.
-    "SELECT p.proname, \
+    format!(
+        "SELECT p.proname, \
                     'FUNCTION', \
                     COALESCE(pg_get_function_result(p.oid), ''), \
                     pg_get_functiondef(p.oid), \
                     COALESCE(pg_get_function_arguments(p.oid), '') \
              FROM pg_proc p \
              JOIN pg_namespace n ON n.oid = p.pronamespace \
-             WHERE n.nspname = $1 AND NOT p.proisagg AND NOT p.proiswindow \
+             WHERE n.nspname = $1 AND NOT p.proisagg AND NOT p.proiswindow{package_filter}{package_filter} \
              ORDER BY p.proname"
+    )
+    .leak()
 }
 
 /// openGauss keeps package subprograms in pg_proc with propackageid pointing
@@ -4566,9 +4605,11 @@ pub async fn list_functions(pool: &Pool, schema: &str) -> Result<Vec<FunctionInf
     // for reliable function definition retrieval (information_schema.routines.routine_definition
     // is NULL for non-SQL functions like plpgsql)
     let has_proc_prokind = postgres_proc_has_prokind(&client).await?;
-    let rows = postgres_query_cached(&client, postgres_functions_sql(has_proc_prokind), &[&schema])
-        .await
-        .map_err(|e| e.to_string())?;
+    let has_proc_propackageid = postgres_proc_has_propackageid(&client).await?;
+    let rows =
+        postgres_query_cached(&client, postgres_functions_sql(has_proc_prokind, has_proc_propackageid), &[&schema])
+            .await
+            .map_err(|e| e.to_string())?;
 
     Ok(rows
         .iter()
@@ -6755,7 +6796,7 @@ mod tests {
 
     #[test]
     fn opengauss_list_objects_sql_includes_packages_and_synonyms() {
-        let sql = list_objects_sql_full(false, true, false, true, true, true, false);
+        let sql = list_objects_sql_full(false, true, false, true, true, true, false, true);
         assert!(sql.contains("pg_catalog.gs_package"));
         assert!(sql.contains("'PACKAGE' AS object_type"));
         assert!(sql.contains("'PACKAGE_BODY' AS object_type"));
@@ -6769,7 +6810,7 @@ mod tests {
 
     #[test]
     fn opengauss_list_objects_sql_includes_jobs_when_catalog_present() {
-        let sql = list_objects_sql_full(false, true, false, true, false, false, true);
+        let sql = list_objects_sql_full(false, true, false, true, false, false, true, true);
         assert!(sql.contains("pg_catalog.pg_job j"));
         assert!(sql.contains("'JOB' AS object_type"));
         assert!(sql.contains("j.nspname::text = $1"));
@@ -6975,7 +7016,7 @@ mod tests {
 
     #[test]
     fn postgres_functions_sql_uses_proc_kind_when_available() {
-        let sql = postgres_functions_sql(true);
+        let sql = postgres_functions_sql(true, true);
         assert!(sql.contains("p.prokind IN ('f', 'p')"));
         assert!(sql.contains("WHEN 'p' THEN 'PROCEDURE'"));
         assert!(!sql.contains("p.proisagg"));
@@ -6984,7 +7025,7 @@ mod tests {
 
     #[test]
     fn legacy_postgres_functions_sql_avoids_proc_kind_column() {
-        let sql = postgres_functions_sql(false);
+        let sql = postgres_functions_sql(false, false);
         assert!(!sql.contains("p.prokind"));
         assert!(sql.contains("NOT p.proisagg"));
         assert!(sql.contains("NOT p.proiswindow"));
