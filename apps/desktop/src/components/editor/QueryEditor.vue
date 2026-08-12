@@ -4299,6 +4299,7 @@ onMounted(async () => {
           mousedown: selectSqlLineFromGutter,
           contextmenu(view, line, event) {
             event.preventDefault();
+            event.stopPropagation();
             return showSqlBookmarkContextMenu(view, line.from, event as MouseEvent, bookmarkMenuLabels.value);
           },
         },

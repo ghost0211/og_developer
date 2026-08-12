@@ -40,6 +40,14 @@ class SqlBookmarkMarker extends GutterMarker {
   }
 }
 
+class SqlBookmarkSpacer extends GutterMarker {
+  toDOM() {
+    const el = document.createElement("span");
+    el.className = "cm-sql-bookmark-spacer";
+    return el;
+  }
+}
+
 const bookmarkField = StateField.define<RangeSet<SqlBookmarkMarker>>({
   create: () => RangeSet.empty,
   update(markers, transaction) {
@@ -224,6 +232,7 @@ const bookmarkMenuPlugin = ViewPlugin.fromClass(
       this.submenu.addEventListener("mouseenter", () => window.clearTimeout(submenuTimer));
       this.submenu.addEventListener("mouseleave", scheduleSubmenuClose);
       this.dom.appendChild(subTrigger);
+      this.dom.appendChild(this.submenu);
 
       // Position near the cursor, flip upward near the bottom edge.
       this.dom.style.display = "block";
@@ -273,7 +282,7 @@ export function sqlBookmarkExtension() {
     gutter({
       class: "cm-sql-bookmark-gutter",
       markers: (view) => view.state.field(bookmarkField),
-      initialSpacer: () => new SqlBookmarkMarker(" "),
+      initialSpacer: () => new SqlBookmarkSpacer(),
       domEventHandlers: {
         mousedown(view, line, event) {
           const mouse = event as MouseEvent;
@@ -284,6 +293,7 @@ export function sqlBookmarkExtension() {
         },
         contextmenu(view, line, event) {
           event.preventDefault();
+          event.stopPropagation();
           return showSqlBookmarkContextMenu(view, line.from, event as MouseEvent, bookmarksLabels(view));
         },
       },
