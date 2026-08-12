@@ -3,7 +3,6 @@ mod data_dir;
 mod db;
 #[cfg(target_os = "macos")]
 mod macos_app_delegate;
-mod models;
 #[cfg(any(target_os = "windows", test))]
 mod startup_recovery;
 #[cfg(all(not(target_os = "windows"), not(test)))]

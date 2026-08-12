@@ -25,6 +25,7 @@ impl DataDirResolution {
         matches!(self.mode, DataDirMode::EnvOverride | DataDirMode::Portable { .. })
     }
 
+    #[cfg(test)]
     pub fn custom_data_dir(&self) -> Option<&Path> {
         self.uses_custom_data_dir().then_some(self.data_dir.as_path())
     }
