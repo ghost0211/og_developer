@@ -8,8 +8,6 @@ const leafTypes: Set<TreeNodeType> = new Set([
   "procedure",
   "function",
   "synonym",
-  "package",
-  "package-body",
   "job",
   "type",
   "type-body",

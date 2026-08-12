@@ -13,7 +13,7 @@ const objectBrowserNodeTypes = new Set<TreeNodeType>(["database", "schema", "obj
 const sourceNodeTypes = new Set<TreeNodeType>(["materialized_view", "procedure", "function", "trigger", "sequence", "synonym", "package", "package-body", "type", "type-body"]);
 const savedSqlNodeTypes = new Set<TreeNodeType>(["saved-sql-file"]);
 const tableChildGroupNodeTypes = new Set<TreeNodeType>(["group-columns", "group-indexes", "group-fkeys", "group-triggers", "group-constraints", "group-partitions", "group-table-partitions", "group-table-subpartitions"]);
-const databaseChildGroupNodeTypes = new Set<TreeNodeType>(["group-tables", "group-views", "group-materialized-views", "group-procedures", "group-functions", "group-triggers", "group-sequences", "group-synonyms", "group-packages", "group-types"]);
+const databaseChildGroupNodeTypes = new Set<TreeNodeType>(["group-tables", "group-views", "group-materialized-views", "group-procedures", "group-functions", "group-triggers", "group-sequences", "group-synonyms", "group-packages", "group-package-bodies", "group-types"]);
 
 export function objectSourceKindForTreeNode(type: TreeNodeType): ObjectSourceKind | null {
   if (type === "view") return "VIEW";

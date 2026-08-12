@@ -172,7 +172,7 @@ test("buildGroupedObjectTreeNodes applies natural name sorting inside object gro
   );
 });
 
-test("buildGroupedObjectTreeNodes groups Oracle packages and package bodies", () => {
+test("buildGroupedObjectTreeNodes splits packages and package bodies into separate groups", () => {
   const groups = buildGroupedObjectTreeNodes({
     nodeId: "conn:app:HR",
     connectionId: "conn",
@@ -187,11 +187,15 @@ test("buildGroupedObjectTreeNodes groups Oracle packages and package bodies", ()
   const packageGroup = groups.find((node) => node.type === "group-packages");
   assert.equal(packageGroup?.label, "tree.packages");
   assert.deepEqual(
-    packageGroup?.children?.map((node) => ({ label: node.label, type: node.type, id: node.id })),
-    [
-      { label: "PAYROLL", type: "package", id: "conn:app:HR:__packages:HR:PAYROLL:PACKAGE" },
-      { label: "PAYROLL", type: "package-body", id: "conn:app:HR:__packages:HR:PAYROLL:PACKAGE_BODY" },
-    ],
+    packageGroup?.children?.map((node) => ({ label: node.label, type: node.type, id: node.id, expandable: Array.isArray(node.children) })),
+    [{ label: "PAYROLL", type: "package", id: "conn:app:HR:__packages:HR:PAYROLL:PACKAGE", expandable: true }],
+  );
+
+  const packageBodyGroup = groups.find((node) => node.type === "group-package-bodies");
+  assert.equal(packageBodyGroup?.label, "tree.packageBodies");
+  assert.deepEqual(
+    packageBodyGroup?.children?.map((node) => ({ label: node.label, type: node.type, id: node.id, expandable: Array.isArray(node.children) })),
+    [{ label: "PAYROLL", type: "package-body", id: "conn:app:HR:__package_bodies:HR:PAYROLL:PACKAGE_BODY", expandable: true }],
   );
 });
 

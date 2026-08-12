@@ -112,6 +112,8 @@ export function getTreeNodeIconInfo(node: TreeNode): TreeNodeIconInfo | null {
       return { icon: Link2, colorClass: "text-sky-500" };
     case "group-packages":
       return { icon: Package, colorClass: "text-cyan-500" };
+    case "group-package-bodies":
+      return { icon: FileCode, colorClass: "text-cyan-400" };
     case "group-partitions":
       return { icon: node.isExpanded ? FolderOpen : FolderClosed, colorClass: "text-green-400" };
     case "group-extensions":

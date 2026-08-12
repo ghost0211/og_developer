@@ -2357,6 +2357,7 @@ export default withEnglishFallback({
     sequences: "시퀀스",
     synonyms: "동의어",
     packages: "패키지",
+    packageBodies: "패키지 본문",
     types: "타입",
     gridfs: "GridFS",
     buckets: "버킷",

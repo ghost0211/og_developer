@@ -2579,7 +2579,11 @@ fn list_object_relations_sql(include_timestamps: bool) -> &'static str {
      WHERE n.nspname = $1 AND c.relkind IN ('r','v','m','f','p','S')"
 }
 
-fn list_object_routines_sql(include_timestamps: bool, has_proc_prokind: bool, has_proc_prosp: bool) -> &'static str {
+fn list_object_routines_sql_base(
+    include_timestamps: bool,
+    has_proc_prokind: bool,
+    has_proc_prosp: bool,
+) -> &'static str {
     if has_proc_prokind && has_proc_prosp {
         if include_timestamps {
             return "SELECT p.proname AS object_name, \
@@ -2656,7 +2660,7 @@ fn list_object_routines_sql(include_timestamps: bool, has_proc_prokind: bool, ha
        CASE WHEN p.prosp THEN 2 ELSE 3 END AS sort_order \
      FROM pg_catalog.pg_proc p \
      JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace \
-     WHERE n.nspname = $1 AND NOT p.proisagg AND NOT p.proiswindow{package_filter}";
+     WHERE n.nspname = $1 AND NOT p.proisagg AND NOT p.proiswindow";
         }
 
         return "SELECT p.proname AS object_name, \
@@ -2670,7 +2674,7 @@ fn list_object_routines_sql(include_timestamps: bool, has_proc_prokind: bool, ha
        CASE WHEN p.prosp THEN 2 ELSE 3 END AS sort_order \
      FROM pg_catalog.pg_proc p \
      JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace \
-     WHERE n.nspname = $1 AND NOT p.proisagg AND NOT p.proiswindow{package_filter}";
+     WHERE n.nspname = $1 AND NOT p.proisagg AND NOT p.proiswindow";
     }
 
     if include_timestamps {
@@ -2686,7 +2690,7 @@ fn list_object_routines_sql(include_timestamps: bool, has_proc_prokind: bool, ha
        3 AS sort_order \
      FROM pg_catalog.pg_proc p \
      JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace \
-     WHERE n.nspname = $1 AND NOT p.proisagg AND NOT p.proiswindow{package_filter}";
+     WHERE n.nspname = $1 AND NOT p.proisagg AND NOT p.proiswindow";
     }
 
     "SELECT p.proname AS object_name, \
@@ -2700,7 +2704,26 @@ fn list_object_routines_sql(include_timestamps: bool, has_proc_prokind: bool, ha
        3 AS sort_order \
      FROM pg_catalog.pg_proc p \
      JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace \
-     WHERE n.nspname = $1 AND NOT p.proisagg AND NOT p.proiswindow{package_filter}"
+     WHERE n.nspname = $1 AND NOT p.proisagg AND NOT p.proiswindow"
+}
+
+fn list_object_routines_sql(
+    include_timestamps: bool,
+    has_proc_prokind: bool,
+    has_proc_prosp: bool,
+    has_proc_propackageid: bool,
+) -> String {
+    let base = list_object_routines_sql_base(include_timestamps, has_proc_prokind, has_proc_prosp);
+    if !has_proc_propackageid {
+        return base.to_string();
+    }
+    // ogdeveloper: openGauss package subprograms are shown under their package
+    // node; exclude them from standalone routine listings. Every arm filters
+    // on "WHERE n.nspname = $1 AND ...", so anchor the package filter there.
+    base.replace(
+        "WHERE n.nspname = $1 AND ",
+        "WHERE n.nspname = $1 AND (p.propackageid = 0 OR p.propackageid IS NULL) AND ",
+    )
 }
 
 #[cfg(test)]
@@ -2733,14 +2756,10 @@ fn list_objects_sql_full(
     has_pg_job_catalog: bool,
     has_proc_propackageid: bool,
 ) -> String {
-    // ogdeveloper: openGauss package subprograms are shown under their
-    // package node; exclude them from standalone listings.
-    let package_filter =
-        if has_proc_propackageid { " AND (p.propackageid = 0 OR p.propackageid IS NULL) " } else { "" };
     let mut sql = format!(
         "{} UNION ALL {}",
         list_object_relations_sql(include_timestamps),
-        list_object_routines_sql(include_timestamps, has_proc_prokind, has_proc_prosp)
+        list_object_routines_sql(include_timestamps, has_proc_prokind, has_proc_prosp, has_proc_propackageid)
     );
     // openGauss-only object families. Their catalogs do not exist on vanilla
     // PostgreSQL, so the UNION arms are appended only when detected.
@@ -3086,7 +3105,10 @@ async fn enrich_objects_with_gs_source_validity(
         let source_type = pg_row_try_string(row, 1);
         let status = pg_row_try_string(row, 2);
         if let Some(kind) = gs_source_type_to_object_kind(&source_type) {
-            latest.insert((name, kind.to_string()), status.eq_ignore_ascii_case("t"));
+            // gs_source.status is a bool on the wire; pg_row_try_string renders
+            // it as "true"/"false" while text-protocol servers may give "t"/"f".
+            let valid = matches!(status.trim().to_ascii_lowercase().as_str(), "t" | "true");
+            latest.insert((name, kind.to_string()), valid);
         }
     }
     if latest.is_empty() {
@@ -4547,7 +4569,7 @@ fn postgres_functions_sql(has_proc_prokind: bool, has_proc_propackageid: bool) -
                     COALESCE(pg_get_function_arguments(p.oid), '') \
              FROM pg_proc p \
              JOIN pg_namespace n ON n.oid = p.pronamespace \
-             WHERE n.nspname = $1 AND NOT p.proisagg AND NOT p.proiswindow{package_filter}{package_filter} \
+             WHERE n.nspname = $1 AND NOT p.proisagg AND NOT p.proiswindow{package_filter} \
              ORDER BY p.proname"
     )
     .leak()
@@ -6806,6 +6828,26 @@ mod tests {
         assert!(sql.contains("s.synobjschema || '.' || s.synobjname"));
         assert!(!sql.contains("pg_job"));
         assert!(sql.ends_with("ORDER BY sort_order, object_name"));
+    }
+
+    #[test]
+    fn list_objects_routines_arm_excludes_package_members_when_propackageid_known() {
+        for include_timestamps in [false, true] {
+            for has_proc_prokind in [false, true] {
+                for has_proc_prosp in [false, true] {
+                    let filtered = list_object_routines_sql(include_timestamps, has_proc_prokind, has_proc_prosp, true);
+                    assert!(
+                        filtered
+                            .contains("WHERE n.nspname = $1 AND (p.propackageid = 0 OR p.propackageid IS NULL) AND "),
+                        "missing package filter: {filtered}"
+                    );
+                    assert!(!filtered.contains("{package_filter}"), "literal placeholder left in SQL: {filtered}");
+                    let unfiltered =
+                        list_object_routines_sql(include_timestamps, has_proc_prokind, has_proc_prosp, false);
+                    assert!(!unfiltered.contains("propackageid"), "unexpected package filter: {unfiltered}");
+                }
+            }
+        }
     }
 
     #[test]

@@ -2416,6 +2416,7 @@ export default withEnglishFallback({
     sequences: "序列",
     synonyms: "同義詞",
     packages: "套件",
+    packageBodies: "套件主體",
     partitions: "分割區",
     subpartitions: "子分割區",
     childTables: "子表",

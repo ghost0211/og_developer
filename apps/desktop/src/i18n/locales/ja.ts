@@ -2440,6 +2440,7 @@ export default withEnglishFallback({
     sequences: "シーケンス",
     synonyms: "シノニム",
     packages: "パッケージ",
+    packageBodies: "パッケージ本体",
     partitions: "パーティション",
     subpartitions: "サブパーティション",
     childTables: "子テーブル",

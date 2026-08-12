@@ -533,8 +533,9 @@ export interface SubpartitionInfo {
 
 export interface FunctionInfo {
   name: string;
-  function_type: string;
-  data_type: string;
+  /** serde camelCase: 后端实际返回 functionType/dataType */
+  functionType: string;
+  dataType: string;
   definition: string;
   arguments: string;
 }
@@ -799,6 +800,7 @@ export type TreeNodeType =
   | "group-sequences"
   | "group-synonyms"
   | "group-packages"
+  | "group-package-bodies"
   | "group-jobs"
   | "group-partitions"
   | "group-extensions"

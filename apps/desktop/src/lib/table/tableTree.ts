@@ -591,8 +591,8 @@ export function buildSimpleObjectTreeNodes({ nodeId, connectionId, database, sch
         database,
         schema: childSchema,
         isExpanded: false,
-        // openGauss packages expand to reveal their subprograms.
-        children: objectType === "PACKAGE" ? [] : undefined,
+        // openGauss packages and package bodies expand to reveal their subprograms.
+        children: objectType === "PACKAGE" || objectType === "PACKAGE_BODY" ? [] : undefined,
       });
     }
   }
@@ -674,9 +674,16 @@ const groupDefs: Array<{
   {
     key: "__packages",
     label: "tree.packages",
-    objectTypes: ["PACKAGE", "PACKAGE_BODY"],
+    objectTypes: ["PACKAGE"],
     nodeType: "group-packages",
-    childType: (objectType) => (objectType === "PACKAGE_BODY" ? "package-body" : "package"),
+    childType: "package",
+  },
+  {
+    key: "__package_bodies",
+    label: "tree.packageBodies",
+    objectTypes: ["PACKAGE_BODY"],
+    nodeType: "group-package-bodies",
+    childType: "package-body",
   },
   {
     key: "__types",
@@ -694,7 +701,7 @@ const groupDefs: Array<{
   },
 ];
 
-const objectGroupNodeTypes = new Set<TreeNodeType>(["group-tables", "group-views", "group-materialized-views", "group-procedures", "group-functions", "group-triggers", "group-sequences", "group-synonyms", "group-packages", "group-types", "group-jobs"]);
+const objectGroupNodeTypes = new Set<TreeNodeType>(["group-tables", "group-views", "group-materialized-views", "group-procedures", "group-functions", "group-triggers", "group-sequences", "group-synonyms", "group-packages", "group-package-bodies", "group-types", "group-jobs"]);
 
 export function buildObjectGroupPlaceholderNodes({ nodeId, connectionId, database, schema, objectTypes }: { nodeId: string; connectionId: string; database: string; schema?: string; objectTypes: DatabaseObjectTreeKind[] }): TreeNode[] {
   const supported = new Set(objectTypes);
@@ -773,8 +780,8 @@ export function buildGroupedObjectTreeNodes({ nodeId, connectionId, database, sc
             database,
             schema: childSchema,
             isExpanded: false,
-            // openGauss packages expand to reveal their subprograms.
-            children: objectType === "PACKAGE" ? [] : undefined,
+            // openGauss packages and package bodies expand to reveal their subprograms.
+            children: objectType === "PACKAGE" || objectType === "PACKAGE_BODY" ? [] : undefined,
           };
         });
     groups.push({

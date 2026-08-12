@@ -311,6 +311,8 @@ function getIconInfo(node: TreeNode): { icon: any; colorClass: string } | null {
       return { icon: Link2, colorClass: "text-sky-500" };
     case "group-packages":
       return { icon: Package, colorClass: "text-cyan-500" };
+    case "group-package-bodies":
+      return { icon: FileCode, colorClass: "text-cyan-400" };
     case "group-jobs":
       return { icon: CalendarClock, colorClass: "text-orange-500" };
     case "group-types":
@@ -1189,6 +1191,7 @@ function onKeydown(event: KeyboardEvent) {
                   node.type === 'group-sequences' ||
                   node.type === 'group-synonyms' ||
                   node.type === 'group-packages' ||
+                  node.type === 'group-package-bodies' ||
                   node.type === 'group-partitions') &&
                 node.objectCount != null
               "

@@ -6511,6 +6511,20 @@ fn postgres_function_object_source_sql_without_prokind(
     )
 }
 
+fn opengauss_routine_gs_source_sql(schema: &str, name: &str, object_type: &db::ObjectSourceKind) -> String {
+    let source_type = if matches!(object_type, db::ObjectSourceKind::Procedure) { "procedure" } else { "function" };
+    format!(
+        "SELECT s.src \
+         FROM dbe_pldeveloper.gs_source s \
+         JOIN pg_catalog.pg_namespace n ON n.oid = s.nspid \
+         WHERE n.nspname = {} AND s.name = {} AND s.type = '{}' \
+         ORDER BY s.id DESC LIMIT 1",
+        sql_string(schema),
+        sql_string(name),
+        source_type
+    )
+}
+
 fn opengauss_routine_source_fallback_sqls(
     schema: &str,
     name: &str,
@@ -6518,24 +6532,28 @@ fn opengauss_routine_source_fallback_sqls(
     signature: Option<&str>,
     primary_err: &str,
 ) -> Vec<(&'static str, String)> {
-    if !matches!(object_type, db::ObjectSourceKind::Function) {
-        return vec![("text-return", postgres_object_source_sql(schema, name, object_type, signature))];
-    }
-
-    let mut fallbacks = Vec::with_capacity(3);
-    if !postgres_missing_prokind_error(primary_err) {
+    let mut fallbacks = Vec::with_capacity(4);
+    if matches!(object_type, db::ObjectSourceKind::Function) {
+        if !postgres_missing_prokind_error(primary_err) {
+            fallbacks.push(("text-return", postgres_object_source_sql(schema, name, object_type, signature)));
+        }
+        // Legacy Gauss-family catalogs vary independently in pg_get_functiondef's return type and prokind support.
+        // Keep both no-prokind expressions so a server with both compatibility differences still succeeds.
+        fallbacks.push((
+            "record-return without prokind",
+            postgres_function_object_source_sql_without_prokind(schema, name, true),
+        ));
+        fallbacks.push((
+            "text-return without prokind",
+            postgres_function_object_source_sql_without_prokind(schema, name, false),
+        ));
+    } else {
         fallbacks.push(("text-return", postgres_object_source_sql(schema, name, object_type, signature)));
     }
-    // Legacy Gauss-family catalogs vary independently in pg_get_functiondef's return type and prokind support.
-    // Keep both no-prokind expressions so a server with both compatibility differences still succeeds.
-    fallbacks.push((
-        "record-return without prokind",
-        postgres_function_object_source_sql_without_prokind(schema, name, true),
-    ));
-    fallbacks.push((
-        "text-return without prokind",
-        postgres_function_object_source_sql_without_prokind(schema, name, false),
-    ));
+    // Ghost objects: a failed CREATE leaves no pg_proc row on openGauss (DDL is
+    // atomic), so every pg_proc-based query above reports "Object source not
+    // found". The failed source text survives in dbe_pldeveloper.gs_source.
+    fallbacks.push(("gs_source", opengauss_routine_gs_source_sql(schema, name, object_type)));
     fallbacks
 }
 
@@ -7730,12 +7748,15 @@ mod object_source_tests {
             None,
             "column notation .definition applied to type text",
         );
-        assert_eq!(text_return.len(), 3);
+        assert_eq!(text_return.len(), 4);
         assert_eq!(text_return[0].0, "text-return");
         assert!(text_return[0].1.contains("p.prokind = 'f'"));
         assert_eq!(text_return[2].0, "text-return without prokind");
         assert!(!text_return[2].1.contains("p.prokind"));
         assert!(!text_return[2].1.contains(".definition"));
+        assert_eq!(text_return[3].0, "gs_source");
+        assert!(text_return[3].1.contains("dbe_pldeveloper.gs_source"));
+        assert!(text_return[3].1.contains("s.type = 'function'"));
 
         let missing_prokind = opengauss_routine_source_fallback_sqls(
             "public",
@@ -7744,9 +7765,22 @@ mod object_source_tests {
             None,
             "column p.prokind does not exist",
         );
-        assert_eq!(missing_prokind.len(), 2);
+        assert_eq!(missing_prokind.len(), 3);
         assert_eq!(missing_prokind[0].0, "record-return without prokind");
         assert_eq!(missing_prokind[1].0, "text-return without prokind");
+        assert_eq!(missing_prokind[2].0, "gs_source");
+
+        let procedure = opengauss_routine_source_fallback_sqls(
+            "public",
+            "recalc_score",
+            &ObjectSourceKind::Procedure,
+            None,
+            "Object source not found",
+        );
+        assert_eq!(procedure.len(), 2);
+        assert_eq!(procedure[0].0, "text-return");
+        assert_eq!(procedure[1].0, "gs_source");
+        assert!(procedure[1].1.contains("s.type = 'procedure'"));
     }
 
     #[test]

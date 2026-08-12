@@ -2417,6 +2417,7 @@ export default withEnglishFallback({
     sequences: "Sequências",
     synonyms: "Sinônimos",
     packages: "Pacotes",
+    packageBodies: "Corpos de pacotes",
     partitions: "Partições",
     subpartitions: "Subpartições",
     childTables: "Subtabelas",

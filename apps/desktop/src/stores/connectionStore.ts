@@ -4892,7 +4892,7 @@ export const useConnectionStore = defineStore("connection", () => {
         targetNode,
         subprograms.map((sub) => {
           const args = sub.arguments?.trim() ?? "";
-          const objectType = sub.function_type?.toUpperCase().includes("PROC") ? "PROCEDURE" : "FUNCTION";
+          const objectType = sub.functionType?.toUpperCase().includes("PROC") ? "PROCEDURE" : "FUNCTION";
           return {
             id: `${nodeId}:${sub.name}:${args}:${objectType}`,
             label: args ? `${sub.name}(${args})` : sub.name,
@@ -4912,6 +4912,8 @@ export const useConnectionStore = defineStore("connection", () => {
     } catch {
       // Older servers without the catalogs fail the query; keep the node a leaf.
       node.children = undefined;
+    } finally {
+      finishTreeNodeLoad(load);
     }
   }
 
@@ -5285,7 +5287,7 @@ export const useConnectionStore = defineStore("connection", () => {
       await loadPartitions(node.connectionId, node.database, node.tableName, node.schema, node.id, node.catalog);
     } else if (node.type === "group-table-subpartitions" && node.connectionId && hasTreeNodeDatabaseContext(node) && node.tableName) {
       await loadSubpartitions(node.connectionId, node.database, node.tableName, node.schema, node.id, node.catalog);
-    } else if (node.type === "package" && node.connectionId && hasTreeNodeDatabaseContext(node) && node.objectName) {
+    } else if ((node.type === "package" || node.type === "package-body") && node.connectionId && hasTreeNodeDatabaseContext(node) && node.objectName) {
       await loadOpengaussPackageSubprograms(node.connectionId, node.database, node.objectName, node.schema, node.id);
     } else if (objectTypesForGroupNode(node.type)) {
       await loadObjectGroupChildren(node, options);
@@ -7043,6 +7045,7 @@ export const useConnectionStore = defineStore("connection", () => {
     loadAllObjectGroupChildren,
     loadTableGroups,
     loadTreeNodeChildren,
+    loadOpengaussPackageSubprograms,
     loadColumns,
     loadIndexes,
     loadForeignKeys,

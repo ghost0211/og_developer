@@ -515,6 +515,7 @@ const groupTypes: Set<TreeNodeType> = new Set([
   "group-sequences",
   "group-synonyms",
   "group-packages",
+  "group-package-bodies",
   "group-types",
   "group-partitions",
   "group-extensions",
@@ -721,6 +722,8 @@ async function toggle() {
       await connectionStore.loadPartitions(node.connectionId, node.database, node.tableName, node.schema, node.id, node.catalog);
     } else if (node.type === "group-table-subpartitions" && node.connectionId && hasTreeNodeDatabaseContext(node) && node.tableName) {
       await connectionStore.loadSubpartitions(node.connectionId, node.database, node.tableName, node.schema, node.id, node.catalog);
+    } else if ((node.type === "package" || node.type === "package-body") && node.connectionId && hasTreeNodeDatabaseContext(node) && node.objectName) {
+      await connectionStore.loadOpengaussPackageSubprograms(node.connectionId, node.database, node.objectName, node.schema, node.id);
     } else if (node.type === "group-extensions" && node.connectionId && hasTreeNodeDatabaseContext(node)) {
       await connectionStore.refreshTreeNode(node);
     }
