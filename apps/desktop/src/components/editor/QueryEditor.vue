@@ -4296,7 +4296,17 @@ onMounted(async () => {
       sqlBookmarkExtension(),
       lineNumbers({
         domEventHandlers: {
-          mousedown: selectSqlLineFromGutter,
+          mousedown(view, line, event) {
+            const mouse = event as MouseEvent;
+            if (mouse.button === 2) {
+              // Right-click: open the bookmark menu on mousedown — some
+              // webviews (WebView2) intercept the native contextmenu event.
+              mouse.preventDefault();
+              mouse.stopPropagation();
+              return showSqlBookmarkContextMenu(view, line.from, mouse, bookmarkMenuLabels.value);
+            }
+            return selectSqlLineFromGutter(view, line, event);
+          },
           contextmenu(view, line, event) {
             event.preventDefault();
             event.stopPropagation();

@@ -286,6 +286,13 @@ export function sqlBookmarkExtension() {
       domEventHandlers: {
         mousedown(view, line, event) {
           const mouse = event as MouseEvent;
+          if (mouse.button === 2) {
+            // Right-click: open the bookmark menu on mousedown — some webviews
+            // (WebView2) intercept the native contextmenu event.
+            mouse.preventDefault();
+            mouse.stopPropagation();
+            return showSqlBookmarkContextMenu(view, line.from, mouse, bookmarksLabels(view));
+          }
           if (mouse.button !== 0) return false;
           mouse.preventDefault();
           toggleSqlBookmark(view, line.from);
