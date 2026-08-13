@@ -155,9 +155,11 @@ async fn attach_and_collect(
 ) -> Result<(OpenGaussDebugPosition, Vec<OpenGaussDebugCodeLine>), String> {
     let mut last_error = String::new();
     let mut attach_rows = Vec::new();
-    for attempt in 0..5 {
+    // Remote/slow servers need several seconds for the debuggee to run turn_on,
+    // start the CALL and park before the first line — keep retrying for ~7s.
+    for attempt in 0..8 {
         if attempt > 0 {
-            tokio::time::sleep(Duration::from_millis(500)).await;
+            tokio::time::sleep(Duration::from_millis(800)).await;
         }
         match run_debug_query(
             debugger,
@@ -369,8 +371,20 @@ pub async fn opengauss_debug_start(
             if let Ok(debuggee) = debuggee_pool.get().await {
                 let _ = run_debug_query(&debuggee, &format!("select * from dbe_pldebugger.turn_off({oid})")).await;
             }
-            let _ = tokio::time::timeout(Duration::from_secs(3), call_task).await;
-            return Err(error);
+            // The background CALL may have failed outright (bad arguments,
+            // missing routine, unsupported call form) — that is the real
+            // cause, and it is currently masked by the attach error. A call
+            // that completed instantly without parking is equally suspicious:
+            // turn_on did not apply to it.
+            match tokio::time::timeout(Duration::from_secs(3), call_task).await {
+                Ok(Ok(Err(call_error))) => return Err(format!("{error}; debuggee call failed: {call_error}")),
+                Ok(Ok(Ok(_))) => {
+                    return Err(format!(
+                        "{error}; the call completed without reaching the debugger — the routine may lack debug info or turn_on did not apply"
+                    ));
+                }
+                _ => return Err(error),
+            }
         }
     };
 

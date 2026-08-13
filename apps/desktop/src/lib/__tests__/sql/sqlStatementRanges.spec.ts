@@ -369,6 +369,32 @@ END big_pkg;`;
     expect(rangeSqlTexts(splitSqlStatementRanges(gaussDbNestedProcedure, "gaussdb"))).toEqual([gaussDbNestedProcedure]);
   });
 
+  it("keeps an openGauss AS-bodied procedure with inner semicolons as one statement", () => {
+    const openGaussProcedure = `CREATE OR REPLACE PROCEDURE estab.checkestabbusinesslicense(
+  pRowUuid uuid,
+  pSocialCreditCode VARCHAR(60),
+  oResultCode out int
+)
+AS
+DECLARE
+  v_count INT := 0;
+begin
+  if pRowUuid is null then
+    oResultCode := 0;
+    RAISE EXCEPTION 'pRowUuid不能为空!';
+  end if;
+  SELECT COUNT(1) INTO v_count FROM def_estab WHERE social_credit_code = pSocialCreditCode AND delete_flag = 0 AND row_uuid <> pRowUuid;
+  IF v_count > 0 then
+    oResultCode := 0;
+    RAISE EXCEPTION '统一社会信用代码不允许重复,请检查数据!';
+  else
+    oResultCode := 1;
+  END IF;
+END;`;
+    expect(rangeSqlTexts(splitSqlStatementRanges(openGaussProcedure, "opengauss"))).toEqual([openGaussProcedure]);
+    expect(rangeSqlTexts(splitSqlStatementRanges(`${openGaussProcedure}\n\nSELECT 1`, "opengauss"))).toEqual([openGaussProcedure, "SELECT 1"]);
+  });
+
   it("separates GaussDB dollar-quoted functions from surrounding statements", () => {
     const ranges = splitSqlStatementRanges(gaussDbDollarQuotedFunctionScript, "gaussdb");
     expect(rangeSqlTexts(ranges)).toEqual([
