@@ -46,12 +46,10 @@ describe("AppTabBar right-side close action", () => {
     const closeRightPositions = [...tabBarSource.matchAll(/label: t\("contextMenu\.closeRightTabs"\),/g)].map((match) => match.index);
     const closeAllPositions = [...tabBarSource.matchAll(/label: closeAllLabel,/g)].map((match) => match.index);
     expect(closeOtherPositions).toHaveLength(2);
-    expect(closeRightPositions).toHaveLength(2);
+    expect(closeRightPositions).toHaveLength(1);
     expect(closeAllPositions).toHaveLength(2);
-    closeRightPositions.forEach((position, index) => {
-      expect(position).toBeGreaterThan(closeOtherPositions[index]);
-      expect(position).toBeLessThan(closeAllPositions[index]);
-    });
+    expect(closeRightPositions[0]).toBeGreaterThan(closeOtherPositions[1]);
+    expect(closeRightPositions[0]).toBeLessThan(closeAllPositions[1]);
   });
 
   it("waits for query tab confirmation before closing special surfaces", () => {
@@ -59,8 +57,9 @@ describe("AppTabBar right-side close action", () => {
     expect(tabBarSource).toContain("if (shouldActivateTarget) activateTab(tab.id)");
   });
 
-  it("reactivates settings after closing an active driver store to its right", () => {
-    expect(tabBarSource).toContain("const shouldActivateSettings = !!props.driverStoreActive");
-    expect(tabBarSource).toMatch(/emit\("close-driver-store"\);\s*if \(shouldActivateSettings\) emit\("activate-settings-page"\);/);
+  it("does not render settings as a tab", () => {
+    expect(tabBarSource).not.toContain("settingsPage");
+    expect(tabBarSource).not.toContain("settings-page");
+    expect(tabBarSource).not.toContain("activate-settings-page");
   });
 });

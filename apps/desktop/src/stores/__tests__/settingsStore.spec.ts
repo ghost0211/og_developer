@@ -198,9 +198,9 @@ describe("normalizeEditorSettings", () => {
       } as any,
     });
 
-    expect(settings.toolbarItems.sqlFileTree).toBe(false);
     expect(settings.toolbarItems.history).toBe(false);
-    expect(settings.toolbarItems.sqlLibrary).toBe(true);
+    expect(settings.toolbarItems).not.toHaveProperty("sqlFileTree");
+    expect(settings.toolbarItems).not.toHaveProperty("sqlLibrary");
     expect(settings.toolbarItems.exclusiveRightSidebarPanels).toBe(true);
   });
 

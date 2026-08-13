@@ -37,16 +37,16 @@ describe("right sidebar panel entry points", () => {
     expect(appSource).toContain("enforceRightSidebarPanelExclusivity(currentRightSidebarPanelState(), lastOpenedRightSidebarPanel)");
   });
 
-  it("does not couple toolbar visibility to panel closing", () => {
+  it("keeps history and AI as toolbar panel entry points while routing SQL panels through menus", () => {
     for (const [setting, event] of [
-      ["sqlLibrary", "toggle-sql-library"],
-      ["sqlFileTree", "toggle-sql-file-panel"],
       ["history", "toggle-history"],
       ["ai", "toggle-ai"],
     ]) {
       expect(toolbarSource).toContain(`<Tooltip v-if="toolbarItems.${setting}">`);
       expect(toolbarSource).toContain(`@click="emit('${event}')"`);
     }
+    expect(toolbarSource).not.toContain('<Tooltip v-if="toolbarItems.sqlLibrary">');
+    expect(toolbarSource).not.toContain('<Tooltip v-if="toolbarItems.sqlFileTree">');
     expect(appSource).not.toMatch(/watch\([\s\S]{0,180}toolbarItems\.(ai|history|sqlLibrary|sqlFileTree)[\s\S]{0,180}closeRightSidebarPanel/);
   });
 });

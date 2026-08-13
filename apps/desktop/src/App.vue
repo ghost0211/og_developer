@@ -184,7 +184,6 @@ const driverStoreActive = ref(false);
 const driverStoreActiveTab = ref<"agent" | "jdbc" | "storage" | "runtime">("agent");
 const settingsReturnSurface = ref<"query" | "driverStore" | "welcome">("welcome");
 const showDriverStore = computed(() => driverStoreTabOpen.value && driverStoreActive.value);
-const showSettingsPage = computed(() => settingsDialogOpen.value);
 const showQuickOpen = ref(false);
 const agentDriverUpdateCount = ref(0);
 const showHistory = ref(false);
@@ -397,10 +396,11 @@ function activateSettingsPage() {
   driverStoreActive.value = false;
 }
 
-function closeSettingsPage() {
+function closeSettingsPage(options: { restoreReturnSurface?: boolean } = {}) {
+  const restoreReturnSurface = options.restoreReturnSurface !== false;
   settingsDialogOpen.value = false;
   settingsStore.settingsPageActive = false;
-  if (settingsReturnSurface.value === "driverStore" && driverStoreTabOpen.value) {
+  if (restoreReturnSurface && settingsReturnSurface.value === "driverStore" && driverStoreTabOpen.value) {
     driverStoreActive.value = true;
     return;
   }
@@ -569,7 +569,7 @@ watch(
     }
     if (id) newQueryContextSource.value = "tab";
     if (id && driverStoreActive.value) driverStoreActive.value = false;
-    if (id && settingsDialogOpen.value) closeSettingsPage();
+    if (id && settingsDialogOpen.value) closeSettingsPage({ restoreReturnSurface: false });
     selectedSql.value = "";
     activeOutputView.value = "result";
     if (id) queryStore.reloadEvictedTab(id);
@@ -586,7 +586,7 @@ watch(
 watch(
   () => settingsStore.settingsPageActive,
   (active) => {
-    if (!active && settingsDialogOpen.value) settingsDialogOpen.value = false;
+    if (!active && settingsDialogOpen.value) closeSettingsPage({ restoreReturnSurface: false });
   },
 );
 
@@ -1968,7 +1968,7 @@ function activateQueryTab(tabId: string): boolean {
   dispatchBeforeTabSwitch(tabId);
   queryStore.activeTabId = tabId;
   driverStoreActive.value = false;
-  if (settingsDialogOpen.value) closeSettingsPage();
+  if (settingsDialogOpen.value) closeSettingsPage({ restoreReturnSurface: false });
   else settingsStore.settingsPageActive = false;
   return true;
 }
@@ -2340,13 +2340,8 @@ onUnmounted(() => {
           :theme-mode="themeMode"
           :show-ai-panel="showAiPanel"
           :show-history="showHistory"
-          :show-sql-library="showSqlLibraryPanel"
-          :show-sql-file-panel="showSqlFilePanel"
-          :show-driver-store="showDriverStore"
-          :show-settings-page="showSettingsPage"
           :checking-updates="checkingUpdates"
           :has-update-available="toolbarHasUpdateAvailable"
-          :agent-driver-update-count="toolbarAgentDriverUpdateCount"
           :has-connections="connectionStore.connections.length > 0"
           :has-sql-file-connections="hasSqlFileConnections"
           :has-active-tab="!!activeTab"

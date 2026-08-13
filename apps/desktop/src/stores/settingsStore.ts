@@ -505,14 +505,7 @@ export interface EditorSettings {
 }
 
 export interface ToolbarItems {
-  dataTransfer: boolean;
-  driverManager: boolean;
-  sqlFile: boolean;
-  schemaDiff: boolean;
-  dataCompare: boolean;
   checkUpdates: boolean;
-  sqlLibrary: boolean;
-  sqlFileTree: boolean;
   history: boolean;
   ai: boolean;
   theme: boolean;
@@ -520,14 +513,7 @@ export interface ToolbarItems {
 }
 
 export const DEFAULT_TOOLBAR_ITEMS: ToolbarItems = {
-  dataTransfer: true,
-  driverManager: false,
-  sqlFile: true,
-  schemaDiff: true,
-  dataCompare: true,
   checkUpdates: false,
-  sqlLibrary: true,
-  sqlFileTree: true,
   history: true,
   ai: true,
   theme: true,
@@ -835,16 +821,9 @@ function normalizeToolbarItems(items: Partial<ToolbarItems> | undefined): Toolba
   const defaults = DEFAULT_TOOLBAR_ITEMS;
   if (!items || typeof items !== "object") return { ...defaults };
   return {
-    dataTransfer: items.dataTransfer ?? defaults.dataTransfer,
-    // og developer: the driver store page and updater are not part of this
-    // product — force them off even for settings persisted by older builds.
-    driverManager: false,
-    sqlFile: items.sqlFile ?? defaults.sqlFile,
-    schemaDiff: items.schemaDiff ?? defaults.schemaDiff,
-    dataCompare: items.dataCompare ?? defaults.dataCompare,
+    // The updater button is intentionally disabled in this product, including for
+    // settings persisted by older builds.
     checkUpdates: false,
-    sqlLibrary: items.sqlLibrary ?? defaults.sqlLibrary,
-    sqlFileTree: items.sqlFileTree ?? defaults.sqlFileTree,
     history: items.history ?? defaults.history,
     ai: items.ai ?? defaults.ai,
     theme: items.theme ?? defaults.theme,

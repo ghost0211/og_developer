@@ -23,8 +23,6 @@ import type { QueryTab } from "@/types/database";
 const props = defineProps<{
   driverStoreOpen?: boolean;
   driverStoreActive?: boolean;
-  settingsPageOpen?: boolean;
-  settingsPageActive?: boolean;
   agentDriverUpdateCount?: number;
 }>();
 
@@ -32,8 +30,6 @@ const emit = defineEmits<{
   "activate-tab": [];
   "activate-driver-store": [];
   "close-driver-store": [];
-  "activate-settings-page": [];
-  "close-settings-page": [];
   "save-tab": [tabId: string];
   "discard-tab-close": [];
   "save-all-tab-close": [];
@@ -56,7 +52,7 @@ const isWrapLayout = computed(() => settingsStore.editorSettings.tabLayout === "
 const fixedTabs = computed(() => queryStore.tabs.filter((tab) => tab.pinned));
 const regularTabs = computed(() => queryStore.tabs.filter((tab) => !tab.pinned));
 const hasFixedTabs = computed(() => fixedTabs.value.length > 0);
-const regularSurfaceCount = computed(() => regularTabs.value.length + (props.driverStoreOpen ? 1 : 0) + (props.settingsPageOpen ? 1 : 0));
+const regularSurfaceCount = computed(() => regularTabs.value.length + (props.driverStoreOpen ? 1 : 0));
 const closeConfirmDirtyCount = computed(() => queryStore.closeConfirmDirtyTabIds.length);
 const showCloseConfirmBulkActions = computed(() => closeConfirmDirtyCount.value > 1);
 const closeConfirmDirtyTabs = computed(() => queryStore.closeConfirmDirtyTabIds.map((id) => queryStore.tabs.find((tab) => tab.id === id)).filter((tab): tab is QueryTab => !!tab));
@@ -172,11 +168,8 @@ function tabTitleStyle(tab: QueryTab): CSSProperties | undefined {
   };
 }
 
-type SpecialRegularSurface = "driverStore" | "settings";
-
-function closeSpecialRegularSurfaces(keep?: SpecialRegularSurface) {
-  if (keep !== "driverStore" && props.driverStoreOpen) emit("close-driver-store");
-  if (keep !== "settings" && props.settingsPageOpen) emit("close-settings-page");
+function closeSpecialRegularSurfaces(keepDriverStore = false) {
+  if (!keepDriverStore && props.driverStoreOpen) emit("close-driver-store");
 }
 
 function closeOtherRegularTabsFromTab(tab: QueryTab) {
@@ -191,27 +184,16 @@ function tabsToRightInGroup(tab: QueryTab) {
 }
 
 function hasTabsToRight(tab: QueryTab) {
-  return tabsToRightInGroup(tab).length > 0 || (!tab.pinned && (!!props.settingsPageOpen || !!props.driverStoreOpen));
+  return tabsToRightInGroup(tab).length > 0 || (!tab.pinned && !!props.driverStoreOpen);
 }
 
 function closeTabsToRightFromTab(tab: QueryTab) {
-  const shouldActivateTarget = !tab.pinned && (!!props.settingsPageActive || !!props.driverStoreActive);
+  const shouldActivateTarget = !tab.pinned && !!props.driverStoreActive;
   queryStore.closeRightTabs(tab.id, () => {
     if (tab.pinned) return;
     closeSpecialRegularSurfaces();
     if (shouldActivateTarget) activateTab(tab.id);
   });
-}
-
-function hasSpecialRegularSurfaceToRight(surface: SpecialRegularSurface) {
-  return surface === "settings" && !!props.driverStoreOpen;
-}
-
-function closeSpecialRegularSurfacesToRight(surface: SpecialRegularSurface) {
-  if (surface !== "settings" || !props.driverStoreOpen) return;
-  const shouldActivateSettings = !!props.driverStoreActive;
-  emit("close-driver-store");
-  if (shouldActivateSettings) emit("activate-settings-page");
 }
 
 function closeAllRegularSurfaces() {
@@ -220,14 +202,9 @@ function closeAllRegularSurfaces() {
 }
 
 function closeOtherActiveTabs() {
-  if (props.settingsPageActive) {
-    queryStore.closeRegularTabs();
-    closeSpecialRegularSurfaces("settings");
-    return;
-  }
   if (props.driverStoreActive) {
     queryStore.closeRegularTabs();
-    closeSpecialRegularSurfaces("driverStore");
+    closeSpecialRegularSurfaces(true);
     return;
   }
 
@@ -239,9 +216,8 @@ function closeOtherActiveTabs() {
 
 defineExpose({ closeOtherActiveTabs });
 
-function getSpecialRegularTabMenuItems(surface: SpecialRegularSurface): ContextMenuItem[] {
-  const keep = surface;
-  const closeCurrent = surface === "driverStore" ? () => emit("close-driver-store") : () => emit("close-settings-page");
+function getSpecialRegularTabMenuItems(): ContextMenuItem[] {
+  const closeCurrent = () => emit("close-driver-store");
   const closeOtherDisabled = regularSurfaceCount.value <= 1;
   const closeOtherLabel = hasFixedTabs.value ? t("contextMenu.closeOtherRegularTabs") : t("contextMenu.closeOtherTabs");
   const closeAllLabel = hasFixedTabs.value ? t("contextMenu.closeAllRegularTabs") : t("contextMenu.closeAllTabs");
@@ -258,17 +234,11 @@ function getSpecialRegularTabMenuItems(surface: SpecialRegularSurface): ContextM
       label: closeOtherLabel,
       action: () => {
         queryStore.closeRegularTabs();
-        closeSpecialRegularSurfaces(keep);
+        closeSpecialRegularSurfaces(true);
       },
       disabled: closeOtherDisabled,
       icon: X,
       shortcut: settingsStore.editorSettings.shortcuts.closeOtherTabs,
-    },
-    {
-      label: t("contextMenu.closeRightTabs"),
-      action: () => closeSpecialRegularSurfacesToRight(surface),
-      disabled: !hasSpecialRegularSurfaceToRight(surface),
-      icon: X,
     },
     {
       label: closeAllLabel,
@@ -446,7 +416,7 @@ watch(
 
 function tabColorStyle(tab: QueryTab) {
   const color = connectionColor(tab.connectionId);
-  const isActive = tab.id === queryStore.activeTabId && !props.driverStoreActive && !props.settingsPageActive;
+  const isActive = tab.id === queryStore.activeTabId && !props.driverStoreActive;
   const isClassic = isClassicLayout.value;
   if (!color) {
     if (isClassic) {
@@ -628,15 +598,11 @@ function onOverflowItemKeydown(event: KeyboardEvent, tabId: string, kind: "regul
                     class="app-tab-pill group flex items-center gap-1 px-2 text-xs cursor-pointer transition-colors whitespace-nowrap select-none"
                     :class="
                       isClassicLayout
-                        ? [
-                            compactTabTitle ? 'min-w-24' : 'min-w-38',
-                            'h-full border-r border-border/80 font-medium dark:border-border/45',
-                            tab.id === queryStore.activeTabId && !driverStoreActive && !settingsPageActive ? 'bg-background text-foreground' : 'text-foreground/70 hover:text-foreground/90',
-                          ]
-                        : [compactTabTitle ? 'min-w-24' : 'min-w-38', 'h-7 rounded-md border', tab.id === queryStore.activeTabId && !driverStoreActive && !settingsPageActive ? 'text-foreground font-medium' : 'border-border/60 text-foreground/70 hover:border-border hover:text-foreground/90']
+                        ? [compactTabTitle ? 'min-w-24' : 'min-w-38', 'h-full border-r border-border/80 font-medium dark:border-border/45', tab.id === queryStore.activeTabId && !driverStoreActive ? 'bg-background text-foreground' : 'text-foreground/70 hover:text-foreground/90']
+                        : [compactTabTitle ? 'min-w-24' : 'min-w-38', 'h-7 rounded-md border', tab.id === queryStore.activeTabId && !driverStoreActive ? 'text-foreground font-medium' : 'border-border/60 text-foreground/70 hover:border-border hover:text-foreground/90']
                     "
                     :style="[tabColorStyle(tab), tabDropStyle(tab.id)]"
-                    :data-active-tab="tab.id === queryStore.activeTabId && !driverStoreActive && !settingsPageActive"
+                    :data-active-tab="tab.id === queryStore.activeTabId && !driverStoreActive"
                     @click="handleTabClick(tab)"
                     @dblclick.stop="startRenameTab(tab)"
                     @mousedown.middle.prevent="queryStore.closeTab(tab.id)"
@@ -700,7 +666,7 @@ function onOverflowItemKeydown(event: KeyboardEvent, tabId: string, kind: "regul
           <!-- Settings open in a modal dialog from the application menu, never as a tab. -->
 
           <!-- Driver Store Tab -->
-          <CustomContextMenu v-if="driverStoreOpen" :items="getSpecialRegularTabMenuItems('driverStore')" v-slot="{ onContextMenu }">
+          <CustomContextMenu v-if="driverStoreOpen" :items="getSpecialRegularTabMenuItems()" v-slot="{ onContextMenu }">
             <div :class="isClassicLayout ? 'h-full' : ''" @contextmenu="onContextMenu">
               <div
                 data-driver-store-tab
@@ -742,7 +708,7 @@ function onOverflowItemKeydown(event: KeyboardEvent, tabId: string, kind: "regul
             <CustomContextMenu v-for="tab in queryStore.tabs" :key="tab.id" :items="getTabMenuItems(tab)" v-slot="{ onContextMenu }">
               <div
                 class="group flex w-full items-center gap-2 rounded-md px-1.5 py-1.5 text-left text-sm outline-hidden hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground"
-                :class="tab.id === queryStore.activeTabId && !driverStoreActive && !settingsPageActive ? 'bg-accent/70 text-accent-foreground' : ''"
+                :class="tab.id === queryStore.activeTabId && !driverStoreActive ? 'bg-accent/70 text-accent-foreground' : ''"
                 :title="tabTitleLabel(tab)"
                 role="menuitem"
                 tabindex="0"
@@ -798,15 +764,11 @@ function onOverflowItemKeydown(event: KeyboardEvent, tabId: string, kind: "regul
                     class="app-tab-pill group flex items-center gap-1 px-2 text-xs cursor-pointer transition-colors whitespace-nowrap select-none"
                     :class="
                       isClassicLayout
-                        ? [
-                            compactTabTitle ? 'min-w-24' : 'min-w-38',
-                            'h-full border-r border-border/80 font-medium dark:border-border/45',
-                            tab.id === queryStore.activeTabId && !driverStoreActive && !settingsPageActive ? 'bg-background text-foreground' : 'text-foreground/70 hover:text-foreground/90',
-                          ]
-                        : [compactTabTitle ? 'min-w-24' : 'min-w-38', 'h-7 rounded-md border', tab.id === queryStore.activeTabId && !driverStoreActive && !settingsPageActive ? 'text-foreground font-medium' : 'border-border/60 text-foreground/70 hover:border-border hover:text-foreground/90']
+                        ? [compactTabTitle ? 'min-w-24' : 'min-w-38', 'h-full border-r border-border/80 font-medium dark:border-border/45', tab.id === queryStore.activeTabId && !driverStoreActive ? 'bg-background text-foreground' : 'text-foreground/70 hover:text-foreground/90']
+                        : [compactTabTitle ? 'min-w-24' : 'min-w-38', 'h-7 rounded-md border', tab.id === queryStore.activeTabId && !driverStoreActive ? 'text-foreground font-medium' : 'border-border/60 text-foreground/70 hover:border-border hover:text-foreground/90']
                     "
                     :style="[tabColorStyle(tab), tabDropStyle(tab.id)]"
-                    :data-active-tab="tab.id === queryStore.activeTabId && !driverStoreActive && !settingsPageActive"
+                    :data-active-tab="tab.id === queryStore.activeTabId && !driverStoreActive"
                     @click="handleTabClick(tab)"
                     @dblclick.stop="startRenameTab(tab)"
                     @mousedown.middle.prevent="queryStore.closeTab(tab.id)"
@@ -883,7 +845,7 @@ function onOverflowItemKeydown(event: KeyboardEvent, tabId: string, kind: "regul
             <CustomContextMenu v-for="tab in fixedTabs" :key="tab.id" :items="getTabMenuItems(tab)" v-slot="{ onContextMenu }">
               <div
                 class="group flex w-full items-center gap-2 rounded-md px-1.5 py-1.5 text-left text-sm outline-hidden hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground"
-                :class="tab.id === queryStore.activeTabId && !driverStoreActive && !settingsPageActive ? 'bg-accent/70 text-accent-foreground' : ''"
+                :class="tab.id === queryStore.activeTabId && !driverStoreActive ? 'bg-accent/70 text-accent-foreground' : ''"
                 :title="tabTitleLabel(tab)"
                 role="menuitem"
                 tabindex="0"

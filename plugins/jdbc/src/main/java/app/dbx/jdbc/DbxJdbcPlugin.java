@@ -27,6 +27,7 @@ import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.SQLFeatureNotSupportedException;
+import java.sql.SQLWarning;
 import java.lang.reflect.Method;
 import java.sql.Statement;
 import java.sql.Time;
@@ -778,13 +779,46 @@ public final class DbxJdbcPlugin {
             result.put("affected_rows", columns.isEmpty() ? Math.max(executed.updateCount(), 0) : 0);
             result.put("execution_time_ms", (System.nanoTime() - start) / 1_000_000);
             result.put("truncated", truncated);
+            ArrayNode messages = MAPPER.createArrayNode();
+            appendStatementWarnings(statement, messages);
             if (drainOpenGaussOutput) {
-                ArrayNode messages = drainOpenGaussOutput(conn);
-                if (!messages.isEmpty()) {
-                    result.set("messages", messages);
+                // put_line lines arrive through BOTH channels on the official
+                // driver (NOTICE warnings + get_lines buffer); keep drained
+                // lines that warnings did not already carry (e.g. buffered by
+                // an earlier run on this connection).
+                ArrayNode drained = drainOpenGaussOutput(conn);
+                for (JsonNode line : drained) {
+                    if (!arrayNodeHasText(messages, line.asText())) {
+                        messages.add(line);
+                    }
                 }
             }
+            if (!messages.isEmpty()) {
+                result.set("messages", messages);
+            }
             return result;
+        }
+    }
+
+    private static boolean arrayNodeHasText(ArrayNode array, String text) {
+        for (JsonNode item : array) {
+            if (item.asText().equals(text)) return true;
+        }
+        return false;
+    }
+
+    // og developer: RAISE NOTICE (and similar server notices) surface as JDBC
+    // statement warnings. Read them right after execution, before the next
+    // statement on this connection clears them.
+    private static void appendStatementWarnings(Statement statement, ArrayNode messages) {
+        try {
+            for (SQLWarning warning = statement.getWarnings(); warning != null; warning = warning.getNextWarning()) {
+                String text = warning.getMessage();
+                if (text != null && !text.isBlank()) {
+                    messages.add(text);
+                }
+            }
+        } catch (SQLException ignored) {
         }
     }
 

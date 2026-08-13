@@ -1,12 +1,11 @@
 <script setup lang="ts">
-import { computed, ref, onMounted, onBeforeUnmount, nextTick, watch } from "vue";
+import { computed, ref, onMounted, onBeforeUnmount, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { invoke } from "@tauri-apps/api/core";
-import { Loader2, Moon, Sun, SunMoon, History, Bot, ArrowLeftRight, FileCode, BookMarked, GitCompareArrows, TableProperties, Settings, CloudDownload, FileDown, FolderTree } from "@lucide/vue";
+import { Loader2, Moon, Sun, SunMoon, History, Bot, CloudDownload } from "@lucide/vue";
 import { Button } from "@/components/ui/button";
 import AppMenuBar from "@/components/layout/AppMenuBar.vue";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import LightDropdown from "@/components/ui/LightDropdown.vue";
 import WindowControls from "@/components/layout/WindowControls.vue";
 import ExportProgressPopover from "@/components/export/ExportProgressPopover.vue";
 import { MAC_TRAFFIC_LIGHT_X, macTrafficLightInsetPaddingForScale, shouldReserveMacTrafficLightInset, useWindowControls } from "@/composables/useWindowControls";
@@ -19,13 +18,8 @@ const props = defineProps<{
   themeMode: AppThemeMode;
   showAiPanel: boolean;
   showHistory: boolean;
-  showSqlLibrary: boolean;
-  showSqlFilePanel: boolean;
-  showDriverStore: boolean;
-  showSettingsPage: boolean;
   checkingUpdates: boolean;
   hasUpdateAvailable: boolean;
-  agentDriverUpdateCount: number;
   hasConnections: boolean;
   hasSqlFileConnections: boolean;
   hasActiveTab: boolean;
@@ -103,25 +97,10 @@ function onToolbarDblClick(e: MouseEvent) {
 
 const toolbarEl = ref<HTMLElement>();
 const newConnectionLabelEl = ref<HTMLElement>();
-const toolbarCollapsed = ref(false);
 const shouldReserveTrafficLightInset = computed(() => shouldReserveMacTrafficLightInset(isMac, isFullscreen.value, isDesktop));
 
-function checkToolbarWidth() {
-  const el = toolbarEl.value;
-  if (!el) return;
-  const screenWidth = window.visualViewport?.width ?? window.innerWidth;
-  const threshold = screenWidth / 2;
-  toolbarCollapsed.value = el.clientWidth < threshold;
-}
-
-// ──────────── Right-side overflow detection ────────────
-
-const rightWrapper = ref<HTMLElement>();
-const rightOverflowCount = ref(0);
 let toolbarLayoutRaf = 0;
 let trafficLightSyncRaf = 0;
-let settlingRightOverflow = false;
-let pendingRightOverflowSettle = false;
 const measuredTrafficLightInset = ref<number | null>(null);
 
 type MacosTrafficLightLayout = {
@@ -132,160 +111,11 @@ type MacosTrafficLightLayout = {
   reserved_inset: number;
 };
 
-/** Ordered list of right-side item keys that can overflow into "More".
- *  Items earlier in the list overflow first when space shrinks. */
-const collapsibleRightItemDefs = computed(() => {
-  interface ItemDef {
-    key: string;
-    label: string;
-    icon: any;
-    action: () => void;
-    disabled: boolean;
-  }
-  const items: ItemDef[] = [];
-  if (toolbarItems.value.checkUpdates) {
-    items.push({
-      key: "checkUpdates",
-      label: t("updates.check"),
-      icon: CloudDownload,
-      action: () => emit("check-updates"),
-      disabled: checkingUpdates.value,
-    });
-  }
-  items.push({
-    key: "exportProgress",
-    label: t("exportProgress.tooltip"),
-    icon: FileDown,
-    action: () => {},
-    disabled: false,
-  });
-  if (toolbarItems.value.sqlLibrary) {
-    items.push({
-      key: "sqlLibrary",
-      label: t("sqlLibrary.title"),
-      icon: BookMarked,
-      action: () => emit("toggle-sql-library"),
-      disabled: false,
-    });
-  }
-  if (toolbarItems.value.sqlFileTree) {
-    items.push({
-      key: "sqlFileTree",
-      label: t("sqlFileTree.title"),
-      icon: FolderTree,
-      action: () => emit("toggle-sql-file-panel"),
-      disabled: false,
-    });
-  }
-  if (toolbarItems.value.history) {
-    items.push({
-      key: "history",
-      label: t("history.title"),
-      icon: History,
-      action: () => emit("toggle-history"),
-      disabled: false,
-    });
-  }
-  if (toolbarItems.value.ai) {
-    items.push({
-      key: "ai",
-      label: "AI",
-      icon: Bot,
-      action: () => emit("toggle-ai"),
-      disabled: false,
-    });
-  }
-  if (toolbarItems.value.theme) {
-    items.push({
-      key: "theme",
-      label: t("toolbar.theme"),
-      icon: themeTriggerIcon.value,
-      action: cycleThemeMode,
-      disabled: false,
-    });
-  }
-  return items;
-});
-
-const overflowedRightKeys = computed(() => {
-  const defs = collapsibleRightItemDefs.value;
-  const overflowKeys = defs.slice(0, rightOverflowCount.value).map((d) => d.key);
-  return new Set(overflowKeys);
-});
-
-/** Overflowed right items to show in the "More" dropdown. */
-const overflowRightMenuItems = computed(() => {
-  const defs = collapsibleRightItemDefs.value;
-  return defs.slice(0, rightOverflowCount.value).map((d) => ({
-    value: d.key,
-    label: d.label,
-    icon: d.icon,
-    action: d.action,
-    disabled: d.disabled,
-  }));
-});
-
-async function settleRightOverflowOnce() {
-  const wrapper = rightWrapper.value;
-  if (!wrapper) return;
-
-  const defsLength = collapsibleRightItemDefs.value.length;
-  if (rightOverflowCount.value > defsLength) {
-    rightOverflowCount.value = defsLength;
-    await nextTick();
-  }
-
-  for (let i = 0; i <= defsLength + 1; i++) {
-    const current = rightWrapper.value;
-    if (!current) return;
-
-    if (current.scrollWidth > current.clientWidth + 1 && rightOverflowCount.value < defsLength) {
-      rightOverflowCount.value++;
-      await nextTick();
-      continue;
-    }
-
-    if (rightOverflowCount.value <= 0) return;
-
-    rightOverflowCount.value--;
-    await nextTick();
-
-    const restored = rightWrapper.value;
-    if (restored && restored.scrollWidth <= restored.clientWidth + 1) {
-      continue;
-    }
-
-    rightOverflowCount.value++;
-    await nextTick();
-    return;
-  }
-}
-
-async function settleRightOverflow() {
-  if (settlingRightOverflow) {
-    pendingRightOverflowSettle = true;
-    return;
-  }
-
-  settlingRightOverflow = true;
-  try {
-    do {
-      pendingRightOverflowSettle = false;
-      await nextTick();
-      await settleRightOverflowOnce();
-    } while (pendingRightOverflowSettle);
-  } finally {
-    settlingRightOverflow = false;
-  }
-}
-
 function scheduleToolbarLayout() {
   if (toolbarLayoutRaf) cancelAnimationFrame(toolbarLayoutRaf);
   toolbarLayoutRaf = requestAnimationFrame(() => {
     toolbarLayoutRaf = 0;
-    checkToolbarWidth();
     scheduleTrafficLightSync();
-    void settleRightOverflow();
   });
 }
 
@@ -321,7 +151,6 @@ function handleWindowResize() {
   scheduleToolbarLayout();
 }
 
-watch(collapsibleRightItemDefs, () => scheduleToolbarLayout(), { flush: "post" });
 watch(
   () => settingsStore.editorSettings.uiScale,
   () => {
@@ -339,7 +168,6 @@ let resizeObserver: ResizeObserver | null = null;
 onMounted(() => {
   resizeObserver = new ResizeObserver(scheduleToolbarLayout);
   if (toolbarEl.value) resizeObserver.observe(toolbarEl.value);
-  if (rightWrapper.value) resizeObserver.observe(rightWrapper.value);
   window.addEventListener("resize", handleWindowResize);
   scheduleToolbarLayout();
 });
@@ -351,103 +179,6 @@ onBeforeUnmount(() => {
   window.removeEventListener("resize", handleWindowResize);
 });
 
-// ──────────── Left-side "More" items ────────────
-
-const moreItems = computed(() => {
-  const items: Array<{ value: string; label: string; icon: any; action: () => void; disabled: boolean }> = [];
-
-  // Hidden left-side items go into "More"
-  if (!toolbarItems.value.dataTransfer) {
-    items.push({
-      value: "transfer",
-      label: t("transfer.dataTransfer"),
-      icon: ArrowLeftRight,
-      action: () => emit("open-transfer"),
-      disabled: !props.hasConnections,
-    });
-  }
-
-  // "More" menu items (individually toggleable)
-  if (toolbarItems.value.sqlFile) {
-    items.push({
-      value: "sql-file",
-      label: t("sqlFile.title"),
-      icon: FileCode,
-      action: () => emit("open-sql-file"),
-      disabled: !props.hasSqlFileConnections,
-    });
-  }
-  if (toolbarItems.value.schemaDiff) {
-    items.push({
-      value: "schema-diff",
-      label: t("diff.title"),
-      icon: GitCompareArrows,
-      action: () => emit("open-schema-diff"),
-      disabled: !props.hasConnections,
-    });
-  }
-  if (toolbarItems.value.dataCompare) {
-    items.push({
-      value: "data-compare",
-      label: t("dataCompare.title"),
-      icon: TableProperties,
-      action: () => emit("open-data-compare"),
-      disabled: !props.hasConnections,
-    });
-  }
-
-  // Append overflowed right-side items at the end
-  for (const ri of overflowRightMenuItems.value) {
-    items.push({
-      value: `right-${ri.value}`,
-      label: ri.label,
-      icon: ri.icon,
-      action: ri.action,
-      disabled: ri.disabled,
-    });
-  }
-
-  return items;
-});
-
-const showMoreDropdown = computed(() => moreItems.value.length > 0);
-
-const collapsedItems = computed(() => {
-  const items: Array<{ value: string; label: string; icon: any; action: () => void; disabled: boolean }> = [];
-  if (toolbarItems.value.dataTransfer) {
-    items.push({
-      value: "transfer",
-      label: t("transfer.dataTransfer"),
-      icon: ArrowLeftRight,
-      action: () => emit("open-transfer"),
-      disabled: !props.hasConnections,
-    });
-  }
-  // Always include moreItems (may contain hidden left-side items + overflowed right items)
-  if (moreItems.value.length > 0) {
-    items.push(...moreItems.value);
-  }
-  return items;
-});
-
-function runMoreItem(value: string) {
-  const item = moreItems.value.find((i) => i.value === value);
-  item?.action();
-}
-
-function runCollapsedItem(value: string) {
-  const item = collapsedItems.value.find((i) => i.value === value);
-  item?.action();
-}
-
-// Per-item overflow visibility helper
-function isRightItemVisible(key: string) {
-  return !overflowedRightKeys.value.has(key);
-}
-
-const toolbarTextButtonClass = "h-8 px-2 text-xs gap-1 leading-none";
-const toolbarTextLabelClass = "inline-flex translate-y-px items-center leading-none";
-const toolbarDropdownTriggerClass = `inline-flex h-8 items-center gap-1 rounded-[6px] px-2 text-xs font-medium leading-none hover:bg-muted hover:text-foreground dark:hover:bg-muted/50 transition-colors [&>span:first-child]:translate-y-px`;
 const toolbarStyle = computed(() => {
   if (!shouldReserveTrafficLightInset.value) return undefined;
   return {
@@ -496,51 +227,13 @@ const toolbarStyle = computed(() => {
       />
     </span>
 
-    <template v-if="!toolbarCollapsed">
-      <Button v-if="toolbarItems.dataTransfer" variant="ghost" size="sm" :class="toolbarTextButtonClass" @click="emit('open-transfer')" :disabled="!hasConnections">
-        <ArrowLeftRight class="h-3.5 w-3.5" />
-        <span :class="toolbarTextLabelClass">{{ t("transfer.dataTransfer") }}</span>
-      </Button>
-
-      <LightDropdown
-        v-if="showMoreDropdown"
-        model-value=""
-        :items="moreItems"
-        :aria-label="t('common.more')"
-        :trigger-label="t('common.more')"
-        :trigger-class="toolbarDropdownTriggerClass"
-        :show-trigger-label="true"
-        :show-chevron="true"
-        check-position="none"
-        align="start"
-        @update:model-value="runMoreItem"
-      />
-    </template>
-
-    <template v-if="toolbarCollapsed">
-      <LightDropdown
-        v-if="collapsedItems.length > 0"
-        model-value=""
-        :items="collapsedItems"
-        :aria-label="t('common.more')"
-        :trigger-label="t('common.more')"
-        :trigger-class="toolbarDropdownTriggerClass"
-        :show-trigger-label="true"
-        :show-chevron="true"
-        check-position="none"
-        align="start"
-        @update:model-value="runCollapsedItem"
-      />
-    </template>
-
     <div class="flex-1" data-tauri-drag-region />
 
-    <!-- Right-side items wrapped in overflow-aware container -->
-    <div ref="rightWrapper" class="flex min-w-0 items-center gap-1 overflow-hidden">
+    <div class="flex shrink-0 items-center gap-1">
       <template v-if="toolbarItems.checkUpdates">
         <Tooltip>
           <TooltipTrigger as-child>
-            <Button v-show="isRightItemVisible('checkUpdates')" variant="ghost" size="icon" class="relative h-8 w-8 shrink-0" :disabled="checkingUpdates" @click="emit('check-updates')">
+            <Button variant="ghost" size="icon" class="relative h-8 w-8 shrink-0" :disabled="checkingUpdates" @click="emit('check-updates')">
               <Loader2 v-if="checkingUpdates" class="h-4 w-4 animate-spin" />
               <CloudDownload v-else class="h-4 w-4" />
               <span v-if="hasUpdateAvailable" class="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-background" />
@@ -550,31 +243,11 @@ const toolbarStyle = computed(() => {
         </Tooltip>
       </template>
 
-      <div v-show="isRightItemVisible('exportProgress')" class="contents">
-        <ExportProgressPopover />
-      </div>
-
-      <Tooltip v-if="toolbarItems.sqlLibrary">
-        <TooltipTrigger as-child>
-          <Button v-show="isRightItemVisible('sqlLibrary')" variant="ghost" size="icon" class="h-8 w-8 shrink-0" :class="{ 'bg-accent': showSqlLibrary }" @click="emit('toggle-sql-library')">
-            <BookMarked class="h-4 w-4" />
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>{{ t("sqlLibrary.title") }}</TooltipContent>
-      </Tooltip>
-
-      <Tooltip v-if="toolbarItems.sqlFileTree">
-        <TooltipTrigger as-child>
-          <Button v-show="isRightItemVisible('sqlFileTree')" variant="ghost" size="icon" class="h-8 w-8 shrink-0" :class="{ 'bg-accent': showSqlFilePanel }" @click="emit('toggle-sql-file-panel')">
-            <FolderTree class="h-4 w-4" />
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>{{ t("sqlFileTree.title") }}</TooltipContent>
-      </Tooltip>
+      <ExportProgressPopover />
 
       <Tooltip v-if="toolbarItems.history">
         <TooltipTrigger as-child>
-          <Button v-show="isRightItemVisible('history')" variant="ghost" size="icon" class="h-8 w-8 shrink-0" :class="{ 'bg-accent': showHistory }" @click="emit('toggle-history')">
+          <Button variant="ghost" size="icon" class="h-8 w-8 shrink-0" :class="{ 'bg-accent': showHistory }" @click="emit('toggle-history')">
             <History class="h-4 w-4" />
           </Button>
         </TooltipTrigger>
@@ -583,7 +256,7 @@ const toolbarStyle = computed(() => {
 
       <Tooltip v-if="toolbarItems.ai">
         <TooltipTrigger as-child>
-          <Button v-show="isRightItemVisible('ai')" variant="ghost" size="icon" class="h-8 w-8 shrink-0" :class="{ 'bg-accent': showAiPanel }" @click="emit('toggle-ai')">
+          <Button variant="ghost" size="icon" class="h-8 w-8 shrink-0" :class="{ 'bg-accent': showAiPanel }" @click="emit('toggle-ai')">
             <Bot class="h-4 w-4" />
           </Button>
         </TooltipTrigger>
@@ -592,23 +265,13 @@ const toolbarStyle = computed(() => {
 
       <Tooltip v-if="toolbarItems.theme">
         <TooltipTrigger as-child>
-          <Button v-show="isRightItemVisible('theme')" variant="ghost" size="icon" class="h-8 w-8 shrink-0" :aria-label="t('toolbar.theme')" @click="cycleThemeMode">
+          <Button variant="ghost" size="icon" class="h-8 w-8 shrink-0" :aria-label="t('toolbar.theme')" @click="cycleThemeMode">
             <component :is="themeTriggerIcon" class="h-4 w-4" />
           </Button>
         </TooltipTrigger>
         <TooltipContent>{{ t("toolbar.theme") }}</TooltipContent>
       </Tooltip>
     </div>
-    <!-- /rightWrapper -->
-
-    <Tooltip>
-      <TooltipTrigger as-child>
-        <Button variant="ghost" size="icon" class="relative h-8 w-8 shrink-0" :class="{ 'bg-accent': showSettingsPage }" @click="emit('open-settings')">
-          <Settings class="h-4 w-4" />
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent>{{ t("settings.title") }}</TooltipContent>
-    </Tooltip>
 
     <WindowControls v-if="showControls" :is-maximized="isMaximized" @minimize="minimize" @toggle-maximize="toggleMaximize" @close="close" />
   </div>
