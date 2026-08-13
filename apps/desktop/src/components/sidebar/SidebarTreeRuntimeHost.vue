@@ -4581,7 +4581,7 @@ function buildObjectSidebarMenu(context: SidebarMenuFactoryContext): boolean {
     return true;
   }
 
-  if (node.type === "trigger" || node.type === "package" || node.type === "package-body" || node.type === "type" || node.type === "type-body") {
+  if (node.type === "trigger" || node.type === "package" || node.type === "package-body" || node.type === "type" || node.type === "type-body" || node.type === "job") {
     items.push({ label: t("contextMenu.viewSource"), action: () => openObjectSourceDialog(false), icon: Code2 });
     items.push({ label: t("contextMenu.copyName"), action: copyName, icon: Copy, shortcut: shortcutCopyName.value });
     items.push({ label: t("contextMenu.changeOpenMode"), action: () => emit("open-settings", "navigation"), icon: Settings2 });

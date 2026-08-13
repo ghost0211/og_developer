@@ -1,6 +1,7 @@
 import { strict as assert } from "node:assert";
 import { test } from "vitest";
 import {
+  activeSqlKeywords,
   buildSqlCompletionItems,
   buildSqlCompletionItemsFromContext,
   getSqlFunctionSignatureHelp,
@@ -3528,4 +3529,11 @@ test("recordCompletionSelection boosts future ranking", () => {
   const tableItems = items.filter((item) => item.type === "table");
   // user_profiles should now rank higher than users due to history boost
   assert.equal(tableItems[0]?.label, "user_profiles");
+});
+
+test("openGauss keyword completion covers documented keywords", () => {
+  const keywords = activeSqlKeywords("opengauss");
+  for (const word of ["TYPE", "FUNCTION", "PROCEDURE", "START", "CONNECT", "BY", "PRIOR", "LEVEL", "DECODE", "CONNECT BY", "START WITH", "PACKAGE", "PACKAGE BODY", "TYPE BODY", "TRIGGER", "NVL", "SYSDATE", "GMS_OUTPUT", "DBE_TASK", "BULK COLLECT", "EXECUTE IMMEDIATE", "MINUS", "ROWNUM", "%TYPE", "%ROWTYPE", "NUMBER", "VARCHAR2", "CLOB", "BLOB"]) {
+    assert.ok(keywords.includes(word), `missing opengauss keyword: ${word}`);
+  }
 });

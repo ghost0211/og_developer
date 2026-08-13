@@ -338,6 +338,7 @@ fn object_type_keyword(object_type: &ObjectSourceKind) -> &'static str {
         ObjectSourceKind::PackageBody => "PACKAGE BODY",
         ObjectSourceKind::Type => "TYPE",
         ObjectSourceKind::TypeBody => "TYPE BODY",
+        ObjectSourceKind::Job => "JOB",
     }
 }
 

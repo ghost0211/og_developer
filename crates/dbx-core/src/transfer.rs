@@ -6532,6 +6532,7 @@ where
             }
             db::ObjectSourceKind::Sequence
             | db::ObjectSourceKind::Synonym
+            | db::ObjectSourceKind::Job
             | db::ObjectSourceKind::Package
             | db::ObjectSourceKind::PackageBody => object.source.clone(),
             db::ObjectSourceKind::Trigger | db::ObjectSourceKind::Type | db::ObjectSourceKind::TypeBody => {

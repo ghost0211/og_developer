@@ -15,7 +15,7 @@ const ROUTINE_OBJECTS: SidebarObjectKind[] = ["TABLE", "VIEW", "PROCEDURE", "FUN
 
 const POSTGRES_OBJECTS: SidebarObjectKind[] = ["TABLE", "VIEW", "MATERIALIZED_VIEW", "PROCEDURE", "FUNCTION", "SEQUENCE"];
 // openGauss adds Oracle-style packages and synonyms (gs_package / pg_synonym catalogs).
-const OPENGAUSS_OBJECTS: SidebarObjectKind[] = [...POSTGRES_OBJECTS, "SYNONYM", "PACKAGE", "PACKAGE_BODY"];
+const OPENGAUSS_OBJECTS: SidebarObjectKind[] = [...POSTGRES_OBJECTS, "SYNONYM", "PACKAGE", "PACKAGE_BODY", "TYPE", "TYPE_BODY"];
 
 // Compatibility-mode rules verified on a live openGauss 7.0 instance:
 // - CREATE PACKAGE succeeds only in A mode ("Package only allowed create in A compatibility")
@@ -25,8 +25,8 @@ const OPENGAUSS_OBJECTS: SidebarObjectKind[] = [...POSTGRES_OBJECTS, "SYNONYM", 
 // When the mode is unknown (legacy connections, detection failed) every group
 // stays visible so nothing disappears unexpectedly.
 function opengaussObjectsForCompatibility(sqlCompatibility?: string): SidebarObjectKind[] {
-  // pg_job (DBMS_JOB) is system infrastructure and exists in every mode.
-  const base: SidebarObjectKind[] = [...POSTGRES_OBJECTS, "SYNONYM", "JOB"];
+  // pg_job (DBMS_JOB) 是系统基础设施，任何模式都存在；自定义 TYPE 也始终可用。
+  const base: SidebarObjectKind[] = [...POSTGRES_OBJECTS, "SYNONYM", "JOB", "TYPE", "TYPE_BODY"];
   switch (sqlCompatibility?.trim().toUpperCase()) {
     case "A":
       return [...base, "PACKAGE", "PACKAGE_BODY"];

@@ -2793,6 +2793,10 @@ fn list_objects_sql_full(
     if has_gs_package_catalog {
         sql.push_str(" UNION ALL ");
         sql.push_str(opengauss_packages_sql());
+        // 自定义 TYPE（composite/enum）在 openGauss 上以 pg_type 存在；
+        // 与 gs_package 同门控，避免影响原生 PostgreSQL 的对象清单。
+        sql.push_str(" UNION ALL ");
+        sql.push_str(opengauss_types_sql());
     }
     if has_pg_synonym_catalog {
         sql.push_str(" UNION ALL ");
@@ -2811,6 +2815,28 @@ fn list_objects_sql_full(
         // overloads instead of making the whole schema browser unavailable.
         sql.replace("pg_get_function_identity_arguments(p.oid)", "pg_get_function_arguments(p.oid)")
     }
+}
+
+/// openGauss custom types (CREATE TYPE ... AS / enum) live in pg_type with
+/// typtype 'c'/'e'; array types (leading underscore) and row types of tables
+/// are excluded.
+fn opengauss_types_sql() -> &'static str {
+    "SELECT t.typname AS object_name, \
+       'TYPE' AS object_type, \
+       NULL::text AS object_comment, \
+       NULL::text AS created_at, \
+       NULL::text AS updated_at, \
+       NULL::text AS parent_schema, \
+       NULL::text AS parent_name, \
+       NULL::text AS signature, \
+       6 AS sort_order \
+     FROM pg_catalog.pg_type t \
+     JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace \
+     WHERE n.nspname = $1 \
+       AND t.typtype IN ('c', 'e') \
+       AND t.typname NOT LIKE '\\_%' ESCAPE '\\' \
+       AND (NOT EXISTS (SELECT 1 FROM pg_catalog.pg_class c WHERE c.reltype = t.oid) \
+            OR EXISTS (SELECT 1 FROM pg_catalog.pg_class c WHERE c.reltype = t.oid AND c.relkind = 'c'))"
 }
 
 /// openGauss stores package specs and bodies in pg_catalog.gs_package. Emit one
@@ -3105,6 +3131,8 @@ fn gs_source_type_to_object_kind(source_type: &str) -> Option<&'static str> {
         "package body" => Some("PACKAGE_BODY"),
         "function" => Some("FUNCTION"),
         "procedure" => Some("PROCEDURE"),
+        "type" => Some("TYPE"),
+        "type body" => Some("TYPE_BODY"),
         _ => None,
     }
 }

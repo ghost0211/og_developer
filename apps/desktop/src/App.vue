@@ -1628,10 +1628,22 @@ function openFileFromMenuSearch(path: string) {
   void openSqlFilePath(path);
 }
 
-const OBJECT_SOURCE_KINDS = new Set(["TABLE", "VIEW", "MATERIALIZED_VIEW", "PROCEDURE", "FUNCTION", "TRIGGER", "SEQUENCE", "SYNONYM", "PACKAGE", "PACKAGE_BODY", "TYPE", "TYPE_BODY"]);
+const OBJECT_SOURCE_KINDS = new Set(["VIEW", "MATERIALIZED_VIEW", "PROCEDURE", "FUNCTION", "TRIGGER", "SEQUENCE", "SYNONYM", "PACKAGE", "PACKAGE_BODY", "TYPE", "TYPE_BODY", "JOB"]);
 
 function openObjectFromMenuSearch(hit: { connectionId: string; database: string; schema: string; objectType: string; name: string }) {
-  const kind = OBJECT_SOURCE_KINDS.has(hit.objectType) ? hit.objectType : "TABLE";
+  if (hit.objectType === "TABLE") {
+    // 表没有"源码"，打开 DDL 视图。
+    queryEditorDdlTarget.value = {
+      connectionId: hit.connectionId,
+      database: hit.database,
+      schema: hit.schema || undefined,
+      tableName: hit.name,
+      objectType: "TABLE" as ObjectSourceKind,
+    };
+    showQueryEditorDdlDialog.value = true;
+    return;
+  }
+  const kind = OBJECT_SOURCE_KINDS.has(hit.objectType) ? hit.objectType : "VIEW";
   queryEditorObjectSourceTarget.value = {
     connectionId: hit.connectionId,
     database: hit.database,
@@ -2269,7 +2281,6 @@ onUnmounted(() => {
           :has-active-tab="!!activeTab"
           :has-active-query="activeTab?.mode === 'query'"
           :can-save-sql="!!activeTab && activeTab.mode === 'query' && canSaveSqlTab(activeTab)"
-          :show-sidebar="sidebarOpen"
           :projects="projectStore.projects.value"
           :active-project-id="projectStore.activeProjectId.value"
           @new-connection="showConnectionDialog = true"
@@ -2292,7 +2303,6 @@ onUnmounted(() => {
           @replace="dispatchEditorMenuAction('replace')"
           @format-sql="formatActiveSql"
           @compress-sql="compressActiveSql"
-          @toggle-sidebar="setSidebarOpen(!sidebarOpen)"
           @close-other-tabs="closeOtherTabs"
           @set-theme-mode="setThemeMode"
           @toggle-ai="toggleRightSidebarPanel('ai')"

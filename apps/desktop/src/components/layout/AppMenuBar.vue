@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useI18n } from "vue-i18n";
-import { ArrowLeftRight, BookMarked, Clipboard, ClipboardPaste, Copy, DatabaseZap, FileCode, FileDown, FileInput, FileOutput, FilePlus2, FolderOpen, FolderSearch, GitCompareArrows, Info, PanelLeft, Redo2, Scissors, Search, Settings, SunMoon, TableProperties, Undo2, X } from "@lucide/vue";
+import { ArrowLeftRight, BookMarked, Clipboard, ClipboardPaste, Copy, DatabaseZap, FileCode, FileDown, FileInput, FileOutput, FilePlus2, FolderOpen, FolderSearch, GitCompareArrows, Info, Redo2, Scissors, Search, Settings, SunMoon, TableProperties, Undo2, X } from "@lucide/vue";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuPortal, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import type { AppThemeMode } from "@/lib/app/appTheme";
 import type { SqlProject } from "@/stores/projectStore";
@@ -11,7 +11,6 @@ const props = defineProps<{
   hasActiveQuery: boolean;
   canSaveSql: boolean;
   hasSqlFileConnections: boolean;
-  showSidebar: boolean;
   themeMode: AppThemeMode;
   projects: SqlProject[];
   activeProjectId?: string;
@@ -38,7 +37,6 @@ const emit = defineEmits<{
   replace: [];
   "format-sql": [];
   "compress-sql": [];
-  "toggle-sidebar": [];
   "search-files": [];
   "search-metadata": [];
   "search-objects": [];
@@ -183,11 +181,6 @@ const shortcutClass = "ml-auto pl-6 text-[10px] text-muted-foreground";
         <DropdownMenuItem :disabled="!hasActiveQuery" :class="menuItemClass" @select="emit('compress-sql')">
           <FileCode :class="menuIconClass" />
           {{ t("toolbar.compressSql") }}
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem :class="menuItemClass" @select="emit('toggle-sidebar')">
-          <PanelLeft :class="menuIconClass" />
-          {{ props.showSidebar ? t("menus.hideSidebar") : t("menus.showSidebar") }}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

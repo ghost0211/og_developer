@@ -44,6 +44,15 @@ export function routineParametersQuery(options: Pick<LoadRoutineParametersOption
   const name = quoteSqlLiteral(options.routineName);
   if (options.databaseType === "postgres" || options.databaseType === "opengauss") {
     const prokindFilter = options.routineKind === "procedure" ? "p.prokind = 'p'" : options.routineKind === "function" ? "p.prokind = 'f'" : "p.prokind IN ('p', 'f')";
+    // openGauss 包成员以 `包名.成员名` 传递（侧栏树带 parentName）；
+    // 同名成员存在于多个包，必须联表 gs_package 按包名限定。
+    const parts = options.routineName
+      .split(".")
+      .map((part) => part.trim())
+      .filter(Boolean);
+    const packageMember = options.databaseType === "opengauss" && parts.length === 2 ? { packageName: parts[0], memberName: parts[1] } : null;
+    const packageJoin = packageMember ? "JOIN pg_catalog.gs_package pkg ON pkg.oid = p.propackageid\n" : "";
+    const nameFilter = packageMember ? `pkg.pkgname = ${quoteSqlLiteral(packageMember.packageName)}\n  AND p.proname = ${quoteSqlLiteral(packageMember.memberName)}` : `p.proname = ${name}`;
     return `
 SELECT
   NULLIF(arg.name, '') AS name,
@@ -63,7 +72,7 @@ SELECT
   END AS has_default
 FROM pg_proc p
 JOIN pg_namespace n ON n.oid = p.pronamespace
-CROSS JOIN LATERAL (
+${packageJoin}CROSS JOIN LATERAL (
   SELECT
     gs.ordinal AS ordinal,
     p.proargnames[gs.ordinal] AS name,
@@ -77,7 +86,7 @@ CROSS JOIN LATERAL (
 ) arg
 WHERE ${prokindFilter}
   AND n.nspname = ${schema}
-  AND p.proname = ${name}
+  AND ${nameFilter}
 ORDER BY arg.ordinal;`.trim();
   }
   if (options.databaseType === "mysql" || options.databaseType === "doris" || options.databaseType === "starrocks") {

@@ -108,6 +108,7 @@ pub enum ObjectSourceKind {
     PackageBody,
     Type,
     TypeBody,
+    Job,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

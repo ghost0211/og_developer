@@ -24,7 +24,6 @@ const props = defineProps<{
   hasActiveTab: boolean;
   hasActiveQuery: boolean;
   canSaveSql: boolean;
-  showSidebar: boolean;
   projects: SqlProject[];
   activeProjectId?: string;
 }>();
@@ -50,7 +49,6 @@ const emit = defineEmits<{
   replace: [];
   "format-sql": [];
   "compress-sql": [];
-  "toggle-sidebar": [];
   "close-other-tabs": [];
   "set-theme-mode": [mode: AppThemeMode];
   "toggle-ai": [];
@@ -205,7 +203,6 @@ const toolbarStyle = computed(() => {
         :has-active-query="hasActiveQuery"
         :can-save-sql="canSaveSql"
         :has-sql-file-connections="hasSqlFileConnections"
-        :show-sidebar="showSidebar"
         :theme-mode="themeMode"
         :projects="projects"
         :active-project-id="activeProjectId"
@@ -229,7 +226,6 @@ const toolbarStyle = computed(() => {
         @replace="emit('replace')"
         @format-sql="emit('format-sql')"
         @compress-sql="emit('compress-sql')"
-        @toggle-sidebar="emit('toggle-sidebar')"
         @close-other-tabs="emit('close-other-tabs')"
         @toggle-ai="emit('toggle-ai')"
         @toggle-history="emit('toggle-history')"

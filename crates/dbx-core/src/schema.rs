@@ -6376,7 +6376,8 @@ fn sqlite_object_type(kind: &db::ObjectSourceKind) -> &'static str {
         | db::ObjectSourceKind::Package
         | db::ObjectSourceKind::PackageBody
         | db::ObjectSourceKind::Type
-        | db::ObjectSourceKind::TypeBody => "routine",
+        | db::ObjectSourceKind::TypeBody
+        | db::ObjectSourceKind::Job => "routine",
     }
 }
 
@@ -6392,6 +6393,7 @@ fn sqlserver_object_type_filter(kind: &db::ObjectSourceKind) -> &'static str {
         | db::ObjectSourceKind::PackageBody
         | db::ObjectSourceKind::Type
         | db::ObjectSourceKind::TypeBody
+        | db::ObjectSourceKind::Job
         | db::ObjectSourceKind::MaterializedView => "''",
     }
 }
@@ -6710,12 +6712,28 @@ fn postgres_object_source_sql_inner(
                 sql_string(name)
             )
         }
+        // openGauss DBMS_JOB 条目：pg_job 只携带元数据（不同构建的字段有差异，
+        // lite 版没有动作文本列），重建一份可读的定义。
+        db::ObjectSourceKind::Job if unwrap_opengauss_record => {
+            format!(
+                "SELECT 'JOB ' || j.job_name || CHR(10) || \
+                   '  status: ' || CASE WHEN j.enable THEN 'enabled' ELSE 'disabled' END || CHR(10) || \
+                   '  interval: ' || COALESCE(j.interval, '-') || CHR(10) || \
+                   '  next run: ' || COALESCE(j.next_run_date::text, '-') \
+                 FROM pg_catalog.pg_job j \
+                 WHERE j.nspname::text = {} AND j.job_name = {} AND j.dbname = current_database()::name \
+                 LIMIT 1",
+                sql_string(schema),
+                sql_string(name)
+            )
+        }
         db::ObjectSourceKind::Trigger
         | db::ObjectSourceKind::Synonym
         | db::ObjectSourceKind::Package
         | db::ObjectSourceKind::PackageBody
         | db::ObjectSourceKind::Type
-        | db::ObjectSourceKind::TypeBody => "SELECT NULL WHERE FALSE".to_string(),
+        | db::ObjectSourceKind::TypeBody
+        | db::ObjectSourceKind::Job => "SELECT NULL WHERE FALSE".to_string(),
     }
 }
 
@@ -6732,6 +6750,7 @@ pub fn oracle_object_source_sql(schema: &str, name: &str, kind: &db::ObjectSourc
         db::ObjectSourceKind::PackageBody => "PACKAGE_BODY",
         db::ObjectSourceKind::Type => "TYPE",
         db::ObjectSourceKind::TypeBody => "TYPE_BODY",
+        db::ObjectSourceKind::Job => "JOB",
     };
     if schema.trim().is_empty() {
         format!("SELECT DBMS_METADATA.GET_DDL({}, {}) FROM DUAL", sql_string(object_type), sql_string(name))
@@ -6787,7 +6806,8 @@ pub fn mysql_object_source_sql(database: &str, name: &str, kind: &db::ObjectSour
         | db::ObjectSourceKind::Package
         | db::ObjectSourceKind::PackageBody
         | db::ObjectSourceKind::Type
-        | db::ObjectSourceKind::TypeBody => String::new(),
+        | db::ObjectSourceKind::TypeBody
+        | db::ObjectSourceKind::Job => String::new(),
         // Doris and StarRocks expose materialized views via `SHOW CREATE MATERIALIZED VIEW`.
         // MySQL itself never reaches this arm in normal use: the desktop capabilities map at
         // apps/desktop/src/lib/database/databaseObjectCapabilities.ts has no "mysql" entry,
@@ -6821,7 +6841,8 @@ pub(crate) fn mysql_object_source_ddl_column_index(kind: &db::ObjectSourceKind) 
         | db::ObjectSourceKind::Package
         | db::ObjectSourceKind::PackageBody
         | db::ObjectSourceKind::Type
-        | db::ObjectSourceKind::TypeBody => 2,
+        | db::ObjectSourceKind::TypeBody
+        | db::ObjectSourceKind::Job => 2,
     }
 }
 
