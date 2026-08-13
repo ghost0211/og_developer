@@ -2,8 +2,9 @@
 import { computed, ref, onMounted, onBeforeUnmount, nextTick, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { invoke } from "@tauri-apps/api/core";
-import { DatabaseZap, FilePlus2, Loader2, Moon, Sun, SunMoon, History, Bot, ArrowLeftRight, FileCode, BookMarked, GitCompareArrows, TableProperties, Settings, CloudDownload, FileDown, FolderTree } from "@lucide/vue";
+import { Loader2, Moon, Sun, SunMoon, History, Bot, ArrowLeftRight, FileCode, BookMarked, GitCompareArrows, TableProperties, Settings, CloudDownload, FileDown, FolderTree } from "@lucide/vue";
 import { Button } from "@/components/ui/button";
+import AppMenuBar from "@/components/layout/AppMenuBar.vue";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import LightDropdown from "@/components/ui/LightDropdown.vue";
 import WindowControls from "@/components/layout/WindowControls.vue";
@@ -27,11 +28,26 @@ const props = defineProps<{
   agentDriverUpdateCount: number;
   hasConnections: boolean;
   hasSqlFileConnections: boolean;
+  hasActiveTab: boolean;
+  hasActiveQuery: boolean;
+  canSaveSql: boolean;
+  showSidebar: boolean;
 }>();
 
 const emit = defineEmits<{
   "new-connection": [];
   "new-query": [];
+  "open-editor-sql-file": [];
+  "save-sql": [];
+  "import-result-archive": [];
+  "close-active-tab": [];
+  "import-config": [];
+  "export-config": [];
+  "quick-open": [];
+  "format-sql": [];
+  "compress-sql": [];
+  "toggle-sidebar": [];
+  "close-other-tabs": [];
   "set-theme-mode": [mode: AppThemeMode];
   "toggle-ai": [];
   "toggle-history": [];
@@ -44,6 +60,7 @@ const emit = defineEmits<{
   "open-sql-file": [];
   "open-schema-diff": [];
   "open-data-compare": [];
+  "open-about": [];
 }>();
 
 const { t } = useI18n();
@@ -441,17 +458,43 @@ const toolbarStyle = computed(() => {
 
 <template>
   <div ref="toolbarEl" class="app-toolbar h-10 flex items-center gap-1 px-2 border-b bg-muted/30 shrink-0 overflow-hidden" :style="toolbarStyle" data-tauri-drag-region @dblclick="onToolbarDblClick">
-    <Button variant="ghost" size="sm" :class="toolbarTextButtonClass" @click="emit('new-connection')">
-      <span class="inline-flex items-center gap-1">
-        <DatabaseZap class="h-3.5 w-3.5" />
-        <span ref="newConnectionLabelEl" :class="toolbarTextLabelClass">{{ t("toolbar.newConnection") }}</span>
-      </span>
-    </Button>
-
-    <Button variant="ghost" size="sm" :class="toolbarTextButtonClass" @click="emit('new-query')" :disabled="!hasConnections">
-      <FilePlus2 class="h-3.5 w-3.5" />
-      <span :class="toolbarTextLabelClass">{{ t("toolbar.newQuery") }}</span>
-    </Button>
+    <span ref="newConnectionLabelEl" class="inline-flex items-center">
+      <AppMenuBar
+        :has-connections="hasConnections"
+        :has-active-tab="hasActiveTab"
+        :has-active-query="hasActiveQuery"
+        :can-save-sql="canSaveSql"
+        :has-sql-file-connections="hasSqlFileConnections"
+        :show-sidebar="showSidebar"
+        :theme-mode="themeMode"
+        @new-connection="emit('new-connection')"
+        @new-query="emit('new-query')"
+        @open-editor-sql-file="emit('open-editor-sql-file')"
+        @save-sql="emit('save-sql')"
+        @import-result-archive="emit('import-result-archive')"
+        @close-active-tab="emit('close-active-tab')"
+        @import-config="emit('import-config')"
+        @export-config="emit('export-config')"
+        @quick-open="emit('quick-open')"
+        @format-sql="emit('format-sql')"
+        @compress-sql="emit('compress-sql')"
+        @toggle-sidebar="emit('toggle-sidebar')"
+        @close-other-tabs="emit('close-other-tabs')"
+        @toggle-ai="emit('toggle-ai')"
+        @toggle-history="emit('toggle-history')"
+        @toggle-sql-library="emit('toggle-sql-library')"
+        @toggle-sql-file-panel="emit('toggle-sql-file-panel')"
+        @open-settings="emit('open-settings')"
+        @set-theme-mode="emit('set-theme-mode', $event)"
+        @open-driver-store="emit('open-driver-store')"
+        @open-transfer="emit('open-transfer')"
+        @open-sql-file="emit('open-sql-file')"
+        @open-schema-diff="emit('open-schema-diff')"
+        @open-data-compare="emit('open-data-compare')"
+        @check-updates="emit('check-updates')"
+        @open-about="emit('open-about')"
+      />
+    </span>
 
     <template v-if="!toolbarCollapsed">
       <Button v-if="toolbarItems.dataTransfer" variant="ghost" size="sm" :class="toolbarTextButtonClass" @click="emit('open-transfer')" :disabled="!hasConnections">

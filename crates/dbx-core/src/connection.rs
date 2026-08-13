@@ -284,6 +284,10 @@ pub struct AppState {
     /// openGauss PL debugger sessions (dbe_pldebugger two-session model),
     /// keyed by debug session id.
     pub opengauss_debug_sessions: Arc<RwLock<HashMap<String, Arc<crate::opengauss_debug::OpenGaussDebugSession>>>>,
+    /// Pools where enabling the gms_output buffer killed the session
+    /// (openGauss-lite closes the connection on put_line over the wire).
+    /// Output capture is skipped there once learned.
+    gms_output_unsupported_pools: Arc<RwLock<std::collections::HashSet<String>>>,
     #[cfg(feature = "mq-admin")]
     pub mq_registry: crate::mq::MqAdminRegistry,
 }
@@ -1133,6 +1137,7 @@ impl AppState {
             duckdb_worker_process_isolation: AtomicBool::new(false),
             duckdb_worker_max_processes: AtomicUsize::new(DUCKDB_WORKER_MAX_PROCESSES_DEFAULT),
             postgres_cancel_contexts: Arc::new(RwLock::new(HashMap::new())),
+            gms_output_unsupported_pools: Arc::new(RwLock::new(std::collections::HashSet::new())),
             transaction_sessions: Arc::new(RwLock::new(HashMap::new())),
             opengauss_debug_sessions: Arc::new(RwLock::new(HashMap::new())),
             #[cfg(feature = "mq-admin")]
@@ -1690,6 +1695,14 @@ impl AppState {
     /// Get the PostgreSQL TLS cancel context (used to reconstruct the TLS connector when cancelling a query).
     pub async fn get_postgres_cancel_context(&self, pool_key: &str) -> Option<db::postgres::PostgresCancelContext> {
         self.postgres_cancel_contexts.read().await.get(pool_key).cloned()
+    }
+
+    pub async fn is_gms_output_capture_unsupported(&self, pool_key: &str) -> bool {
+        self.gms_output_unsupported_pools.read().await.contains(pool_key)
+    }
+
+    pub async fn mark_gms_output_capture_unsupported(&self, pool_key: &str) {
+        self.gms_output_unsupported_pools.write().await.insert(pool_key.to_string());
     }
 
     pub fn pool_activity_touch(&self, pool_key: &str) -> PoolActivityTouch {

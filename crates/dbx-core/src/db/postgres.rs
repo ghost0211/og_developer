@@ -3694,6 +3694,57 @@ pub async fn execute_query_with_max_rows(
     }
 }
 
+/// openGauss gms_output buffers lines per session; drain them after a run.
+const GMS_OUTPUT_DRAIN_SQL: &str = "select * from gms_output.get_lines(null, 10000)";
+
+/// Cheap gate so only statements touching the output API pay the extra
+/// enable/drain round trips.
+fn sql_mentions_gms_output(sql: &str) -> bool {
+    let haystack = sql.to_ascii_lowercase();
+    haystack.contains("gms_output")
+        || haystack.contains("dbms_output")
+        || haystack.contains("dbe_output")
+        || haystack.contains("put_line")
+}
+
+async fn gms_output_try_enable(client: &deadpool_postgres::Object) -> bool {
+    client.execute("select gms_output.enable()", &[]).await.is_ok()
+}
+
+async fn gms_output_drain_lines(client: &deadpool_postgres::Object) -> Vec<String> {
+    match client.query_opt(GMS_OUTPUT_DRAIN_SQL, &[]).await {
+        Ok(Some(row)) => {
+            let lines: Vec<Option<String>> = row.try_get(0).unwrap_or_default();
+            lines.into_iter().flatten().collect()
+        }
+        _ => Vec::new(),
+    }
+}
+
+/// gms_output.put_line buffers server-side per session, so the enable, the
+/// user query and the drain must all run on the same checked-out connection.
+/// Lines ride `QueryResult.messages`; on failure they are appended to the
+/// error text (partial output before a crash is the interesting part).
+async fn run_with_gms_output_capture(
+    client: &deadpool_postgres::Object,
+    sql: &str,
+    query: impl std::future::Future<Output = Result<QueryResult, String>>,
+) -> Result<QueryResult, String> {
+    if !sql_mentions_gms_output(sql) || !gms_output_try_enable(client).await {
+        return query.await;
+    }
+    let outcome = query.await;
+    let lines = gms_output_drain_lines(client).await;
+    match outcome {
+        Ok(mut result) => {
+            result.messages = lines;
+            Ok(result)
+        }
+        Err(error) if !lines.is_empty() => Err(format!("{error}\n[gms_output]\n{}", lines.join("\n"))),
+        Err(error) => Err(error),
+    }
+}
+
 pub async fn execute_query_with_max_rows_and_cancel(
     pool: &Pool,
     sql: &str,
@@ -3702,18 +3753,23 @@ pub async fn execute_query_with_max_rows_and_cancel(
     budget: DbOperationBudget,
     cancel_context: Option<PostgresCancelContext>,
     prefer_text_protocol: bool,
+    capture_gms_output: bool,
 ) -> Result<QueryResult, String> {
     let client = checkout_postgres_client(pool, cancel_token.as_ref(), budget.checkout_timeout).await?;
     let pg_cancel_token = client.cancel_token();
-    wait_postgres_query(
+    let query = wait_postgres_query(
         pg_cancel_token,
         cancel_context,
         cancel_token,
         budget.query_timeout,
         budget.cancel_timeout,
         execute_query_with_max_rows_inner(&client, sql, max_rows, prefer_text_protocol),
-    )
-    .await
+    );
+    if capture_gms_output {
+        run_with_gms_output_capture(&client, sql, query).await
+    } else {
+        query.await
+    }
 }
 
 fn postgres_read_only_transaction_setup(schema: Option<&str>) -> Vec<(String, &'static str)> {
@@ -3962,6 +4018,7 @@ pub async fn execute_query_with_schema_and_max_rows_and_cancel(
     budget: DbOperationBudget,
     cancel_context: Option<PostgresCancelContext>,
     prefer_text_protocol: bool,
+    capture_gms_output: bool,
 ) -> Result<QueryResult, String> {
     let start = Instant::now();
     let checkout_start = Instant::now();
@@ -3999,15 +4056,15 @@ pub async fn execute_query_with_schema_and_max_rows_and_cancel(
 
     let query_start = Instant::now();
     let pg_cancel_token = client.cancel_token();
-    let result = wait_postgres_query(
+    let query = wait_postgres_query(
         pg_cancel_token,
         cancel_context,
         cancel_token,
         budget.query_timeout,
         budget.cancel_timeout,
         execute_query_with_max_rows_inner(&client, sql, max_rows, prefer_text_protocol),
-    )
-    .await;
+    );
+    let result = if capture_gms_output { run_with_gms_output_capture(&client, sql, query).await } else { query.await };
     if result.is_ok() {
         clear_postgres_caches_after_ddl(pool, Some(&client), sql);
     }

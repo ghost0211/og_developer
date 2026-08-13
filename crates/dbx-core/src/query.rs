@@ -1197,6 +1197,34 @@ fn postgres_prefers_text_protocol(db_type: Option<DatabaseType>) -> bool {
     db_type == Some(DatabaseType::Redshift)
 }
 
+/// openGauss-lite closes the whole session when put_line runs with the output
+/// buffer enabled over the wire (verified live on 7.0.0-RC3, simple and
+/// extended protocol alike). The first crash marks the pool so later
+/// executions skip the enable step and behave like a plain silent run.
+async fn guard_gms_output_capture_outcome(
+    state: &AppState,
+    pool_key: &str,
+    capture_attempted: bool,
+    outcome: Result<db::QueryResult, String>,
+) -> Result<db::QueryResult, String> {
+    if !capture_attempted {
+        return outcome;
+    }
+    match outcome {
+        Err(error) if error.contains("connection closed") => {
+            state.mark_gms_output_capture_unsupported(pool_key).await;
+            log::warn!(
+                "[postgres][gms_output:capture-disabled] pool_key={} reason=connection-closed-during-capture",
+                pool_key
+            );
+            Err(format!(
+                "{error}\n[gms_output] This server build closes the session when the output buffer is enabled over the native driver; output capture has been disabled for this connection (subsequent executions will run without it). The official JDBC driver captures DBMS_OUTPUT on such builds."
+            ))
+        }
+        other => other,
+    }
+}
+
 pub async fn operation_budget_for_pool_key(
     state: &AppState,
     pool_key: &str,
@@ -1365,6 +1393,8 @@ async fn do_execute_typed(
             let schema = schema.map(|s| s.to_string());
             let max_rows = options.max_rows;
             let prefer_text_protocol = postgres_prefers_text_protocol(pool_db_type);
+            let capture_gms_output = matches!(pool_db_type, Some(DatabaseType::OpenGauss | DatabaseType::Gaussdb))
+                && !state.is_gms_output_capture_unsupported(pool_key).await;
             let execution_mode = options.execution_mode;
             let cancel_context = state.get_postgres_cancel_context(pool_key).await;
             drop(connections);
@@ -1380,7 +1410,7 @@ async fn do_execute_typed(
                 )
                 .await
             } else if let Some(schema) = schema {
-                db::postgres::execute_query_with_schema_and_max_rows_and_cancel(
+                let outcome = db::postgres::execute_query_with_schema_and_max_rows_and_cancel(
                     &p,
                     &schema,
                     sql,
@@ -1389,10 +1419,12 @@ async fn do_execute_typed(
                     operation_budget.clone(),
                     cancel_context,
                     prefer_text_protocol,
+                    capture_gms_output,
                 )
-                .await
+                .await;
+                guard_gms_output_capture_outcome(state, pool_key, capture_gms_output, outcome).await
             } else {
-                db::postgres::execute_query_with_max_rows_and_cancel(
+                let outcome = db::postgres::execute_query_with_max_rows_and_cancel(
                     &p,
                     sql,
                     max_rows,
@@ -1400,8 +1432,10 @@ async fn do_execute_typed(
                     operation_budget.clone(),
                     cancel_context,
                     prefer_text_protocol,
+                    capture_gms_output,
                 )
-                .await
+                .await;
+                guard_gms_output_capture_outcome(state, pool_key, capture_gms_output, outcome).await
             }
         }
         PoolKind::Sqlite(p) => {

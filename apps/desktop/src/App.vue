@@ -173,7 +173,7 @@ const setupRequired = ref(false);
 const showConnectionDialog = ref(false);
 const connectionDialogPrefill = ref<ConnectionDeepLinkDraft | null>(null);
 const connectionDialogInitialTab = ref<ConfigTab | undefined>(undefined);
-const settingsPageTabOpen = ref(false);
+const settingsDialogOpen = ref(false);
 const settingsInitialTab = ref("appearance");
 const settingsInitialSection = ref<string | undefined>(undefined);
 const settingsNavigationRequestId = ref(0);
@@ -184,7 +184,7 @@ const driverStoreActive = ref(false);
 const driverStoreActiveTab = ref<"agent" | "jdbc" | "storage" | "runtime">("agent");
 const settingsReturnSurface = ref<"query" | "driverStore" | "welcome">("welcome");
 const showDriverStore = computed(() => driverStoreTabOpen.value && driverStoreActive.value);
-const showSettingsPage = computed(() => settingsPageTabOpen.value && settingsStore.settingsPageActive);
+const showSettingsPage = computed(() => settingsDialogOpen.value);
 const showQuickOpen = ref(false);
 const agentDriverUpdateCount = ref(0);
 const showHistory = ref(false);
@@ -392,13 +392,13 @@ watch(
 );
 
 function activateSettingsPage() {
-  settingsPageTabOpen.value = true;
+  settingsDialogOpen.value = true;
   settingsStore.settingsPageActive = true;
   driverStoreActive.value = false;
 }
 
 function closeSettingsPage() {
-  settingsPageTabOpen.value = false;
+  settingsDialogOpen.value = false;
   settingsStore.settingsPageActive = false;
   if (settingsReturnSurface.value === "driverStore" && driverStoreTabOpen.value) {
     driverStoreActive.value = true;
@@ -421,6 +421,7 @@ function openDriverStorePage(target?: "agent" | "jdbc" | "storage" | "runtime" |
   }
   driverStoreTabOpen.value = true;
   driverStoreActive.value = true;
+  settingsDialogOpen.value = false;
   settingsStore.settingsPageActive = false;
 }
 
@@ -568,7 +569,7 @@ watch(
     }
     if (id) newQueryContextSource.value = "tab";
     if (id && driverStoreActive.value) driverStoreActive.value = false;
-    if (id && settingsStore.settingsPageActive) settingsStore.settingsPageActive = false;
+    if (id && settingsDialogOpen.value) closeSettingsPage();
     selectedSql.value = "";
     activeOutputView.value = "result";
     if (id) queryStore.reloadEvictedTab(id);
@@ -579,6 +580,13 @@ watch(
   () => connectionStore.selectedTreeNodeId,
   (id) => {
     if (id) newQueryContextSource.value = "sidebar";
+  },
+);
+
+watch(
+  () => settingsStore.settingsPageActive,
+  (active) => {
+    if (!active && settingsDialogOpen.value) settingsDialogOpen.value = false;
   },
 );
 
@@ -1939,12 +1947,29 @@ function dispatchBeforeTabSwitch(tabId: string) {
   window.dispatchEvent(new CustomEvent("dbx:before-tab-switch", { detail: { tabId, fromTabId: queryStore.activeTabId } }));
 }
 
+function closeActiveTab() {
+  if (settingsDialogOpen.value) {
+    closeSettingsPage();
+    return;
+  }
+  if (driverStoreActive.value) {
+    closeDriverStorePage();
+    return;
+  }
+  if (queryStore.activeTabId) queryStore.closeTab(queryStore.activeTabId);
+}
+
+function closeOtherTabs() {
+  appTabBarRef.value?.closeOtherActiveTabs();
+}
+
 function activateQueryTab(tabId: string): boolean {
   if (!queryStore.tabs.some((tab) => tab.id === tabId)) return false;
   dispatchBeforeTabSwitch(tabId);
   queryStore.activeTabId = tabId;
   driverStoreActive.value = false;
-  settingsStore.settingsPageActive = false;
+  if (settingsDialogOpen.value) closeSettingsPage();
+  else settingsStore.settingsPageActive = false;
   return true;
 }
 
@@ -2038,13 +2063,7 @@ function handleKeydown(e: KeyboardEvent) {
   }
   if (isCloseTabShortcut(e, shortcuts)) {
     e.preventDefault();
-    if (showSettingsPage.value) {
-      closeSettingsPage();
-    } else if (showDriverStore.value) {
-      closeDriverStorePage();
-    } else if (queryStore.activeTabId) {
-      queryStore.closeTab(queryStore.activeTabId);
-    }
+    closeActiveTab();
     return;
   }
   if (isSaveShortcut(e, shortcuts) && e.target instanceof Element && isObjectSourceSaveShortcutTarget(e.target)) {
@@ -2330,8 +2349,23 @@ onUnmounted(() => {
           :agent-driver-update-count="toolbarAgentDriverUpdateCount"
           :has-connections="connectionStore.connections.length > 0"
           :has-sql-file-connections="hasSqlFileConnections"
+          :has-active-tab="!!activeTab"
+          :has-active-query="activeTab?.mode === 'query'"
+          :can-save-sql="!!activeTab && activeTab.mode === 'query' && canSaveSqlTab(activeTab)"
+          :show-sidebar="sidebarOpen"
           @new-connection="showConnectionDialog = true"
           @new-query="newQuery"
+          @open-editor-sql-file="openSqlFile"
+          @save-sql="void openSaveSqlDialog()"
+          @import-result-archive="importResultArchive"
+          @close-active-tab="closeActiveTab"
+          @import-config="dialogs.onImportClick()"
+          @export-config="dialogs.onExportClick()"
+          @quick-open="showQuickOpen = true"
+          @format-sql="formatActiveSql"
+          @compress-sql="compressActiveSql"
+          @toggle-sidebar="setSidebarOpen(!sidebarOpen)"
+          @close-other-tabs="closeOtherTabs"
           @set-theme-mode="setThemeMode"
           @toggle-ai="toggleRightSidebarPanel('ai')"
           @toggle-history="toggleRightSidebarPanel('history')"
@@ -2344,6 +2378,7 @@ onUnmounted(() => {
           @open-sql-file="dialogs.showSqlFileDialog.value = true"
           @open-schema-diff="dialogs.showSchemaDiffDialog.value = true"
           @open-data-compare="dialogs.showDataCompareDialog.value = true"
+          @open-about="openAbout"
         />
 
         <div :class="isClassicLayout ? 'app-layout-classic flex-1 flex min-h-0' : 'app-panel-gutter flex-1 flex min-h-0 gap-1 p-1'">
@@ -2370,17 +2405,13 @@ onUnmounted(() => {
                 ref="appTabBarRef"
                 :driver-store-open="driverStoreTabOpen"
                 :driver-store-active="driverStoreActive"
-                :settings-page-open="settingsPageTabOpen"
-                :settings-page-active="settingsStore.settingsPageActive"
                 :agent-driver-update-count="toolbarAgentDriverUpdateCount"
                 @activate-driver-store="openDriverStorePage"
-                @activate-settings-page="activateSettingsPage"
                 @activate-tab="
                   driverStoreActive = false;
                   settingsStore.settingsPageActive = false;
                 "
                 @close-driver-store="closeDriverStorePage"
-                @close-settings-page="closeSettingsPage"
                 @save-tab="handleSaveTab"
                 @discard-tab-close="handleDiscardPendingTabClose"
                 @save-all-tab-close="handleSaveAllPendingTabClose"
@@ -2388,19 +2419,7 @@ onUnmounted(() => {
                 @cancel-tab-close="cancelPendingAppClose"
               />
               <DriverStorePage v-if="driverStoreTabOpen" v-show="driverStoreActive" v-model:active-tab="driverStoreActiveTab" class="flex-1 min-h-0" :update-notifications-enabled="updateNotificationsEnabled" :focus-target="driverStoreFocus" @update-count-change="updateAgentDriverUpdateCount" />
-              <EditorSettingsPage
-                v-if="settingsPageTabOpen"
-                v-show="settingsStore.settingsPageActive"
-                variant="page"
-                :open="settingsPageTabOpen"
-                :initial-tab="settingsInitialTab"
-                :initial-section="settingsInitialSection"
-                :navigation-request-id="settingsNavigationRequestId"
-                :app-version="appVersion"
-                class="flex-1 min-h-0"
-                @update:open="(open: boolean) => (open ? activateSettingsPage() : closeSettingsPage())"
-              />
-              <div v-if="activeTab" v-show="!driverStoreActive && !settingsStore.settingsPageActive" class="flex flex-col flex-1 min-h-0">
+              <div v-if="activeTab" v-show="!driverStoreActive" class="flex flex-col flex-1 min-h-0">
                 <EditorToolbar
                   v-if="activeTab.mode === 'query' && !isPreviewTab(activeTab)"
                   :active-tab="activeTab"
@@ -2513,7 +2532,7 @@ onUnmounted(() => {
                 </KeepAlive>
               </div>
               <WelcomeScreen
-                v-else-if="!driverStoreActive && !settingsStore.settingsPageActive"
+                v-else-if="!driverStoreActive"
                 :connection-stats="connectionStats"
                 :recent-connections="recentConnections"
                 :saved-sql-history-items="savedSqlHistoryItems"
@@ -2613,6 +2632,16 @@ onUnmounted(() => {
           @open-lineage-target="openLineageTarget"
           @open-database-search-target="openDatabaseSearchTarget"
           @open-diagram-target="openDiagramTarget"
+        />
+        <EditorSettingsPage
+          v-if="settingsDialogOpen"
+          variant="dialog"
+          :open="settingsDialogOpen"
+          :initial-tab="settingsInitialTab"
+          :initial-section="settingsInitialSection"
+          :navigation-request-id="settingsNavigationRequestId"
+          :app-version="appVersion"
+          @update:open="(open: boolean) => (open ? activateSettingsPage() : closeSettingsPage())"
         />
         <UpdateDialog
           v-if="showUpdateDialog"

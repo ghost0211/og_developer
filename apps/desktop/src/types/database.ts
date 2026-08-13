@@ -646,6 +646,8 @@ export interface BatchStatementExecutionItem {
   status: BatchStatementExecutionStatus;
   executionTimeMs?: number;
   affectedRows?: number;
+  /** openGauss gms_output lines drained after this statement ran. */
+  messages?: string[];
   error?: string;
   errorDetails?: BackendError;
 }
