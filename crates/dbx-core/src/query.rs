@@ -1395,6 +1395,11 @@ async fn do_execute_typed(
             let prefer_text_protocol = postgres_prefers_text_protocol(pool_db_type);
             let capture_gms_output = matches!(pool_db_type, Some(DatabaseType::OpenGauss | DatabaseType::Gaussdb))
                 && !state.is_gms_output_capture_unsupported(pool_key).await;
+            let notice_receiver = if matches!(pool_db_type, Some(DatabaseType::OpenGauss | DatabaseType::Gaussdb)) {
+                state.get_postgres_notice_receiver(pool_key).await
+            } else {
+                None
+            };
             let execution_mode = options.execution_mode;
             let cancel_context = state.get_postgres_cancel_context(pool_key).await;
             drop(connections);
@@ -1420,6 +1425,7 @@ async fn do_execute_typed(
                     cancel_context,
                     prefer_text_protocol,
                     capture_gms_output,
+                    notice_receiver,
                 )
                 .await;
                 guard_gms_output_capture_outcome(state, pool_key, capture_gms_output, outcome).await
@@ -1433,6 +1439,7 @@ async fn do_execute_typed(
                     cancel_context,
                     prefer_text_protocol,
                     capture_gms_output,
+                    notice_receiver,
                 )
                 .await;
                 guard_gms_output_capture_outcome(state, pool_key, capture_gms_output, outcome).await

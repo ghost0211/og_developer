@@ -1515,6 +1515,19 @@ pub async fn connect(url: &str, fallback_timeout: Duration) -> Result<Pool, Stri
     connect_with_pool_size(url, fallback_timeout, 10).await
 }
 
+/// Connect like [`connect`], but also capture server notices (RAISE NOTICE
+/// etc.) from every pooled connection into the returned receiver.
+pub async fn connect_with_notices(
+    url: &str,
+    fallback_timeout: Duration,
+) -> Result<(Pool, tokio::sync::broadcast::Receiver<tokio_postgres::NoticeMessage>), String> {
+    let (sender, receiver) = tokio::sync::broadcast::channel(256);
+    let pool =
+        connect_with_optional_local_timezone_inner(url, fallback_timeout, None, 10, Some(std::sync::Arc::new(sender)))
+            .await?;
+    Ok((pool, receiver))
+}
+
 /// Connect with a custom pool size. Debug sessions use max_size=1 so a checked
 /// out client is a pinned, dedicated session (og developer).
 pub async fn connect_with_pool_size(url: &str, fallback_timeout: Duration, max_size: usize) -> Result<Pool, String> {
@@ -1545,6 +1558,16 @@ async fn connect_with_optional_local_timezone(
     timezone: Option<&str>,
     max_size: usize,
 ) -> Result<Pool, String> {
+    connect_with_optional_local_timezone_inner(url, fallback_timeout, timezone, max_size, None).await
+}
+
+async fn connect_with_optional_local_timezone_inner(
+    url: &str,
+    fallback_timeout: Duration,
+    timezone: Option<&str>,
+    max_size: usize,
+    notice_sink: Option<std::sync::Arc<tokio::sync::broadcast::Sender<tokio_postgres::NoticeMessage>>>,
+) -> Result<Pool, String> {
     let url_with_keepalive = inject_postgres_keepalive_params(url);
     let postgres_url = postgres_connection_url(&url_with_keepalive)?;
     let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
@@ -1554,6 +1577,10 @@ async fn connect_with_optional_local_timezone(
     super::with_connection_timeout("PostgreSQL", timeout, async {
         let pg_config = tokio_postgres::Config::from_str(&postgres_url.url)
             .map_err(|e| format!("Invalid PostgreSQL connection URL: {e}"))?;
+        let mut pg_config = pg_config;
+        if let Some(sink) = notice_sink {
+            pg_config.notice_sink(sink);
+        }
 
         // Fast recycling only checks whether the connection is already closed
         // instead of issuing a validation query on every checkout, saving one
@@ -3725,22 +3752,44 @@ async fn gms_output_drain_lines(client: &deadpool_postgres::Object) -> Vec<Strin
 /// user query and the drain must all run on the same checked-out connection.
 /// Lines ride `QueryResult.messages`; on failure they are appended to the
 /// error text (partial output before a crash is the interesting part).
-async fn run_with_gms_output_capture(
+/// gms_output.put_line buffers server-side per session, so the enable, the
+/// user query and the drain must all run on the same checked-out connection.
+/// Server notices (RAISE NOTICE) arrive asynchronously on the wire; the
+/// backlog is flushed before the query and everything collected afterwards is
+/// attributed to this run. Lines ride `QueryResult.messages`; on failure they
+/// are appended to the error text.
+async fn run_with_server_output_capture(
     client: &deadpool_postgres::Object,
     sql: &str,
     query: impl std::future::Future<Output = Result<QueryResult, String>>,
+    capture_gms_output: bool,
+    notices: Option<tokio::sync::broadcast::Receiver<tokio_postgres::NoticeMessage>>,
 ) -> Result<QueryResult, String> {
-    if !sql_mentions_gms_output(sql) || !gms_output_try_enable(client).await {
-        return query.await;
+    let mut notices = notices;
+    if let Some(receiver) = &mut notices {
+        while receiver.try_recv().is_ok() {}
     }
+    let gms_enabled = capture_gms_output && sql_mentions_gms_output(sql) && gms_output_try_enable(client).await;
     let outcome = query.await;
-    let lines = gms_output_drain_lines(client).await;
+    let mut lines: Vec<String> = Vec::new();
+    if gms_enabled {
+        lines.extend(gms_output_drain_lines(client).await);
+    }
+    if let Some(receiver) = &mut notices {
+        while let Ok(notice) = receiver.try_recv() {
+            lines.push(if notice.severity.eq_ignore_ascii_case("NOTICE") {
+                notice.message
+            } else {
+                format!("[{}] {}", notice.severity, notice.message)
+            });
+        }
+    }
     match outcome {
         Ok(mut result) => {
             result.messages = lines;
             Ok(result)
         }
-        Err(error) if !lines.is_empty() => Err(format!("{error}\n[gms_output]\n{}", lines.join("\n"))),
+        Err(error) if !lines.is_empty() => Err(format!("{error}\n[server output]\n{}", lines.join("\n"))),
         Err(error) => Err(error),
     }
 }
@@ -3754,6 +3803,7 @@ pub async fn execute_query_with_max_rows_and_cancel(
     cancel_context: Option<PostgresCancelContext>,
     prefer_text_protocol: bool,
     capture_gms_output: bool,
+    notice_receiver: Option<tokio::sync::broadcast::Receiver<tokio_postgres::NoticeMessage>>,
 ) -> Result<QueryResult, String> {
     let client = checkout_postgres_client(pool, cancel_token.as_ref(), budget.checkout_timeout).await?;
     let pg_cancel_token = client.cancel_token();
@@ -3765,8 +3815,8 @@ pub async fn execute_query_with_max_rows_and_cancel(
         budget.cancel_timeout,
         execute_query_with_max_rows_inner(&client, sql, max_rows, prefer_text_protocol),
     );
-    if capture_gms_output {
-        run_with_gms_output_capture(&client, sql, query).await
+    if capture_gms_output || notice_receiver.is_some() {
+        run_with_server_output_capture(&client, sql, query, capture_gms_output, notice_receiver).await
     } else {
         query.await
     }
@@ -4019,6 +4069,7 @@ pub async fn execute_query_with_schema_and_max_rows_and_cancel(
     cancel_context: Option<PostgresCancelContext>,
     prefer_text_protocol: bool,
     capture_gms_output: bool,
+    notice_receiver: Option<tokio::sync::broadcast::Receiver<tokio_postgres::NoticeMessage>>,
 ) -> Result<QueryResult, String> {
     let start = Instant::now();
     let checkout_start = Instant::now();
@@ -4064,7 +4115,11 @@ pub async fn execute_query_with_schema_and_max_rows_and_cancel(
         budget.cancel_timeout,
         execute_query_with_max_rows_inner(&client, sql, max_rows, prefer_text_protocol),
     );
-    let result = if capture_gms_output { run_with_gms_output_capture(&client, sql, query).await } else { query.await };
+    let result = if capture_gms_output || notice_receiver.is_some() {
+        run_with_server_output_capture(&client, sql, query, capture_gms_output, notice_receiver).await
+    } else {
+        query.await
+    };
     if result.is_ok() {
         clear_postgres_caches_after_ddl(pool, Some(&client), sql);
     }

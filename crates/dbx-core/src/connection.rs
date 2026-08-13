@@ -288,6 +288,11 @@ pub struct AppState {
     /// (openGauss-lite closes the connection on put_line over the wire).
     /// Output capture is skipped there once learned.
     gms_output_unsupported_pools: Arc<RwLock<std::collections::HashSet<String>>>,
+    /// Server-notice receivers for native openGauss/GaussDB pools, keyed by
+    /// pool_key. The receiver observes RAISE NOTICE from every connection in
+    /// the pool; execution drains the backlog around each query.
+    postgres_notice_receivers:
+        Arc<RwLock<HashMap<String, tokio::sync::broadcast::Receiver<tokio_postgres::NoticeMessage>>>>,
     #[cfg(feature = "mq-admin")]
     pub mq_registry: crate::mq::MqAdminRegistry,
 }
@@ -1138,6 +1143,7 @@ impl AppState {
             duckdb_worker_max_processes: AtomicUsize::new(DUCKDB_WORKER_MAX_PROCESSES_DEFAULT),
             postgres_cancel_contexts: Arc::new(RwLock::new(HashMap::new())),
             gms_output_unsupported_pools: Arc::new(RwLock::new(std::collections::HashSet::new())),
+            postgres_notice_receivers: Arc::new(RwLock::new(HashMap::new())),
             transaction_sessions: Arc::new(RwLock::new(HashMap::new())),
             opengauss_debug_sessions: Arc::new(RwLock::new(HashMap::new())),
             #[cfg(feature = "mq-admin")]
@@ -1705,6 +1711,21 @@ impl AppState {
         self.gms_output_unsupported_pools.write().await.insert(pool_key.to_string());
     }
 
+    pub async fn get_postgres_notice_receiver(
+        &self,
+        pool_key: &str,
+    ) -> Option<tokio::sync::broadcast::Receiver<tokio_postgres::NoticeMessage>> {
+        self.postgres_notice_receivers.read().await.get(pool_key).map(|receiver| receiver.resubscribe())
+    }
+
+    pub async fn register_postgres_notice_receiver(
+        &self,
+        pool_key: &str,
+        receiver: tokio::sync::broadcast::Receiver<tokio_postgres::NoticeMessage>,
+    ) {
+        self.postgres_notice_receivers.write().await.insert(pool_key.to_string(), receiver);
+    }
+
     pub fn pool_activity_touch(&self, pool_key: &str) -> PoolActivityTouch {
         PoolActivityTouch {
             pool_key: pool_key.to_string(),
@@ -1914,12 +1935,18 @@ impl AppState {
                 let jdbc_config = opengauss_jdbc_config_for_endpoint(&db_config, &host, port);
                 self.external_driver_pool("jdbc", &jdbc_config).await?
             }
-            DatabaseType::Postgres
-            | DatabaseType::Redshift
-            | DatabaseType::Gaussdb
-            | DatabaseType::Kwdb
-            | DatabaseType::Questdb
-            | DatabaseType::OpenGauss => {
+            DatabaseType::Gaussdb | DatabaseType::OpenGauss => {
+                // ogdeveloper: native wire connections capture RAISE NOTICE for
+                // the 输出 result view.
+                let (pg_pool, notice_receiver) = db::postgres::connect_with_notices(&url, connect_timeout).await?;
+                // Build TLS cancel context for reconstructing TLS connection during cancel
+                if let Some(ctx) = db::postgres::build_postgres_cancel_context(&url) {
+                    self.postgres_cancel_contexts.write().await.insert(pool_key.clone(), ctx);
+                }
+                self.register_postgres_notice_receiver(&pool_key, notice_receiver).await;
+                PoolKind::Postgres(pg_pool)
+            }
+            DatabaseType::Postgres | DatabaseType::Redshift | DatabaseType::Kwdb | DatabaseType::Questdb => {
                 let pg_pool = db::postgres::connect(&url, connect_timeout).await?;
                 // Build TLS cancel context for reconstructing TLS connection during cancel
                 if let Some(ctx) = db::postgres::build_postgres_cancel_context(&url) {
