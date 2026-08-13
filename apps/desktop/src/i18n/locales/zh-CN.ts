@@ -1031,6 +1031,7 @@ export default withEnglishFallback({
     sql: "SQL",
     table: "表",
     tableData: "数据表",
+    output: "输出",
     redis: "Redis",
     etcd: "etcd",
     etcdDashboard: "etcd 大盘",
@@ -1130,6 +1131,7 @@ export default withEnglishFallback({
     noSql: "无法获取 SQL",
     navigationHint: "单击预览对应 SQL，双击在编辑器中聚焦并选中。",
     outputHint: "DBMS_OUTPUT 输出",
+    outputEmpty: "本次执行没有输出内容",
     statuses: {
       pending: "等待",
       running: "执行中",

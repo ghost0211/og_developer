@@ -996,6 +996,7 @@ export default withEnglishFallback({
     sql: "SQL",
     table: "テーブル",
     tableData: "テーブルデータ",
+    output: "出力",
     redis: "Redis",
     etcd: "etcd",
     mongo: "Mongo",

@@ -1030,6 +1030,7 @@ export default {
     sql: "SQL",
     table: "Table",
     tableData: "Table Data",
+    output: "Output",
     redis: "Redis",
     etcd: "etcd",
     etcdDashboard: "etcd Dashboard",
@@ -1129,6 +1130,7 @@ export default {
     noSql: "SQL unavailable",
     navigationHint: "Click a row to preview its SQL; double-click to focus it in the editor.",
     outputHint: "DBMS_OUTPUT output",
+    outputEmpty: "No output from this execution",
     statuses: {
       pending: "Pending",
       running: "Running",

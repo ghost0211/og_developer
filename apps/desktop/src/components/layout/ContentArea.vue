@@ -134,7 +134,7 @@ const props = defineProps<{
   activeTab: QueryTab;
   activeConnection?: ConnectionConfig;
   executableSql: string;
-  activeOutputView: "result" | "summary" | "explain" | "chart";
+  activeOutputView: "result" | "output" | "summary" | "explain" | "chart";
   formatSqlRequest: { id: number; tabId: string } | null;
   compressSqlRequest: { id: number; tabId: string } | null;
   selectedSql: string;
@@ -143,7 +143,7 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  "update:activeOutputView": [value: "result" | "summary" | "explain" | "chart"];
+  "update:activeOutputView": [value: "result" | "output" | "summary" | "explain" | "chart"];
   fixWithAi: [errorMessage: string];
   sendSelectionToAi: [sql: string];
   execute: [sqlOverride?: SqlExecutionOverride];
@@ -411,6 +411,12 @@ watch(
 );
 const summaryItems = computed(() => executionSummaryItems(props.activeTab));
 const hasExecutionSummary = computed(() => summaryItems.value.length > 0 || props.activeTab.isExecuting);
+/** openGauss gms_output / RAISE NOTICE lines, in statement order. */
+const outputMessages = computed(() => {
+  const results = props.activeTab.results ?? (props.activeTab.result ? [props.activeTab.result] : []);
+  return results.flatMap((result) => result.messages ?? []);
+});
+const hasResultOutput = computed(() => outputMessages.value.length > 0);
 const batchExecutionProgress = computed(() => props.activeTab.batchSqlExecution);
 const batchExecutionPercent = computed(() => {
   const progress = batchExecutionProgress.value;
@@ -593,6 +599,10 @@ watch(
   () => [props.activeTab.id, props.activeTab.result, props.activeTab.results, props.activeTab.isExecuting] as const,
   () => {
     if (props.activeTab.isExecuting) return;
+    if (hasResultOutput.value && !hasTabularResult.value && props.activeOutputView === "result") {
+      emit("update:activeOutputView", "output");
+      return;
+    }
     if (hasExecutionSummary.value && !hasTabularResult.value && props.activeOutputView === "result") {
       emit("update:activeOutputView", "summary");
     }
@@ -1311,6 +1321,7 @@ defineExpose({ focusSearch, refreshData, refreshQueryEditorCompletionCache, hand
               <QueryResultViewSwitcher
                 :active-view="activeOutputView"
                 :can-show-result="canShowResultOutput"
+                :can-show-output="hasResultOutput"
                 :can-show-summary="hasExecutionSummary"
                 :can-show-chart="hasNumericData && !activeElasticsearchJsonResponse"
                 :compact="standaloneResultToolbarCompact"
@@ -1341,6 +1352,17 @@ defineExpose({ focusSearch, refreshData, refreshQueryEditorCompletionCache, hand
             />
 
             <QueryChart v-else-if="activeOutputView === 'chart' && activeTab.result && !activeElasticsearchJsonResponse" class="flex-1 min-h-0" :result="activeTab.result" />
+
+            <div v-else-if="activeOutputView === 'output'" data-query-output-view class="flex-1 min-h-0 overflow-auto bg-background">
+              <div v-if="outputMessages.length === 0" class="flex h-full items-center justify-center text-sm text-muted-foreground">
+                {{ t("executionSummary.outputEmpty") }}
+              </div>
+              <div v-else class="min-w-[46rem] px-3 py-2">
+                <div v-for="(line, index) in outputMessages" :key="index" class="whitespace-pre-wrap break-all border-b border-border/40 py-1 font-mono text-xs leading-5 text-emerald-700 last:border-b-0 dark:text-emerald-300">
+                  {{ line }}
+                </div>
+              </div>
+            </div>
 
             <div v-else-if="activeOutputView === 'summary'" class="flex-1 min-h-0 overflow-auto bg-background">
               <div v-if="summaryItems.length === 0" class="flex h-full items-center justify-center text-sm text-muted-foreground">
@@ -1464,7 +1486,15 @@ defineExpose({ focusSearch, refreshData, refreshQueryEditorCompletionCache, hand
                 @sort="(column: string, columnIndex: number, direction: 'asc' | 'desc' | null, whereInput?: string, mode?: DataGridSortMode) => emit('sort', column, columnIndex, direction, whereInput, mode)"
               >
                 <template #result-toolbar-leading="{ compact }">
-                  <QueryResultViewSwitcher :active-view="activeOutputView" :can-show-result="canShowResultOutput" :can-show-summary="hasExecutionSummary" :can-show-chart="hasNumericData && !activeElasticsearchJsonResponse" :compact="compact" @select-view="emit('update:activeOutputView', $event)" />
+                  <QueryResultViewSwitcher
+                    :active-view="activeOutputView"
+                    :can-show-result="canShowResultOutput"
+                    :can-show-output="hasResultOutput"
+                    :can-show-summary="hasExecutionSummary"
+                    :can-show-chart="hasNumericData && !activeElasticsearchJsonResponse"
+                    :compact="compact"
+                    @select-view="emit('update:activeOutputView', $event)"
+                  />
                   <template v-if="activeElasticsearchRawBody">
                     <div class="mx-1 h-4 w-px bg-border" />
                     <button

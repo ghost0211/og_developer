@@ -76,7 +76,7 @@ export function useSqlExecution(deps: {
   activeConnection: ComputedRef<ConnectionConfig | undefined>;
   executableSql: ComputedRef<string>;
   resolveExecutableSql?: (snapshot?: SqlExecutionSnapshot) => Promise<string>;
-  activeOutputView: Ref<"result" | "summary" | "explain" | "chart">;
+  activeOutputView: Ref<"result" | "output" | "summary" | "explain" | "chart">;
   blockDangerousRedisCommands?: Ref<boolean>;
   onMissingDatabase?: () => void;
 }) {
@@ -229,11 +229,15 @@ export function useSqlExecution(deps: {
     });
     if (producedResult === false) return;
     const sqlServerMessageResultIndex = executionDatabaseType === "sqlserver" ? tab.results?.findIndex((result) => result.server_message === true) : undefined;
+    const executionMessages = (tab.results ?? (tab.result ? [tab.result] : [])).flatMap((result) => result.messages ?? []);
     if (sqlServerMessageResultIndex !== undefined && sqlServerMessageResultIndex >= 0) {
       queryStore.setActiveResultIndex(tab.id, sqlServerMessageResultIndex);
       deps.activeOutputView.value = "result";
     } else if (executionDatabaseType === "sqlserver" && tab.result?.server_message === true) {
       deps.activeOutputView.value = "result";
+    } else if (executionMessages.length > 0 && !tab.results?.some((result) => result.columns.length > 0)) {
+      // 打印输出优先于摘要：纯 RAISE NOTICE/gms_output 的执行没有结果表。
+      deps.activeOutputView.value = "output";
     } else if (tab.result && !tab.result.columns.length && !tab.results?.some((result) => result.columns.length > 0)) {
       deps.activeOutputView.value = "summary";
     }

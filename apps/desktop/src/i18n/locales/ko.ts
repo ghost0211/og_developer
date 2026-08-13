@@ -911,6 +911,7 @@ export default withEnglishFallback({
     sql: "SQL",
     table: "테이블",
     tableData: "테이블 데이터",
+    output: "출력",
     redis: "Redis",
     etcd: "etcd",
     etcdDashboard: "etcd 대시보드",

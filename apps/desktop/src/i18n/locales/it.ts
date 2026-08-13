@@ -975,6 +975,7 @@ export default withEnglishFallback({
     sql: "SQL",
     table: "Tabella",
     tableData: "Dati Tabella",
+    output: "Output",
     redis: "Redis",
     etcd: "etcd",
     zookeeper: "ZooKeeper",

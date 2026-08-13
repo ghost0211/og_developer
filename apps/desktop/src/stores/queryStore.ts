@@ -306,24 +306,6 @@ function applyBatchSqlProgress(
   }
 }
 
-export function appendServerOutputResults(results: QueryResult[]): QueryResult[] {
-  const synthesized = results
-    .filter((result) => result.messages?.length)
-    .map(
-      (result) =>
-        ({
-          columns: [i18n.global.t("executionSummary.outputHint")],
-          column_types: ["text"],
-          column_sortables: [false],
-          rows: result.messages!.map((line) => [line]),
-          affected_rows: 0,
-          execution_time_ms: 0,
-          sourceLabel: "DBMS_OUTPUT",
-        }) satisfies QueryResult,
-    );
-  return synthesized.length > 0 ? [...results, ...synthesized] : results;
-}
-
 function reconcileBatchSqlResults(tab: QueryTab, executionId: string, results: QueryResult[]) {
   const batch = batchSqlExecutionFor(tab, executionId);
   if (!batch) return;
@@ -4115,7 +4097,7 @@ export const useQueryStore = defineStore("query", () => {
       }
       const annotatedResults = annotateQueryResultSources(markQueryResultsRowsRaw(await withFrontendQueryTimeout(executionPromise, frontendTimeoutSecs, t("editor.queryTimeoutError", { seconds: frontendTimeoutSecs }))), queryBaseSql, sourceLabelDatabase, effectiveDbType, options?.sourceOffset);
       reconcileBatchSqlResults(tab, executionId, annotatedResults);
-      const results = appendServerOutputResults(annotatedResults);
+      const results = annotatedResults;
       const successfulOracleSchemaChanges = effectiveDbType === "oracle" ? results.filter((result) => result.execution_error !== true && isOracleCurrentSchemaStatement(result.sourceStatement)).length : 0;
       const successfulSapHanaSchemaChanges = effectiveDbType === "saphana" ? results.filter((result) => result.execution_error !== true && isSapHanaSetSchemaStatement(result.sourceStatement)).length : 0;
       const sqlServerUseDatabase = effectiveDbType === "sqlserver" && !results.some(isSqlServerBatchErrorResult) ? sqlServerUseDatabaseFromStatement(sql) : undefined;
