@@ -151,11 +151,25 @@ function returnsRoutineOutput(parameter: Pick<RoutineParameterValue, "mode">): b
 // ogdeveloper: openGauss graphical routine invocation (PL/SQL Developer style)
 // ---------------------------------------------------------------------------
 
+/**
+ * Quotes an identifier only when it actually needs quoting (mixed case,
+ * special characters, reserved words). Lowercase snake_case names stay bare —
+ * blanket "..." quoting implies case-sensitive objects that were never
+ * created that way.
+ */
+const OPENGAUSS_BARE_IDENTIFIER = /^[a-z_][a-z0-9_$]*$/;
+const OPENGAUSS_ROUTINE_RESERVED_WORDS = new Set(["begin", "end", "if", "else", "elsif", "declare", "select", "insert", "update", "delete", "table", "function", "procedure", "package", "type", "loop", "while", "for", "case", "return", "raise", "then", "do", "call", "user", "default"]);
+
+function quoteOpenGaussIdentifierWhenNeeded(part: string): string {
+  if (OPENGAUSS_BARE_IDENTIFIER.test(part) && !OPENGAUSS_ROUTINE_RESERVED_WORDS.has(part)) return part;
+  return quoteTableIdentifier("opengauss", part);
+}
+
 /** Quotes each dotted segment so package members (pkg.proc) qualify correctly. */
 function qualifiedOpenGaussRoutineName(options: BuildRoutineExecutionSqlOptions): string {
   const parts = options.routineName.split(".").filter(Boolean);
   const qualified = options.schema ? [options.schema, ...parts] : parts;
-  return qualified.map((part) => quoteTableIdentifier("opengauss", part)).join(".");
+  return qualified.map(quoteOpenGaussIdentifierWhenNeeded).join(".");
 }
 
 /**
@@ -186,18 +200,30 @@ export function buildOpenGaussRoutineExecutionSql(options: BuildRoutineExecution
 }
 
 /**
- * Builds the direct CALL used for debugging (the debuggee parks on routine
- * entry; openGauss returns OUT/INOUT values as a result row when NULL
- * placeholders are passed).
+ * Builds the anonymous PL/SQL block used for debugging. The debuggee must run
+ * the routine inside the debugger-marked session; an anonymous block is more
+ * permissive than CALL (which rejects some argument forms) and matches how
+ * PL/SQL tools invoke routines. OUT/INOUT parameters cannot take NULL
+ * placeholders inside a block, so they are bound to DECLAREd variables.
  */
 export function buildOpenGaussRoutineDebugCallSql(options: BuildRoutineExecutionSqlOptions & { parameters: RoutineParameterValue[] }): string {
   const routine = qualifiedOpenGaussRoutineName(options);
   const sorted = [...options.parameters].sort((a, b) => a.ordinal - b.ordinal);
+  const declarations: string[] = [];
   const args = sorted.map((parameter) => {
-    if (parameter.mode === "OUT") return "NULL";
+    const variable = `v_arg_${parameter.ordinal}`;
+    if (parameter.mode === "OUT") {
+      declarations.push(`${variable} ${parameter.dataType || "text"};`);
+      return variable;
+    }
+    if (parameter.mode === "INOUT") {
+      declarations.push(`${variable} ${parameter.dataType || "text"} := ${routineParameterSqlValue("opengauss", parameter)};`);
+      return variable;
+    }
     return shouldIncludeParameter(parameter) ? routineParameterSqlValue("opengauss", parameter) : "NULL";
   });
-  return `CALL ${routine}(${args.join(", ")});`;
+  const body = `BEGIN\n  ${routine}(${args.join(", ")});\nEND;`;
+  return declarations.length > 0 ? `DECLARE\n  ${declarations.join("\n  ")}\n${body}` : body;
 }
 
 function routineArgumentSql(databaseType: DatabaseType | undefined, parameter: RoutineParameterValue, useNamedArguments: boolean): string {

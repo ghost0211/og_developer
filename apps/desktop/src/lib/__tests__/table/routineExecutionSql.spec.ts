@@ -151,6 +151,11 @@ describe("SQL Server routine execution SQL", () => {
     expect(metadataSql).toContain("p.max_length AS max_length");
     expect(metadataSql).toContain("p.precision AS precision");
     expect(metadataSql).toContain("p.scale AS scale");
+
+    // openGauss shares the pg_proc metadata query, narrowed by routine kind.
+    expect(routineParametersQuery({ database: "postgres", databaseType: "opengauss", schema: "public", routineName: "dbg_demo", routineKind: "procedure" })).toContain("p.prokind = 'p'");
+    expect(routineParametersQuery({ database: "postgres", databaseType: "opengauss", schema: "public", routineName: "f", routineKind: "function" })).toContain("p.prokind = 'f'");
+    expect(routineParametersQuery({ database: "postgres", databaseType: "opengauss", schema: "public", routineName: "dbg_demo" })).toContain("p.prokind IN ('p', 'f')");
   });
 });
 
@@ -164,7 +169,7 @@ describe("openGauss graphical routine invocation", () => {
       routineName: "dbg_demo",
       parameters: [param("x", "integer", "IN", 1, "1")],
     });
-    expect(sql).toBe('CALL "public"."dbg_demo"(1);');
+    expect(sql).toBe("CALL public.dbg_demo(1);");
   });
 
   it("procedures with OUT/INOUT params use CALL with NULL placeholders (values return as a row)", () => {
@@ -174,7 +179,7 @@ describe("openGauss graphical routine invocation", () => {
       routineName: "ogdev_out_demo",
       parameters: [param("x", "int", "IN", 1, "4"), param("y", "numeric", "OUT", 2), param("z", "text", "INOUT", 3, "in")],
     });
-    expect(sql).toBe('CALL "public"."ogdev_out_demo"(4, NULL, \'in\');');
+    expect(sql).toBe("CALL public.ogdev_out_demo(4, NULL, 'in');");
   });
 
   it("functions use SELECT * FROM", () => {
@@ -185,16 +190,37 @@ describe("openGauss graphical routine invocation", () => {
       parameters: [param("emp_id", "integer", "IN", 1, "7")],
       isFunction: true,
     });
-    expect(sql).toBe('SELECT * FROM "public"."emp_pkg"."get_salary"(7);');
+    expect(sql).toBe("SELECT * FROM public.emp_pkg.get_salary(7);");
   });
 
-  it("debug calls stay direct with NULL placeholders for OUT params", () => {
+  it("mixed-case routine names stay quoted", () => {
+    const sql = buildOpenGaussRoutineExecutionSql({
+      databaseType: "opengauss",
+      schema: "public",
+      routineName: "EmpPkg.getSalary",
+      parameters: [param("emp_id", "integer", "IN", 1, "7")],
+      isFunction: true,
+    });
+    expect(sql).toBe('SELECT * FROM public."EmpPkg"."getSalary"(7);');
+  });
+
+  it("debug calls use an anonymous block with DECLAREd variables for OUT/INOUT params", () => {
     const sql = buildOpenGaussRoutineDebugCallSql({
       databaseType: "opengauss",
       schema: "public",
       routineName: "ogdev_out_demo",
       parameters: [param("x", "int", "IN", 1, "4"), param("y", "numeric", "OUT", 2), param("z", "text", "INOUT", 3, "in")],
     });
-    expect(sql).toBe('CALL "public"."ogdev_out_demo"(4, NULL, \'in\');');
+    expect(sql).toBe("DECLARE\n  v_arg_2 numeric;\n  v_arg_3 text := 'in';\nBEGIN\n  public.ogdev_out_demo(4, v_arg_2, v_arg_3);\nEND;");
+  });
+
+  it("debug calls without output params skip the DECLARE section", () => {
+    const sql = buildOpenGaussRoutineDebugCallSql({
+      databaseType: "opengauss",
+      schema: "public",
+      routineName: "dbg_demo",
+      parameters: [param("x", "integer", "IN", 1, "1")],
+    });
+    expect(sql).toBe("BEGIN\n  public.dbg_demo(1);\nEND;");
   });
 });

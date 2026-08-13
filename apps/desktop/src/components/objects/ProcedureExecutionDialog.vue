@@ -112,6 +112,7 @@ async function refreshParameters() {
       databaseType: props.databaseType,
       schema: props.schema,
       routineName: props.routineName,
+      routineKind: props.routineKind,
     });
     if (token !== loadToken) return;
     parameters.value = loaded.map((parameter) => ({

@@ -8,6 +8,8 @@ export interface LoadRoutineParametersOptions {
   databaseType?: DatabaseType;
   schema?: string;
   routineName: string;
+  /** Narrows pg_proc by prokind; omit to match both procedures and functions. */
+  routineKind?: "procedure" | "function";
 }
 
 export async function loadRoutineParameters(options: LoadRoutineParametersOptions): Promise<RoutineParameter[]> {
@@ -21,15 +23,27 @@ export async function loadRoutineParameters(options: LoadRoutineParametersOption
 }
 
 export function supportsRoutineParameterMetadata(databaseType?: DatabaseType): boolean {
-  return databaseType === "postgres" || databaseType === "mysql" || databaseType === "doris" || databaseType === "starrocks" || databaseType === "sqlserver" || databaseType === "oracle" || databaseType === "dameng" || databaseType === "oceanbase-oracle" || databaseType === "databend";
+  return (
+    databaseType === "postgres" ||
+    databaseType === "opengauss" ||
+    databaseType === "mysql" ||
+    databaseType === "doris" ||
+    databaseType === "starrocks" ||
+    databaseType === "sqlserver" ||
+    databaseType === "oracle" ||
+    databaseType === "dameng" ||
+    databaseType === "oceanbase-oracle" ||
+    databaseType === "databend"
+  );
 }
 
-export function routineParametersQuery(options: Pick<LoadRoutineParametersOptions, "database" | "databaseType" | "schema" | "routineName">): string | null {
+export function routineParametersQuery(options: Pick<LoadRoutineParametersOptions, "database" | "databaseType" | "schema" | "routineName" | "routineKind">): string | null {
   if (!supportsRoutineParameterMetadata(options.databaseType)) return null;
-  const effectiveSchema = options.schema || (options.databaseType === "postgres" ? "public" : "") || (options.databaseType === "mysql" || options.databaseType === "doris" || options.databaseType === "starrocks" ? options.database : "");
+  const effectiveSchema = options.schema || (options.databaseType === "postgres" || options.databaseType === "opengauss" ? "public" : "") || (options.databaseType === "mysql" || options.databaseType === "doris" || options.databaseType === "starrocks" ? options.database : "");
   const schema = quoteSqlLiteral(effectiveSchema);
   const name = quoteSqlLiteral(options.routineName);
-  if (options.databaseType === "postgres") {
+  if (options.databaseType === "postgres" || options.databaseType === "opengauss") {
+    const prokindFilter = options.routineKind === "procedure" ? "p.prokind = 'p'" : options.routineKind === "function" ? "p.prokind = 'f'" : "p.prokind IN ('p', 'f')";
     return `
 SELECT
   NULLIF(arg.name, '') AS name,
@@ -61,7 +75,7 @@ CROSS JOIN LATERAL (
     COUNT(*) FILTER (WHERE COALESCE(p.proargmodes[gs.ordinal], 'i') IN ('i', 'b', 'v')) OVER (ORDER BY gs.ordinal) AS input_ordinal
   FROM generate_series(1, COALESCE(array_length(p.proallargtypes, 1), p.pronargs)) AS gs(ordinal)
 ) arg
-WHERE p.prokind = 'p'
+WHERE ${prokindFilter}
   AND n.nspname = ${schema}
   AND p.proname = ${name}
 ORDER BY arg.ordinal;`.trim();
