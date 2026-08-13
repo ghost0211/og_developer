@@ -7,20 +7,17 @@ function source(relativePath: string): string {
   return readFileSync(path.resolve(relativePath), "utf8");
 }
 
-test("shares the configured download source with agent driver management", () => {
-  const app = source("apps/desktop/src/App.vue");
-  const driverStore = source("apps/desktop/src/components/config/DriverStoreDialog.vue");
+test("agent driver installation still honors the configured download source", () => {
   const backendApi = source("apps/desktop/src/lib/backend/api.ts");
-
-  assert.match(driverStore, /driverStoreTab === 'agent' && !isWeb/);
-  assert.match(driverStore, /:model-value="settingsStore\.editorSettings\.updateDownloadSource"/);
-  assert.match(driverStore, /settingsStore\.updateEditorSettings\(\{ updateDownloadSource: value \}\)/);
-  assert.match(driverStore, /void forceRefresh\(\)\.catch\(\(\) => undefined\)/);
 
   assert.match(backendApi, /backend\.listInstalledAgents\(useSettingsStore\(\)\.editorSettings\.updateDownloadSource\)/);
   assert.match(backendApi, /backend\.installAgent\(dbType, useSettingsStore\(\)\.editorSettings\.updateDownloadSource(?:, operationId)?\)/);
   assert.match(backendApi, /backend\.upgradeAllAgents\(useSettingsStore\(\)\.editorSettings\.updateDownloadSource(?:, operationId)?\)/);
   assert.match(backendApi, /backend\.reinstallJre\(jreKey, useSettingsStore\(\)\.editorSettings\.updateDownloadSource(?:, operationId)?\)/);
-  assert.match(app, /const drivers = await api\.listInstalledAgents\(\)/);
-  assert.doesNotMatch(app, /invoke<[^>]+>\("list_installed_agents"\)/);
+});
+
+test("the driver management page and its update badge are gone", () => {
+  const app = source("apps/desktop/src/App.vue");
+  assert.doesNotMatch(app, /DriverStoreDialog/);
+  assert.doesNotMatch(app, /refreshAgentDriverUpdateCount/);
 });

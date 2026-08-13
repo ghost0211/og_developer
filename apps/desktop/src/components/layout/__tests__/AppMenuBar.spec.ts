@@ -5,9 +5,20 @@ const menuSource = readFileSync(new URL("../AppMenuBar.vue", import.meta.url), "
 
 describe("AppMenuBar", () => {
   it("exposes the requested top-level application menus", () => {
-    for (const key of ["file", "project", "edit", "session", "tools", "settings", "help"]) {
+    for (const key of ["file", "project", "edit", "search", "tools", "settings", "help"]) {
       expect(menuSource).toContain(`t("menus.${key}")`);
     }
+  });
+
+  it("exposes editor and search actions", () => {
+    for (const event of ["undo", "redo", "cut", "copy", "paste", "find", "replace", "format-sql", "compress-sql", "search-files", "search-metadata", "search-objects", "create-project", "open-project", "select-project"]) {
+      expect(menuSource).toContain(`@select="emit('${event}'`);
+    }
+  });
+
+  it("has no update-check or driver-store entries", () => {
+    expect(menuSource).not.toContain("check-updates");
+    expect(menuSource).not.toContain("open-driver-store");
   });
 
   it("routes settings through the standalone settings action", () => {

@@ -1846,8 +1846,49 @@ export async function pendingOpenConnectionLinks(): Promise<string[]> {
   return [];
 }
 
-export async function readExternalSqlFile(_path: string): Promise<string> {
-  throw new Error("Opening external SQL file paths is only available in the desktop app");
+export async function readExternalSqlFile(path: string): Promise<string> {
+  return get(`/api/fs/read-text?${qs({ path })}`);
+}
+
+export interface FileSearchHit {
+  path: string;
+  relative: string;
+  size: number;
+}
+
+export interface MetadataSearchHit {
+  connection_id: string;
+  connection_name: string;
+  database: string;
+  schema: string;
+  object_type: string;
+  name: string;
+}
+
+export interface DefinitionSearchHit {
+  connection_id: string;
+  connection_name: string;
+  database: string;
+  schema: string;
+  object_type: string;
+  name: string;
+  snippet: string;
+}
+
+export async function searchFiles(root: string, query: string, limit = 200): Promise<FileSearchHit[]> {
+  return get(`/api/search/files?${qs({ root, query, limit })}`);
+}
+
+export async function searchMetadata(query: string, limit = 200): Promise<MetadataSearchHit[]> {
+  return post("/api/search/metadata", { query, limit });
+}
+
+export async function searchObjectDefinitions(query: string, limit = 100): Promise<DefinitionSearchHit[]> {
+  return post("/api/search/object-definitions", { query, limit });
+}
+
+export async function listDirectories(path: string): Promise<string[]> {
+  return get(`/api/fs/list-dir?${qs({ path })}`);
 }
 
 export async function writeExternalSqlFile(_path: string, _content: string): Promise<void> {

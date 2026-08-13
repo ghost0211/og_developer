@@ -505,7 +505,6 @@ export interface EditorSettings {
 }
 
 export interface ToolbarItems {
-  checkUpdates: boolean;
   history: boolean;
   ai: boolean;
   theme: boolean;
@@ -513,7 +512,6 @@ export interface ToolbarItems {
 }
 
 export const DEFAULT_TOOLBAR_ITEMS: ToolbarItems = {
-  checkUpdates: false,
   history: true,
   ai: true,
   theme: true,
@@ -821,9 +819,6 @@ function normalizeToolbarItems(items: Partial<ToolbarItems> | undefined): Toolba
   const defaults = DEFAULT_TOOLBAR_ITEMS;
   if (!items || typeof items !== "object") return { ...defaults };
   return {
-    // The updater button is intentionally disabled in this product, including for
-    // settings persisted by older builds.
-    checkUpdates: false,
     history: items.history ?? defaults.history,
     ai: items.ai ?? defaults.ai,
     theme: items.theme ?? defaults.theme,

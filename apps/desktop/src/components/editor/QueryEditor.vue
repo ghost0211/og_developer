@@ -3839,6 +3839,9 @@ function refreshCompletionCache() {
 onMounted(async () => {
   if (!editorRef.value) return;
 
+  // 菜单栏编辑命令（撤销/重做/剪贴板/查找）经窗口事件桥接。
+  window.addEventListener("dbx-editor-command", handleMenuEditorCommand);
+
   // Pre-load SQL highlighter for hover tooltips (non-blocking)
   void (async () => {
     try {
@@ -4994,12 +4997,55 @@ function resumeQueryEditorBackgroundWork() {
   restoreEditorViewport();
 }
 
+function handleMenuEditorCommand(event: Event) {
+  const action = (event as CustomEvent<{ action: string }>).detail?.action;
+  if (!action || !editorIsActive) return;
+  const currentView = view.value;
+  if (!currentView) return;
+  switch (action) {
+    case "undo":
+      codeMirrorUndo?.(currentView);
+      break;
+    case "redo":
+      codeMirrorRedo?.(currentView);
+      break;
+    case "copy": {
+      const selected = currentView.state.sliceDoc(currentView.state.selection.main.from, currentView.state.selection.main.to);
+      if (selected) void navigator.clipboard?.writeText(selected).catch(() => {});
+      break;
+    }
+    case "cut": {
+      const selected = currentView.state.sliceDoc(currentView.state.selection.main.from, currentView.state.selection.main.to);
+      if (selected) {
+        void navigator.clipboard?.writeText(selected).catch(() => {});
+        currentView.dispatch(currentView.state.replaceSelection(""));
+      }
+      break;
+    }
+    case "paste":
+      void navigator.clipboard
+        ?.readText()
+        .then((text) => {
+          if (text && view.value) view.value.dispatch(view.value.state.replaceSelection(text));
+        })
+        .catch(() => {});
+      break;
+    case "find":
+      openSearch();
+      break;
+    case "replace":
+      openReplace();
+      break;
+  }
+}
+
 onActivated(resumeQueryEditorBackgroundWork);
 
 onDeactivated(pauseQueryEditorBackgroundWork);
 
 onBeforeUnmount(() => {
   pauseQueryEditorBackgroundWork();
+  window.removeEventListener("dbx-editor-command", handleMenuEditorCommand);
   if (viewportEmitFrame !== null) {
     cancelAnimationFrame(viewportEmitFrame);
     viewportEmitFrame = null;

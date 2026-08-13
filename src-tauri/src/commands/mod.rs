@@ -39,6 +39,7 @@ pub mod saved_sql;
 pub mod schema;
 pub mod schema_cache;
 pub mod schema_diff;
+pub mod search;
 pub mod sql_file;
 pub mod sqlite_backup;
 pub mod ssh_config;

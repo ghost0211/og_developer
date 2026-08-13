@@ -48,12 +48,12 @@ import { applyDamengSslUrlParams, damengSslFormConfig } from "@/lib/database/dam
 import { DamengJvmSystemPropertyError, damengJvmSystemPropertiesText, parseDamengJvmSystemProperties } from "@/lib/database/damengJvmOptions";
 import { copyToClipboard } from "@/lib/common/clipboard";
 import { configuredDatabaseProductName, connectionConfigFingerprint, databaseInfoCopyText, databaseInfoRows, normalizeDatabaseConnectionInfo, type DatabaseInfoField } from "@/lib/connection/connectionDatabaseInfo";
-import { agentDriverInstallKey, appendAgentDriverUpdateHint, hasAgentDriverUpdate, showAgentDriverInstallHint, type AgentDriverInstallState, type DriverStoreFocus } from "@/lib/connection/agentDriverInstallHint";
+import { agentDriverInstallKey, appendAgentDriverUpdateHint, hasAgentDriverUpdate, showAgentDriverInstallHint, type AgentDriverInstallState } from "@/lib/connection/agentDriverInstallHint";
 import { prestoSqlBuiltinDriverPaths } from "@/lib/database/prestoSqlBuiltinDriver";
 import { JDBCX_DEFAULT_URL, JDBCX_DRIVER_PROFILE, JDBCX_JDBC_DRIVER_CLASS, ensureJdbcxRuntimeDrivers, isJdbcxRuntimeBundle, isJdbcxRuntimePath, jdbcxHighPrivilegeExtensionsEnabled, setJdbcxHighPrivilegeExtensionsEnabled } from "@/lib/database/jdbcxBuiltinDriver";
 import { SQLITE_DATABASE_FILE_EXTENSIONS } from "@/lib/database/databaseFileDetection";
 import { connectionAttemptOriginalErrorMessage, connectionAttemptTimeoutMessage, connectionAttemptTimeoutMs } from "@/lib/connection/connectionAttemptTimeout";
-import { appendConnectionErrorHints, isJdbcMissingRuntimeDependencyError } from "@/lib/connection/connectionErrorHints";
+import { appendConnectionErrorHints } from "@/lib/connection/connectionErrorHints";
 import { preventDialogDocumentSelectAll } from "@/lib/connection/dialogTextSelection";
 import { postgresTlsModeForForm } from "@/lib/connection/postgresTlsMode";
 import { buildMqKafkaConnectionExtra, mqKafkaConnectionTarget, resolveMqKafkaConnectionSource, type MqKafkaConnectionSource } from "@/lib/connection/mqKafkaConnection";
@@ -183,7 +183,6 @@ const emit = defineEmits<{
   connectStarted: [name: string];
   connectSucceeded: [name: string];
   connectFailed: [message: string];
-  openDriverStore: [focus?: DriverStoreFocus];
   openTunnelProfileSettings: [];
 }>();
 
@@ -554,8 +553,6 @@ function resizeNoteTextarea() {
   textarea.style.height = `${Math.min(textarea.scrollHeight, maxContentHeight) + borderHeight}px`;
   textarea.style.overflowY = textarea.scrollHeight > maxContentHeight ? "auto" : "hidden";
 }
-
-const showJdbcDependencyDriverManagerAction = computed(() => form.value.db_type === "jdbc" && isJdbcMissingRuntimeDependencyError(connectionErrorDetail.value));
 
 function externalConfigRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? { ...(value as Record<string, unknown>) } : {};
@@ -2930,7 +2927,6 @@ const zookeeperAuthScheme = computed<ZooKeeperAuthScheme>({
 const canUseTransportLayers = computed(() => form.value.db_type !== "sqlite" && form.value.db_type !== "access" && !isCloudflareD1Connection(form.value) && !isH2FileMode.value && !(form.value.db_type === "oracle" && form.value.oracle_connection_type === "tns"));
 const shouldShowAgentDriverInstallHint = computed(() => showAgentDriverInstallHint(form.value.db_type, agentDrivers.value, form.value.driver_profile));
 const h2DriverMissing = computed(() => form.value.db_type === "h2" && isH2FileMode.value && agentDrivers.value.find((d) => d.db_type === "h2")?.installed !== true);
-const agentDriverFocus = computed<DriverStoreFocus>(() => ({ target: "driver", driver: agentDriverInstallKey(form.value.db_type, form.value.driver_profile) }));
 const canChooseVisibleDatabases = computed(() => connectionCanChooseVisibleDatabases(form.value));
 const visibleFilterUsesSchemas = computed(() => connectionUsesVisibleSchemaFilter(form.value));
 const hasVisibleDatabaseFilter = computed(() => Array.isArray(form.value.visible_databases));
@@ -4281,15 +4277,6 @@ async function copyConnectionErrorDetail() {
   }
 }
 
-function openJdbcDriverManager() {
-  emit("openDriverStore", { target: "tab", tab: "jdbc" });
-}
-
-function openJdbcDriverManagerFromError() {
-  showConnectionErrorDialog.value = false;
-  openJdbcDriverManager();
-}
-
 function resetForm() {
   editingId.value = null;
   form.value = defaultForm();
@@ -5303,7 +5290,7 @@ function openExternalUrl(url: string) {
                 <div v-if="h2DriverMissing" class="grid grid-cols-4 items-center gap-4">
                   <span />
                   <p class="col-span-3 text-xs text-muted-foreground">
-                    {{ t("connection.driverInstallHintPrefix") }}<a class="underline cursor-pointer text-primary hover:text-primary/80" @click="emit('openDriverStore', agentDriverFocus)">{{ t("toolbar.driverManager") }}</a
+                    {{ t("connection.driverInstallHintPrefix") }}<span class="text-primary">{{ t("toolbar.driverManager") }}</span
                     >{{ t("connection.driverInstallHintSuffix") }}
                   </p>
                 </div>
@@ -5393,10 +5380,6 @@ function openExternalUrl(url: string) {
                         {{ t("connection.jdbcPluginHint") }}
                       </p>
                       <div class="flex flex-wrap gap-2">
-                        <Button type="button" variant="outline" size="sm" @click="emit('openDriverStore', { target: 'tab', tab: 'jdbc' })">
-                          <FolderOpen class="h-3.5 w-3.5" />
-                          {{ t("toolbar.driverManager") }}
-                        </Button>
                         <Button type="button" variant="outline" size="sm" @click="openExternalUrl('https://dbxio.com')">
                           <ExternalLink class="h-3.5 w-3.5" />
                           {{ t("connection.jdbcDocs") }}
@@ -6583,7 +6566,7 @@ function openExternalUrl(url: string) {
                   <div v-if="shouldShowAgentDriverInstallHint" class="grid grid-cols-4 items-center gap-4">
                     <span />
                     <p class="col-span-3 text-xs text-muted-foreground">
-                      {{ t("connection.driverInstallHintPrefix") }}<a class="underline cursor-pointer text-primary hover:text-primary/80" @click="emit('openDriverStore', agentDriverFocus)">{{ t("toolbar.driverManager") }}</a
+                      {{ t("connection.driverInstallHintPrefix") }}<span class="text-primary">{{ t("toolbar.driverManager") }}</span
                       >{{ t("connection.driverInstallHintSuffix") }}
                     </p>
                   </div>
@@ -6692,10 +6675,6 @@ function openExternalUrl(url: string) {
                           {{ t("connection.jdbcPluginHint") }}
                         </p>
                         <div class="flex flex-wrap gap-2">
-                          <Button type="button" variant="outline" size="sm" @click="emit('openDriverStore', { target: 'tab', tab: 'jdbc' })">
-                            <FolderOpen class="h-3.5 w-3.5" />
-                            {{ t("toolbar.driverManager") }}
-                          </Button>
                           <Button type="button" variant="outline" size="sm" @click="openExternalUrl('https://dbxio.com')">
                             <ExternalLink class="h-3.5 w-3.5" />
                             {{ t("connection.jdbcDocs") }}
@@ -7107,10 +7086,6 @@ function openExternalUrl(url: string) {
                     </div>
                     <div class="flex items-center justify-between gap-3">
                       <p class="text-xs leading-5 text-muted-foreground">{{ t("connection.gaussdbMJdbcDriverHint") }}</p>
-                      <Button type="button" variant="outline" size="sm" class="shrink-0" @click="openJdbcDriverManager">
-                        <FolderOpen class="h-3.5 w-3.5" />
-                        {{ t("toolbar.driverManager") }}
-                      </Button>
                     </div>
                   </div>
                 </div>
@@ -7614,10 +7589,6 @@ function openExternalUrl(url: string) {
       </div>
 
       <DialogFooter class="gap-2">
-        <Button v-if="showJdbcDependencyDriverManagerAction" variant="outline" @click="openJdbcDriverManagerFromError">
-          <FolderOpen class="mr-1.5 h-3.5 w-3.5" />
-          {{ t("toolbar.driverManager") }}
-        </Button>
         <Button variant="outline" @click="copyConnectionErrorDetail">
           <Copy class="mr-1.5 h-3.5 w-3.5" />
           {{ t("connection.copyError") }}

@@ -2,7 +2,6 @@ import { invoke } from "@tauri-apps/api/core";
 import { BackendErrorException, type BackendError } from "@/lib/backend/errorUtils";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { normalizeRustMongoCommand, type MongoCommand } from "@/lib/mongo/mongoShellCommand";
-import { ExternalSqlFileTooLargeError } from "@/lib/sql/sqlFileOpen";
 
 /** Normalize Tauri rejections once at the public backend boundary. */
 async function invokeBackend<T>(command: string, args?: Record<string, unknown>): Promise<T> {
@@ -740,11 +739,23 @@ export async function pendingOpenConnectionLinks(): Promise<string[]> {
 }
 
 export async function readExternalSqlFile(path: string): Promise<string> {
-  const result = await invoke<{ kind: "content"; content: string } | { kind: "tooLarge"; sizeBytes: number; maxSizeBytes: number }>("read_external_sql_file", { path });
-  if (result.kind === "tooLarge") {
-    throw new ExternalSqlFileTooLargeError(result.sizeBytes, result.maxSizeBytes);
-  }
-  return result.content;
+  return invoke("read_text_file", { path });
+}
+
+export async function searchFiles(root: string, query: string, limit = 200): Promise<Awaited<ReturnType<typeof import("./http").searchFiles>>[number][]> {
+  return invoke("search_files", { root, query, limit });
+}
+
+export async function searchMetadata(query: string, limit = 200): Promise<Awaited<ReturnType<typeof import("./http").searchMetadata>>[number][]> {
+  return invoke("search_metadata", { query, limit });
+}
+
+export async function searchObjectDefinitions(query: string, limit = 100): Promise<Awaited<ReturnType<typeof import("./http").searchObjectDefinitions>>[number][]> {
+  return invoke("search_object_definitions", { query, limit });
+}
+
+export async function listDirectories(path: string): Promise<string[]> {
+  return invoke("list_directories", { path });
 }
 
 export async function writeExternalSqlFile(path: string, content: string): Promise<void> {

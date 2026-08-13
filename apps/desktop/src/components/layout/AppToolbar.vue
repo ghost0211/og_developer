@@ -2,7 +2,7 @@
 import { computed, ref, onMounted, onBeforeUnmount, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { invoke } from "@tauri-apps/api/core";
-import { Loader2, Moon, Sun, SunMoon, History, Bot, CloudDownload } from "@lucide/vue";
+import { Moon, Sun, SunMoon, History, Bot } from "@lucide/vue";
 import { Button } from "@/components/ui/button";
 import AppMenuBar from "@/components/layout/AppMenuBar.vue";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -12,20 +12,21 @@ import { MAC_TRAFFIC_LIGHT_X, macTrafficLightInsetPaddingForScale, shouldReserve
 import { useToast } from "@/composables/useToast";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { isSystemAppThemeMode, type AppThemeMode } from "@/lib/app/appTheme";
+import type { SqlProject } from "@/stores/projectStore";
 
 const props = defineProps<{
   isDark: boolean;
   themeMode: AppThemeMode;
   showAiPanel: boolean;
   showHistory: boolean;
-  checkingUpdates: boolean;
-  hasUpdateAvailable: boolean;
   hasConnections: boolean;
   hasSqlFileConnections: boolean;
   hasActiveTab: boolean;
   hasActiveQuery: boolean;
   canSaveSql: boolean;
   showSidebar: boolean;
+  projects: SqlProject[];
+  activeProjectId?: string;
 }>();
 
 const emit = defineEmits<{
@@ -37,7 +38,16 @@ const emit = defineEmits<{
   "close-active-tab": [];
   "import-config": [];
   "export-config": [];
-  "quick-open": [];
+  "create-project": [];
+  "open-project": [];
+  "select-project": [projectId: string];
+  undo: [];
+  redo: [];
+  cut: [];
+  copy: [];
+  paste: [];
+  find: [];
+  replace: [];
   "format-sql": [];
   "compress-sql": [];
   "toggle-sidebar": [];
@@ -48,8 +58,9 @@ const emit = defineEmits<{
   "toggle-sql-library": [];
   "toggle-sql-file-panel": [];
   "open-settings": [];
-  "open-driver-store": [];
-  "check-updates": [];
+  "search-files": [];
+  "search-metadata": [];
+  "search-objects": [];
   "open-transfer": [];
   "open-sql-file": [];
   "open-schema-diff": [];
@@ -62,8 +73,6 @@ const { toast } = useToast();
 const settingsStore = useSettingsStore();
 const toolbarItems = computed(() => settingsStore.editorSettings.toolbarItems);
 const { isMac, isDesktop, showControls, isMaximized, isFullscreen, minimize, toggleMaximize, close } = useWindowControls();
-const checkingUpdates = computed(() => props.checkingUpdates);
-
 const themeTriggerIcon = computed(() => {
   if (isSystemAppThemeMode(props.themeMode)) return SunMoon;
   return props.isDark ? Moon : Sun;
@@ -198,6 +207,8 @@ const toolbarStyle = computed(() => {
         :has-sql-file-connections="hasSqlFileConnections"
         :show-sidebar="showSidebar"
         :theme-mode="themeMode"
+        :projects="projects"
+        :active-project-id="activeProjectId"
         @new-connection="emit('new-connection')"
         @new-query="emit('new-query')"
         @open-editor-sql-file="emit('open-editor-sql-file')"
@@ -206,7 +217,16 @@ const toolbarStyle = computed(() => {
         @close-active-tab="emit('close-active-tab')"
         @import-config="emit('import-config')"
         @export-config="emit('export-config')"
-        @quick-open="emit('quick-open')"
+        @create-project="emit('create-project')"
+        @open-project="emit('open-project')"
+        @select-project="emit('select-project', $event)"
+        @undo="emit('undo')"
+        @redo="emit('redo')"
+        @cut="emit('cut')"
+        @copy="emit('copy')"
+        @paste="emit('paste')"
+        @find="emit('find')"
+        @replace="emit('replace')"
         @format-sql="emit('format-sql')"
         @compress-sql="emit('compress-sql')"
         @toggle-sidebar="emit('toggle-sidebar')"
@@ -217,12 +237,13 @@ const toolbarStyle = computed(() => {
         @toggle-sql-file-panel="emit('toggle-sql-file-panel')"
         @open-settings="emit('open-settings')"
         @set-theme-mode="emit('set-theme-mode', $event)"
-        @open-driver-store="emit('open-driver-store')"
+        @search-files="emit('search-files')"
+        @search-metadata="emit('search-metadata')"
+        @search-objects="emit('search-objects')"
         @open-transfer="emit('open-transfer')"
         @open-sql-file="emit('open-sql-file')"
         @open-schema-diff="emit('open-schema-diff')"
         @open-data-compare="emit('open-data-compare')"
-        @check-updates="emit('check-updates')"
         @open-about="emit('open-about')"
       />
     </span>
@@ -230,19 +251,6 @@ const toolbarStyle = computed(() => {
     <div class="flex-1" data-tauri-drag-region />
 
     <div class="flex shrink-0 items-center gap-1">
-      <template v-if="toolbarItems.checkUpdates">
-        <Tooltip>
-          <TooltipTrigger as-child>
-            <Button variant="ghost" size="icon" class="relative h-8 w-8 shrink-0" :disabled="checkingUpdates" @click="emit('check-updates')">
-              <Loader2 v-if="checkingUpdates" class="h-4 w-4 animate-spin" />
-              <CloudDownload v-else class="h-4 w-4" />
-              <span v-if="hasUpdateAvailable" class="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-background" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>{{ t("updates.check") }}</TooltipContent>
-        </Tooltip>
-      </template>
-
       <ExportProgressPopover />
 
       <Tooltip v-if="toolbarItems.history">

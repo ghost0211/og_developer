@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { useI18n } from "vue-i18n";
-import { ArrowLeftRight, BookMarked, Bot, CloudDownload, DatabaseZap, FileCode, FileDown, FileInput, FileOutput, FilePlus2, FolderOpen, GitCompareArrows, History, Info, Package, PanelLeft, Search, Settings, SunMoon, TableProperties, X } from "@lucide/vue";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { ArrowLeftRight, BookMarked, Clipboard, ClipboardPaste, Copy, DatabaseZap, FileCode, FileDown, FileInput, FileOutput, FilePlus2, FolderOpen, FolderSearch, GitCompareArrows, Info, PanelLeft, Redo2, Scissors, Search, Settings, SunMoon, TableProperties, Undo2, X } from "@lucide/vue";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuPortal, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import type { AppThemeMode } from "@/lib/app/appTheme";
+import type { SqlProject } from "@/stores/projectStore";
 
 const props = defineProps<{
   hasConnections: boolean;
@@ -12,6 +13,8 @@ const props = defineProps<{
   hasSqlFileConnections: boolean;
   showSidebar: boolean;
   themeMode: AppThemeMode;
+  projects: SqlProject[];
+  activeProjectId?: string;
 }>();
 
 const emit = defineEmits<{
@@ -23,10 +26,22 @@ const emit = defineEmits<{
   "close-active-tab": [];
   "import-config": [];
   "export-config": [];
-  "quick-open": [];
+  "create-project": [];
+  "open-project": [];
+  "select-project": [projectId: string];
+  undo: [];
+  redo: [];
+  cut: [];
+  copy: [];
+  paste: [];
+  find: [];
+  replace: [];
   "format-sql": [];
   "compress-sql": [];
   "toggle-sidebar": [];
+  "search-files": [];
+  "search-metadata": [];
+  "search-objects": [];
   "close-other-tabs": [];
   "toggle-ai": [];
   "toggle-history": [];
@@ -34,12 +49,10 @@ const emit = defineEmits<{
   "toggle-sql-file-panel": [];
   "open-settings": [];
   "set-theme-mode": [mode: AppThemeMode];
-  "open-driver-store": [];
   "open-transfer": [];
   "open-sql-file": [];
   "open-schema-diff": [];
   "open-data-compare": [];
-  "check-updates": [];
   "open-about": [];
 }>();
 
@@ -47,6 +60,7 @@ const { t } = useI18n();
 const menuTriggerClass = "inline-flex h-8 items-center rounded-md px-2.5 text-xs font-medium leading-none text-foreground/80 transition-colors hover:bg-accent hover:text-foreground focus-visible:bg-accent focus-visible:text-foreground focus-visible:outline-none";
 const menuItemClass = "gap-2";
 const menuIconClass = "h-3.5 w-3.5 text-muted-foreground";
+const shortcutClass = "ml-auto pl-6 text-[10px] text-muted-foreground";
 </script>
 
 <template>
@@ -78,6 +92,15 @@ const menuIconClass = "h-3.5 w-3.5 text-muted-foreground";
           {{ t("menus.importResult") }}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
+        <DropdownMenuItem :class="menuItemClass" @select="emit('import-config')">
+          <FileInput :class="menuIconClass" />
+          {{ t("menus.importConnections") }}
+        </DropdownMenuItem>
+        <DropdownMenuItem :class="menuItemClass" @select="emit('export-config')">
+          <FileOutput :class="menuIconClass" />
+          {{ t("menus.exportConnections") }}
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
         <DropdownMenuItem :disabled="!hasActiveTab" :class="menuItemClass" @select="emit('close-active-tab')">
           <X :class="menuIconClass" />
           {{ t("menus.closeTab") }}
@@ -89,20 +112,24 @@ const menuIconClass = "h-3.5 w-3.5 text-muted-foreground";
       <DropdownMenuTrigger as-child>
         <button type="button" :class="menuTriggerClass" role="menuitem">{{ t("menus.project") }}</button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" class="w-56">
-        <DropdownMenuItem :class="menuItemClass" @select="emit('import-config')">
-          <FileInput :class="menuIconClass" />
-          {{ t("menus.importConnections") }}
+      <DropdownMenuContent align="start" class="w-64">
+        <DropdownMenuItem :class="menuItemClass" @select="emit('create-project')">
+          <FolderOpen :class="menuIconClass" />
+          {{ t("menus.createProject") }}
         </DropdownMenuItem>
-        <DropdownMenuItem :class="menuItemClass" @select="emit('export-config')">
-          <FileOutput :class="menuIconClass" />
-          {{ t("menus.exportConnections") }}
+        <DropdownMenuItem :class="menuItemClass" @select="emit('open-project')">
+          <FolderSearch :class="menuIconClass" />
+          {{ t("menus.openProject") }}
         </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem :class="menuItemClass" @select="emit('open-driver-store')">
-          <Package :class="menuIconClass" />
-          {{ t("toolbar.driverManager") }}
-        </DropdownMenuItem>
+        <template v-if="projects.length">
+          <DropdownMenuSeparator />
+          <DropdownMenuLabel class="px-2 py-1 text-[10px] text-muted-foreground">{{ t("menus.recentProjects") }}</DropdownMenuLabel>
+          <DropdownMenuItem v-for="project in projects" :key="project.id" :class="menuItemClass" @select="emit('select-project', project.id)">
+            <FolderOpen :class="menuIconClass" />
+            <span class="min-w-0 flex-1 truncate">{{ project.name }}</span>
+            <span v-if="project.id === activeProjectId" class="text-[10px] text-primary">✓</span>
+          </DropdownMenuItem>
+        </template>
       </DropdownMenuContent>
     </DropdownMenu>
 
@@ -111,9 +138,42 @@ const menuIconClass = "h-3.5 w-3.5 text-muted-foreground";
         <button type="button" :class="menuTriggerClass" role="menuitem">{{ t("menus.edit") }}</button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" class="w-56">
-        <DropdownMenuItem :class="menuItemClass" @select="emit('quick-open')">
+        <DropdownMenuItem :disabled="!hasActiveQuery" :class="menuItemClass" @select="emit('undo')">
+          <Undo2 :class="menuIconClass" />
+          {{ t("menus.undo") }}
+          <span :class="shortcutClass">Ctrl+Z</span>
+        </DropdownMenuItem>
+        <DropdownMenuItem :disabled="!hasActiveQuery" :class="menuItemClass" @select="emit('redo')">
+          <Redo2 :class="menuIconClass" />
+          {{ t("menus.redo") }}
+          <span :class="shortcutClass">Ctrl+Y</span>
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem :disabled="!hasActiveQuery" :class="menuItemClass" @select="emit('cut')">
+          <Scissors :class="menuIconClass" />
+          {{ t("menus.cut") }}
+          <span :class="shortcutClass">Ctrl+X</span>
+        </DropdownMenuItem>
+        <DropdownMenuItem :disabled="!hasActiveQuery" :class="menuItemClass" @select="emit('copy')">
+          <Copy :class="menuIconClass" />
+          {{ t("menus.copy") }}
+          <span :class="shortcutClass">Ctrl+C</span>
+        </DropdownMenuItem>
+        <DropdownMenuItem :disabled="!hasActiveQuery" :class="menuItemClass" @select="emit('paste')">
+          <ClipboardPaste :class="menuIconClass" />
+          {{ t("menus.paste") }}
+          <span :class="shortcutClass">Ctrl+V</span>
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem :disabled="!hasActiveQuery" :class="menuItemClass" @select="emit('find')">
           <Search :class="menuIconClass" />
-          {{ t("menus.quickOpen") }}
+          {{ t("menus.find") }}
+          <span :class="shortcutClass">Ctrl+F</span>
+        </DropdownMenuItem>
+        <DropdownMenuItem :disabled="!hasActiveQuery" :class="menuItemClass" @select="emit('replace')">
+          <Clipboard :class="menuIconClass" />
+          {{ t("menus.replace") }}
+          <span :class="shortcutClass">Ctrl+H</span>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem :disabled="!hasActiveQuery" :class="menuItemClass" @select="emit('format-sql')">
@@ -134,29 +194,20 @@ const menuIconClass = "h-3.5 w-3.5 text-muted-foreground";
 
     <DropdownMenu>
       <DropdownMenuTrigger as-child>
-        <button type="button" :class="menuTriggerClass" role="menuitem">{{ t("menus.session") }}</button>
+        <button type="button" :class="menuTriggerClass" role="menuitem">{{ t("menus.search") }}</button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" class="w-56">
-        <DropdownMenuItem :disabled="!hasConnections" :class="menuItemClass" @select="emit('new-query')">
-          <FilePlus2 :class="menuIconClass" />
-          {{ t("toolbar.newQuery") }}
+        <DropdownMenuItem :class="menuItemClass" @select="emit('search-files')">
+          <FolderSearch :class="menuIconClass" />
+          {{ t("menus.searchFiles") }}
         </DropdownMenuItem>
-        <DropdownMenuItem :disabled="!hasActiveTab" :class="menuItemClass" @select="emit('close-active-tab')">
-          <X :class="menuIconClass" />
-          {{ t("menus.closeTab") }}
+        <DropdownMenuItem :disabled="!hasConnections" :class="menuItemClass" @select="emit('search-metadata')">
+          <TableProperties :class="menuIconClass" />
+          {{ t("menus.searchMetadata") }}
         </DropdownMenuItem>
-        <DropdownMenuItem :disabled="!hasActiveTab" :class="menuItemClass" @select="emit('close-other-tabs')">
-          <X :class="menuIconClass" />
-          {{ t("menus.closeOtherTabs") }}
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem :class="menuItemClass" @select="emit('toggle-history')">
-          <History :class="menuIconClass" />
-          {{ t("history.title") }}
-        </DropdownMenuItem>
-        <DropdownMenuItem :class="menuItemClass" @select="emit('toggle-ai')">
-          <Bot :class="menuIconClass" />
-          {{ t("menus.aiAssistant") }}
+        <DropdownMenuItem :disabled="!hasConnections" :class="menuItemClass" @select="emit('search-objects')">
+          <FileCode :class="menuIconClass" />
+          {{ t("menus.searchObjects") }}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -190,10 +241,6 @@ const menuIconClass = "h-3.5 w-3.5 text-muted-foreground";
         <DropdownMenuItem :class="menuItemClass" @select="emit('toggle-sql-file-panel')">
           <FileCode :class="menuIconClass" />
           {{ t("sqlFileTree.title") }}
-        </DropdownMenuItem>
-        <DropdownMenuItem :class="menuItemClass" @select="emit('check-updates')">
-          <CloudDownload :class="menuIconClass" />
-          {{ t("updates.check") }}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -242,10 +289,6 @@ const menuIconClass = "h-3.5 w-3.5 text-muted-foreground";
         <DropdownMenuItem :class="menuItemClass" @select="emit('open-about')">
           <Info :class="menuIconClass" />
           {{ t("about.title") }}
-        </DropdownMenuItem>
-        <DropdownMenuItem :class="menuItemClass" @select="emit('check-updates')">
-          <CloudDownload :class="menuIconClass" />
-          {{ t("updates.check") }}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

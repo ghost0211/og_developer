@@ -94,14 +94,12 @@ test("retains a downloaded update when a task starts during download and install
   assert.equal(installCount, 1);
 });
 
-test("wires the active task guard into update installation and restart", () => {
+test("the app shell no longer wires update installation", () => {
   const appSource = readFileSync("apps/desktop/src/App.vue", "utf8");
-  const updaterSource = readFileSync("apps/desktop/src/composables/useAppUpdater.ts", "utf8");
-  const dialogSource = readFileSync("apps/desktop/src/components/layout/UpdateDialog.vue", "utf8");
 
-  assert.match(appSource, /countActiveUpdateBlockingTasks\(activeBackgroundTaskCount\.value, queryStore\.tabs\)/);
-  assert.match(appSource, /getActiveTaskCount: \(\) => trackedUpdateTaskCount\.value/);
-  assert.equal(updaterSource.match(/if \(blockUpdateForActiveTasks\(\)\) return;/g)?.length, 2);
-  assert.match(dialogSource, /role="alert"[\s\S]*updates\.activeTasksBlockUpdate/);
-  assert.equal(dialogSource.match(/:disabled="activeTaskCount > 0"/g)?.length, 3);
+  // 检查 dbx 更新功能已从应用外壳移除；库函数保留但不再接入。
+  assert.doesNotMatch(appSource, /useAppUpdater/);
+  assert.doesNotMatch(appSource, /countActiveUpdateBlockingTasks/);
+  assert.doesNotMatch(appSource, /UpdateDialog/);
+  assert.doesNotMatch(appSource, /checkUpdates/);
 });

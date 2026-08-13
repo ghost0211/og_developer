@@ -22,25 +22,20 @@ test("keeps JDBC outside the database picker and exposes a dedicated entry", () 
   assert.match(content.slice(jdbcEntry, jdbcEntry + 400), /goToConnectionStep\('jdbc'\)/);
 });
 
-test("opens driver management on the JDBC tab from JDBC connection settings", () => {
+test("driver management page has been removed from the connection flow", () => {
   const connectionDialog = source("apps/desktop/src/components/connection/ConnectionDialog.vue");
-  const appDialogs = source("apps/desktop/src/components/layout/AppDialogs.vue");
   const app = source("apps/desktop/src/App.vue");
-  const driverStore = source("apps/desktop/src/components/config/DriverStoreDialog.vue");
 
-  assert.equal(connectionDialog.match(/emit\('openDriverStore', \{ target: 'tab', tab: 'jdbc' \}\)/g)?.length, 2);
-  assert.match(appDialogs, /@open-driver-store="emit\('openDriverStore', \$event\)"/);
-  assert.match(app, /openDriverStorePage\(\$event\)/);
-  assert.match(app, /v-model:active-tab="driverStoreActiveTab"/);
-  assert.match(driverStore, /"update:activeTab": \[tab: "agent" \| "jdbc" \| "storage" \| "runtime"\]/);
+  // 驱动管理页面入口已彻底移除：连接对话框不再发出 openDriverStore，
+  // 也没有指向驱动管理页的按钮（提示文案里的纯文本保留）。
+  assert.equal(connectionDialog.includes("openDriverStore"), false);
+  assert.equal(/@click="[^"]*openDriverStore/.test(connectionDialog), false);
+  assert.equal(app.includes("DriverStoreDialog"), false);
+  assert.equal(app.includes("openDriverStorePage"), false);
 });
 
-test("resets the driver management tab after the page is closed", () => {
+test("driver store page state is gone from the app shell", () => {
   const app = source("apps/desktop/src/App.vue");
-  const closeStart = app.indexOf("function closeDriverStorePage() {");
-  const closeEnd = app.indexOf("\n}", closeStart);
-
-  assert.notEqual(closeStart, -1);
-  assert.notEqual(closeEnd, -1);
-  assert.match(app.slice(closeStart, closeEnd), /driverStoreActiveTab\.value = "agent"/);
+  assert.equal(app.indexOf("function closeDriverStorePage() {"), -1);
+  assert.equal(app.includes("driverStoreActiveTab"), false);
 });

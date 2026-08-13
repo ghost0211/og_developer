@@ -12,14 +12,14 @@ import AppDialogs from "@/components/layout/AppDialogs.vue";
 import WelcomeScreen from "@/components/layout/WelcomeScreen.vue";
 import type { ConfigTab } from "@/components/connection/ConnectionDialog.vue";
 import { useConnectionStore } from "@/stores/connectionStore";
+import { useProjectStore } from "@/stores/projectStore";
+import type { MenuSearchMode } from "@/components/search/MenuSearchDialog.vue";
 import { useQueryStore } from "@/stores/queryStore";
 import { enforceRightSidebarPanelExclusivity, RIGHT_SIDEBAR_PANEL_IDS, transitionRightSidebarPanels, useSettingsStore, type RightSidebarPanelId, type RightSidebarPanelState } from "@/stores/settingsStore";
 import { useSavedSqlStore } from "@/stores/savedSqlStore";
 import { usePromptTemplateStore } from "@/stores/promptTemplateStore";
 import { useToast } from "@/composables/useToast";
 import { useTheme } from "@/composables/useTheme";
-import { useAppUpdater } from "@/composables/useAppUpdater";
-import { useExportTracker } from "@/composables/useExportTracker";
 import { useFileDrop } from "@/composables/useFileDrop";
 import { usePanelResize } from "@/composables/usePanelResize";
 import { useDatabaseOptions } from "@/composables/useDatabaseOptions";
@@ -87,15 +87,12 @@ import { buildAppendedEditorSql } from "@/lib/ai/aiSqlAppend";
 import { assessProductionSql } from "@/lib/database/productionSafety";
 import { executeWithProductionSqlGuard } from "@/lib/database/productionExecutionGuard";
 import { buildHistoryAiAnalysisPrompt } from "@/lib/history/historyAiAnalysis";
-import { countAvailableAgentDriverUpdates } from "@/lib/connection/agentDriverUpdateBadge";
-import type { DriverStoreFocus } from "@/lib/connection/agentDriverInstallHint";
 import { safeLocalStorageGet, safeLocalStorageSet } from "@/lib/backend/safeStorage";
 import { apiUrl, webPath } from "@/lib/common/webPath";
 import { shouldBlockAppNativeSelectAll } from "@/lib/common/clipboard";
 import { APP_FONT_SANS_CSS_VAR, DATA_GRID_FONT_FAMILY_CSS_VAR, DEFAULT_DATA_GRID_FONT_FAMILY, DEFAULT_UI_FONT_FAMILY } from "@/lib/app/appFonts";
 import { rankSavedSqlHistory } from "@/lib/savedSql/savedSqlHistory";
 import { savedSqlDefaultTargetForWrite } from "@/lib/savedSql/savedSqlExecutionTarget";
-import { countActiveUpdateBlockingTasks } from "@/lib/app/appUpdateTaskGuard";
 import { initSavedSqlEditorPositions } from "@/lib/app/savedSqlEditorPosition";
 import { isSchemaAware, isSingleDatabase, usesTreeSchemaMode } from "@/lib/database/databaseFeatureSupport";
 import { codeMirrorSqlDialect, connectionUsesDatabaseObjectTreeMode, effectiveDatabaseTypeForConnection } from "@/lib/database/jdbcDialect";
@@ -114,12 +111,12 @@ const QueryHistory = defineAsyncComponent(() => import("@/components/editor/Quer
 const SqlLibraryPanel = defineAsyncComponent(() => import("@/components/layout/SqlLibraryPanel.vue"));
 const SqlFilePanel = defineAsyncComponent(() => import("@/components/layout/SqlFilePanel.vue"));
 const AboutDialog = defineAsyncComponent(() => import("@/components/common/AboutDialog.vue"));
-const DriverStorePage = defineAsyncComponent(() => import("@/components/config/DriverStoreDialog.vue"));
 const EditorSettingsPage = defineAsyncComponent(() => import("@/components/editor/EditorSettingsDialog.vue"));
-const UpdateDialog = defineAsyncComponent(() => import("@/components/layout/UpdateDialog.vue"));
 const CloseActionPromptDialog = defineAsyncComponent(() => import("@/components/layout/CloseActionPromptDialog.vue"));
 const LoginPage = defineAsyncComponent(() => import("@/components/auth/LoginPage.vue"));
 const QuickOpenDialog = defineAsyncComponent(() => import("@/components/quick-open/QuickOpenDialog.vue"));
+const ProjectDialog = defineAsyncComponent(() => import("@/components/projects/ProjectDialog.vue"));
+const MenuSearchDialog = defineAsyncComponent(() => import("@/components/search/MenuSearchDialog.vue"));
 const QueryEditorDdlViewDialog = defineAsyncComponent(() => import("@/components/objects/DdlViewDialog.vue"));
 const QueryEditorObjectSourceDialog = defineAsyncComponent(() => import("@/components/objects/ObjectSourceDialog.vue"));
 
@@ -137,35 +134,10 @@ const promptTemplateStore = usePromptTemplateStore();
 connectionStore.setBeforeConnectHandler((config) => ensureJdbcxRuntimeDrivers(config, api).then(() => undefined));
 const { message: toastMessage, visible: toastVisible, toast } = useToast();
 const { isDark, themeMode, applyTheme, setThemeMode } = useTheme();
-const { activeCount: activeBackgroundTaskCount } = useExportTracker();
-const trackedUpdateTaskCount = computed(() => countActiveUpdateBlockingTasks(activeBackgroundTaskCount.value, queryStore.tabs));
-const {
-  checkingUpdates,
-  updateInfo,
-  updateCheckMessage,
-  showUpdateDialog,
-  isDownloadingUpdate,
-  downloadProgress,
-  updateDownloaded,
-  isInstallingUpdate,
-  updateReady,
-  activeTaskCount: activeUpdateTaskCount,
-  hasUpdateAvailable,
-  checkUpdates,
-  openLatestRelease,
-  downloadAndInstallUpdate,
-  cancelDownload,
-  installDownloadedUpdate,
-  restartApp,
-} = useAppUpdater({
-  getActiveTaskCount: () => trackedUpdateTaskCount.value,
-});
 const { setupFileDrop } = useFileDrop();
 
 const isDesktop = isTauriRuntime();
 const drawDesktopWindowFrame = shouldDrawDesktopWindowFrame(isMacOS(), isDesktop, isWindows());
-const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
-let updateCheckTimer: ReturnType<typeof setInterval> | undefined;
 const needsAuth = ref(!isDesktop);
 const authenticated = ref(isDesktop);
 const setupRequired = ref(false);
@@ -179,13 +151,11 @@ const settingsInitialSection = ref<string | undefined>(undefined);
 const settingsNavigationRequestId = ref(0);
 const showQueryEditorDdlDialog = ref(false);
 const showQueryEditorObjectSourceDialog = ref(false);
-const driverStoreTabOpen = ref(false);
-const driverStoreActive = ref(false);
-const driverStoreActiveTab = ref<"agent" | "jdbc" | "storage" | "runtime">("agent");
-const settingsReturnSurface = ref<"query" | "driverStore" | "welcome">("welcome");
-const showDriverStore = computed(() => driverStoreTabOpen.value && driverStoreActive.value);
+const settingsReturnSurface = ref<"query" | "welcome">("welcome");
 const showQuickOpen = ref(false);
-const agentDriverUpdateCount = ref(0);
+const projectStore = useProjectStore();
+const projectDialog = ref<{ open: boolean; mode: "create" | "open" }>({ open: false, mode: "create" });
+const menuSearchDialog = ref<{ open: boolean; mode: MenuSearchMode }>({ open: false, mode: "files" });
 const showHistory = ref(false);
 const showAiPanel = ref(safeLocalStorageGet("dbx-ai-panel-open") === "true");
 const showSqlLibraryPanel = ref(safeLocalStorageGet("dbx-sql-library-open") === "true");
@@ -243,25 +213,6 @@ const activeConnection = computed(() => {
   const tab = activeTab.value;
   return tab ? connectionStore.getConfig(tab.connectionId) : undefined;
 });
-
-function updateAgentDriverUpdateCount(count: number) {
-  if (!settingsStore.editorSettings.updateNotificationsEnabled) {
-    agentDriverUpdateCount.value = 0;
-    return;
-  }
-  agentDriverUpdateCount.value = count;
-}
-
-async function refreshAgentDriverUpdateCount() {
-  if (!isDesktop || !settingsStore.editorSettings.updateNotificationsEnabled) return;
-  try {
-    const drivers = await api.listInstalledAgents();
-    if (!settingsStore.editorSettings.updateNotificationsEnabled) return;
-    updateAgentDriverUpdateCount(countAvailableAgentDriverUpdates(drivers));
-  } catch {
-    // Driver update availability is only a badge hint; keep the existing count if the registry cannot be reached.
-  }
-}
 
 function restoreHistorySql(sql: string, entry: HistoryEntry) {
   const tab = activeTab.value;
@@ -369,14 +320,12 @@ useScheduledDatabaseBackups({ scheduler: true });
 
 const appVersion = ref("");
 const isClassicLayout = computed(() => settingsStore.editorSettings.appLayout === "classic");
-const updateNotificationsEnabled = computed(() => settingsStore.editorSettings.updateNotificationsEnabled);
-
 function openSettings(initialTab = "appearance", initialSection?: string) {
   settingsInitialTab.value = initialTab;
   settingsInitialSection.value = initialSection;
   settingsNavigationRequestId.value += 1;
   if (!settingsStore.settingsPageActive) {
-    settingsReturnSurface.value = showDriverStore.value ? "driverStore" : activeTab.value ? "query" : "welcome";
+    settingsReturnSurface.value = activeTab.value ? "query" : "welcome";
   }
   activateSettingsPage();
 }
@@ -393,46 +342,12 @@ watch(
 function activateSettingsPage() {
   settingsDialogOpen.value = true;
   settingsStore.settingsPageActive = true;
-  driverStoreActive.value = false;
 }
 
-function closeSettingsPage(options: { restoreReturnSurface?: boolean } = {}) {
-  const restoreReturnSurface = options.restoreReturnSurface !== false;
-  settingsDialogOpen.value = false;
-  settingsStore.settingsPageActive = false;
-  if (restoreReturnSurface && settingsReturnSurface.value === "driverStore" && driverStoreTabOpen.value) {
-    driverStoreActive.value = true;
-    return;
-  }
-  driverStoreActive.value = false;
-}
-
-const driverStoreFocus = ref<DriverStoreFocus | null>(null);
-
-function openDriverStorePage(target?: "agent" | "jdbc" | "storage" | "runtime" | DriverStoreFocus | null) {
-  if (typeof target === "string") {
-    driverStoreActiveTab.value = target;
-    driverStoreFocus.value = null;
-  } else if (target && target.target === "tab") {
-    driverStoreActiveTab.value = target.tab;
-    driverStoreFocus.value = null;
-  } else {
-    driverStoreFocus.value = target ?? null;
-  }
-  driverStoreTabOpen.value = true;
-  driverStoreActive.value = true;
+function closeSettingsPage(_options: { restoreReturnSurface?: boolean } = {}) {
   settingsDialogOpen.value = false;
   settingsStore.settingsPageActive = false;
 }
-
-function closeDriverStorePage() {
-  driverStoreTabOpen.value = false;
-  driverStoreActive.value = false;
-  driverStoreActiveTab.value = "agent";
-  driverStoreFocus.value = null;
-}
-const toolbarAgentDriverUpdateCount = computed(() => (updateNotificationsEnabled.value ? agentDriverUpdateCount.value : 0));
-const toolbarHasUpdateAvailable = computed(() => updateNotificationsEnabled.value && hasUpdateAvailable.value);
 const hasSqlFileConnections = computed(() => connectionStore.connections.some((c) => supportsSqlFileExecution(c.db_type)));
 const queryEditorDdlDatabaseType = computed(() => {
   if (!queryEditorDdlTarget.value?.connectionId) return undefined;
@@ -568,7 +483,6 @@ watch(
       );
     }
     if (id) newQueryContextSource.value = "tab";
-    if (id && driverStoreActive.value) driverStoreActive.value = false;
     if (id && settingsDialogOpen.value) closeSettingsPage({ restoreReturnSurface: false });
     selectedSql.value = "";
     activeOutputView.value = "result";
@@ -1184,7 +1098,6 @@ function pasteClipboardAsSqlInCondition() {
 let desktopOpenTabsRestorationBarrier: OpenTabsRestorationBarrier | null = null;
 
 async function openSqlFilePath(path: string) {
-  if (!isTauriRuntime()) return;
   try {
     await desktopOpenTabsRestorationBarrier?.settled;
     const content = await api.readExternalSqlFile(path);
@@ -1678,6 +1591,58 @@ function openAbout() {
   aboutDialogOpen.value = true;
 }
 
+// ---------------------------------------------------------------------------
+// 项目（工作区）与菜单栏搜索/编辑命令
+// ---------------------------------------------------------------------------
+
+function onMenuCreateProject() {
+  projectDialog.value = { open: true, mode: "create" };
+}
+
+function onMenuOpenProject() {
+  projectDialog.value = { open: true, mode: "open" };
+}
+
+function onMenuSelectProject(projectId: string) {
+  projectStore.setActiveProject(projectId);
+  toast(t("menus.projectActivated"), 2000);
+}
+
+function onCreateProject(name: string, path: string) {
+  projectStore.addProject(name, path);
+  toast(t("menus.projectActivated"), 2000);
+}
+
+function openMenuSearch(mode: MenuSearchMode) {
+  menuSearchDialog.value = { open: true, mode };
+}
+
+type EditorMenuAction = "undo" | "redo" | "cut" | "copy" | "paste" | "find" | "replace";
+
+function dispatchEditorMenuAction(action: EditorMenuAction) {
+  if (activeTab.value?.mode !== "query") return;
+  window.dispatchEvent(new CustomEvent("dbx-editor-command", { detail: { action } }));
+}
+
+function openFileFromMenuSearch(path: string) {
+  void openSqlFilePath(path);
+}
+
+const OBJECT_SOURCE_KINDS = new Set(["TABLE", "VIEW", "MATERIALIZED_VIEW", "PROCEDURE", "FUNCTION", "TRIGGER", "SEQUENCE", "SYNONYM", "PACKAGE", "PACKAGE_BODY", "TYPE", "TYPE_BODY"]);
+
+function openObjectFromMenuSearch(hit: { connectionId: string; database: string; schema: string; objectType: string; name: string }) {
+  const kind = OBJECT_SOURCE_KINDS.has(hit.objectType) ? hit.objectType : "TABLE";
+  queryEditorObjectSourceTarget.value = {
+    connectionId: hit.connectionId,
+    database: hit.database,
+    schema: hit.schema || undefined,
+    name: hit.name,
+    objectType: kind as ObjectSourceKind,
+    initialEditing: false,
+  };
+  showQueryEditorObjectSourceDialog.value = true;
+}
+
 function setSidebarOpen(open: boolean) {
   sidebarOpen.value = open;
   safeLocalStorageSet("dbx-sidebar-open", open ? "true" : "false");
@@ -1952,10 +1917,6 @@ function closeActiveTab() {
     closeSettingsPage();
     return;
   }
-  if (driverStoreActive.value) {
-    closeDriverStorePage();
-    return;
-  }
   if (queryStore.activeTabId) queryStore.closeTab(queryStore.activeTabId);
 }
 
@@ -1967,7 +1928,6 @@ function activateQueryTab(tabId: string): boolean {
   if (!queryStore.tabs.some((tab) => tab.id === tabId)) return false;
   dispatchBeforeTabSwitch(tabId);
   queryStore.activeTabId = tabId;
-  driverStoreActive.value = false;
   if (settingsDialogOpen.value) closeSettingsPage({ restoreReturnSurface: false });
   else settingsStore.settingsPageActive = false;
   return true;
@@ -2223,31 +2183,6 @@ function handleContextMenu(e: MouseEvent) {
   e.preventDefault();
 }
 
-function openDriverStoreFromEvent(event: Event) {
-  openDriverStorePage(((event as CustomEvent).detail as DriverStoreFocus | undefined) ?? null);
-}
-
-function runUpdateNotificationChecks() {
-  if (!updateNotificationsEnabled.value) return;
-  checkUpdates({ silent: true });
-  void refreshAgentDriverUpdateCount();
-}
-
-watch(updateNotificationsEnabled, (enabled) => {
-  if (!enabled) {
-    agentDriverUpdateCount.value = 0;
-    if (updateCheckTimer) {
-      clearInterval(updateCheckTimer);
-      updateCheckTimer = undefined;
-    }
-    return;
-  }
-  runUpdateNotificationChecks();
-  if (!updateCheckTimer) {
-    updateCheckTimer = setInterval(runUpdateNotificationChecks, UPDATE_CHECK_INTERVAL_MS);
-  }
-});
-
 onMounted(async () => {
   console.log("[STARTUP] onMounted begin");
   const mountStart = performance.now();
@@ -2258,7 +2193,6 @@ onMounted(async () => {
   void applyUiScale(settingsStore.editorSettings.uiScale);
   window.addEventListener("keydown", handleNativeSelectAll, true);
   window.addEventListener("keydown", handleKeydown);
-  window.addEventListener("dbx-open-driver-store", openDriverStoreFromEvent);
   if (isDesktop) {
     document.addEventListener("contextmenu", handleContextMenu);
   }
@@ -2297,12 +2231,6 @@ onMounted(async () => {
   desktopOpenTabsRestorationBarrier = createOpenTabsRestorationBarrier();
   void initApp();
   setupFileDrop().catch(() => {});
-  setTimeout(() => {
-    runUpdateNotificationChecks();
-    if (updateNotificationsEnabled.value && !updateCheckTimer) {
-      updateCheckTimer = setInterval(runUpdateNotificationChecks, UPDATE_CHECK_INTERVAL_MS);
-    }
-  }, 10_000);
   api
     .getAppVersion()
     .then((v) => {
@@ -2320,12 +2248,8 @@ onMounted(async () => {
 onUnmounted(() => {
   cleanupTauriListeners();
   cleanupCloseActionPromptListener();
-  if (updateCheckTimer) {
-    clearInterval(updateCheckTimer);
-  }
   window.removeEventListener("keydown", handleNativeSelectAll, true);
   window.removeEventListener("keydown", handleKeydown);
-  window.removeEventListener("dbx-open-driver-store", openDriverStoreFromEvent);
   document.removeEventListener("contextmenu", handleContextMenu);
 });
 </script>
@@ -2340,14 +2264,14 @@ onUnmounted(() => {
           :theme-mode="themeMode"
           :show-ai-panel="showAiPanel"
           :show-history="showHistory"
-          :checking-updates="checkingUpdates"
-          :has-update-available="toolbarHasUpdateAvailable"
           :has-connections="connectionStore.connections.length > 0"
           :has-sql-file-connections="hasSqlFileConnections"
           :has-active-tab="!!activeTab"
           :has-active-query="activeTab?.mode === 'query'"
           :can-save-sql="!!activeTab && activeTab.mode === 'query' && canSaveSqlTab(activeTab)"
           :show-sidebar="sidebarOpen"
+          :projects="projectStore.projects.value"
+          :active-project-id="projectStore.activeProjectId.value"
           @new-connection="showConnectionDialog = true"
           @new-query="newQuery"
           @open-editor-sql-file="openSqlFile"
@@ -2356,7 +2280,16 @@ onUnmounted(() => {
           @close-active-tab="closeActiveTab"
           @import-config="dialogs.onImportClick()"
           @export-config="dialogs.onExportClick()"
-          @quick-open="showQuickOpen = true"
+          @create-project="onMenuCreateProject"
+          @open-project="onMenuOpenProject"
+          @select-project="onMenuSelectProject"
+          @undo="dispatchEditorMenuAction('undo')"
+          @redo="dispatchEditorMenuAction('redo')"
+          @cut="dispatchEditorMenuAction('cut')"
+          @copy="dispatchEditorMenuAction('copy')"
+          @paste="dispatchEditorMenuAction('paste')"
+          @find="dispatchEditorMenuAction('find')"
+          @replace="dispatchEditorMenuAction('replace')"
           @format-sql="formatActiveSql"
           @compress-sql="compressActiveSql"
           @toggle-sidebar="setSidebarOpen(!sidebarOpen)"
@@ -2367,8 +2300,9 @@ onUnmounted(() => {
           @toggle-sql-library="toggleRightSidebarPanel('sqlLibrary')"
           @toggle-sql-file-panel="toggleRightSidebarPanel('sqlFile')"
           @open-settings="openSettings('appearance')"
-          @open-driver-store="openDriverStorePage"
-          @check-updates="checkUpdates()"
+          @search-files="openMenuSearch('files')"
+          @search-metadata="openMenuSearch('metadata')"
+          @search-objects="openMenuSearch('objects')"
           @open-transfer="dialogs.showTransferDialog.value = true"
           @open-sql-file="dialogs.showSqlFileDialog.value = true"
           @open-schema-diff="dialogs.showSchemaDiffDialog.value = true"
@@ -2398,23 +2332,14 @@ onUnmounted(() => {
             <div class="h-full flex flex-col min-w-0">
               <AppTabBar
                 ref="appTabBarRef"
-                :driver-store-open="driverStoreTabOpen"
-                :driver-store-active="driverStoreActive"
-                :agent-driver-update-count="toolbarAgentDriverUpdateCount"
-                @activate-driver-store="openDriverStorePage"
-                @activate-tab="
-                  driverStoreActive = false;
-                  settingsStore.settingsPageActive = false;
-                "
-                @close-driver-store="closeDriverStorePage"
+                @activate-tab="settingsStore.settingsPageActive = false"
                 @save-tab="handleSaveTab"
                 @discard-tab-close="handleDiscardPendingTabClose"
                 @save-all-tab-close="handleSaveAllPendingTabClose"
                 @discard-all-tab-close="handleDiscardAllPendingTabClose"
                 @cancel-tab-close="cancelPendingAppClose"
               />
-              <DriverStorePage v-if="driverStoreTabOpen" v-show="driverStoreActive" v-model:active-tab="driverStoreActiveTab" class="flex-1 min-h-0" :update-notifications-enabled="updateNotificationsEnabled" :focus-target="driverStoreFocus" @update-count-change="updateAgentDriverUpdateCount" />
-              <div v-if="activeTab" v-show="!driverStoreActive" class="flex flex-col flex-1 min-h-0">
+              <div v-if="activeTab" class="flex flex-col flex-1 min-h-0">
                 <EditorToolbar
                   v-if="activeTab.mode === 'query' && !isPreviewTab(activeTab)"
                   :active-tab="activeTab"
@@ -2527,7 +2452,7 @@ onUnmounted(() => {
                 </KeepAlive>
               </div>
               <WelcomeScreen
-                v-else-if="!driverStoreActive"
+                v-else
                 :connection-stats="connectionStats"
                 :recent-connections="recentConnections"
                 :saved-sql-history-items="savedSqlHistoryItems"
@@ -2616,10 +2541,7 @@ onUnmounted(() => {
                 5000,
               )
           "
-          @open-driver-store="
-            setConnectionDialogOpen(false);
-            openDriverStorePage($event);
-          "
+          @open-driver-store="setConnectionDialogOpen(false)"
           @open-tunnel-profile-settings="
             setConnectionDialogOpen(false);
             openSettings('tunnels');
@@ -2638,25 +2560,10 @@ onUnmounted(() => {
           :app-version="appVersion"
           @update:open="(open: boolean) => (open ? activateSettingsPage() : closeSettingsPage())"
         />
-        <UpdateDialog
-          v-if="showUpdateDialog"
-          v-model:open="showUpdateDialog"
-          :update-info="updateInfo"
-          :update-check-message="updateCheckMessage"
-          :is-downloading-update="isDownloadingUpdate"
-          :download-progress="downloadProgress"
-          :update-downloaded="updateDownloaded"
-          :is-installing-update="isInstallingUpdate"
-          :update-ready="updateReady"
-          :active-task-count="activeUpdateTaskCount"
-          @open-latest-release="openLatestRelease"
-          @download-and-install="downloadAndInstallUpdate"
-          @cancel-download="cancelDownload"
-          @install-downloaded="installDownloadedUpdate"
-          @restart="restartApp"
-        />
         <CloseActionPromptDialog v-if="isDesktop && showCloseActionPrompt" :open="showCloseActionPrompt" @update:open="handleCloseActionPromptOpenChange" @quit="chooseQuit" @minimize="chooseMinimize" />
         <QuickOpenDialog :open="showQuickOpen" @update:open="showQuickOpen = $event" @select="handleQuickOpenSelect" />
+        <ProjectDialog :open="projectDialog.open" :mode="projectDialog.mode" @update:open="projectDialog.open = $event" @create="onCreateProject" @select="onMenuSelectProject" />
+        <MenuSearchDialog :open="menuSearchDialog.open" :mode="menuSearchDialog.mode" @update:open="menuSearchDialog.open = $event" @open-file="openFileFromMenuSearch" @open-object="openObjectFromMenuSearch" />
       </div>
       <Teleport to="body">
         <Transition name="toast">
