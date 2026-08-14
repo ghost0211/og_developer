@@ -4636,6 +4636,18 @@ function createGroupObjectTemplate() {
     objectType: "PACKAGE",
     sql: `CREATE OR REPLACE PACKAGE ${schemaName}new_pkg AS\n  -- 声明包内的过程/函数\nEND new_pkg;\n`,
   };
+  templates["group-package-bodies"] = {
+    title: t("contextMenu.createPackageBody"),
+    name: "new_pkg_body",
+    objectType: "PACKAGE_BODY",
+    sql: `CREATE OR REPLACE PACKAGE BODY ${schemaName}new_pkg_body AS\n  -- 实现包内声明的过程/函数\nEND new_pkg_body;\n`,
+  };
+  templates["group-materialized-views"] = {
+    title: t("contextMenu.createMaterializedView"),
+    name: "new_mv",
+    objectType: "MATERIALIZED_VIEW",
+    sql: `CREATE MATERIALIZED VIEW ${schemaName}new_mv AS\nSELECT\n  *\nFROM ${schemaName}source_table;\n`,
+  };
   templates["group-types"] = {
     title: t("contextMenu.createType"),
     name: "new_type",
@@ -4674,7 +4686,7 @@ function createGroupObjectTemplate() {
   queryStore.setObjectSource(tabId, {
     schema: node.schema,
     name: template.name,
-    objectType: template.objectType as "PROCEDURE" | "FUNCTION" | "PACKAGE" | "TYPE" | "SEQUENCE" | "SYNONYM" | "TRIGGER" | "JOB",
+    objectType: template.objectType as "PROCEDURE" | "FUNCTION" | "PACKAGE" | "PACKAGE_BODY" | "TYPE" | "SEQUENCE" | "SYNONYM" | "TRIGGER" | "JOB" | "MATERIALIZED_VIEW",
   });
 }
 
@@ -4685,7 +4697,7 @@ function buildObjectGroupSidebarMenu(context: SidebarMenuFactoryContext): boolea
     const mysqlObjectTemplate = node.connectionId ? mysqlObjectTemplateForGroup(connectionStore.getConfig(node.connectionId), node) : null;
     const hasMongoCreateIndexAction = node.type === "group-indexes" && canCreateMongoIndex.value;
     const hasMongoDropAllIndexesAction = node.type === "group-indexes" && canDropAllMongoIndexes.value;
-    const creatableObjectGroups = new Set<TreeNode["type"]>(["group-procedures", "group-functions", "group-packages", "group-types", "group-sequences", "group-synonyms", "group-triggers", "group-jobs"]);
+    const creatableObjectGroups = new Set<TreeNode["type"]>(["group-procedures", "group-functions", "group-packages", "group-package-bodies", "group-types", "group-sequences", "group-synonyms", "group-triggers", "group-jobs", "group-materialized-views"]);
     const canCreateGroupObject = creatableObjectGroups.has(node.type) && !!node.connectionId && !!node.database;
     const hasGroupAction = (node.type === "group-tables" && canCreateTable.value) || (node.type === "group-views" && !!node.connectionId && !!node.database) || !!mysqlObjectTemplate || hasMongoCreateIndexAction || hasMongoDropAllIndexesAction || canCreateGroupObject;
     const canLoadAllObjectGroup = !!objectTypesForGroupNode(node.type);
@@ -4706,11 +4718,13 @@ function buildObjectGroupSidebarMenu(context: SidebarMenuFactoryContext): boolea
         "group-procedures": t("contextMenu.createProcedure"),
         "group-functions": t("contextMenu.createFunction"),
         "group-packages": t("contextMenu.createPackage"),
+        "group-package-bodies": t("contextMenu.createPackageBody"),
         "group-types": t("contextMenu.createType"),
         "group-sequences": t("contextMenu.createSequence"),
         "group-synonyms": t("contextMenu.createSynonym"),
         "group-triggers": t("contextMenu.createTrigger"),
         "group-jobs": t("contextMenu.createJob"),
+        "group-materialized-views": t("contextMenu.createMaterializedView"),
       };
       items.push({ label: labelByGroup[node.type] ?? t("contextMenu.createObject"), action: createGroupObjectTemplate, icon: Plus });
     }

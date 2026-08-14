@@ -2301,6 +2301,8 @@ export default withEnglishFallback({
     createProcedure: "新建存储过程",
     createFunction: "新建函数",
     createPackage: "新建包",
+    createPackageBody: "新建包体",
+    createMaterializedView: "新建物化视图",
     createType: "新建类型",
     createSequence: "新建序列",
     createSynonym: "新建同义词",

@@ -2299,6 +2299,8 @@ export default {
     createProcedure: "Create Procedure",
     createFunction: "Create Function",
     createPackage: "Create Package",
+    createPackageBody: "Create Package Body",
+    createMaterializedView: "Create Materialized View",
     createType: "Create Type",
     createSequence: "Create Sequence",
     createSynonym: "Create Synonym",
