@@ -26,9 +26,7 @@ export type { SavedSqlOpenTargetMode };
 export type { DataTabReuseMode };
 
 export interface DesktopSettings {
-  show_tray_icon: boolean;
   icon_theme: DesktopIconTheme;
-  quit_on_close: boolean;
   close_action_prompted: boolean;
   debug_logging_enabled: boolean;
   duckdb_worker_process_isolation: boolean;
@@ -55,9 +53,7 @@ export const DUCKDB_WORKER_MAX_PROCESSES_DEFAULT = 4;
 const SQL_SEMANTIC_DIAGNOSTICS_AUTO_ENABLED = false;
 
 export const DEFAULT_DESKTOP_SETTINGS: DesktopSettings = {
-  show_tray_icon: true,
   icon_theme: "default",
-  quit_on_close: false,
   close_action_prompted: false,
   debug_logging_enabled: false,
   duckdb_worker_process_isolation: false,
@@ -73,9 +69,7 @@ export function normalizeDesktopSettings(settings: Partial<DesktopSettings> | nu
   const iconTheme = settings?.icon_theme === "black" ? "black" : DEFAULT_DESKTOP_SETTINGS.icon_theme;
   const sidebarTablePageSize = typeof settings?.sidebar_table_page_size === "number" && settings.sidebar_table_page_size > 0 ? settings.sidebar_table_page_size : DEFAULT_DESKTOP_SETTINGS.sidebar_table_page_size;
   return {
-    show_tray_icon: settings?.show_tray_icon ?? DEFAULT_DESKTOP_SETTINGS.show_tray_icon,
     icon_theme: iconTheme,
-    quit_on_close: settings?.quit_on_close ?? DEFAULT_DESKTOP_SETTINGS.quit_on_close,
     close_action_prompted: settings?.close_action_prompted ?? DEFAULT_DESKTOP_SETTINGS.close_action_prompted,
     debug_logging_enabled: settings?.debug_logging_enabled ?? DEFAULT_DESKTOP_SETTINGS.debug_logging_enabled,
     duckdb_worker_process_isolation: settings?.duckdb_worker_process_isolation ?? DEFAULT_DESKTOP_SETTINGS.duckdb_worker_process_isolation,

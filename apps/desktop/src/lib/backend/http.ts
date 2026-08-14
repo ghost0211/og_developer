@@ -204,9 +204,7 @@ import { normalizeConnectionTestResult } from "@/lib/connection/connectionDataba
 
 const DESKTOP_SETTINGS_STORAGE_KEY = "dbx-desktop-settings";
 const DEFAULT_DESKTOP_SETTINGS: DesktopSettings = {
-  show_tray_icon: true,
   icon_theme: "default",
-  quit_on_close: false,
   close_action_prompted: false,
   debug_logging_enabled: false,
   duckdb_worker_process_isolation: false,
@@ -1549,7 +1547,7 @@ export async function saveSavedSqlEditorPositions(positions: unknown[]): Promise
   await saveBrowserAppState("saved_sql_editor_positions", positions);
 }
 
-export async function completeAppClose(_action: "quit" | "hide"): Promise<void> {
+export async function completeAppClose(_action?: "quit" | "hide"): Promise<void> {
   return undefined;
 }
 

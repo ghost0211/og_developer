@@ -176,9 +176,7 @@ export interface DriverRuntimeSummary {
 }
 
 export interface DesktopSettings {
-  show_tray_icon: boolean;
   icon_theme: "default" | "black";
-  quit_on_close: boolean;
   close_action_prompted: boolean;
   debug_logging_enabled: boolean;
   duckdb_worker_process_isolation: boolean;
@@ -586,8 +584,8 @@ export async function saveSavedSqlEditorPositions(positions: unknown[]): Promise
   return invoke("save_saved_sql_editor_positions", { positions });
 }
 
-export async function completeAppClose(action: "quit" | "hide"): Promise<void> {
-  return invoke("complete_app_close", { action });
+export async function completeAppClose(_action?: "quit" | "hide"): Promise<void> {
+  return invoke("complete_app_close", { action: "quit" });
 }
 
 export async function requestAppClose(): Promise<void> {

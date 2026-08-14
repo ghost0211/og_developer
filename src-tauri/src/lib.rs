@@ -20,20 +20,17 @@ use std::time::{Duration, Instant};
 #[cfg(target_os = "macos")]
 use tauri::menu::Menu;
 #[cfg(target_os = "macos")]
+use tauri::menu::MenuBuilder;
+#[cfg(target_os = "macos")]
 use tauri::menu::{AboutMetadata, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::webview::PageLoadEvent;
 use tauri::RunEvent;
-use tauri::{
-    menu::MenuBuilder,
-    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-};
 use tauri::{Emitter, Manager};
 #[cfg(target_os = "macos")]
 use tauri_plugin_clipboard_manager::ClipboardExt;
 #[cfg(any(windows, target_os = "linux"))]
 use tauri_plugin_deep_link::DeepLinkExt;
 
-const DESKTOP_TRAY_ID: &str = "main-tray";
 const APP_CLOSE_REQUESTED_EVENT: &str = "dbx-app-close-requested";
 #[cfg(target_os = "macos")]
 const APP_MENU_QUIT_ID: &str = "app-menu-quit";
@@ -91,8 +88,6 @@ impl AppLocaleState {
     }
 }
 #[cfg(target_os = "macos")]
-const MACOS_TRAY_ICON: tauri::image::Image<'_> = tauri::include_image!("icons/tray-macos-template.png");
-#[cfg(target_os = "macos")]
 const ABOUT_APP_ICON: tauri::image::Image<'_> = tauri::include_image!("icons/icon.png");
 #[cfg(not(target_os = "macos"))]
 const BLACK_APP_ICON: tauri::image::Image<'_> = tauri::include_image!("icons/icon-black.png");
@@ -103,15 +98,6 @@ const MACOS_DARK_APP_ICON: &[u8] = include_bytes!("../icons/icon-macos-dark.icns
 
 pub(crate) fn apply_debug_log_level(debug_logging_enabled: bool) {
     log::set_max_level(if debug_logging_enabled { log::LevelFilter::Debug } else { log::LevelFilter::Off });
-}
-
-fn should_hide_window_on_close(target_os: &str) -> bool {
-    matches!(target_os, "macos" | "windows")
-}
-
-fn should_setup_desktop_tray(target_os: &str, show_tray_icon: bool, linux_appindicator_available: bool) -> bool {
-    show_tray_icon
-        && (matches!(target_os, "macos" | "windows") || (target_os == "linux" && linux_appindicator_available))
 }
 
 fn should_enable_single_instance(debug_build: bool) -> bool {
@@ -129,22 +115,6 @@ fn startup_data_dir_mode(mode: &data_dir::DataDirMode) -> &'static str {
 #[cfg(target_os = "macos")]
 fn development_dock_badge_label(debug_build: bool) -> Option<&'static str> {
     debug_build.then_some("DEV")
-}
-
-#[cfg(target_os = "linux")]
-fn linux_appindicator_available() -> bool {
-    const APPINDICATOR_LIBRARIES: &[&str] = &["libayatana-appindicator3.so.1", "libappindicator3.so.1"];
-
-    APPINDICATOR_LIBRARIES.iter().any(|library| {
-        // tray-icon loads AppIndicator dynamically and panics when neither ABI is
-        // installed, so probe the same libraries before entering that code path.
-        unsafe { libloading::Library::new(library).is_ok() }
-    })
-}
-
-#[cfg(not(target_os = "linux"))]
-fn linux_appindicator_available() -> bool {
-    false
 }
 
 #[cfg(test)]
@@ -168,8 +138,8 @@ pub(crate) fn clear_startup_probe_after_frontend_ready() {
     startup_recovery::mark_frontend_ready();
 }
 
-fn should_confirm_app_exit_request(target_os: &str, exit_code: Option<i32>, confirmed_exit: bool) -> bool {
-    should_hide_window_on_close(target_os) && exit_code != Some(tauri::RESTART_EXIT_CODE) && !confirmed_exit
+fn should_confirm_app_exit_request(_target_os: &str, exit_code: Option<i32>, confirmed_exit: bool) -> bool {
+    exit_code != Some(tauri::RESTART_EXIT_CODE) && !confirmed_exit
 }
 
 fn should_fallback_to_native_quit(target: &str, frontend_ready: bool) -> bool {
@@ -526,43 +496,6 @@ fn clear_main_webview_focus<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
     }
 }
 
-pub(crate) fn hide_main_window_for_close<R: tauri::Runtime>(app: &tauri::AppHandle<R>, window: &tauri::Window<R>) {
-    clear_main_webview_focus(app);
-
-    #[cfg(target_os = "macos")]
-    {
-        if window.is_fullscreen().unwrap_or(false) {
-            let app = app.clone();
-            let window = window.clone();
-            let _ = window.set_fullscreen(false);
-            tauri::async_runtime::spawn(async move {
-                for _ in 0..40 {
-                    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-                    if !window.is_fullscreen().unwrap_or(false) {
-                        tokio::time::sleep(std::time::Duration::from_millis(600)).await;
-                        let app_to_hide = app.clone();
-                        let window_to_hide = window.clone();
-                        let _ = app.run_on_main_thread(move || {
-                            let _ = window_to_hide.hide();
-                            let _ = app_to_hide.hide();
-                        });
-                        return;
-                    }
-                }
-                let app_to_hide = app.clone();
-                let window_to_hide = window.clone();
-                let _ = app.run_on_main_thread(move || {
-                    let _ = window_to_hide.hide();
-                    let _ = app_to_hide.hide();
-                });
-            });
-            return;
-        }
-    }
-
-    let _ = window.hide();
-}
-
 pub(crate) fn request_app_close<R: tauri::Runtime>(app: &tauri::AppHandle<R>, target: &str) {
     let frontend_ready = app.try_state::<CloseBehaviorState>().is_some_and(|state| state.is_frontend_ready());
     if should_fallback_to_native_quit(target, frontend_ready) {
@@ -631,19 +564,6 @@ fn locale_family(locale: &str) -> LocaleFamily {
     }
 }
 
-fn tray_menu_labels_for_locale(locale: &str) -> (&'static str, &'static str) {
-    match locale_family(locale) {
-        LocaleFamily::SimplifiedChinese => ("显示 DBX", "退出 DBX"),
-        LocaleFamily::TraditionalChinese => ("顯示 DBX", "退出 DBX"),
-        LocaleFamily::Japanese => ("DBXを表示", "DBXを終了"),
-        LocaleFamily::Korean => ("DBX 표시", "DBX 종료"),
-        LocaleFamily::Spanish => ("Mostrar DBX", "Salir de DBX"),
-        LocaleFamily::Italian => ("Mostra DBX", "Esci da DBX"),
-        LocaleFamily::Portuguese => ("Mostrar DBX", "Sair do DBX"),
-        LocaleFamily::English => ("Show DBX", "Quit DBX"),
-    }
-}
-
 // Matches the frontend supportInfoCopy translations in apps/desktop/src/i18n/locales/*.ts.
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn app_menu_copy_support_info_label(locale: &str) -> &'static str {
@@ -679,17 +599,11 @@ fn current_app_locale<R: tauri::Runtime, M: Manager<R>>(manager: &M) -> String {
     }
 }
 
-fn build_tray_menu<R: tauri::Runtime, M: Manager<R>>(manager: &M) -> tauri::Result<tauri::menu::Menu<R>> {
-    let (show_label, quit_label) = tray_menu_labels_for_locale(&current_app_locale(manager));
-    MenuBuilder::new(manager).text("show", show_label).separator().text("quit", quit_label).build()
-}
-
 /// Rebuilds the tray menu (and the macOS app menu) so native labels follow the
 /// UI language after the frontend reports a locale change.
 pub(crate) fn refresh_native_menus(app: &tauri::AppHandle) -> tauri::Result<()> {
-    if let Some(tray) = app.tray_by_id(DESKTOP_TRAY_ID) {
-        tray.set_menu(Some(build_tray_menu(app)?))?;
-    }
+    #[cfg_attr(not(target_os = "macos"), allow(unused_variables))]
+    let app = app;
     #[cfg(target_os = "macos")]
     {
         let _ = app.set_menu(build_app_menu(app)?)?;
@@ -698,51 +612,6 @@ pub(crate) fn refresh_native_menus(app: &tauri::AppHandle) -> tauri::Result<()> 
 }
 
 #[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
-fn setup_desktop_tray<R: tauri::Runtime, M: Manager<R>>(
-    manager: &M,
-    _icon_theme: DesktopIconTheme,
-) -> tauri::Result<()> {
-    let menu = build_tray_menu(manager)?;
-    let mut tray =
-        TrayIconBuilder::<R>::with_id(DESKTOP_TRAY_ID).tooltip("DBX").menu(&menu).show_menu_on_left_click(false);
-    #[cfg(target_os = "macos")]
-    {
-        tray = tray.icon(MACOS_TRAY_ICON).icon_as_template(true);
-    }
-    #[cfg(target_os = "windows")]
-    {
-        let icon = match _icon_theme {
-            DesktopIconTheme::Default => manager.app_handle().default_window_icon().cloned(),
-            DesktopIconTheme::Black => Some(BLACK_APP_ICON),
-        };
-        if let Some(icon) = icon {
-            tray = tray.icon(icon);
-        }
-    }
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    {
-        if let Some(icon) = manager.app_handle().default_window_icon().cloned() {
-            tray = tray.icon(icon);
-        }
-    }
-
-    tray.on_menu_event(|app, event| {
-        if event.id() == "show" {
-            show_main_window(app);
-        } else if event.id() == "quit" {
-            request_app_close(app, "quit");
-        }
-    })
-    .on_tray_icon_event(|tray, event| match event {
-        TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. }
-        | TrayIconEvent::DoubleClick { button: MouseButton::Left, .. } => show_main_window(tray.app_handle()),
-        _ => {}
-    })
-    .build(manager)?;
-
-    Ok(())
-}
-
 #[cfg(target_os = "macos")]
 fn apply_macos_app_icon_theme(app: &tauri::AppHandle, icon_theme: DesktopIconTheme) -> tauri::Result<()> {
     use objc2::{AllocAnyThread, MainThreadMarker};
@@ -803,44 +672,9 @@ fn apply_desktop_icon_theme(app: &tauri::AppHandle, icon_theme: DesktopIconTheme
     Ok(())
 }
 
-fn apply_desktop_tray_icon_theme(app: &tauri::AppHandle, _icon_theme: DesktopIconTheme) -> tauri::Result<()> {
-    if let Some(_tray) = app.tray_by_id(DESKTOP_TRAY_ID) {
-        #[cfg(target_os = "windows")]
-        {
-            let icon = match _icon_theme {
-                DesktopIconTheme::Default => app.default_window_icon().cloned(),
-                DesktopIconTheme::Black => Some(BLACK_APP_ICON),
-            };
-            _tray.set_icon(icon)?;
-        }
-        #[cfg(target_os = "linux")]
-        {
-            let icon = match _icon_theme {
-                DesktopIconTheme::Default => app.default_window_icon().cloned(),
-                DesktopIconTheme::Black => Some(BLACK_APP_ICON),
-            };
-            _tray.set_icon(icon)?;
-        }
-        #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
-        {
-            let _ = (_tray, _icon_theme);
-        }
-    }
-    Ok(())
-}
-
 pub(crate) fn apply_desktop_settings(app: &tauri::AppHandle, desktop_settings: &DesktopSettings) -> tauri::Result<()> {
     apply_debug_log_level(desktop_settings.debug_logging_enabled);
     apply_desktop_icon_theme(app, desktop_settings.icon_theme)?;
-    if should_setup_desktop_tray(std::env::consts::OS, desktop_settings.show_tray_icon, linux_appindicator_available())
-    {
-        if let Some(tray) = app.tray_by_id(DESKTOP_TRAY_ID) {
-            tray.set_visible(desktop_settings.show_tray_icon)?;
-            apply_desktop_tray_icon_theme(app, desktop_settings.icon_theme)?;
-        } else if desktop_settings.show_tray_icon {
-            setup_desktop_tray(app, desktop_settings.icon_theme)?;
-        }
-    }
     Ok(())
 }
 
@@ -852,8 +686,7 @@ mod tests {
         linux_appimage_wayland_backend_override, linux_drm_render_devices_from_paths, linux_nvidia_driver_from_state,
         linux_selected_drm_render_device, linux_webkit_rendering_workarounds, native_window_decorations_override,
         should_confirm_app_exit_request, should_enable_single_instance, should_fallback_to_native_quit,
-        should_hide_window_on_close, should_setup_desktop_tray, should_show_main_window_after_setup,
-        should_show_main_window_before_setup_tasks, startup_data_dir_mode, tray_menu_labels_for_locale,
+        should_show_main_window_after_setup, should_show_main_window_before_setup_tasks, startup_data_dir_mode,
         uses_application_level_icon, LinuxDrmRenderDevice, LinuxNvidiaDriver,
     };
     use crate::data_dir::DataDirMode;
@@ -861,62 +694,6 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     const TEST_GTK3_IMMODULES_CACHE: &str = "/usr/lib/test/gtk-3.0/3.0.0/immodules.cache";
-
-    #[test]
-    fn tray_menu_labels_follow_locale() {
-        assert_eq!(tray_menu_labels_for_locale("zh-CN"), ("显示 DBX", "退出 DBX"));
-        assert_eq!(tray_menu_labels_for_locale("zh_CN"), ("显示 DBX", "退出 DBX"));
-        assert_eq!(tray_menu_labels_for_locale("zh-Hans-CN"), ("显示 DBX", "退出 DBX"));
-        assert_eq!(tray_menu_labels_for_locale("zh"), ("显示 DBX", "退出 DBX"));
-        assert_eq!(tray_menu_labels_for_locale("zh-TW"), ("顯示 DBX", "退出 DBX"));
-        assert_eq!(tray_menu_labels_for_locale("zh-Hant-HK"), ("顯示 DBX", "退出 DBX"));
-        assert_eq!(tray_menu_labels_for_locale("zh-MO"), ("顯示 DBX", "退出 DBX"));
-        assert_eq!(tray_menu_labels_for_locale("ja-JP"), ("DBXを表示", "DBXを終了"));
-        assert_eq!(tray_menu_labels_for_locale("ko-KR"), ("DBX 표시", "DBX 종료"));
-        assert_eq!(tray_menu_labels_for_locale("es-ES"), ("Mostrar DBX", "Salir de DBX"));
-        assert_eq!(tray_menu_labels_for_locale("it-IT"), ("Mostra DBX", "Esci da DBX"));
-        assert_eq!(tray_menu_labels_for_locale("pt-BR"), ("Mostrar DBX", "Sair do DBX"));
-        assert_eq!(tray_menu_labels_for_locale("en-US"), ("Show DBX", "Quit DBX"));
-        // Unknown and empty locales fall back to English; "ita" must not match "it".
-        assert_eq!(tray_menu_labels_for_locale("ita"), ("Show DBX", "Quit DBX"));
-        assert_eq!(tray_menu_labels_for_locale(""), ("Show DBX", "Quit DBX"));
-    }
-
-    #[test]
-    fn app_menu_labels_follow_locale() {
-        assert_eq!(app_menu_quit_label("zh-CN", "DBX"), "退出 DBX");
-        assert_eq!(app_menu_quit_label("zh-TW", "DBX"), "退出 DBX");
-        assert_eq!(app_menu_quit_label("ja-JP", "DBX"), "DBXを終了");
-        assert_eq!(app_menu_quit_label("ko-KR", "DBX"), "DBX 종료");
-        assert_eq!(app_menu_quit_label("en-US", "DBX"), "Quit DBX");
-        assert_eq!(app_menu_quit_label("", "DBX"), "Quit DBX");
-        assert_eq!(app_menu_copy_support_info_label("zh-CN"), "复制支持信息");
-        assert_eq!(app_menu_copy_support_info_label("zh-TW"), "複製支援資訊");
-        assert_eq!(app_menu_copy_support_info_label("ko-KR"), "지원 정보 복사");
-        assert_eq!(app_menu_copy_support_info_label("en-US"), "Copy Support Info");
-    }
-
-    #[test]
-    fn hides_window_on_close_for_windows_and_macos() {
-        assert!(should_hide_window_on_close("windows"));
-        assert!(should_hide_window_on_close("macos"));
-    }
-
-    #[test]
-    fn does_not_hide_window_on_close_for_other_platforms() {
-        assert!(!should_hide_window_on_close("linux"));
-    }
-
-    #[test]
-    fn sets_up_desktop_tray_for_windows_macos_and_linux() {
-        assert!(should_setup_desktop_tray("windows", true, false));
-        assert!(should_setup_desktop_tray("macos", true, false));
-        assert!(should_setup_desktop_tray("linux", true, true));
-        assert!(!should_setup_desktop_tray("linux", true, false));
-        assert!(!should_setup_desktop_tray("windows", false, true));
-        assert!(!should_setup_desktop_tray("macos", false, true));
-        assert!(!should_setup_desktop_tray("linux", false, true));
-    }
 
     #[test]
     fn keeps_single_instance_for_release_builds_only() {
@@ -939,15 +716,6 @@ mod tests {
     fn labels_debug_builds_in_the_macos_dock() {
         assert_eq!(super::development_dock_badge_label(true), Some("DEV"));
         assert_eq!(super::development_dock_badge_label(false), None);
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn macos_tray_icon_remains_a_system_template() {
-        // Menu bar template images are intentionally independent from the app
-        // icon theme so macOS can recolor them for light and dark menu bars.
-        assert_eq!(super::MACOS_TRAY_ICON.width(), 36);
-        assert_eq!(super::MACOS_TRAY_ICON.height(), 36);
     }
 
     #[cfg(target_os = "macos")]
@@ -985,10 +753,10 @@ mod tests {
     #[test]
     fn only_user_requested_app_exit_needs_frontend_confirmation() {
         assert!(should_confirm_app_exit_request("windows", None, false));
-        assert!(should_confirm_app_exit_request("macos", Some(0), false));
-        assert!(!should_confirm_app_exit_request("windows", Some(0), true));
+        assert!(should_confirm_app_exit_request("macos", None, false));
+        assert!(should_confirm_app_exit_request("linux", None, false));
+        assert!(!should_confirm_app_exit_request("windows", None, true));
         assert!(!should_confirm_app_exit_request("windows", Some(tauri::RESTART_EXIT_CODE), false));
-        assert!(!should_confirm_app_exit_request("linux", Some(0), false));
     }
 
     #[test]
@@ -1436,13 +1204,6 @@ pub fn run() {
             ));
 
             prepare_main_window_for_display(app.handle());
-            if should_setup_desktop_tray(
-                std::env::consts::OS,
-                desktop_settings.show_tray_icon,
-                linux_appindicator_available(),
-            ) {
-                setup_desktop_tray(app, desktop_settings.icon_theme)?;
-            }
             apply_desktop_icon_theme(app.handle(), desktop_settings.icon_theme)?;
             #[cfg(target_os = "macos")]
             apply_macos_development_dock_badge(app.handle())?;
@@ -1461,15 +1222,8 @@ pub fn run() {
         })
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                if !should_hide_window_on_close(std::env::consts::OS) {
-                    return;
-                }
+                // 系统托盘已移除：关闭窗口一律走退出流程（前端确认未保存标签）。
                 let app = window.app_handle();
-                if app.try_state::<CloseBehaviorState>().is_none() {
-                    api.prevent_close();
-                    hide_main_window_for_close(app, window);
-                    return;
-                }
                 api.prevent_close();
                 request_app_close(app, "settings");
             }

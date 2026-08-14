@@ -300,8 +300,6 @@ const editConfirmUnsavedSqlClose = ref(settingsStore.editorSettings.confirmUnsav
 const editSavedSqlOpenTargetMode = ref<SavedSqlOpenTargetMode>(settingsStore.editorSettings.savedSqlOpenTargetMode);
 const editAppLayout = ref(settingsStore.editorSettings.appLayout);
 const editTabLayout = ref(settingsStore.editorSettings.tabLayout);
-const editShowTrayIcon = ref(settingsStore.desktopSettings.show_tray_icon);
-const editQuitOnClose = ref(settingsStore.desktopSettings.quit_on_close);
 const desktopCloseBehaviorResetPending = ref(false);
 const editIconTheme = ref<DesktopIconTheme>(settingsStore.desktopSettings.icon_theme);
 const editDebugLoggingEnabled = ref(settingsStore.desktopSettings.debug_logging_enabled);
@@ -750,8 +748,6 @@ watch(
   (open) => {
     if (open) {
       syncEditorSettingsDraftFromStore();
-      editShowTrayIcon.value = settingsStore.desktopSettings.show_tray_icon;
-      editQuitOnClose.value = settingsStore.desktopSettings.quit_on_close;
       editIconTheme.value = settingsStore.desktopSettings.icon_theme;
       editDebugLoggingEnabled.value = settingsStore.desktopSettings.debug_logging_enabled;
       editSidebarTablePageSize.value = settingsStore.desktopSettings.sidebar_table_page_size ?? DEFAULT_SIDEBAR_TABLE_PAGE_SIZE;
@@ -818,8 +814,6 @@ const hasApplyBlocker = computed(() => hasBlockingShortcutConflicts.value || has
 function hasChanges(): boolean {
   return (
     hasEditorDraftChanges.value ||
-    editShowTrayIcon.value !== settingsStore.desktopSettings.show_tray_icon ||
-    editQuitOnClose.value !== settingsStore.desktopSettings.quit_on_close ||
     editIconTheme.value !== settingsStore.desktopSettings.icon_theme ||
     editDebugLoggingEnabled.value !== settingsStore.desktopSettings.debug_logging_enabled ||
     editSidebarTablePageSize.value !== (settingsStore.desktopSettings.sidebar_table_page_size ?? DEFAULT_SIDEBAR_TABLE_PAGE_SIZE)
@@ -837,8 +831,6 @@ async function persistSettings() {
     editEditorSettingsBase.value = editorSettingsDraftFromSettings(settingsStore.editorSettings);
   }
   await settingsStore.updateDesktopSettings({
-    show_tray_icon: editShowTrayIcon.value,
-    quit_on_close: editQuitOnClose.value,
     close_action_prompted: desktopCloseBehaviorResetPending.value ? false : true,
     icon_theme: editIconTheme.value,
     debug_logging_enabled: editDebugLoggingEnabled.value,
@@ -894,8 +886,6 @@ function resetDefaultsForTab(tab: SettingsCategory) {
     editActiveCustomThemeId.value = DEFAULT_EDITOR_SETTINGS.activeCustomThemeId;
     editAppLayout.value = DEFAULT_EDITOR_SETTINGS.appLayout;
     editTabLayout.value = DEFAULT_EDITOR_SETTINGS.tabLayout;
-    editShowTrayIcon.value = DEFAULT_DESKTOP_SETTINGS.show_tray_icon;
-    editQuitOnClose.value = DEFAULT_DESKTOP_SETTINGS.quit_on_close;
     desktopCloseBehaviorResetPending.value = true;
     editIconTheme.value = DEFAULT_DESKTOP_SETTINGS.icon_theme;
     editDebugLoggingEnabled.value = DEFAULT_DESKTOP_SETTINGS.debug_logging_enabled;
@@ -969,8 +959,6 @@ function resetAllDefaults() {
   editConfirmUnsavedSqlClose.value = DEFAULT_EDITOR_SETTINGS.confirmUnsavedSqlClose;
   editSavedSqlOpenTargetMode.value = DEFAULT_EDITOR_SETTINGS.savedSqlOpenTargetMode;
   editAppLayout.value = DEFAULT_EDITOR_SETTINGS.appLayout;
-  editShowTrayIcon.value = DEFAULT_DESKTOP_SETTINGS.show_tray_icon;
-  editQuitOnClose.value = DEFAULT_DESKTOP_SETTINGS.quit_on_close;
   desktopCloseBehaviorResetPending.value = true;
   editIconTheme.value = DEFAULT_DESKTOP_SETTINGS.icon_theme;
   editDebugLoggingEnabled.value = DEFAULT_DESKTOP_SETTINGS.debug_logging_enabled;
@@ -1910,8 +1898,6 @@ watch(
       confirmNewPassword.value = "";
       await settingsStore.initAiConfigs();
       await settingsStore.initDesktopSettings();
-      editShowTrayIcon.value = settingsStore.desktopSettings.show_tray_icon;
-      editQuitOnClose.value = settingsStore.desktopSettings.quit_on_close;
       editIconTheme.value = settingsStore.desktopSettings.icon_theme;
       editDebugLoggingEnabled.value = settingsStore.desktopSettings.debug_logging_enabled;
       editSidebarTablePageSize.value = settingsStore.desktopSettings.sidebar_table_page_size ?? DEFAULT_SIDEBAR_TABLE_PAGE_SIZE;
@@ -3832,26 +3818,6 @@ onUnmounted(() => {
                     </div>
                   </Button>
                 </div>
-              </div>
-
-              <div v-if="!isWeb" class="flex items-center justify-between gap-4 rounded-md border bg-muted/20 px-3 py-2">
-                <div class="space-y-1">
-                  <Label for="show-tray-icon">{{ t("settings.showTrayIcon") }}</Label>
-                  <p class="text-xs text-muted-foreground">
-                    {{ t("settings.showTrayIconDescription") }}
-                  </p>
-                </div>
-                <Switch id="show-tray-icon" v-model="editShowTrayIcon" />
-              </div>
-
-              <div v-if="!isWeb" class="flex items-center justify-between gap-4 rounded-md border bg-muted/20 px-3 py-2">
-                <div class="space-y-1">
-                  <Label for="quit-on-close">{{ t("settings.quitOnClose") }}</Label>
-                  <p class="text-xs text-muted-foreground">
-                    {{ t("settings.quitOnCloseDescription") }}
-                  </p>
-                </div>
-                <Switch id="quit-on-close" v-model="editQuitOnClose" />
               </div>
 
               <div class="flex items-center justify-between gap-4 rounded-md border bg-muted/20 px-3 py-2">

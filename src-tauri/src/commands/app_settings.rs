@@ -8,8 +8,8 @@ use tauri::{AppHandle, Manager, State, Window};
 
 use super::connection::AppState;
 use crate::{
-    apply_debug_log_level, apply_desktop_settings, clear_startup_probe_after_frontend_ready,
-    hide_main_window_for_close, refresh_native_menus, request_app_close, AppLocaleState, CloseBehaviorState,
+    apply_debug_log_level, apply_desktop_settings, clear_startup_probe_after_frontend_ready, refresh_native_menus,
+    request_app_close, AppLocaleState, CloseBehaviorState,
 };
 
 const DEVELOPMENT_OPEN_TABS_STATE_KEY: &str = "development_open_tabs";
@@ -80,19 +80,12 @@ pub async fn save_max_retries(state: State<'_, Arc<AppState>>, max_retries: u32)
 }
 
 #[tauri::command]
-pub async fn complete_app_close(app: AppHandle, window: Window, action: String) -> Result<(), String> {
-    match action.as_str() {
-        "quit" => {
-            if let Some(state) = app.try_state::<CloseBehaviorState>() {
-                state.allow_next_exit();
-            }
-            app.exit(0);
-        }
-        "hide" => {
-            hide_main_window_for_close(&app, &window);
-        }
-        _ => return Err(format!("unsupported close action: {action}")),
+pub async fn complete_app_close(app: AppHandle, _window: Window, _action: String) -> Result<(), String> {
+    // 系统托盘已移除：关闭窗口即退出。
+    if let Some(state) = app.try_state::<CloseBehaviorState>() {
+        state.allow_next_exit();
     }
+    app.exit(0);
     Ok(())
 }
 

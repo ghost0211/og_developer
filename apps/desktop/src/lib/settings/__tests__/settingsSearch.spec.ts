@@ -113,14 +113,11 @@ describe("settings search", () => {
       "settings.uiScaleDescription": "Scale the interface for high-DPI displays",
       "settings.uiFontFamily": "Interface font",
       "settings.uiFontFamilyDescription": "Applies to the toolbar and dialogs",
-      "settings.showTrayIcon": "Show tray icon",
-      "settings.showTrayIconDescription": "Keep DBX hidden in the background",
     };
     const entries = resolveSettingsSearchEntries(SETTINGS_SEARCH_DEFINITIONS, { isWeb: false, visibleCategories: new Set<SettingsCategory>(["appearance"]) }, (key) => descriptionTranslations[key] ?? key, categoryLabels);
 
     expect(searchSettings(entries, "high-DPI", "en").map((entry) => entry.id)).toEqual(["appearance-ui-scale"]);
     expect(searchSettings(entries, "toolbar and dialogs", "en").map((entry) => entry.id)).toEqual(["appearance-ui-font"]);
-    expect(searchSettings(entries, "hidden in the background", "en").map((entry) => entry.id)).toEqual(["appearance-tray"]);
   });
 
   it("activates result buttons through click for keyboard and assistive technology", () => {

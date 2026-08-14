@@ -112,7 +112,6 @@ const SqlLibraryPanel = defineAsyncComponent(() => import("@/components/layout/S
 const SqlFilePanel = defineAsyncComponent(() => import("@/components/layout/SqlFilePanel.vue"));
 const AboutDialog = defineAsyncComponent(() => import("@/components/common/AboutDialog.vue"));
 const EditorSettingsPage = defineAsyncComponent(() => import("@/components/editor/EditorSettingsDialog.vue"));
-const CloseActionPromptDialog = defineAsyncComponent(() => import("@/components/layout/CloseActionPromptDialog.vue"));
 const LoginPage = defineAsyncComponent(() => import("@/components/auth/LoginPage.vue"));
 const QuickOpenDialog = defineAsyncComponent(() => import("@/components/quick-open/QuickOpenDialog.vue"));
 const ProjectDialog = defineAsyncComponent(() => import("@/components/projects/ProjectDialog.vue"));
@@ -316,7 +315,7 @@ const { setupTauriListeners, cleanupTauriListeners } = useTauriEvents({
   openDbFilePath,
   openConnectionDeepLink,
 });
-const { showCloseActionPrompt, chooseQuit, chooseMinimize, cancelCloseActionPrompt, performCloseAction, setupCloseActionPromptListener, cleanupCloseActionPromptListener } = useCloseActionPrompt({ requestClose: requestAppClose });
+const { performCloseAction, setupCloseActionPromptListener, cleanupCloseActionPromptListener } = useCloseActionPrompt({ requestClose: requestAppClose });
 useVisibilityChange();
 useWebDavAutoUpload();
 useScheduledDatabaseBackups({ scheduler: true });
@@ -693,11 +692,7 @@ function cancelPendingAppClose() {
 }
 
 function finishPendingAppClose(action: AppCloseAction) {
-  if (pendingCloseActionChoice.value) {
-    pendingCloseActionChoice.value = false;
-    showCloseActionPrompt.value = true;
-    return;
-  }
+  pendingCloseActionChoice.value = false;
   pendingAppCloseAction.value = null;
   pendingSaveShouldCloseTab.value = true;
   void queryStore
@@ -716,8 +711,8 @@ function continuePendingAppCloseAfterSave() {
   finishPendingAppClose(action);
 }
 
-function requestAppClose(action: AppCloseAction, options: AppCloseRequestOptions = {}) {
-  pendingCloseActionChoice.value = !!options.requireCloseActionChoice;
+function requestAppClose(action: AppCloseAction, _options: AppCloseRequestOptions = {}) {
+  pendingCloseActionChoice.value = false;
   if (queryStore.hasDirtyTabs) {
     pendingAppCloseAction.value = action;
     pendingSaveShouldCloseTab.value = false;
@@ -742,14 +737,6 @@ function handleDiscardPendingTabClose() {
 function handleDiscardAllPendingTabClose() {
   if (!pendingAppCloseAction.value) return;
   continuePendingAppCloseAfterSave();
-}
-
-function handleCloseActionPromptOpenChange(open: boolean) {
-  showCloseActionPrompt.value = open;
-  if (!open) {
-    cancelCloseActionPrompt();
-    cancelPendingAppClose();
-  }
 }
 
 async function saveExternalSqlPath(tab: QueryTab, options: { closeAfterSave?: boolean } = {}): Promise<boolean> {
@@ -2586,7 +2573,6 @@ onUnmounted(() => {
           :app-version="appVersion"
           @update:open="(open: boolean) => (open ? activateSettingsPage() : closeSettingsPage())"
         />
-        <CloseActionPromptDialog v-if="isDesktop && showCloseActionPrompt" :open="showCloseActionPrompt" @update:open="handleCloseActionPromptOpenChange" @quit="chooseQuit" @minimize="chooseMinimize" />
         <QuickOpenDialog :open="showQuickOpen" @update:open="showQuickOpen = $event" @select="handleQuickOpenSelect" />
         <ProjectDialog :open="projectDialog.open" :mode="projectDialog.mode" @update:open="projectDialog.open = $event" @create="onCreateProject" @select="onMenuSelectProject" />
         <SessionsDialog :open="sessionsDialogOpen" @update:open="sessionsDialogOpen = $event" />
