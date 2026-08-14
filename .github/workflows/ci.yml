@@ -479,9 +479,6 @@ jobs:
               - '.github/workflows/ci.yml'
             packages:
               - 'packages/cli/**'
-              - 'packages/mcp-server/**'
-              - 'crates/dbx-cli/**'
-              - 'crates/dbx-mcp/**'
               - 'scripts/verify-package-install.mjs'
               - 'package.json'
               - 'pnpm-lock.yaml'
