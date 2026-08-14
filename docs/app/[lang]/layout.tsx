@@ -10,13 +10,13 @@ import { buildSiteStructuredData } from "@/lib/structuredData";
 const LOCALE_MAP: Record<string, { locale: string; title: string; description: string }> = {
   en: {
     locale: "en_US",
-    title: "DBX - 20 MB to manage 70+ databases",
+    title: "og developer — an openGauss-specific database development tool",
     description: DEFAULT_DESCRIPTION,
   },
   cn: {
     locale: "zh_CN",
-    title: "DBX - 20MB，管理70+种数据库",
-    description: "70+ 种数据库，仅 20 MB。支持桌面与 Docker 自托管，内置 AI 助手。",
+    title: "og developer — openGauss 专用数据库开发工具",
+    description: "openGauss 专用数据库开发工具：官方 JDBC 驱动内嵌、PL/SQL 调试器、DBMS_OUTPUT / RAISE NOTICE 捕获、包/同义词对象树。基于 dbx（Apache-2.0）的深度定制 fork。",
   },
 };
 
@@ -65,12 +65,6 @@ export default async function LangLayout({ params, children }: { params: Promise
   return (
     <html lang={getHtmlLang(locale)} suppressHydrationWarning>
       <head>
-        <script
-          defer
-          src="https://analytics.unihub.top/script.js"
-          data-website-id="69afbe68-e06e-4fa8-84cd-e47d6d44baf0"
-          data-domains="dbxio.com,www.dbxio.com"
-        />
         {siteStructuredData.map((structuredData) => (
           <script key={structuredData["@id"]} type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }} />
         ))}

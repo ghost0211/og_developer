@@ -8,51 +8,30 @@ const i18n = {
   en: {
     home: "Home",
     docs: "Docs",
-    changelog: "Changelog",
-    community: "Community",
-    sponsors: "Sponsors",
-    contributors: "Contributors",
-    drivers: "Offline Drivers",
-    langLabel: "Switch to Chinese",
+    langLabel: "切换到中文",
     menu: "Open navigation",
     closeMenu: "Close navigation",
   },
   cn: {
     home: "首页",
     docs: "文档",
-    changelog: "更新日志",
-    community: "交流群",
-    sponsors: "赞助商",
-    contributors: "贡献者",
-    drivers: "离线驱动",
-    langLabel: "切换到英文",
+    langLabel: "Switch to English",
     menu: "打开导航",
     closeMenu: "关闭导航",
   },
 };
 
-export function LandingNav({ lang, active }: { lang: "en" | "cn"; active?: "home" | "databases" | "changelog" | "community" | "sponsors" | "contributors" | "drivers" }) {
+const REPO_URL = "https://github.com/ghost0211/og_developer";
+
+export function LandingNav({ lang, active }: { lang: "en" | "cn"; active?: "home" | "docs" }) {
   const ref = useRef<HTMLElement>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const t = i18n[lang];
   const otherLang = lang === "cn" ? "en" : "cn";
-  const langHrefMap: Record<string, string> = {
-    databases: `/${otherLang}/databases`,
-    changelog: `/${otherLang}/changelog`,
-    community: `/${otherLang}/community`,
-    sponsors: `/${otherLang}/sponsors`,
-    contributors: `/${otherLang}/contributors`,
-    drivers: `/${otherLang}/drivers`,
-  };
-  const langHref = langHrefMap[active ?? ""] ?? `/${otherLang}`;
+  const langHref = `/${otherLang}${active === "docs" ? "/docs/getting-started" : ""}`;
   const navItems = [
     { id: "home", href: `/${lang}`, label: t.home, tabletHidden: false },
-    { id: "docs", href: `/${lang}/docs/what-is-dbx`, label: t.docs, tabletHidden: false },
-    { id: "changelog", href: `/${lang}/changelog`, label: t.changelog, tabletHidden: false },
-    { id: "community", href: `/${lang}/community`, label: t.community, tabletHidden: false },
-    { id: "sponsors", href: `/${lang}/sponsors`, label: t.sponsors, tabletHidden: true },
-    { id: "contributors", href: `/${lang}/contributors`, label: t.contributors, tabletHidden: true },
-    { id: "drivers", href: `/${lang}/drivers`, label: t.drivers, tabletHidden: false },
+    { id: "docs", href: `/${lang}/docs/getting-started`, label: t.docs, tabletHidden: false },
   ] as const;
 
   useEffect(() => {
@@ -95,7 +74,7 @@ export function LandingNav({ lang, active }: { lang: "en" | "cn"; active?: "home
       <div className="landing-nav-inner flex items-center justify-between max-w-[1180px] h-16 mx-auto px-7 max-[760px]:min-h-[60px] max-[760px]:h-auto max-[760px]:px-[18px] max-[760px]:py-2">
         <Link href={`/${lang}`} className="landing-nav-brand flex min-h-11 items-center gap-2.5 text-landing-ink text-2xl font-[820]" onClick={() => setMenuOpen(false)}>
           <img src="/logo.png" alt="" aria-hidden="true" width={28} height={28} />
-          <span>DBX</span>
+          <span>og developer</span>
         </Link>
         <div className="flex items-center gap-1">
           {navItems.map((item) => (
@@ -108,7 +87,7 @@ export function LandingNav({ lang, active }: { lang: "en" | "cn"; active?: "home
               {item.label}
             </Link>
           ))}
-          <Link href="https://github.com/t8y2/dbx" target="_blank" rel="noopener noreferrer" aria-label="GitHub" title="GitHub" className="landing-nav-link inline-flex size-9 items-center justify-center rounded-[7px] text-landing-muted max-[760px]:hidden">
+          <Link href={REPO_URL} target="_blank" rel="noopener noreferrer" aria-label="GitHub" title="GitHub" className="landing-nav-link inline-flex size-9 items-center justify-center rounded-[7px] text-landing-muted max-[760px]:hidden">
             <Github size={18} strokeWidth={2} />
           </Link>
           <Link href={langHref} aria-label={t.langLabel} title={t.langLabel} className="landing-nav-link ml-1.5 inline-flex h-9 items-center justify-center rounded-[7px] border border-landing-line px-3 text-[12px] font-[650] tracking-tight text-landing-muted" onClick={() => setMenuOpen(false)}>
@@ -142,7 +121,7 @@ export function LandingNav({ lang, active }: { lang: "en" | "cn"; active?: "home
               <span aria-hidden="true">→</span>
             </Link>
           ))}
-          <Link href="https://github.com/t8y2/dbx" target="_blank" rel="noopener noreferrer" className="landing-mobile-menu-link" onClick={() => setMenuOpen(false)} tabIndex={menuOpen ? 0 : -1}>
+          <Link href={REPO_URL} target="_blank" rel="noopener noreferrer" className="landing-mobile-menu-link" onClick={() => setMenuOpen(false)} tabIndex={menuOpen ? 0 : -1}>
             <span className="inline-flex items-center gap-2"><Github size={17} /> GitHub</span>
             <span aria-hidden="true">↗</span>
           </Link>

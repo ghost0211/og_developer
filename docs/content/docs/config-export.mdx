@@ -43,6 +43,6 @@ Import also supports plain JSON files from older versions (without passwords) an
 | URL parameters, SSL, SSH, proxy, visible database settings             | Yes                                                      |
 | Database password, SSH password, SSH key passphrase, connection string | Yes, encrypted in the export file                        |
 | Vendor JDBC driver JAR files                                           | No; reinstall or re-import drivers on the target machine |
-| Saved SQL, UI/editor settings, and sidebar layout                      | No; use [Cloud Sync](/en/docs/cloud-sync) to migrate them |
+| Saved SQL, UI/editor settings, and sidebar layout                      | No (desktop-local settings) |
 
 For JDBC migrations, export the connection settings here, then use [JDBC Plugin](/en/docs/plugins) to install the plugin and import driver JARs on the destination machine.

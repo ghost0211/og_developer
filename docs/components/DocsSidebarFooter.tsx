@@ -58,17 +58,8 @@ export function DocsSidebarFooter() {
     <div className="dbx-docs-sidebar-footer">
       <div className="dbx-docs-sidebar-tools">
         <div className="flex items-center gap-1">
-          <a className={iconButton} href="https://github.com/t8y2/dbx" target="_blank" rel="noreferrer" aria-label="GitHub">
+          <a className={iconButton} href="https://github.com/ghost0211/og_developer" target="_blank" rel="noreferrer" aria-label="GitHub">
             <GithubIcon />
-          </a>
-          <a className={iconButton} href="https://discord.gg/W7NyVDRt6a" target="_blank" rel="noreferrer" aria-label="Discord">
-            <DiscordIcon />
-          </a>
-          <a className={iconButton} href="https://qm.qq.com/cgi-bin/qm/qr?k=&group_code=1087880322" target="_blank" rel="noreferrer" aria-label="QQ">
-            <QQIcon />
-          </a>
-          <a className={iconButton} href="https://docs.qq.com/doc/DVVhMY0h1ekJqc0tz" target="_blank" rel="noreferrer" aria-label="WeChat">
-            <WeChatIcon />
           </a>
         </div>
         <ThemeSwitch mode="light-dark" className="dbx-docs-theme-switch" />

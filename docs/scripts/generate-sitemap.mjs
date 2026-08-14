@@ -2,7 +2,7 @@ import { readdirSync, writeFileSync } from "fs";
 import { resolve, relative } from "path";
 
 const OUT_DIR = resolve(import.meta.dirname, "../out");
-const SITE_URL = "https://dbxio.com";
+const SITE_URL = "https://github.com/ghost0211/og_developer";
 const EXCLUDE = new Set(["index.html", "404.html", "_not-found.html"]);
 
 function* walkDir(dir) {

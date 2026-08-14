@@ -1,65 +1,31 @@
 ---
 title: Getting Started
-description: Install DBX, create your first connection, and understand the desktop, Docker, and source workflows.
+description: Install og developer, create your first openGauss connection, and run it from source.
 ---
+
+og developer is an openGauss-specific database development tool, a deep-customized fork of [dbx](https://github.com/t8y2/dbx) (Apache-2.0). It focuses on one database only — openGauss — with dialect details and PL/SQL development experience done to the extreme.
 
 This guide gets you through three things:
 
-1. Install DBX or start the Docker version
-2. Create and test your first database connection
-3. Run DBX from source when you want to contribute or debug locally
+1. Install og developer
+2. Create and test your first openGauss connection
+3. Run og developer from source when you want to contribute or debug locally
 
 ## Choose An Install Method
 
-<Tabs groupId="platform" items={['macOS', 'Windows', 'Linux', 'Docker']}>
+<Callout type="info">Release installers are not published yet. Until the first release, use the source build below.</Callout>
+
+<Tabs groupId="platform" items={['macOS', 'Windows', 'Linux']}>
   <Tab value="macOS">
-    Install with Homebrew:
-
-    ```bash
-    brew install --cask dbx
-    ```
-
-    Update later with:
-
-    ```bash
-    brew upgrade --cask dbx
-    ```
-
-    You can also download a `.dmg` installer from [GitHub Releases](https://github.com/t8y2/dbx/releases).
+    Download the `.dmg` installer from [GitHub Releases](https://github.com/ghost0211/og_developer/releases).
 
   </Tab>
   <Tab value="Windows">
-    Install with Scoop:
-
-    ```bash
-    scoop bucket add dbx https://github.com/t8y2/scoop-bucket
-    scoop install dbx
-    ```
-
-    Update later with:
-
-    ```bash
-    scoop update dbx
-    ```
-
-    You can also download a `.msi` installer from [GitHub Releases](https://github.com/t8y2/dbx/releases).
+    Download the `.msi` or `.exe` installer from [GitHub Releases](https://github.com/ghost0211/og_developer/releases). Windows 10/11 is supported; the MSVC toolchain is only needed when building from source.
 
   </Tab>
   <Tab value="Linux">
-    Install with Flatpak from [FlatPark](https://flatpark.org/apps/com.dbxio.dbx/) (works on any distribution):
-
-    ```bash
-    flatpak remote-add --if-not-exists flatpark https://dl.flatpark.org/flatpark.flatpakrepo
-    flatpak install flatpark com.dbxio.dbx
-    ```
-
-    Update later with:
-
-    ```bash
-    flatpak update com.dbxio.dbx
-    ```
-
-    You can also download a package from [GitHub Releases](https://github.com/t8y2/dbx/releases):
+    Download a package from [GitHub Releases](https://github.com/ghost0211/og_developer/releases):
 
     | Format | Use Case |
     |---|---|
@@ -70,62 +36,11 @@ This guide gets you through three things:
     For `.AppImage`, make the file executable before first run:
 
     ```bash
-    chmod +x DBX*.AppImage
-    ```
-
-  </Tab>
-  <Tab value="Docker">
-    Docker is for self-hosting DBX on a server and opening it from a browser:
-
-    ```bash
-    docker run -d \
-      --pull=always \
-      --name dbx \
-      -p 4224:4224 \
-      -v dbx-data:/app/data \
-      t8y2/dbx:latest
-    ```
-
-    The `latest` tag pulls the current release. This uses the cross-platform `dbx-data` named volume. For faster pulls in China, use `docker.cnb.cool/dbxio.com/dbx:latest` instead.
-
-    Then open `http://localhost:4224`.
-
-    `deploy/docker-compose.yml` builds the current checkout. To deploy a published image, use `deploy/docker-compose.release.yml`:
-
-    ```bash
-    docker compose -f deploy/docker-compose.release.yml up -d
-    ```
-
-    ```yaml
-    services:
-      dbx:
-        image: t8y2/dbx:latest
-        # For faster pulls in China, use the CNB image instead:
-        # image: docker.cnb.cool/dbxio.com/dbx:latest
-        pull_policy: always
-        ports:
-          - "4224:4224"
-        volumes:
-          - dbx-data:/app/data
-        restart: unless-stopped
-
-    volumes:
-      dbx-data:
+    chmod +x og-developer*.AppImage
     ```
 
   </Tab>
 </Tabs>
-
-## Desktop Or Docker
-
-| Mode | Best For | Storage | Important Boundary |
-| --- | --- | --- | --- |
-| Desktop | Daily local work, local database files, the complete workbench | Local app data directory | Supports the local SQL file tree/library, desktop deep links, and OS file integration |
-| Docker / Web | Self-hosting on a server and remote browser access | Docker volume or server data directory | Paths belong to the server; some local-file and desktop integrations are unavailable |
-
-Desktop and Web share most database workflows and the Rust core, but their local integrations are not identical. For SQLite, DuckDB, Access, external SQL files, or local directories, verify which machine owns the file; Docker normally requires mounting the directory into the container.
-
-<Callout type="info">MCP tools that open a table or display results in the desktop UI require DBX Desktop to be running. Query-only MCP tools can read the local DBX data directory directly or connect to a DBX Web/Docker backend.</Callout>
 
 ## Create Your First Connection
 
@@ -133,31 +48,19 @@ Desktop and Web share most database workflows and the Rust core, but their local
   <Step>
     ### Open New Connection
 
-    Click **New Connection** from the sidebar or toolbar.
+    Click **New Connection** from the sidebar or toolbar. The connection type picker offers openGauss only.
 
   </Step>
   <Step>
-    ### Pick A Database Type
+    ### Pick a Mode
 
-    Choose a built-in profile such as MySQL, PostgreSQL, SQLite, Redis, MongoDB, DuckDB, ClickHouse, SQL Server, Oracle, or one of the compatibility and Agent/JDBC profiles listed in [Database Support](/en/docs/databases).
+    Choose **JDBC** (default) for the official `org.opengauss.Driver` with full SHA-256 support, or **Native** for the wire protocol.
 
   </Step>
   <Step>
     ### Fill Connection Details
 
-    For network databases, enter host, port, username, password, and default database when needed. For SQLite, DuckDB, and Access, select a local database file instead of host and port.
-
-  </Step>
-  <Step>
-    ### Paste A URL When Available
-
-    DBX can parse common connection URLs for engines such as MySQL, PostgreSQL, Redis, MongoDB, ClickHouse, SQL Server, Oracle, Elasticsearch, Easysearch, DM, GaussDB, openGauss, TDengine, and Access. Review the parsed fields before saving.
-
-  </Step>
-  <Step>
-    ### Add Network Options
-
-    Use [Tunnel / Proxy](/en/docs/ssh-tunnel) for databases behind private networks, bastion hosts, web-only gateways, or SOCKS5/HTTP proxy environments.
+    JDBC mode accepts a URL such as `jdbc:opengauss://127.0.0.1:5432/postgres` plus username and password. Native mode uses host, port (`5432`), database, username and password.
 
   </Step>
   <Step>
@@ -168,87 +71,94 @@ Desktop and Web share most database workflows and the Rust core, but their local
   </Step>
 </Steps>
 
-<Callout type="info">Connection passwords, SSH passwords, SSH key passphrases, and connection strings are stored separately from the regular connection JSON in DBX's local storage. Use [Config Export/Import](/en/docs/config-export) when you need to migrate encrypted connection settings.</Callout>
+<Callout type="info">If the native mode reports an authentication failure, the server is likely using SHA-256 (`password_encryption_type=2`). Use JDBC mode, or switch the account to MD5 on the server. See [Connect to openGauss](/en/docs/opengauss) for details.</Callout>
 
 ## Reduce Production Mistakes
 
 - Give production connections a distinct name such as `prod-orders`, and use colors, groups, and notes to describe their purpose.
-- For query-only access, combine a database read-only account with DBX **Read-only connection**.
-- Enable **Production protection** for the whole connection or selected databases; DBX requires a fresh explicit confirmation for writes.
-- When one server contains many databases or schemas, show only the objects you currently need.
+- For query-only access, combine a database read-only account with the **Read-only connection** flag.
+- Enable **Production protection** for the whole connection or selected databases; a fresh explicit confirmation is required for writes.
 - Review generated SQL before applying edits, imports, transfers, SQL files, or schema sync operations.
-- Put MCP connections behind an allowlist and prefer Read only or Data read/write instead of enabling Full access by default.
 
 See [Production and Write Safety](/en/docs/production-safety) for complete behavior and recommended configurations.
 
 ## What To Try Next
 
 <Cards>
-  <Card title="Write SQL" href="/en/docs/query-editor">
-    Use completion, formatting, selected execution, cancellation, and history.
+  <Card title="Connect to openGauss" href="/en/docs/opengauss">
+    JDBC and native modes, SHA-256 authentication, and compatibility modes.
   </Card>
-  <Card title="Browse Data" href="/en/docs/data-grid">
-    Inspect results, edit rows when safe, preview SQL, and export data.
+  <Card title="PL/SQL Development" href="/en/docs/plsql-development">
+    Statement splitting, A-compatibility types, source view, and message capture.
   </Card>
-  <Card title="Explore Schema" href="/en/docs/schema-browser">
-    Browse databases, schemas, tables, columns, Redis keys, and MongoDB collections.
+  <Card title="PL/SQL Debugger" href="/en/docs/debugger">
+    Breakpoints, stepping, variables, and the call stack.
   </Card>
 </Cards>
 
 ## Common Connection Problems
 
-| Symptom                      | Check                                                                                          |
-| ---------------------------- | ---------------------------------------------------------------------------------------------- |
-| Timeout                      | Host, port, firewall, security group, VPN, Docker host reachability, or private network access |
-| Authentication failed        | Username, password, auth mode, SSL requirement, remote login permission                        |
-| Connected but no tables      | Default database, schema, permissions, metadata read access, visible database filter           |
-| File database cannot open    | File path, file permissions, mounted Docker volume, or unsupported file extension              |
-| Private database unreachable | Configure tunnel / proxy, VPN, or run Docker on a machine that can reach the database          |
+| Symptom | Check |
+| --- | --- |
+| `password authentication failed` | Server uses SHA-256; use JDBC mode or switch the account to MD5 |
+| Timeout | Host, port, firewall, security group, VPN, or private network access |
+| Connected but no tables | Default database, schema, permissions, or metadata read access |
+| Private database unreachable | Configure tunnel / proxy, VPN, or run on a machine that can reach the database |
 
 ## Run From Source
 
-Use source mode when contributing or debugging DBX locally.
-
-<Callout type="info">
-  First-time contributors should follow [Build From Source and Contribute](/en/docs/contributing) for complete platform setup, forking, issue claiming, testing, and pull request steps.
-</Callout>
+Use source mode when contributing or debugging og developer locally.
 
 ### Requirements
 
 - [Node.js](https://nodejs.org/) >= 22.13.0
-- [pnpm](https://pnpm.io/) 10.27.0
+- [pnpm](https://pnpm.io/) 10
+- [Rust](https://www.rust-lang.org/tools/install) (stable)
 - Make
-- [Rust](https://www.rust-lang.org/tools/install) >= 1.88
 
 ### System Dependencies
 
 <Tabs groupId="dev-platform" items={["macOS", "Linux", "Windows"]}>
-  <Tab value="macOS">```bash brew install unixodbc ```</Tab>
+  <Tab value="macOS">No extra system dependencies are usually needed.</Tab>
   <Tab value="Linux">```bash sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev unixodbc-dev ```</Tab>
-  <Tab value="Windows">Windows usually needs no extra system dependency for local DBX development.</Tab>
+  <Tab value="Windows">MSVC toolchain via Visual Studio Build Tools; see [BUILD_WINDOWS.md](https://github.com/ghost0211/og_developer/blob/main/BUILD_WINDOWS.md).</Tab>
 </Tabs>
 
 ### Start Development
 
 ```bash
-git clone https://github.com/t8y2/dbx.git
-cd dbx
-make
+git clone https://github.com/ghost0211/og_developer.git
+cd og_developer
+pnpm install
+pnpm dev:tauri
 ```
 
-`make` installs root dependencies when needed and starts the local Tauri desktop development environment.
-
-For the web version:
+`pnpm dev` starts the frontend dev server only. For the web version:
 
 ```bash
-make dev-web
-make dev-backend
+pnpm dev:web
+pnpm dev:backend
 ```
 
 ### Build Desktop Packages
 
 ```bash
-make package
+pnpm build
+pnpm tauri build
 ```
 
 Desktop installers are written to `src-tauri/target/release/bundle/`.
+
+### Tests
+
+```bash
+npx vitest run        # frontend tests
+cargo test -p dbx-core --no-default-features \
+  --features duckdb-sidecar,mq-admin,sqlite-sqlcipher --lib   # Rust tests
+```
+
+A local Docker instance (`openGauss-lite` 7.0.0-RC3, port 5432) is used as the test target; see the `db-*` targets in the [Makefile](https://github.com/ghost0211/og_developer/blob/main/Makefile).
+
+## Contribute
+
+This project is a derivative fork of [dbx](https://github.com/t8y2/dbx) (Apache-2.0). See [Contributing](/en/docs/contributing), [CONTRIBUTING.md](https://github.com/ghost0211/og_developer/blob/main/CONTRIBUTING.md), and the [NOTICE](https://github.com/ghost0211/og_developer/blob/main/NOTICE) file for the fork relationship and the list of modifications.

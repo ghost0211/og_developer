@@ -81,6 +81,16 @@ DBX shows the definition available from the active driver. Formatting, privilege
 
 Both surfaces share object identity and metadata. Open an object from the browser, then reveal the same node in the object tree when needed.
 
+## openGauss Objects
+
+The object tree and browser expose the openGauss-specific object kinds in addition to the PostgreSQL-compatible ones:
+
+- **PACKAGE / PACKAGE_BODY** — package nodes expand to their subprograms (functions/procedures); invalid (compile-failed) packages are marked red and their ghost source stays inspectable
+- **SYNONYM** — comments show the `FOR <target>` clause
+- **TYPE** — object and composite types
+- **JOB** — scheduled jobs (A mode)
+- **Source view** — for packages and synonyms, source is reconstructed from `gs_source` / `gs_package` and can be re-run to compile (see [PL/SQL Development](/en/docs/plsql-development))
+
 ## Boundaries
 
 - Object types and statistic columns vary by database

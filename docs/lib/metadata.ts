@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 
-export const SITE_URL = "https://dbxio.com";
-export const SITE_NAME = "DBX";
-export const DEFAULT_DESCRIPTION = "70+ databases in 20 MB. Desktop & Docker self-hosting, with built-in AI assistant.";
+export const SITE_URL = "https://github.com/ghost0211/og_developer";
+export const SITE_NAME = "og developer";
+export const DEFAULT_DESCRIPTION =
+  "openGauss 专用数据库开发工具：官方 JDBC 驱动内嵌、PL/SQL 调试器、DBMS_OUTPUT / RAISE NOTICE 捕获、包/同义词对象树。基于 dbx（Apache-2.0）的深度定制 fork。";
 export const DEFAULT_OG_IMAGE = "/logo.png";
 
 const LOCALE_MAP: Record<string, string> = {
@@ -28,62 +29,36 @@ interface BuildMetadataParams {
   description: string;
   path: string;
   lang: string;
-  ogType?: "website" | "article";
-  images?: string[];
-  lastModified?: Date;
 }
 
-export function buildMetadata({
-  title,
-  description,
-  path,
-  lang,
-  ogType = "website",
-  images,
-  lastModified,
-}: BuildMetadataParams): Metadata {
-  const canonical = `${SITE_URL}${path}`;
-  const locale = LOCALE_MAP[lang] ?? "en_US";
-  const ogImages = images?.map((url) => ({
-    url,
-    width: url === DEFAULT_OG_IMAGE ? 512 : 1200,
-    height: url === DEFAULT_OG_IMAGE ? 512 : 630,
-  })) ?? [{ url: DEFAULT_OG_IMAGE, width: 512, height: 512 }];
+export function buildMetadata({ title, description, path, lang, ogType }: BuildMetadataParams & { ogType?: "website" | "article" }): Metadata {
+  const htmlLang = HTML_LANG_MAP[lang] ?? "en";
+  const url = `${SITE_URL}${path}`;
 
-  const base: Metadata = {
+  return {
     title,
     description,
     alternates: {
-      canonical,
+      canonical: url,
       languages: {
         en: `${SITE_URL}${swapLang(path, "en")}`,
         zh: `${SITE_URL}${swapLang(path, "cn")}`,
-        "x-default": `${SITE_URL}${swapLang(path, "en")}`,
       },
     },
     openGraph: {
       title,
       description,
-      url: canonical,
+      url,
+      type: ogType ?? "website",
+      locale: LOCALE_MAP[lang] ?? "en_US",
       siteName: SITE_NAME,
-      type: ogType,
-      locale,
-      images: ogImages,
+      images: [{ url: DEFAULT_OG_IMAGE }],
     },
     twitter: {
       card: "summary_large_image",
       title,
       description,
-      images: images ?? [DEFAULT_OG_IMAGE],
-    },
-    other: {
-      "og:image:alt": title,
+      images: [DEFAULT_OG_IMAGE],
     },
   };
-
-  if (lastModified) {
-    base.other = { ...base.other, "article:modified_time": lastModified.toISOString() };
-  }
-
-  return base;
 }

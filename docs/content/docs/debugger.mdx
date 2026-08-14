@@ -1,0 +1,76 @@
+---
+title: PL/SQL Debugger
+description: Graphical debugging of PL/SQL routines and anonymous blocks with the openGauss dbe_pldebugger API.
+---
+
+og developer ships a graphical debugger for PL/SQL routines and anonymous blocks, built on the openGauss `dbe_pldebugger` API (available since openGauss 1.0; anonymous-block debugging since 5.1.0). The full flow — `turn_on` → `attach` → breakpoints → stepping → variables → call stack → finish — has been verified end-to-end against openGauss-lite 7.0.0-RC3.
+
+## How It Works
+
+The debugger uses the two-session model required by `dbe_pldebugger`:
+
+1. The **debugging session** attaches to the target and controls execution (`attach`, `add_breakpoint`, `step`, `next`, `continue`, `finish`, `backtrace`, …)
+2. The **executed session** runs the routine or anonymous block being debugged
+
+og developer manages both sessions for you — you only see the debug dialog.
+
+## Before You Start
+
+- The database account needs the privileges required by `dbe_pldebugger` (see the openGauss manual, *DBE_PLDEBUGGER Schema*)
+- Debug a routine from its context menu, or open a routine / anonymous block in the editor and use the **Debug** entry in the execution dialog
+
+## Debugging a Routine
+
+<Steps>
+  <Step>
+    ### Open the Debugger
+
+    Right-click a function or procedure and choose the debug action, or use the **Debug** entry in the execution dialog.
+
+  </Step>
+  <Step>
+    ### Set Breakpoints
+
+    Click the editor gutter to toggle breakpoints before or during the session.
+
+  </Step>
+  <Step>
+    ### Control Execution
+
+    Use the debug toolbar: step into, step over, continue, and finish.
+
+  </Step>
+  <Step>
+    ### Inspect State
+
+    The panel shows local variables (with live values), the call stack, and current breakpoints.
+
+  </Step>
+  <Step>
+    ### End the Session
+
+    Run to the end or abort; the debug session and its server-side resources are cleaned up.
+
+  </Step>
+</Steps>
+
+## Debugging an Anonymous Block
+
+Anonymous blocks (`DO $$ ... $$` or PL/SQL `DECLARE ... BEGIN ... END;`) can be debugged the same way: open the block in the editor, set breakpoints, and start a debug session from the execution dialog.
+
+## Limitations
+
+- The debugger depends on the server-side `dbe_pldebugger` extension being available in the target database
+- Debugging across a JDBC connection uses the same two-session model; both sessions must be able to reach the same database
+- Server-side limits (for example, only one active debug session per database) follow the openGauss manual
+
+## What To Try Next
+
+<Cards>
+  <Card title="PL/SQL Development" href="/en/docs/plsql-development">
+    Statement splitting, A-compatibility types, source view, and message capture.
+  </Card>
+  <Card title="Query Editor" href="/en/docs/query-editor">
+    Completion, formatting, selected execution, and history.
+  </Card>
+</Cards>

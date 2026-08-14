@@ -40,7 +40,7 @@ console.log(`Static export verified: ${files.length} files contain no GitHub API
 const requiredContent = [
   { file: "en.html", includes: ['<html lang="en"', '"@type":"SoftwareApplication"'] },
   { file: "cn.html", includes: ['<html lang="zh-CN"', '"@type":"SoftwareApplication"'] },
-  { file: "llms.txt", includes: ["70+ database", "20 MB", "Apache-2.0"] },
+  { file: "llms.txt", includes: ["openGauss", "Apache-2.0"] },
 ];
 
 for (const requirement of requiredContent) {
@@ -80,7 +80,7 @@ for (const file of localizedHtmlFiles) {
 console.log(`Static export semantics verified for ${localizedHtmlFiles.length} localized pages.`);
 
 const sitemap = await readFile(join(outputDirectory, "sitemap.xml"), "utf8");
-for (const localizedHome of ["https://dbxio.com/en", "https://dbxio.com/cn"]) {
+for (const localizedHome of ["https://github.com/ghost0211/og_developer/en", "https://github.com/ghost0211/og_developer/cn"]) {
   if (!sitemap.includes(`<loc>${localizedHome}</loc>`)) {
     throw new Error(`sitemap.xml is missing localized URL: ${localizedHome}`);
   }

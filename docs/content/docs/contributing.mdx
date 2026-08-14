@@ -17,7 +17,7 @@ This tutorial is for first-time DBX contributors. By the end, you will have:
 
 ## 1. Choose and Claim an Issue
 
-Open [DBX Issues](https://github.com/t8y2/dbx/issues) and choose an issue that has no assignee and no active contributor in its comments. Good first contributions have one of these properties:
+Open [og developer Issues](https://github.com/ghost0211/og_developer/issues) and choose an issue that has no assignee and no active contributor in its comments. Good first contributions have one of these properties:
 
 - The reproduction steps and expected behavior are already clear
 - The scope is a small documentation, translation, or UI change
@@ -115,14 +115,14 @@ See the [official Tauri prerequisites](https://v2.tauri.app/start/prerequisites/
 
 ## 3. Fork and Clone the Repository
 
-Open [t8y2/dbx](https://github.com/t8y2/dbx) on GitHub and click **Fork**.
+Open [ghost0211/og_developer](https://github.com/ghost0211/og_developer) on GitHub and click **Fork**.
 
 Replace `<your-github-name>` with your account name:
 
 ```bash
-git clone https://github.com/<your-github-name>/dbx.git
-cd dbx
-git remote add upstream https://github.com/t8y2/dbx.git
+git clone https://github.com/<your-github-name>/og_developer.git
+cd og_developer
+git remote add upstream https://github.com/t8y2/dbx.git   # upstream dbx, optional: sync upstream fixes
 git remote -v
 ```
 
@@ -159,9 +159,7 @@ For a lightweight desktop build, keep DuckDB sidecar support while skipping the 
 make dev-fast
 ```
 
-Development builds can run alongside an installed DBX instance. Both use the same local DBX data, so connections and history are available in each window. Avoid changing the same connection, saved SQL, or global setting in both windows at once.
-
-When testing the MCP bridge, the instance started last owns the shared `mcp-bridge-port` discovery file and receives MCP requests. Redis PubSub prefers port `4224` (or `DBX_PORT` when set) and automatically falls back to an available local port; the frontend uses the actual bound port.
+Development builds can run alongside an installed og developer instance. Both use the same local DBX data, so connections and history are available in each window. Avoid changing the same connection, saved SQL, or global setting in both windows at once.
 
 ### Windows
 
@@ -199,7 +197,7 @@ make db-verify DB=mysql@8.4
 make db-down DB=mysql@8.4
 ```
 
-The service ports listen on `127.0.0.1` by default. Set `DB_BIND_ADDRESS=0.0.0.0`, choose a strong `DB_PASSWORD`, and use firewall controls before exposing a host to a shared network. See the [Database Test Lab](/en/docs/database-lab) for all supported recipes, overrides, and reset safety requirements.
+The service ports listen on `127.0.0.1` by default. Set `DB_BIND_ADDRESS=0.0.0.0`, choose a strong `DB_PASSWORD`, and use firewall controls before exposing a host to a shared network. For this fork, openGauss development uses a local Docker instance (`openGauss-lite` 7.0.0-RC3, port 5432); see the `db-*` targets in the [Makefile](https://github.com/ghost0211/og_developer/blob/main/Makefile) for the test database recipes.
 
 ## 5. Understand the Repository Layout
 
@@ -210,8 +208,7 @@ The service ports listen on `127.0.0.1` by default. Set `DB_BIND_ADDRESS=0.0.0.0
 | `crates/dbx-core/` | Connections, queries, metadata, and shared Rust database logic |
 | `crates/dbx-web/` | Docker/Web backend |
 | `packages/app-tests/` | Tests for shared frontend logic |
-| `packages/cli/` | DBX CLI |
-| `packages/mcp-server/` | MCP Server |
+| `packages/cli/` | CLI packages (inherited from dbx, not the product focus) |
 | `docs/content/docs/` | Bilingual website documentation |
 | `agents/drivers/` | Java/JDBC and selected native database agents |
 
@@ -295,8 +292,8 @@ Database behavior changes should be verified against a real database, not only m
 
 Agents are separate processes that communicate with DBX through stdin/stdout JSON-RPC. Java/JDBC agents normally use JDK 21; native agents use Go or Rust. Read these first:
 
-- [`agents/README.md`](https://github.com/t8y2/dbx/blob/main/agents/README.md)
-- [`agents/docs/agent-authoring.md`](https://github.com/t8y2/dbx/blob/main/agents/docs/agent-authoring.md)
+- [`agents/README.md`](https://github.com/ghost0211/og_developer/blob/main/agents/README.md)
+- [`agents/docs/agent-authoring.md`](https://github.com/ghost0211/og_developer/blob/main/agents/docs/agent-authoring.md)
 
 #### Change an Existing Java/JDBC Agent
 
@@ -419,7 +416,9 @@ Do not combine unrelated problems in the same commit or pull request.
 
 ## 9. Open a Pull Request
 
-Open your fork on GitHub and click **Compare & pull request**. Set the target repository to `t8y2/dbx` and the target branch to `main`.
+Open your fork on GitHub and click **Compare & pull request**. Set the target repository to `ghost0211/og_developer` and the target branch to `main`.
+
+openGauss fixes that stay close to upstream patterns can also be submitted to [t8y2/dbx](https://github.com/t8y2/dbx) as pull requests — see the `opengauss-fixes` branch in this repository for a clean, self-contained fix set ready for that purpose.
 
 The pull request description should include:
 
@@ -482,6 +481,6 @@ Start with the minimum check for the changed directory, then perform the issue's
 
 - Describe the blocker in the original issue and include the complete error and operating system version
 - Join [Discord](https://discord.gg/W7NyVDRt6a)
-- Read the repository [CONTRIBUTING.md](https://github.com/t8y2/dbx/blob/main/CONTRIBUTING.md)
+- Read the repository [CONTRIBUTING.md](https://github.com/ghost0211/og_developer/blob/main/CONTRIBUTING.md)
 
 Do not report only "the build failed." Include the command, the first meaningful error in the log, your operating system, and your Node.js, pnpm, and Rust versions.

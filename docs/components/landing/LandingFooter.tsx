@@ -2,14 +2,16 @@ import Link from "next/link";
 
 const i18n = {
   en: {
-    tagline: "20 MB to manage 70+ databases.",
-    copyright: `© ${new Date().getFullYear()} DBX. All rights reserved.`,
+    tagline: "The openGauss-specific database development tool.",
+    copyright: `© ${new Date().getFullYear()} og developer contributors.`,
   },
   cn: {
-    tagline: "20MB，管理70+种数据库。",
-    copyright: `© ${new Date().getFullYear()} DBX.`,
+    tagline: "openGauss 专用数据库开发工具。",
+    copyright: `© ${new Date().getFullYear()} og developer contributors.`,
   },
 };
+
+const REPO_URL = "https://github.com/ghost0211/og_developer";
 
 function GithubIcon() {
   return (
@@ -29,7 +31,7 @@ export function LandingFooter({ lang }: { lang: "en" | "cn" }) {
           {/* Logo */}
           <Link href={`/${lang}`} className="flex min-h-11 items-center gap-2.5 text-[var(--color-landing-ink)] text-lg font-[820] shrink-0">
             <img src="/logo.png" alt="" aria-hidden="true" width={22} height={22} />
-            <span>DBX</span>
+            <span>og developer</span>
           </Link>
 
           {/* Tagline */}
@@ -37,14 +39,8 @@ export function LandingFooter({ lang }: { lang: "en" | "cn" }) {
 
           {/* Repo icons */}
           <div className="flex items-center gap-3 shrink-0">
-            <a href="https://github.com/t8y2/dbx" target="_blank" rel="noopener noreferrer" className="inline-flex size-11 items-center justify-center text-[var(--color-landing-muted)] hover:text-[var(--color-landing-ink)] transition-colors" aria-label="GitHub">
+            <a href={REPO_URL} target="_blank" rel="noopener noreferrer" className="inline-flex size-11 items-center justify-center text-[var(--color-landing-muted)] hover:text-[var(--color-landing-ink)] transition-colors" aria-label="GitHub">
               <GithubIcon />
-            </a>
-            <a href="https://cnb.cool/dbxio.com/dbx" target="_blank" rel="noopener noreferrer" className="inline-flex size-11 items-center justify-center opacity-40 hover:opacity-100 transition-opacity" aria-label="CNB">
-              <img src="/icons/cnb.svg" alt="CNB" width={18} height={18} />
-            </a>
-            <a href="https://atomgit.com/t8y2/dbx" target="_blank" rel="noopener noreferrer" className="inline-flex size-11 items-center justify-center opacity-40 hover:opacity-100 transition-opacity" aria-label="AtomGit">
-              <img src="/icons/atomgit.png" alt="AtomGit" width={18} height={18} />
             </a>
           </div>
 

@@ -1,0 +1,58 @@
+---
+title: PL/SQL Development
+description: PL/SQL-aware statement splitting, A-compatibility types, source reconstruction, DBMS_OUTPUT / RAISE NOTICE capture, and compile-error line mapping.
+---
+
+og developer invests in the openGauss dialect details that make PL/SQL work feel native. This page covers the openGauss-specific behavior on top of the regular [Query Editor](/en/docs/query-editor).
+
+## PL/SQL-Aware Statement Splitting
+
+openGauss reuses the GaussDB dialect profile: PL/SQL blocks, `/` line terminators, and dollar-quoted routine bodies are handled correctly. Statements such as `CREATE PACKAGE BODY` that contain many `;` inside the body are executed as one unit instead of being chopped into fragments.
+
+This applies to the editor, SQL files, and the object source re-run flow.
+
+## A-Compatibility Types
+
+The openGauss dialect adds the A-mode (Oracle-compatible) types on top of the native PostgreSQL types:
+
+`NUMBER` · `VARCHAR2` · `NVARCHAR2` · `RAW` · `BLOB` · `BINARY_INTEGER` / `PLS_INTEGER` · `BINARY_FLOAT` · `BINARY_DOUBLE` · `JSONB` · `INTERVAL`
+
+## Object Source and Compile Loop
+
+For packages, package bodies, and synonyms, the source is rebuilt from the openGauss catalogs:
+
+- `gs_source` holds the original `CREATE` text and is preferred when present
+- `gs_package` stores a normalized form; og developer reconstructs executable DDL from it (spec, body, and body with an initialization section) as a fallback
+- Reconstructed DDL is executable — edit the source and run it again to recompile without leaving the editor
+
+## DBMS_OUTPUT and RAISE NOTICE Messages
+
+`RAISE NOTICE` / `RAISE INFO` lines and `DBMS_OUTPUT` output are captured through both connection modes (JDBC warnings and native wire messages) and shown in the result view, so PL/SQL message flows are visible without a separate console.
+
+## Compile-Error Line Mapping
+
+openGauss reports compile errors with `LINE n` positions (and often the full query text). og developer maps those positions back to editor lines, so a failed `CREATE PACKAGE` points at the offending line instead of a wall of text.
+
+## openGauss Object Tree
+
+The sidebar exposes the openGauss-specific object kinds:
+
+- **PACKAGE / PACKAGE_BODY** — from `gs_package`, with subprogram hierarchy (functions/procedures under the package node)
+- **SYNONYM** — from `pg_synonym`, comments show the `FOR <target>` clause
+- **TYPE** — object and composite types from `pg_type`
+- **JOB** — scheduled jobs from `pg_job` (A mode)
+- **Invalid-object badges** — objects whose compilation failed (`gs_source.status = 'f'`) are marked red, and their ghost source is still inspectable
+
+## What To Try Next
+
+<Cards>
+  <Card title="PL/SQL Debugger" href="/en/docs/debugger">
+    Step through routines with breakpoints, variables, and the call stack.
+  </Card>
+  <Card title="Query Editor" href="/en/docs/query-editor">
+    Completion, formatting, selected execution, and history.
+  </Card>
+  <Card title="Object Browser" href="/en/docs/object-browser">
+    Search objects, inspect DDL and source, and run bulk actions.
+  </Card>
+</Cards>

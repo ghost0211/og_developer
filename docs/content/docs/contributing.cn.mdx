@@ -17,7 +17,7 @@ description: 从零搭建 DBX 开发环境，运行桌面版，完成第一次�
 
 ## 1. 选择并认领任务
 
-打开 [DBX Issues](https://github.com/t8y2/dbx/issues)，选择一个尚未分配、评论中也没有人正在处理的 Issue。第一次贡献优先考虑：
+打开 [og developer Issues](https://github.com/ghost0211/og_developer/issues)，选择一个尚未分配、评论中也没有人正在处理的 Issue。第一次贡献优先考虑：
 
 - 复现步骤和预期行为已经写清楚的问题
 - 改动范围较小的文档、翻译或 UI 问题
@@ -115,14 +115,14 @@ Tauri 的完整系统要求可以参考 [Tauri 官方前置依赖文档](https:/
 
 ## 3. Fork 和克隆仓库
 
-先在 GitHub 打开 [t8y2/dbx](https://github.com/t8y2/dbx)，点击右上角 **Fork** 创建自己的仓库副本。
+先在 GitHub 打开 [ghost0211/og_developer](https://github.com/ghost0211/og_developer)，点击右上角 **Fork** 创建自己的仓库副本。
 
 将下面的 `<你的 GitHub 用户名>` 替换为你的账号：
 
 ```bash
-git clone https://github.com/<你的 GitHub 用户名>/dbx.git
-cd dbx
-git remote add upstream https://github.com/t8y2/dbx.git
+git clone https://github.com/<你的 GitHub 用户名>/og_developer.git
+cd og_developer
+git remote add upstream https://github.com/t8y2/dbx.git   # 上游 dbx，可选：用于同步上游修复
 git remote -v
 ```
 
@@ -159,9 +159,7 @@ make
 make dev-fast
 ```
 
-开发版可以与已安装的 DBX 同时运行。两者使用同一份本地 DBX 数据，因此连接和历史记录会同时可用；请避免在两个窗口中同时修改同一个连接、收藏 SQL 或全局设置。
-
-测试 MCP bridge 时，后启动的实例会写入共享的 `mcp-bridge-port` 发现文件并接收 MCP 请求。Redis PubSub 优先使用端口 `4224`（设置 `DBX_PORT` 时优先使用该端口）；端口被占用时会自动回退到可用的本地端口，前端会使用实际监听端口。
+开发版可以与已安装的 og developer 同时运行。两者使用同一份本地 DBX 数据，因此连接和历史记录会同时可用；请避免在两个窗口中同时修改同一个连接、收藏 SQL 或全局设置。
 
 ### Windows
 
@@ -199,7 +197,7 @@ make db-verify DB=mysql@8.4
 make db-down DB=mysql@8.4
 ```
 
-服务端口默认监听 `127.0.0.1`；在共享网络中暴露主机前，请设置 `DB_BIND_ADDRESS=0.0.0.0`、使用强 `DB_PASSWORD` 并配置防火墙。所有支持的配方、覆盖变量和重置安全要求请参阅[数据库测试实验室](/cn/docs/database-lab)。
+服务端口默认监听 `127.0.0.1`；在共享网络中暴露主机前，请设置 `DB_BIND_ADDRESS=0.0.0.0`、使用强 `DB_PASSWORD` 并配置防火墙。本 fork 的 openGauss 开发使用本地 Docker 实例（`openGauss-lite` 7.0.0-RC3，端口 5432）；测试库配方见 [Makefile](https://github.com/ghost0211/og_developer/blob/main/Makefile) 中的 `db-*` 目标。
 
 ## 5. 认识项目结构
 
@@ -210,8 +208,7 @@ make db-down DB=mysql@8.4
 | `crates/dbx-core/` | 数据库连接、查询、元数据和共享 Rust 逻辑 |
 | `crates/dbx-web/` | Docker/Web 后端 |
 | `packages/app-tests/` | 前端共享逻辑测试 |
-| `packages/cli/` | DBX CLI |
-| `packages/mcp-server/` | MCP Server |
+| `packages/cli/` | CLI 包（继承自 dbx，非产品重点） |
 | `docs/content/docs/` | 官网中英文文档 |
 | `agents/drivers/` | Java/JDBC 和部分原生数据库 Agent |
 
@@ -295,8 +292,8 @@ make cargo-test-fast
 
 Agent 是独立进程，通过 stdin/stdout JSON-RPC 与 DBX 通信。Java/JDBC Agent 通常使用 JDK 21；原生 Agent 使用 Go 或 Rust。开始前先阅读：
 
-- [`agents/README.zh-CN.md`](https://github.com/t8y2/dbx/blob/main/agents/README.zh-CN.md)
-- [`agents/docs/agent-authoring.zh-CN.md`](https://github.com/t8y2/dbx/blob/main/agents/docs/agent-authoring.zh-CN.md)
+- [`agents/README.zh-CN.md`](https://github.com/ghost0211/og_developer/blob/main/agents/README.zh-CN.md)
+- [`agents/docs/agent-authoring.zh-CN.md`](https://github.com/ghost0211/og_developer/blob/main/agents/docs/agent-authoring.zh-CN.md)
 
 #### 修改现有 Java/JDBC Agent
 
@@ -393,7 +390,7 @@ git diff
 | 官网文档 | `make docs-build` |
 | 前端/UI | `pnpm typecheck && pnpm lint && pnpm test` |
 | Rust | `make cargo-check-fast && make cargo-test-fast` |
-| CLI/MCP/Node Core | `pnpm test:packages` |
+| CLI/Node Core | `pnpm test:packages` |
 | Agent | Agent 脚本校验、对应 Gradle/Go 测试、构建产物校验和本地运行时真实验证 |
 
 如果修改跨越多个区域，需要合并执行对应检查。修复 Bug 时，还应再次执行原始复现步骤，证明问题已消失，并检查相邻正常场景没有回归。
@@ -419,7 +416,9 @@ git push -u origin HEAD
 
 ## 9. 创建 Pull Request
 
-在 GitHub 打开你的 Fork，点击 **Compare & pull request**，目标仓库选择 `t8y2/dbx`，目标分支选择 `main`。
+在 GitHub 打开你的 Fork，点击 **Compare & pull request**，目标仓库选择 `ghost0211/og_developer`，目标分支选择 `main`。
+
+贴近上游模式的 openGauss 修复也可以作为 PR 提交给 [t8y2/dbx](https://github.com/t8y2/dbx) 回馈上游——本仓库的 `opengauss-fixes` 分支就是为此准备的干净修复集。
 
 PR 描述至少写清：
 
@@ -482,6 +481,6 @@ corepack prepare pnpm@10.27.0 --activate
 
 - 在原 Issue 中描述卡点，并附完整错误信息和操作系统版本
 - 加入 [Discord](https://discord.gg/W7NyVDRt6a)
-- 查看仓库根目录的 [CONTRIBUTING.zh-CN.md](https://github.com/t8y2/dbx/blob/main/CONTRIBUTING.zh-CN.md)
+- 查看仓库根目录的 [CONTRIBUTING.zh-CN.md](https://github.com/ghost0211/og_developer/blob/main/CONTRIBUTING.zh-CN.md)
 
 请不要只发送“编译失败”。至少附上执行的命令、错误日志中最早出现的错误、操作系统、Node.js、pnpm 和 Rust 版本。

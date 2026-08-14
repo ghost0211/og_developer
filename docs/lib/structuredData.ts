@@ -1,28 +1,31 @@
 import { DEFAULT_DESCRIPTION, SITE_NAME, SITE_URL } from "./metadata";
 
 const localizedDescription = {
-  en: DEFAULT_DESCRIPTION,
-  cn: "70+ 种数据库，仅 20 MB。支持桌面端、Docker 自托管、AI 助手与 MCP Server。",
+  en: "An openGauss-specific database development tool, a deep-customized fork of dbx (Apache-2.0): official JDBC driver, PL/SQL debugger, DBMS_OUTPUT / RAISE NOTICE capture, and package/synonym object tree.",
+  cn: DEFAULT_DESCRIPTION,
 } as const;
 
 const localizedFeatureList = {
   en: [
-    "Manage 70+ SQL, NoSQL, vector, time-series, embedded databases, and message queues",
-    "Desktop apps for Windows, macOS, and Linux",
-    "Docker self-hosting for browser access",
-    "AI-assisted SQL generation, explanation, optimization, and repair",
-    "MCP Server integration for AI coding agents",
-    "Schema browsing, schema diff, data editing, import, and export",
+    "Bundled official openGauss JDBC driver with full SHA-256 support",
+    "PL/SQL-aware statement splitting and A-compatibility types",
+    "Graphical PL/SQL debugger based on dbe_pldebugger",
+    "DBMS_OUTPUT / RAISE NOTICE capture through JDBC and native wire protocol",
+    "Package, synonym, type, and job object tree with invalid-object badges",
+    "sql_compatibility (A/B/C/PG/M) awareness",
   ],
   cn: [
-    "统一管理 70+ 种 SQL、NoSQL、向量、时序、嵌入式数据库与消息队列",
-    "提供 Windows、macOS 与 Linux 桌面端",
-    "支持 Docker 自托管与浏览器访问",
-    "支持 AI 生成、解释、优化与修复 SQL",
-    "通过 MCP Server 连接 AI 编程智能体",
-    "提供结构浏览、结构对比、数据编辑、导入与导出",
+    "内嵌官方 openGauss JDBC 驱动，完整支持 SHA-256 认证",
+    "PL/SQL 感知的语句切分与 A 兼容模式类型",
+    "基于 dbe_pldebugger 的图形化 PL/SQL 调试器",
+    "JDBC 与原生协议双路捕获 DBMS_OUTPUT / RAISE NOTICE",
+    "包、同义词、类型、作业对象树，含无效对象标记",
+    "sql_compatibility（A/B/C/PG/M）兼容模式感知",
   ],
 } as const;
+
+const REPO_URL = "https://github.com/ghost0211/og_developer";
+const LICENSE_URL = `${REPO_URL}/blob/main/LICENSE`;
 
 export function buildSiteStructuredData() {
   return [
@@ -33,7 +36,6 @@ export function buildSiteStructuredData() {
       name: SITE_NAME,
       url: SITE_URL,
       description: DEFAULT_DESCRIPTION,
-      publisher: { "@id": `${SITE_URL}/#organization` },
       inLanguage: ["en", "zh-CN"],
     },
     {
@@ -44,12 +46,7 @@ export function buildSiteStructuredData() {
       url: SITE_URL,
       description: DEFAULT_DESCRIPTION,
       logo: `${SITE_URL}/logo.png`,
-      sameAs: [
-        "https://github.com/t8y2/dbx",
-        "https://www.npmjs.com/package/@dbx-app/mcp-server",
-        "https://cnb.cool/dbxio.com/dbx",
-        "https://atomgit.com/t8y2/dbx",
-      ],
+      sameAs: [REPO_URL],
     },
   ] as const;
 }
@@ -66,19 +63,13 @@ export function buildSoftwareApplicationStructuredData(lang: "en" | "cn", versio
     description: localizedDescription[lang],
     applicationCategory: "DeveloperApplication",
     applicationSubCategory: "Database management",
-    operatingSystem: "Windows, macOS, Linux, Docker",
+    operatingSystem: "Windows, macOS, Linux",
     softwareVersion: version,
     isAccessibleForFree: true,
     inLanguage: language,
-    codeRepository: "https://github.com/t8y2/dbx",
-    downloadUrl: "https://github.com/t8y2/dbx/releases/latest",
-    releaseNotes: `${SITE_URL}/${lang}/changelog`,
-    license: "https://github.com/t8y2/dbx/blob/main/LICENSE",
-    screenshot: [
-      `${SITE_URL}/screenshot-dark.png`,
-      `${SITE_URL}/screenshot-er.png`,
-      `${SITE_URL}/screenshot-grid.png`,
-    ],
+    codeRepository: REPO_URL,
+    downloadUrl: `${REPO_URL}/releases/latest`,
+    license: LICENSE_URL,
     featureList: [...localizedFeatureList[lang]],
     offers: {
       "@type": "Offer",
@@ -88,9 +79,6 @@ export function buildSoftwareApplicationStructuredData(lang: "en" | "cn", versio
     },
     author: { "@id": `${SITE_URL}/#organization` },
     publisher: { "@id": `${SITE_URL}/#organization` },
-    sameAs: [
-      "https://github.com/t8y2/dbx",
-      "https://www.npmjs.com/package/@dbx-app/mcp-server",
-    ],
+    sameAs: [REPO_URL],
   } as const;
 }

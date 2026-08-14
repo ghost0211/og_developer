@@ -8,7 +8,7 @@ test("site structured data does not advertise a nonexistent search route", () =>
 
   assert.equal(website["@type"], "WebSite");
   assert.equal("potentialAction" in website, false);
-  assert.equal(organization["@id"], "https://dbxio.com/#organization");
+  assert.equal(organization["@id"], "https://github.com/ghost0211/og_developer/#organization");
 });
 
 test("software structured data stays localized and versioned", () => {
@@ -18,8 +18,8 @@ test("software structured data stays localized and versioned", () => {
   assert.equal(english.applicationCategory, "DeveloperApplication");
   assert.equal(english.softwareVersion, "0.5.71");
   assert.equal(english.inLanguage, "en");
-  assert.match(english.description, /70\+ databases/);
+  assert.match(english.description, /openGauss/);
   assert.equal(chinese.inLanguage, "zh-CN");
-  assert.match(chinese.description, /70\+ 种数据库/);
-  assert.equal(chinese.license, "https://github.com/t8y2/dbx/blob/main/LICENSE");
+  assert.match(chinese.description, /openGauss/);
+  assert.equal(chinese.license, "https://github.com/ghost0211/og_developer/blob/main/LICENSE");
 });

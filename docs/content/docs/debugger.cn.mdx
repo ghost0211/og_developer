@@ -1,0 +1,76 @@
+---
+title: PL/SQL 调试器
+description: 基于 openGauss dbe_pldebugger API 的 PL/SQL 例程与匿名块图形调试。
+---
+
+og developer 内置基于 openGauss `dbe_pldebugger` API 的图形调试器（openGauss 1.0 引入，5.1.0 起支持匿名块调试）。完整流程——`turn_on` → `attach` → 断点 → 单步 → 变量 → 调用栈 → 完成——已在 openGauss-lite 7.0.0-RC3 真机端到端验证。
+
+## 工作原理
+
+调试器使用 `dbe_pldebugger` 要求的双会话模型：
+
+1. **调试会话** attach 到目标并控制执行（`attach`、`add_breakpoint`、`step`、`next`、`continue`、`finish`、`backtrace` 等）
+2. **被调会话**运行被调试的例程或匿名块
+
+og developer 替你管理两个会话，你只需要面对调试对话框。
+
+## 开始之前
+
+- 数据库账号需要具备 `dbe_pldebugger` 要求的权限（见 openGauss 手册《DBE_PLDEBUGGER Schema》）
+- 从例程右键菜单进入调试，或在编辑器打开例程/匿名块后，从执行对话框的**调试**入口启动
+
+## 调试例程
+
+<Steps>
+  <Step>
+    ### 打开调试器
+
+    右键函数或过程选择调试操作，或在执行对话框中点**调试**。
+
+  </Step>
+  <Step>
+    ### 设置断点
+
+    在会话开始前或进行中，点击编辑器行号区切换断点。
+
+  </Step>
+  <Step>
+    ### 控制执行
+
+    使用调试工具栏：单步进入、单步跳过、继续、跳出。
+
+  </Step>
+  <Step>
+    ### 检查状态
+
+    面板显示局部变量（实时值）、调用栈和当前断点。
+
+  </Step>
+  <Step>
+    ### 结束会话
+
+    运行到结束或中止；调试会话及服务端资源会被清理。
+
+  </Step>
+</Steps>
+
+## 调试匿名块
+
+匿名块（`DO $$ ... $$` 或 PL/SQL 的 `DECLARE ... BEGIN ... END;`）可以用同样的方式调试：在编辑器打开块、设置断点，从执行对话框启动调试会话。
+
+## 限制
+
+- 调试依赖目标数据库中服务端的 `dbe_pldebugger` 扩展可用
+- JDBC 连接调试同样使用双会话模型；两个会话都必须能访问同一个数据库
+- 服务端限制（例如每个数据库同时只允许一个调试会话）遵循 openGauss 手册
+
+## 下一步
+
+<Cards>
+  <Card title="PL/SQL 开发" href="/cn/docs/plsql-development">
+    语句切分、A 兼容类型、源码查看与消息捕获。
+  </Card>
+  <Card title="查询编辑器" href="/cn/docs/query-editor">
+    补全、格式化、选中执行和历史记录。
+  </Card>
+</Cards>

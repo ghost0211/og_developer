@@ -1,0 +1,97 @@
+---
+title: 连接 openGauss
+description: JDBC 与原生协议两种连接方式、认证方式与兼容模式感知说明。
+---
+
+og developer 是 DBX 工作台的 openGauss 专用版，提供两种连接模式，都聚焦 openGauss。
+
+## 连接模式
+
+### JDBC 模式（默认）
+
+内嵌官方 openGauss JDBC 驱动（`org.opengauss.Driver`），首次使用自动就位。该模式完整支持 openGauss 认证体系，包括 SHA-256（`password_encryption_type=2`，openGauss 默认配置）。
+
+- 连接 URL：`jdbc:opengauss://host:5432/dbname`
+- 用户名和密码作为普通 JDBC 属性传入
+- 推荐新连接使用；openGauss 默认配置开箱即用
+
+### 原生协议
+
+原生协议使用 vendored `tokio-postgres` fork（增加了 RAISE NOTICE 捕获），元数据密集场景更快，编辑器能直接获得协议层反馈。
+
+- 主机 / 端口 / 用户名 / 密码字段
+- RAISE NOTICE 消息被捕获并显示在结果视图（见 [PL/SQL 开发](/cn/docs/plsql-development)）
+
+<Callout type="warn">原生协议未实现 openGauss SHA-256 认证。如果服务端使用 `password_encryption_type=2`（默认），请改用 JDBC 模式，或在服务端把账号切换为 MD5。</Callout>
+
+```sql
+-- 服务端：password_encryption_type=0
+ALTER USER user_name IDENTIFIED BY 'password' REPLACE 'password';
+```
+
+## 新建连接
+
+<Steps>
+  <Step>
+    ### 打开新建连接
+
+    从侧边栏或工具栏点击**新建连接**。本版本连接类型选择器只保留 openGauss。
+
+  </Step>
+  <Step>
+    ### 选择模式
+
+    选 **JDBC**（默认，官方驱动，支持 SHA-256）或 **原生**（wire 协议）。
+
+  </Step>
+  <Step>
+    ### 填写信息
+
+    JDBC 模式：填写 `jdbc:opengauss://host:5432/dbname`、用户名和密码。
+
+    原生模式：填写主机、端口（默认 `5432`）、数据库、用户名和密码。
+
+  </Step>
+  <Step>
+    ### 测试并保存
+
+    点击**测试**验证凭据、网络与权限。通过后保存连接，从侧边栏打开。
+
+  </Step>
+</Steps>
+
+## 兼容模式感知
+
+openGauss 数据库按 `sql_compatibility`（A / B / C / PG / M）创建。og developer 连接后探测模式并自适应：
+
+| 方面 | 由探测到的模式驱动 |
+| --- | --- |
+| 对象树 | 按模式显示或隐藏节点（例如 JOB 与 EVENT） |
+| 编辑器方言 | 补全和高亮跟随模式 |
+| 信息面板 | 连接摘要显示检测到的兼容模式 |
+
+A/PG 规则已在 openGauss-lite 7.0.0-RC3 真机验证；B/M 模式按官方 6.0 手册实现（lite 镜像连接 B 模式库会崩溃，无法真机验证）。
+
+## 常见问题
+
+| 现象 | 排查 |
+| --- | --- |
+| 原生模式提示 `password authentication failed` | 服务端使用 SHA-256；改用 JDBC 模式或把账号切为 MD5 |
+| 超时 | 主机、端口、防火墙、安全组或私有网络 |
+| 已连接但没有表 | 默认数据库、Schema、权限或元数据读取权限 |
+| 找不到驱动 | JDBC 驱动首次使用自动下载；检查应用数据目录下的驱动目录 |
+| 私有网络数据库不可达 | 配置[隧道/代理](/cn/docs/ssh-tunnel) |
+
+## 下一步
+
+<Cards>
+  <Card title="PL/SQL 开发" href="/cn/docs/plsql-development">
+    语句切分、A 兼容类型、源码查看与消息捕获。
+  </Card>
+  <Card title="PL/SQL 调试器" href="/cn/docs/debugger">
+    基于 dbe_pldebugger 的图形调试：断点、单步、变量、调用栈。
+  </Card>
+  <Card title="对象树" href="/cn/docs/schema-browser">
+    浏览包、同义词、类型、作业和无效对象。
+  </Card>
+</Cards>

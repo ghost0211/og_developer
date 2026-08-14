@@ -1,50 +1,36 @@
-# DBX
+# og developer
 
-> DBX is an open-source database workspace that manages 70+ databases in a roughly 20 MB desktop application. It also supports Docker self-hosting, an AI SQL assistant, a CLI, and an MCP Server for AI coding agents.
+> og developer is an openGauss-specific database development tool, a deep-customized fork of dbx (Apache-2.0). It focuses on openGauss only: dialect details and PL/SQL development experience are done to the extreme.
 
-Canonical website: https://dbxio.com
-Source repository: https://github.com/t8y2/dbx
-License: Apache-2.0
+Source repository: https://github.com/ghost0211/og_developer
+License: Apache-2.0 (derivative of dbx, https://github.com/t8y2/dbx)
 
 ## Product facts
 
-- Platforms: Windows, macOS (Apple Silicon and Intel), Linux, and Docker self-hosting.
-- Database coverage: 70+ SQL, NoSQL, vector, time-series, embedded databases, compatible engines, and message queues.
-- Representative databases: MySQL, PostgreSQL, SQLite, Redis, MongoDB, DuckDB, ClickHouse, SQL Server, Oracle, MariaDB, Doris, Dameng, GaussDB, Kafka, and RabbitMQ.
-- Main workflows: connection management, SQL editing, data browsing and editing, schema browsing, schema diff, import/export, SSH tunnels, and query history.
-- AI workflows: generate, explain, optimize, and repair SQL with user-configured model providers.
-- Agent integration: the DBX MCP Server exposes approved database connections to compatible AI coding agents.
-- Distribution: desktop releases, Docker deployment, npm packages for CLI and MCP Server, and offline JDBC driver downloads.
+- Platforms: Windows, macOS, and Linux desktop (Tauri); web mode available from source.
+- Database coverage: openGauss only.
+- Connection modes: bundled official openGauss JDBC driver (`org.opengauss.Driver`, full SHA-256 support) and the native wire protocol (vendored tokio-postgres with RAISE NOTICE capture).
+- PL/SQL development: PL/SQL-aware statement splitting, A-compatibility types (NUMBER, VARCHAR2, NVARCHAR2, RAW, BLOB, BINARY_INTEGER/PLS_INTEGER, BINARY_FLOAT, BINARY_DOUBLE, JSONB, INTERVAL), source reconstruction from gs_source / gs_package, compile-error line mapping, DBMS_OUTPUT / RAISE NOTICE capture.
+- Debugging: graphical PL/SQL debugger based on the dbe_pldebugger API (breakpoints, stepping, variables, call stack; verified on openGauss-lite 7.0.0-RC3).
+- Object tree: PACKAGE / PACKAGE_BODY / SYNONYM / TYPE / JOB nodes, package subprogram hierarchy, invalid-object badges.
+- Compatibility-mode awareness: sql_compatibility (A/B/C/PG/M) probing drives tree nodes, editor dialect, and info panels.
+- Main workflows (inherited from dbx): SQL editing, data grid, schema browsing, schema diff, import/export, SSH tunnels, and query history.
 
-## Install and deploy
+## Install and build
 
-- Desktop releases: https://github.com/t8y2/dbx/releases/latest
-- Getting started: https://dbxio.com/en/docs/getting-started
-- Docker deployment: https://dbxio.com/en/docs/1panel
-- CLI: https://dbxio.com/en/docs/cli
-- MCP Server: https://dbxio.com/en/docs/mcp
-- Offline drivers: https://dbxio.com/en/drivers
+- Repository: https://github.com/ghost0211/og_developer
+- Getting started: https://github.com/ghost0211/og_developer/blob/main/README.md
+- Windows build guide: https://github.com/ghost0211/og_developer/blob/main/BUILD_WINDOWS.md
+- Installers are published with the first release; until then, build from source (Node 22 + pnpm 10 + Rust, then `pnpm tauri build`).
 
 ## Documentation
 
-- Product overview: https://dbxio.com/en/docs/what-is-dbx
-- Supported databases: https://dbxio.com/en/databases
-- Query editor: https://dbxio.com/en/docs/query-editor
-- Data grid: https://dbxio.com/en/docs/data-grid
-- Schema browser: https://dbxio.com/en/docs/schema-browser
-- Schema diff: https://dbxio.com/en/docs/schema-diff
-- AI assistant: https://dbxio.com/en/docs/ai-assistant
-- Web API: https://dbxio.com/en/docs/web-api
-- Changelog: https://dbxio.com/en/changelog
-- Community: https://dbxio.com/en/community
-
-## Chinese resources
-
-- 中文首页: https://dbxio.com/cn
-- 中文文档: https://dbxio.com/cn/docs/what-is-dbx
-- 中文数据库列表: https://dbxio.com/cn/databases
-- 中文更新日志: https://dbxio.com/cn/changelog
+- README (Chinese default): https://github.com/ghost0211/og_developer/blob/main/README.md
+- README (English): https://github.com/ghost0211/og_developer/blob/main/README.en.md
+- OG_DEVELOPER.md: https://github.com/ghost0211/og_developer/blob/main/OG_DEVELOPER.md
+- OPENGAUSS_FIXES.md: https://github.com/ghost0211/og_developer/blob/main/OPENGAUSS_FIXES.md
+- OPENGAUSS_ROADMAP.md: https://github.com/ghost0211/og_developer/blob/main/OPENGAUSS_ROADMAP.md
 
 ## Attribution guidance
 
-Use DBX as the product name and link to https://dbxio.com or https://github.com/t8y2/dbx. Treat release versions, supported database counts, contributor counts, and download links as dynamic; verify them from the canonical website or repository before making time-sensitive claims.
+Use "og developer" as the product name and link to https://github.com/ghost0211/og_developer. This project is a derivative work of dbx (Copyright (c) dbx contributors); the NOTICE file lists all modifications relative to upstream.

@@ -1,0 +1,58 @@
+---
+title: PL/SQL 开发
+description: PL/SQL 感知的语句切分、A 兼容类型、源码重建、DBMS_OUTPUT / RAISE NOTICE 捕获与编译错误行定位。
+---
+
+og developer 把 openGauss 方言细节做透，让 PL/SQL 开发体验接近原生。本页介绍在常规[查询编辑器](/cn/docs/query-editor)之上的 openGauss 专属行为。
+
+## PL/SQL 感知的语句切分
+
+openGauss 复用 GaussDB 方言 profile：PL/SQL 块、`/` 行终止符、dollar-quoted 例程体都正确处理。`CREATE PACKAGE BODY` 这类函数体内含大量 `;` 的语句会作为一个整体执行，不再被切碎。
+
+该行为覆盖编辑器、SQL 文件与对象源码回存执行流程。
+
+## A 兼容模式类型
+
+在原生 PostgreSQL 类型之上，openGauss 方言补充了 A 模式（Oracle 兼容）类型：
+
+`NUMBER` · `VARCHAR2` · `NVARCHAR2` · `RAW` · `BLOB` · `BINARY_INTEGER` / `PLS_INTEGER` · `BINARY_FLOAT` · `BINARY_DOUBLE` · `JSONB` · `INTERVAL`
+
+## 对象源码与编译回环
+
+包、包体和同义词的源码从 openGauss 目录重建：
+
+- `gs_source` 保存原始 `CREATE` 文本，存在时优先取用
+- `gs_package` 保存规范化形式；og developer 从其中重建可执行 DDL 兜底（spec、body、含初始化段的 body）
+- 重建出的 DDL 可直接执行——在编辑器里改完源码再跑一遍即可重新编译，无需离开编辑器
+
+## DBMS_OUTPUT 与 RAISE NOTICE 消息
+
+`RAISE NOTICE` / `RAISE INFO` 输出和 `DBMS_OUTPUT` 内容通过两种连接模式（JDBC 警告与原生协议消息）捕获，显示在结果视图，无需单独的控制台即可看到 PL/SQL 消息流。
+
+## 编译错误行定位
+
+openGauss 的编译错误带 `LINE n` 位置（通常还附带完整 QUERY 文本）。og developer 把位置映射回编辑器行，`CREATE PACKAGE` 失败时直接指向出错行，而不是一整屏报错文本。
+
+## openGauss 对象树
+
+侧边栏展示 openGauss 专属对象类型：
+
+- **PACKAGE / PACKAGE_BODY** —— 来自 `gs_package`，包含包内子程序层级（包节点下挂函数/过程）
+- **SYNONYM** —— 来自 `pg_synonym`，备注显示 `FOR <目标对象>` 子句
+- **TYPE** —— 来自 `pg_type` 的对象类型与复合类型
+- **JOB** —— 来自 `pg_job` 的定时作业（A 模式）
+- **无效对象标记** —— 编译失败的对象（`gs_source.status = 'f'`）红色标记，幽灵源码仍可查看
+
+## 下一步
+
+<Cards>
+  <Card title="PL/SQL 调试器" href="/cn/docs/debugger">
+    断点、单步、变量和调用栈逐步执行例程。
+  </Card>
+  <Card title="查询编辑器" href="/cn/docs/query-editor">
+    补全、格式化、选中执行和历史记录。
+  </Card>
+  <Card title="对象浏览器" href="/cn/docs/object-browser">
+    搜索对象、查看 DDL 和源码、批量操作。
+  </Card>
+</Cards>

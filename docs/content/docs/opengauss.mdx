@@ -1,0 +1,97 @@
+---
+title: Connect to openGauss
+description: JDBC and native wire protocol connection modes, authentication, and compatibility-mode awareness.
+---
+
+og developer is an openGauss-specific build of the DBX workbench. It offers two connection modes, both focused on openGauss.
+
+## Connection Modes
+
+### JDBC mode (default)
+
+The official openGauss JDBC driver (`org.opengauss.Driver`) is bundled and seeded automatically on first use. This mode supports the full openGauss authentication stack, including SHA-256 (`password_encryption_type=2`, the openGauss default).
+
+- Connection URL: `jdbc:opengauss://host:5432/dbname`
+- Username and password are sent as regular JDBC properties
+- Recommended for new connections; works out of the box with openGauss defaults
+
+### Native wire protocol
+
+The native protocol uses a vendored `tokio-postgres` fork that adds RAISE NOTICE capture. It is faster for metadata-heavy workflows and gives the editor direct protocol-level feedback.
+
+- Host / port / username / password fields
+- RAISE NOTICE messages are drained and shown in the result view (see [PL/SQL Development](/en/docs/plsql-development))
+
+<Callout type="warn">The native protocol does not implement openGauss SHA-256 authentication. If the server uses `password_encryption_type=2` (default), either connect with JDBC mode, or switch the account to MD5 on the server.</Callout>
+
+```sql
+-- server side: password_encryption_type=0
+ALTER USER user_name IDENTIFIED BY 'password' REPLACE 'password';
+```
+
+## Create a Connection
+
+<Steps>
+  <Step>
+    ### Open New Connection
+
+    Click **New Connection** from the sidebar or toolbar. The connection type picker is trimmed to openGauss in this build.
+
+  </Step>
+  <Step>
+    ### Pick a Mode
+
+    Choose **JDBC** for the official driver (default, SHA-256 ready) or **Native** for the wire protocol.
+
+  </Step>
+  <Step>
+    ### Fill Details
+
+    JDBC mode: enter `jdbc:opengauss://host:5432/dbname`, username and password.
+
+    Native mode: enter host, port (default `5432`), database, username and password.
+
+  </Step>
+  <Step>
+    ### Test And Save
+
+    Click **Test** to verify credentials, network access, and permissions. After the test passes, save the connection and open it from the sidebar.
+
+  </Step>
+</Steps>
+
+## Compatibility-Mode Awareness
+
+openGauss databases are created with a compatibility mode (`sql_compatibility`: A / B / C / PG / M). og developer probes the mode after connecting and adapts:
+
+| Aspect | Behavior driven by the probed mode |
+| --- | --- |
+| Object tree | Mode-specific nodes are shown or hidden (for example JOB vs EVENT) |
+| Editor dialect | SQL completion and highlighting follow the mode |
+| Info panel | Connection summary shows the detected compatibility mode |
+
+A and PG rules are verified against a real openGauss-lite 7.0.0-RC3 instance; B and M modes follow the official 6.0 manual (the lite image crashes when connecting to a B-mode database, so it could not be verified on a real instance).
+
+## Troubleshooting
+
+| Symptom | Check |
+| --- | --- |
+| `password authentication failed` in native mode | Server uses SHA-256; use JDBC mode or switch the account to MD5 |
+| Timeout | Host, port, firewall, security group, or private network access |
+| Connected but no tables | Default database, schema, permissions, or metadata read access |
+| Driver not found | JDBC driver seeds itself on first use; check the driver directory under the app data path |
+| Private database unreachable | Configure [Tunnel / Proxy](/en/docs/ssh-tunnel) |
+
+## What To Try Next
+
+<Cards>
+  <Card title="PL/SQL Development" href="/en/docs/plsql-development">
+    Statement splitting, A-compatibility types, source view, and message capture.
+  </Card>
+  <Card title="PL/SQL Debugger" href="/en/docs/debugger">
+    Graphical debugging with dbe_pldebugger: breakpoints, stepping, variables, call stack.
+  </Card>
+  <Card title="Object tree" href="/en/docs/schema-browser">
+    Browse packages, synonyms, types, jobs, and invalid objects.
+  </Card>
+</Cards>

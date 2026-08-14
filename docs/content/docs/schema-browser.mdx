@@ -22,13 +22,8 @@ The actual hierarchy follows the database model:
 
 | Type | Example tree |
 | --- | --- |
-| MySQL-compatible | Connection → database → table/view → column/index/foreign key/trigger |
-| PostgreSQL, Oracle, SQL Server, and others | Connection → database or service → schema → object |
-| Doris / StarRocks | Catalog → database → table when multiple catalogs exist; flat when only `internal` exists |
-| Redis | Connection → Redis DB, with paged keys in the dedicated browser |
-| MongoDB | Connection → database → collections, indexes, and GridFS buckets |
-| Elasticsearch / Easysearch | Connection → indexes and other document objects |
-| HBase, vector, message queue, etcd, ZooKeeper, Nacos | System-specific objects that open [Specialized Workspaces](/en/docs/specialized-workspaces) |
+| MySQL-compatible (B mode) | Connection → database → table/view → column/index/foreign key/trigger |
+| PostgreSQL, openGauss, Oracle, SQL Server, and others | Connection → database or service → schema → object |
 
 ## Connection Groups and Bulk Management
 
@@ -146,8 +141,5 @@ DBX does not force every system into a relational tree. For example:
   </Card>
   <Card title="Search the database" href="/en/docs/object-browser">
     Locate objects by type, name, and metadata in large databases.
-  </Card>
-  <Card title="Manage specialized systems" href="/en/docs/specialized-workspaces">
-    Open Redis, MongoDB, vector, MQ, etcd, ZooKeeper, and Nacos workspaces.
   </Card>
 </Cards>
