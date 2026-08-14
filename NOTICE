@@ -1,0 +1,27 @@
+og developer
+Copyright (c) 2025 og developer contributors
+
+This product is a derivative work of dbx, an open-source database manager:
+
+  dbx
+  Copyright (c) dbx contributors
+  https://github.com/t8y2/dbx
+  Licensed under the Apache License, Version 2.0.
+
+The following files/directories contain modifications relative to upstream
+dbx (openGauss-specific support, product branding and feature trimming):
+
+  crates/dbx-core/src/sql.rs                 (SQL splitter: openGauss PL/SQL profile)
+  crates/dbx-core/src/db/postgres.rs         (object tree: synonym / package catalogs)
+  crates/dbx-core/src/schema.rs              (source reconstruction for package/synonym)
+  crates/dbx-core/src/jdbc.rs                 (openGauss JDBC driver support)
+  apps/desktop/src/lib/database/databaseObjectCapabilities.ts
+  apps/desktop/src/components/connection/ConnectionDialog.vue
+  plugins/dialects/opengauss.yaml            (A-compatible types)
+  vendor/tokio-postgres-gaussdb/             (fork of tokio-postgres: RAISE NOTICE capture)
+  vendor/ctor, vendor/dirs-sys, vendor/pageant, vendor/rumqttc, vendor/wry
+  docs/, *.md                               (project documentation)
+
+Unmodified portions are Copyright (c) dbx contributors and are used under
+the Apache License, Version 2.0. See the LICENSE file for the full license
+text and the git history for complete authorship attribution.

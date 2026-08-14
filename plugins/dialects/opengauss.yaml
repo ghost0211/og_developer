@@ -1,3 +1,11 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# og developer — modified from upstream dbx (https://github.com/t8y2/dbx,
+# Apache-2.0, Copyright (c) dbx contributors) for openGauss support:
+# A-compatibility types added (NUMBER, VARCHAR2, NVARCHAR2, RAW, BLOB,
+# BINARY_INTEGER/PLS_INTEGER, BINARY_FLOAT, BINARY_DOUBLE, JSONB, INTERVAL).
+# See NOTICE for the full list of modifications.
+
 dialect:
   name: "openGauss"
   display_name: "openGauss"

@@ -1,3 +1,11 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// og developer — modified from upstream dbx (https://github.com/t8y2/dbx,
+// Apache-2.0, Copyright (c) dbx contributors) for openGauss support:
+// source reconstruction of SYNONYM / PACKAGE / PACKAGE_BODY from
+// pg_synonym / gs_package catalogs.
+// See NOTICE for the full list of modifications.
+
 use crate::agent_recovery::{RecoveryDecision, RecoveryPolicy, RecoveryScope};
 use crate::connection::{
     connection_url_for_endpoint, database_connection_config, gaussdb_uses_m_jdbc_driver, task_client_session_id,

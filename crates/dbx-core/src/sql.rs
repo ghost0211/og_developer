@@ -1,3 +1,11 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// og developer — modified from upstream dbx (https://github.com/t8y2/dbx,
+// Apache-2.0, Copyright (c) dbx contributors) for openGauss support:
+// openGauss reuses the gaussdb() SQL dialect profile (PL/SQL blocks,
+// `/` line terminator) so package/function scripts are not split wrongly.
+// See NOTICE for the full list of modifications.
+
 use serde::{Deserialize, Serialize};
 use sqlparser::dialect::OracleDialect;
 use sqlparser::tokenizer::{Token, Tokenizer};

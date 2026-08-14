@@ -1,3 +1,11 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// og developer — modified from upstream dbx (https://github.com/t8y2/dbx,
+// Apache-2.0, Copyright (c) dbx contributors) for openGauss support:
+// catalog probes for pg_catalog.gs_package / pg_synonym add PACKAGE,
+// PACKAGE_BODY and SYNONYM entries to the object tree.
+// See NOTICE for the full list of modifications.
+
 use chrono::{DateTime, Local, NaiveDate, NaiveDateTime, NaiveTime};
 use deadpool_postgres::{ManagerConfig, Pool, PoolError, RecyclingMethod, Runtime};
 use futures::{SinkExt, StreamExt};

@@ -505,12 +505,10 @@ jobs:
               - 'Cargo.lock'
               - '.github/scripts/bump-agent-versions.mjs'
               - '.github/scripts/bump-agent-versions.test.mjs'
-              - '.github/workflows/agents-release.yml'
               - '.github/workflows/ci.yml'
             duckdb_windows:
               - 'agents/drivers/duckdb/**'
               - 'agents/scripts/validate_windows_pe_dependencies.py'
-              - '.github/workflows/agents-release.yml'
               - '.github/workflows/ci.yml'
             nix:
               # These advisory checks validate the pnpm and Cargo dependency closures.
@@ -533,7 +531,6 @@ jobs:
               - '.github/scripts/prepare-webview2-win7-loader.ps1'
               - '.github/scripts/prepare-webview2-win7-runtime.ps1'
               - '.github/workflows/ci.yml'
-              - '.github/workflows/release.yml'
               - 'src-tauri/tauri.webview2-win7-fixed.conf.json'
               - 'src-tauri/build.rs'
               - 'src-tauri/Cargo.toml'

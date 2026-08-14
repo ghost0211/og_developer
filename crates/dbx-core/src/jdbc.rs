@@ -1,3 +1,11 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// og developer — modified from upstream dbx (https://github.com/t8y2/dbx,
+// Apache-2.0, Copyright (c) dbx contributors) for openGauss support:
+// bundles the official openGauss JDBC driver (org.opengauss.Driver) and
+// seeds it into the JDBC plugin driver directory.
+// See NOTICE for the full list of modifications.
+
 use crate::agent_service::AgentProgressEvent;
 use crate::plugins::PluginRuntimeEnv;
 use crate::plugins::{PluginManifest, SUPPORTED_PLUGIN_PROTOCOL_VERSION};

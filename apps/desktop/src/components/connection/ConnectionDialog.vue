@@ -1,3 +1,10 @@
+<!--
+  SPDX-License-Identifier: Apache-2.0
+  og developer — modified from upstream dbx (https://github.com/t8y2/dbx,
+  Apache-2.0, Copyright (c) dbx contributors) for openGauss support:
+  connection type picker restricted to openGauss (ENABLED_DATABASE_TYPES
+  whitelist; upstream code kept intact). See NOTICE for modifications.
+-->
 <script setup lang="ts">
 import type { ObjectDirective } from "vue";
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
