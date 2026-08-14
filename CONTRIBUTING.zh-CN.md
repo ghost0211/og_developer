@@ -20,7 +20,7 @@
 - Rust >= 1.88
 - Make
 
-Linux 桌面端还需要 WebKit/GTK 相关依赖，具体命令见 [README.zh-CN.md](README.zh-CN.md#快速开始)。
+Linux 桌面端还需要 WebKit/GTK 相关依赖，具体命令见 [README.md](README.md#快速开始)。
 
 ### 本地运行
 

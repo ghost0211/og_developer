@@ -1,6 +1,6 @@
 # DBX Agents
 
-English | [简体中文](README.zh-CN.md)
+English | [简体中文](../README.md)
 
 Agent drivers for [DBX](https://github.com/t8y2/dbx) — database support via JDBC and native database drivers.
 
