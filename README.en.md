@@ -67,10 +67,28 @@ type whitelist is the only entry cut — relaxing it restores all other database
 
 ### Inherited from dbx
 
-- SQL editor with completion, formatting (with sample preview), bookmarks,
-  3-mode search, editor commands, workspace projects.
-- Result grid with export, graphical routine calls, sessions, schema browser,
-  extension management and more.
+- Core SQL editor: completion, multi-statement execution with batch progress,
+  result grid and export.
+- Schema browser, table structure editing, extension management, data transfer
+  and other general database-tool capabilities.
+
+### General capabilities added by og developer
+
+The following are NOT inherited from dbx — they were built in this repository:
+
+- **SQL bookmarks**: 🔖 line bookmarks in the gutter with add/remove/jump
+  (F2 / Shift-F2) via a context menu.
+- **Menu bar and editor commands**: project/search/edit/tools menus, undo/redo/
+  cut/copy/paste/find/find-and-replace, SQL save-as.
+- **Three-mode search**: files (inside a project directory), metadata (object
+  names), database objects (definition text).
+- **Workspace project management**: create/open projects (named working
+  directories) used as the default root for file search.
+- **Session management**: `pg_stat_activity` session list with manual/timed
+  refresh and session termination.
+- **Formatter sample preview**: live example in the SQL formatting settings.
+- **Output view**: DBMS_OUTPUT / `RAISE NOTICE` lines shown in an 输出 tab in
+  the result area.
 
 ## Relationship to upstream
 
