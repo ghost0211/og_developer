@@ -19,7 +19,6 @@ jobs:
     if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-22.04
     env:
-      # The workspace intentionally contains platform-specific CLI/MCP packages for every release target.
       NPM_CONFIG_LOGLEVEL: error
     steps:
       - uses: actions/checkout@v5
@@ -36,7 +35,7 @@ jobs:
           cache: pnpm
 
       - name: Install frontend dependencies
-        run: pnpm --filter dbx... install --frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: Frontend check
         run: pnpm check
@@ -55,44 +54,6 @@ jobs:
 
       - name: GitHub script tests
         run: node --test .github/scripts/*.test.mjs
-
-  packages:
-    needs: changes
-    if: needs.changes.outputs.packages == 'true'
-    runs-on: ubuntu-22.04
-    env:
-      # Unsupported-platform package warnings are expected while validating cross-platform package metadata.
-      NPM_CONFIG_LOGLEVEL: error
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
-        with:
-          version: 10.27.0
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: 22.13.0
-          cache: pnpm
-
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev libsecret-1-dev
-
-      - name: Install frontend dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@1.97.1
-
-      - name: Node package tests
-        run: pnpm test:packages
-
-      - name: Node package publish dry run
-        run: pnpm publish:dry-run
 
   windows-win7-bundle:
     needs: changes
@@ -449,7 +410,6 @@ jobs:
     runs-on: ubuntu-22.04
     outputs:
       frontend: ${{ steps.filter.outputs.frontend }}
-      packages: ${{ steps.filter.outputs.packages }}
       rust: ${{ steps.filter.outputs.rust }}
       rust_full: ${{ steps.rust-mode.outputs.full }}
       jdbc: ${{ steps.filter.outputs.jdbc }}
@@ -476,14 +436,6 @@ jobs:
               - 'package.json'
               - '.oxfmtrc.json'
               - 'scripts/run-check.mjs'
-              - '.github/workflows/ci.yml'
-            packages:
-              - 'packages/cli/**'
-              - 'scripts/verify-package-install.mjs'
-              - 'package.json'
-              - 'pnpm-lock.yaml'
-              - 'Cargo.toml'
-              - 'Cargo.lock'
               - '.github/workflows/ci.yml'
             rust:
               - 'crates/**'
