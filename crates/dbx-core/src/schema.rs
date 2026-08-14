@@ -6727,6 +6727,45 @@ fn postgres_object_source_sql_inner(
                 sql_string(name)
             )
         }
+        // 自定义类型（composite/enum）的原始 CREATE 不落 gs_source，从目录重建。
+        db::ObjectSourceKind::Type if unwrap_opengauss_record => {
+            format!(
+                "SELECT 'CREATE TYPE ' || n.nspname || '.' || t.typname || ' AS (' || \
+                   string_agg(a.attname || ' ' || format_type(a.atttypid, a.atttypmod), ', ' ORDER BY a.attnum) || ');' \
+                 FROM pg_catalog.pg_type t \
+                 JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace \
+                 JOIN pg_catalog.pg_attribute a ON a.attrelid = t.typrelid AND a.attnum > 0 AND NOT a.attisdropped \
+                 WHERE n.nspname = {} AND t.typname = {} AND t.typtype = 'c' \
+                 GROUP BY n.nspname, t.typname \
+                 HAVING count(a.attname) > 0 \
+                 UNION ALL \
+                 SELECT 'CREATE TYPE ' || n.nspname || '.' || t.typname || ' AS ENUM (' || \
+                   string_agg(quote_literal(e.enumlabel), ', ' ORDER BY e.enumsortorder) || ');' \
+                 FROM pg_catalog.pg_type t \
+                 JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace \
+                 JOIN pg_catalog.pg_enum e ON e.enumtypid = t.oid \
+                 WHERE n.nspname = {} AND t.typname = {} AND t.typtype = 'e' \
+                 GROUP BY n.nspname, t.typname \
+                 HAVING count(e.enumlabel) > 0 \
+                 LIMIT 1",
+                sql_string(schema),
+                sql_string(name),
+                sql_string(schema),
+                sql_string(name)
+            )
+        }
+        // 类型体源码存于 gs_source（与包体同通道）。
+        db::ObjectSourceKind::TypeBody if unwrap_opengauss_record => {
+            format!(
+                "SELECT s.src \
+                 FROM dbe_pldeveloper.gs_source s \
+                 JOIN pg_catalog.pg_namespace n ON n.oid = s.nspid \
+                 WHERE n.nspname = {} AND s.name = {} AND s.type = 'type body' \
+                 ORDER BY s.id DESC LIMIT 1",
+                sql_string(schema),
+                sql_string(name)
+            )
+        }
         db::ObjectSourceKind::Trigger
         | db::ObjectSourceKind::Synonym
         | db::ObjectSourceKind::Package

@@ -39,7 +39,7 @@ const SEARCH_CONNECTION_TIMEOUT: Duration = Duration::from_secs(10);
 fn pg_metadata_search_sql(query: &str) -> String {
     format!(
         "SELECT n.nspname, c.relname, \
-                CASE c.relkind WHEN 'r' THEN 'TABLE' WHEN 'v' THEN 'VIEW' WHEN 'm' THEN 'MATERIALIZED_VIEW' WHEN 'p' THEN 'TABLE' WHEN 'S' THEN 'SEQUENCE' ELSE 'TABLE' END \
+                CASE c.relkind WHEN 'r' THEN 'TABLE' WHEN 'v' THEN 'VIEW' WHEN 'm' THEN 'MATERIALIZED_VIEW' WHEN 'p' THEN 'TABLE' WHEN 'S' THEN 'SEQUENCE' WHEN 'c' THEN 'TYPE' ELSE 'TABLE' END \
          FROM pg_catalog.pg_class c \
          JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
          WHERE c.relname ILIKE '%{}%' AND n.nspname NOT IN ('pg_catalog', 'information_schema', 'pg_toast') \
@@ -48,7 +48,15 @@ fn pg_metadata_search_sql(query: &str) -> String {
          FROM pg_catalog.pg_proc p \
          JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace \
          WHERE p.proname ILIKE '%{}%' AND n.nspname NOT IN ('pg_catalog', 'information_schema') \
+         UNION ALL \
+         SELECT n.nspname, t.typname, 'TYPE' \
+         FROM pg_catalog.pg_type t \
+         JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace \
+         WHERE t.typname ILIKE '%{}%' AND t.typtype = 'e' \
+           AND t.typname NOT LIKE '\\_%' ESCAPE '\\' \
+           AND n.nspname NOT IN ('pg_catalog', 'information_schema') \
          LIMIT 60",
+        query.replace('\'', "''"),
         query.replace('\'', "''"),
         query.replace('\'', "''")
     )
