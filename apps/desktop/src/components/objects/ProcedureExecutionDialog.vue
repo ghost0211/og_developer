@@ -22,6 +22,8 @@ const props = defineProps<{
   schema?: string;
   routineName: string;
   routineKind?: "procedure" | "function";
+  /** identity arguments（pg_get_function_identity_arguments），用于同名重载的精确匹配 */
+  signature?: string;
 }>();
 
 const emit = defineEmits<{
@@ -32,6 +34,7 @@ const emit = defineEmits<{
 
 const loading = ref(false);
 const loadError = ref("");
+const parametersLoaded = ref(false);
 const parameters = ref<RoutineParameterValue[]>([]);
 const sqlDraft = ref("");
 const manualSqlDirty = ref(false);
@@ -103,6 +106,7 @@ async function refreshParameters() {
   loading.value = true;
   loadError.value = "";
   parameters.value = [];
+  parametersLoaded.value = false;
   manualSqlDirty.value = false;
   sqlDraft.value = generatedSql.value;
   try {
@@ -113,6 +117,7 @@ async function refreshParameters() {
       schema: props.schema,
       routineName: props.routineName,
       routineKind: props.routineKind,
+      signature: props.signature,
     });
     if (token !== loadToken) return;
     parameters.value = loaded.map((parameter) => ({
@@ -121,6 +126,7 @@ async function refreshParameters() {
       useNull: false,
       useDefault: !!parameter.hasDefault,
     }));
+    parametersLoaded.value = true;
     sqlDraft.value = generatedSql.value;
   } catch (e: any) {
     if (token !== loadToken) return;
@@ -233,6 +239,10 @@ function canEditParameter(parameter: RoutineParameterValue): boolean {
 
         <p v-else-if="loadError" class="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
           {{ t("contextMenu.procedureParametersUnavailable") }}
+        </p>
+
+        <p v-else-if="parametersLoaded" class="rounded-md border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+          {{ t("contextMenu.noParameters") }}
         </p>
 
         <p v-else class="rounded-md border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">

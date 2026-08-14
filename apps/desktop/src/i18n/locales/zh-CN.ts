@@ -2359,6 +2359,7 @@ export default withEnglishFallback({
     loadingProcedureParameters: "正在读取参数...",
     procedureParametersUnavailable: "未能读取参数信息，仍可直接编辑下方 SQL 后执行。",
     noProcedureParameters: "未读取到参数，确认后将直接执行当前 SQL。",
+    noParameters: "该例程没有参数",
     inputParameters: "{count} 个输入参数",
     outputParameters: "{count} 个输出参数",
     parameterName: "Name",

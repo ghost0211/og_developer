@@ -10,6 +10,8 @@ export interface LoadRoutineParametersOptions {
   routineName: string;
   /** Narrows pg_proc by prokind; omit to match both procedures and functions. */
   routineKind?: "procedure" | "function";
+  /** identity arguments（pg_get_function_identity_arguments），用于同名重载的精确匹配 */
+  signature?: string;
 }
 
 export async function loadRoutineParameters(options: LoadRoutineParametersOptions): Promise<RoutineParameter[]> {
@@ -37,7 +39,7 @@ export function supportsRoutineParameterMetadata(databaseType?: DatabaseType): b
   );
 }
 
-export function routineParametersQuery(options: Pick<LoadRoutineParametersOptions, "database" | "databaseType" | "schema" | "routineName" | "routineKind">): string | null {
+export function routineParametersQuery(options: Pick<LoadRoutineParametersOptions, "database" | "databaseType" | "schema" | "routineName" | "routineKind" | "signature">): string | null {
   if (!supportsRoutineParameterMetadata(options.databaseType)) return null;
   const effectiveSchema = options.schema || (options.databaseType === "postgres" || options.databaseType === "opengauss" ? "public" : "") || (options.databaseType === "mysql" || options.databaseType === "doris" || options.databaseType === "starrocks" ? options.database : "");
   const schema = quoteSqlLiteral(effectiveSchema);
@@ -53,6 +55,10 @@ export function routineParametersQuery(options: Pick<LoadRoutineParametersOption
     const packageMember = options.databaseType === "opengauss" && parts.length === 2 ? { packageName: parts[0], memberName: parts[1] } : null;
     const packageJoin = packageMember ? "JOIN pg_catalog.gs_package pkg ON pkg.oid = p.propackageid\n" : "";
     const nameFilter = packageMember ? `pkg.pkgname = ${quoteSqlLiteral(packageMember.packageName)}\n  AND p.proname = ${quoteSqlLiteral(packageMember.memberName)}` : `p.proname = ${name}`;
+    // 同名重载（包内与独立例程都可能）按 identity arguments 精确匹配。
+    const signatureFilter = options.signature?.trim() ? `\n  AND pg_get_function_identity_arguments(p.oid) = ${quoteSqlLiteral(options.signature)}` : "";
+    // 独立例程不要混入同名包成员（openGauss 才有 propackageid）。
+    const standalonePackageFilter = !packageMember && options.databaseType === "opengauss" ? "\n  AND (p.propackageid = 0 OR p.propackageid IS NULL)" : "";
     return `
 SELECT
   NULLIF(arg.name, '') AS name,
@@ -86,7 +92,7 @@ ${packageJoin}CROSS JOIN LATERAL (
 ) arg
 WHERE ${prokindFilter}
   AND n.nspname = ${schema}
-  AND ${nameFilter}
+  AND ${nameFilter}${signatureFilter}${standalonePackageFilter}
 ORDER BY arg.ordinal;`.trim();
   }
   if (options.databaseType === "mysql" || options.databaseType === "doris" || options.databaseType === "starrocks") {

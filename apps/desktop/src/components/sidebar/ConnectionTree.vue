@@ -1962,6 +1962,7 @@ defineExpose({ focusSearch, createNewGroup, collapseAllTreeNodes });
       :schema="sidebarProcedureTarget.schema"
       :routine-name="sidebarProcedureTarget.parentName ? `${sidebarProcedureTarget.parentName}.${sidebarProcedureTarget.objectName || sidebarProcedureTarget.label}` : sidebarProcedureTarget.objectName || sidebarProcedureTarget.label"
       :routine-kind="sidebarProcedureTarget.type === 'function' ? 'function' : 'procedure'"
+      :signature="sidebarProcedureTarget.signature"
       @open-sql="openSidebarProcedureSql"
       @execute="executeSidebarProcedureSql"
       @debug="debugSidebarProcedureSql"

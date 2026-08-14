@@ -160,6 +160,46 @@ describe("SQL Server routine execution SQL", () => {
 });
 
 describe("openGauss graphical routine invocation", () => {
+  it("filters overloaded routines by identity arguments", () => {
+    const bySignature = routineParametersQuery({
+      database: "postgres",
+      databaseType: "opengauss",
+      schema: "public",
+      routineName: "add_emp",
+      signature: "p_id integer, p_name text",
+    });
+    expect(bySignature).toContain("pg_get_function_identity_arguments(p.oid) = 'p_id integer, p_name text'");
+
+    const packageMember = routineParametersQuery({
+      database: "postgres",
+      databaseType: "opengauss",
+      schema: "public",
+      routineName: "ogtest_pkg.add_emp",
+      signature: "p_id integer, p_name text, p_salary numeric",
+    });
+    expect(packageMember).toContain("pkg.pkgname = 'ogtest_pkg'");
+    expect(packageMember).toContain("p.proname = 'add_emp'");
+    expect(packageMember).toContain("pg_get_function_identity_arguments(p.oid) = 'p_id integer, p_name text, p_salary numeric'");
+  });
+
+  it("keeps standalone routines apart from same-named package members", () => {
+    const standalone = routineParametersQuery({
+      database: "postgres",
+      databaseType: "opengauss",
+      schema: "public",
+      routineName: "show_count",
+      signature: "a integer",
+    });
+    expect(standalone).toContain("(p.propackageid = 0 OR p.propackageid IS NULL)");
+    const packageMember = routineParametersQuery({
+      database: "postgres",
+      databaseType: "opengauss",
+      schema: "public",
+      routineName: "pkg_init.show_count",
+    });
+    expect(packageMember).not.toContain("propackageid = 0");
+  });
+
   const param = (name: string, dataType: string, mode: "IN" | "OUT" | "INOUT", ordinal: number, value = "") => ({ name, dataType, mode, ordinal, value });
 
   it("procedures with only IN inputs use CALL", () => {
