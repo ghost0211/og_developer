@@ -251,8 +251,11 @@ pub enum AsyncMessage {
 /// id of the session that produced the notice.
 #[derive(Debug, Clone)]
 pub struct NoticeMessage {
+    /// Backend process id of the session that produced the notice.
     pub pid: i32,
+    /// Notice severity (NOTICE/WARNING/INFO/…).
     pub severity: String,
+    /// The notice text.
     pub message: String,
 }
 

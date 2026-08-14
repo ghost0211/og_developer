@@ -30,6 +30,7 @@ use std::future;
 #[cfg(feature = "runtime")]
 use std::net::IpAddr;
 #[cfg(feature = "runtime")]
+#[cfg(unix)]
 use std::path::PathBuf;
 use std::pin::pin;
 use std::sync::Arc;
