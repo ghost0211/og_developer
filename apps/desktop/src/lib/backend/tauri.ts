@@ -760,6 +760,18 @@ export async function killSession(connectionId: string, pid: number): Promise<vo
   return invoke("kill_session", { connectionId, pid });
 }
 
+export async function writeTextFile(path: string, content: string): Promise<void> {
+  return invoke("write_text_file", { path, content });
+}
+
+export async function ensureDirectory(path: string): Promise<void> {
+  return invoke("ensure_directory", { path });
+}
+
+export async function defaultProjectsRoot(): Promise<string> {
+  return invoke("default_projects_root");
+}
+
 export async function listDirectories(path: string): Promise<string[]> {
   return invoke("list_directories", { path });
 }

@@ -65,6 +65,36 @@ pub async fn list_dir(
     Ok(Json(dirs.map_err(AppError::from)?))
 }
 
+#[derive(Deserialize)]
+pub struct WriteFileRequest {
+    pub path: String,
+    pub content: String,
+}
+
+pub async fn write_text_file(
+    State(_state): State<Arc<WebState>>,
+    Json(req): Json<WriteFileRequest>,
+) -> Result<Json<()>, AppError> {
+    let result = tokio::task::spawn_blocking(move || dbx_core::search::write_text_file(&req.path, &req.content))
+        .await
+        .map_err(|e| AppError::from(format!("file write task failed: {e}")))?;
+    Ok(Json(result.map_err(AppError::from)?))
+}
+
+pub async fn ensure_directory(
+    State(_state): State<Arc<WebState>>,
+    Query(q): Query<DirListQuery>,
+) -> Result<Json<()>, AppError> {
+    let result = tokio::task::spawn_blocking(move || dbx_core::search::ensure_directory(&q.path))
+        .await
+        .map_err(|e| AppError::from(format!("mkdir task failed: {e}")))?;
+    Ok(Json(result.map_err(AppError::from)?))
+}
+
+pub async fn default_projects_root(State(_state): State<Arc<WebState>>) -> Result<Json<String>, AppError> {
+    Ok(Json(dbx_core::search::default_projects_root()))
+}
+
 pub async fn read_text_file(
     State(_state): State<Arc<WebState>>,
     Query(q): Query<ReadFileQuery>,

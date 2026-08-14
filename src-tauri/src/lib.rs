@@ -1165,7 +1165,28 @@ pub fn run() {
                 let plugins_root = state.plugins.root_dir().to_path_buf();
                 let resource_jar =
                     app.path().resolve("resources/opengauss-jdbc-6.0.0.jar", tauri::path::BaseDirectory::Resource).ok();
+                let bundled_plugin_zip =
+                    app.path().resolve("resources/jdbc-plugin.zip", tauri::path::BaseDirectory::Resource).ok();
                 tauri::async_runtime::spawn(async move {
+                    // 已安装的 JDBC 插件若比 bundled 版本旧（如缺 RAISE NOTICE
+                    // 捕获的 0.1.28+），启动时自动从 bundled zip 重装。
+                    if let Some(zip) = bundled_plugin_zip {
+                        if zip.exists() {
+                            let sync_root = plugins_root.clone();
+                            match tauri::async_runtime::spawn_blocking(move || {
+                                dbx_core::jdbc::sync_bundled_jdbc_plugin(&sync_root, &zip)
+                            })
+                            .await
+                            {
+                                Ok(Ok(Some(version))) => {
+                                    log::info!("[jdbc] bundled plugin installed/updated to {version}")
+                                }
+                                Ok(Ok(None)) => {}
+                                Ok(Err(err)) => log::warn!("[jdbc] bundled plugin sync failed: {err}"),
+                                Err(err) => log::warn!("[jdbc] bundled plugin sync task failed: {err}"),
+                            }
+                        }
+                    }
                     if let Some(jar) = resource_jar {
                         if jar.exists() {
                             if let Err(err) = dbx_core::jdbc::seed_bundled_opengauss_driver(&plugins_root, &jar) {
@@ -1278,6 +1299,9 @@ pub fn run() {
             commands::search::search_object_definitions,
             commands::search::list_directories,
             commands::search::read_text_file,
+            commands::search::write_text_file,
+            commands::search::ensure_directory,
+            commands::search::default_projects_root,
             commands::app_settings::save_pinned_tree_node_ids,
             commands::app_settings::load_editor_settings,
             commands::app_settings::save_editor_settings,

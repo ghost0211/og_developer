@@ -9,6 +9,8 @@ import { Label } from "@/components/ui/label";
 import { isTauriRuntime } from "@/lib/backend/tauriRuntime";
 import * as api from "@/lib/backend/api";
 import { useProjectStore } from "@/stores/projectStore";
+import { useConnectionStore } from "@/stores/connectionStore";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 const props = defineProps<{
   open: boolean;
@@ -17,12 +19,14 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   "update:open": [value: boolean];
-  create: [name: string, path: string];
+  create: [name: string, path: string, connectionId?: string];
   select: [projectId: string];
 }>();
 
 const { t } = useI18n();
 const projectStore = useProjectStore();
+const connectionStore = useConnectionStore();
+const bindConnectionId = ref<string | undefined>(undefined);
 
 const dialogOpen = computed({
   get: () => props.open,
@@ -77,7 +81,7 @@ function enterDirectory(entry: string) {
 
 function confirmCreate() {
   if (!name.value.trim() || !path.value.trim()) return;
-  emit("create", name.value.trim(), path.value.trim());
+  emit("create", name.value.trim(), path.value.trim(), bindConnectionId.value || undefined);
   dialogOpen.value = false;
 }
 
@@ -115,6 +119,19 @@ watch(dialogOpen, (open) => {
         <div class="space-y-1.5">
           <Label for="project-name">{{ t("menus.projectName") }}</Label>
           <Input id="project-name" v-model="name" :placeholder="t('menus.projectNamePlaceholder')" />
+        </div>
+        <div class="space-y-1.5">
+          <Label>{{ t("menus.projectConnection") }}</Label>
+          <Select v-model="bindConnectionId">
+            <SelectTrigger class="h-8 w-full text-xs">
+              <SelectValue :placeholder="t('menus.projectConnectionPlaceholder')" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem v-for="connection in connectionStore.connections" :key="connection.id" :value="connection.id">
+                {{ connection.name || connection.id }}
+              </SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       </div>
 

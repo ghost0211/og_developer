@@ -1906,6 +1906,18 @@ export async function killSession(connectionId: string, pid: number): Promise<vo
   return post("/api/sessions/kill", { connection_id: connectionId, pid });
 }
 
+export async function writeTextFile(path: string, content: string): Promise<void> {
+  return post("/api/fs/write-text", { path, content });
+}
+
+export async function ensureDirectory(path: string): Promise<void> {
+  return get(`/api/fs/ensure-dir?${qs({ path })}`);
+}
+
+export async function defaultProjectsRoot(): Promise<string> {
+  return get("/api/fs/default-projects-root");
+}
+
 export async function listDirectories(path: string): Promise<string[]> {
   return get(`/api/fs/list-dir?${qs({ path })}`);
 }

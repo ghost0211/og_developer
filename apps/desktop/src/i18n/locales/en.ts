@@ -88,6 +88,8 @@ export default {
     projectNamePlaceholder: "e.g. core-system",
     projectDirectory: "Project Directory",
     projectDirectoryPlaceholder: "No directory selected",
+    projectConnection: "Bind database connection",
+    projectConnectionPlaceholder: "Optional; new queries default to this connection",
     browse: "Browse",
     parentDirectory: "Parent Directory",
     noProjects: "No projects yet — create one first",

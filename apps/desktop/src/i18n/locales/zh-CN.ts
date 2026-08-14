@@ -91,6 +91,8 @@ export default withEnglishFallback({
     projectNamePlaceholder: "例如：核心系统",
     projectDirectory: "项目目录",
     projectDirectoryPlaceholder: "未选择目录",
+    projectConnection: "绑定数据库连接",
+    projectConnectionPlaceholder: "可选，新建查询时默认使用该连接",
     browse: "浏览",
     parentDirectory: "上级目录",
     noProjects: "暂无项目，请先创建",

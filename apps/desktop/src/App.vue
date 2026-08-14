@@ -984,6 +984,23 @@ async function confirmSaveSqlToLibrary() {
   const tab = activeTab.value;
   const name = saveSqlName.value.trim();
   if (!tab || !tab.sql.trim() || !name) return;
+  const project = projectStore.activeProject.value;
+  if (project) {
+    // 项目模式下：保存为 <项目>/sql/<名称>.sql 文件。
+    try {
+      const filePath = `${projectStore.sqlDirectory(project)}/${defaultSavedSqlName(name)}.sql`;
+      await api.writeTextFile(filePath, tab.sql);
+      queryStore.linkExternalSqlPath(tab.id, filePath, `${name}.sql`);
+      queryStore.markTabClean(tab);
+      saveSqlAsNew.value = false;
+      showSaveSqlDialog.value = false;
+      closePendingSavedTab();
+      toast(t("savedSql.saved"), 2000);
+    } catch (e: any) {
+      toast(t("savedSql.saveFailed", { message: e?.message || String(e) }), 5000);
+    }
+    return;
+  }
   try {
     const target = savedSqlTargetForSave(tab);
     const saved = await savedSqlStore.saveFile({
@@ -1605,11 +1622,22 @@ function onMenuOpenProject() {
 
 function onMenuSelectProject(projectId: string) {
   projectStore.setActiveProject(projectId);
+  const project = projectStore.projects.value.find((candidate) => candidate.id === projectId);
+  if (project?.connectionId && connectionStore.getConfig(project.connectionId)) {
+    connectionStore.activeConnectionId = project.connectionId;
+  }
   toast(t("menus.projectActivated"), 2000);
 }
 
-function onCreateProject(name: string, path: string) {
-  projectStore.addProject(name, path);
+async function onCreateProject(name: string, path: string, connectionId?: string) {
+  try {
+    await api.ensureDirectory(`${path.replace(/[\\/]+$/, "")}/sql`);
+  } catch (e: any) {
+    toast(e?.message || String(e), 5000);
+    return;
+  }
+  projectStore.addProject(name, path, connectionId);
+  if (connectionId) connectionStore.activeConnectionId = connectionId;
   toast(t("menus.projectActivated"), 2000);
 }
 
@@ -2242,6 +2270,7 @@ onMounted(async () => {
   }
   desktopOpenTabsRestorationBarrier = createOpenTabsRestorationBarrier();
   void initApp();
+  void projectStore.ensureDefaultProject({ defaultProjectsRoot: api.defaultProjectsRoot, ensureDirectory: api.ensureDirectory });
   setupFileDrop().catch(() => {});
   api
     .getAppVersion()

@@ -290,3 +290,28 @@ pub fn list_directories(path: &str) -> Result<Vec<String>, String> {
 pub fn read_text_file(path: &str) -> Result<String, String> {
     std::fs::read_to_string(path).map_err(|e| format!("Failed to read {path}: {e}"))
 }
+
+/// Creates a directory tree (mkdir -p), used for project/sql directories.
+pub fn ensure_directory(path: &str) -> Result<(), String> {
+    std::fs::create_dir_all(path).map_err(|e| format!("Failed to create directory {path}: {e}"))
+}
+
+/// Writes a text file, creating parent directories when missing.
+pub fn write_text_file(path: &str, content: &str) -> Result<(), String> {
+    let file = std::path::PathBuf::from(path);
+    if let Some(parent) = file.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent).map_err(|e| format!("Failed to create directory {parent:?}: {e}"))?;
+        }
+    }
+    std::fs::write(&file, content).map_err(|e| format!("Failed to write {path}: {e}"))
+}
+
+/// 默认项目目录：HOME 下的 ogdeveloper-projects（web 与桌面统一）。
+pub fn default_projects_root() -> String {
+    let home = std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(|path| path.to_string_lossy().to_string())
+        .unwrap_or_else(|| ".".to_string());
+    format!("{home}/ogdeveloper-projects")
+}

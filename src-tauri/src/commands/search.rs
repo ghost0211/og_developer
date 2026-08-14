@@ -48,3 +48,18 @@ pub fn list_directories(path: String) -> Result<Vec<String>, String> {
 pub fn read_text_file(path: String) -> Result<String, String> {
     dbx_core::search::read_text_file(&path)
 }
+
+#[tauri::command]
+pub fn write_text_file(path: String, content: String) -> Result<(), String> {
+    dbx_core::search::write_text_file(&path, &content)
+}
+
+#[tauri::command]
+pub fn ensure_directory(path: String) -> Result<(), String> {
+    dbx_core::search::ensure_directory(&path)
+}
+
+#[tauri::command]
+pub fn default_projects_root() -> Result<String, String> {
+    Ok(dbx_core::search::default_projects_root())
+}

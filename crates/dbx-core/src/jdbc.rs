@@ -302,6 +302,70 @@ pub async fn install_jdbc_plugin_from_file(plugins_root: &Path, file_path: &str)
     jdbc_plugin_status_from_dir(&status_dir).await
 }
 
+/// og developer: 桌面端启动时把 bundled 的 JDBC 插件与已安装版本比对；
+/// 已安装版本较旧（如缺 RAISE NOTICE 捕获的 0.1.28+）时从 zip 重装。
+pub fn sync_bundled_jdbc_plugin(plugins_root: &Path, bundled_zip: &Path) -> Result<Option<String>, String> {
+    if !bundled_zip.exists() {
+        return Ok(None);
+    }
+    let Some(bundled_version) = read_zip_manifest_version(bundled_zip)? else {
+        return Ok(None);
+    };
+    let installed_manifest = match std::fs::read_to_string(plugins_root.join("jdbc").join("manifest.json")) {
+        Ok(raw) => serde_json::from_str::<PluginManifest>(&raw).map_err(|err| err.to_string())?,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            // 未安装：直接装 bundled。
+            let bytes =
+                std::fs::read(bundled_zip).map_err(|err| format!("Failed to read bundled JDBC plugin: {err}"))?;
+            install_jdbc_plugin_zip(&bytes, &plugins_root.join("jdbc"))?;
+            return Ok(Some(bundled_version));
+        }
+        Err(err) => return Err(err.to_string()),
+    };
+    let installed_version = installed_manifest.version;
+    if version_newer_than(&bundled_version, &installed_version) {
+        let bytes = std::fs::read(bundled_zip).map_err(|err| format!("Failed to read bundled JDBC plugin: {err}"))?;
+        install_jdbc_plugin_zip(&bytes, &plugins_root.join("jdbc"))?;
+        Ok(Some(bundled_version))
+    } else {
+        Ok(None)
+    }
+}
+
+fn read_zip_manifest_version(zip_path: &Path) -> Result<Option<String>, String> {
+    let bytes = std::fs::read(zip_path).map_err(|err| format!("Failed to read {zip_path:?}: {err}"))?;
+    let cursor = std::io::Cursor::new(bytes);
+    let mut archive = zip::ZipArchive::new(cursor).map_err(|err| err.to_string())?;
+    for index in 0..archive.len() {
+        let mut entry = archive.by_index(index).map_err(|err| err.to_string())?;
+        if entry.name().ends_with("manifest.json") {
+            let mut raw = String::new();
+            use std::io::Read;
+            entry.read_to_string(&mut raw).map_err(|err| err.to_string())?;
+            let manifest: PluginManifest = serde_json::from_str(&raw).map_err(|err| err.to_string())?;
+            return Ok(Some(manifest.version));
+        }
+    }
+    Ok(None)
+}
+
+/// 简单 semver 比较（x.y.z，无预发布）。
+fn version_newer_than(candidate: &str, current: &str) -> bool {
+    fn parts(version: &str) -> Vec<u32> {
+        version.split('.').filter_map(|part| part.parse::<u32>().ok()).collect()
+    }
+    let candidate = parts(candidate);
+    let current = parts(current);
+    for index in 0..candidate.len().max(current.len()) {
+        let left = candidate.get(index).copied().unwrap_or(0);
+        let right = current.get(index).copied().unwrap_or(0);
+        if left != right {
+            return left > right;
+        }
+    }
+    false
+}
+
 pub fn uninstall_jdbc_plugin(plugins_root: &Path) -> Result<JdbcPluginStatus, String> {
     let plugin_dir = plugins_root.join("jdbc");
     for entry in ["manifest.json", "bin", "lib"] {
