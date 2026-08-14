@@ -517,6 +517,7 @@ const groupTypes: Set<TreeNodeType> = new Set([
   "group-packages",
   "group-package-bodies",
   "group-types",
+  "group-jobs",
   "group-partitions",
   "group-extensions",
 ]);
@@ -4609,6 +4610,74 @@ function treeTableClipboardMenuItems(node: TreeNode): ContextMenuItem[] {
   return state === "paste" ? [pasteItem] : [copyItem, pasteItem];
 }
 
+function createGroupObjectTemplate() {
+  const node = activeNode.value;
+  if (!node.connectionId || !node.database) return;
+  const config = connectionStore.getConfig(node.connectionId);
+  const dbType = effectiveDatabaseTypeForConnection(config);
+  const isOpenGauss = dbType === "opengauss" || dbType === "gaussdb";
+  const schemaName = node.schema ? `${node.schema}.` : "";
+  const templates: Partial<Record<TreeNode["type"], { title: string; name: string; objectType: string; sql: string }>> = {};
+  templates["group-procedures"] = {
+    title: t("contextMenu.createProcedure"),
+    name: "new_proc",
+    objectType: "PROCEDURE",
+    sql: isOpenGauss ? `CREATE OR REPLACE PROCEDURE ${schemaName}new_proc(\n  p_param text DEFAULT NULL\n)\nAS\nBEGIN\n  NULL;\nEND;\n` : `CREATE OR REPLACE PROCEDURE ${schemaName}new_proc()\nLANGUAGE plpgsql\nAS $$\nBEGIN\n  NULL;\nEND $$;\n`,
+  };
+  templates["group-functions"] = {
+    title: t("contextMenu.createFunction"),
+    name: "new_func",
+    objectType: "FUNCTION",
+    sql: isOpenGauss ? `CREATE OR REPLACE FUNCTION ${schemaName}new_func(p_param text DEFAULT NULL)\nRETURNS text\nAS\nBEGIN\n  RETURN p_param;\nEND;\n` : `CREATE OR REPLACE FUNCTION ${schemaName}new_func()\nRETURNS text\nLANGUAGE sql\nAS $$ SELECT 'ok' $$;\n`,
+  };
+  templates["group-packages"] = {
+    title: t("contextMenu.createPackage"),
+    name: "new_pkg",
+    objectType: "PACKAGE",
+    sql: `CREATE OR REPLACE PACKAGE ${schemaName}new_pkg AS\n  -- 声明包内的过程/函数\nEND new_pkg;\n`,
+  };
+  templates["group-types"] = {
+    title: t("contextMenu.createType"),
+    name: "new_type",
+    objectType: "TYPE",
+    sql: isOpenGauss ? `CREATE TYPE ${schemaName}new_type AS (\n  attr1 text,\n  attr2 integer\n);\n` : `CREATE TYPE ${schemaName}new_type AS (\n  attr1 text,\n  attr2 integer\n);\n`,
+  };
+  templates["group-sequences"] = {
+    title: t("contextMenu.createSequence"),
+    name: "new_seq",
+    objectType: "SEQUENCE",
+    sql: `CREATE SEQUENCE ${schemaName}new_seq\n  START WITH 1\n  INCREMENT BY 1\n  NO CYCLE;\n`,
+  };
+  templates["group-synonyms"] = {
+    title: t("contextMenu.createSynonym"),
+    name: "new_syn",
+    objectType: "SYNONYM",
+    sql: `CREATE SYNONYM ${schemaName}new_syn FOR ${schemaName}target_object;\n`,
+  };
+  templates["group-triggers"] = {
+    title: t("contextMenu.createTrigger"),
+    name: "new_trg",
+    objectType: "TRIGGER",
+    sql: isOpenGauss ? `CREATE TRIGGER new_trg\nAFTER INSERT ON ${schemaName}target_table\nFOR EACH ROW\nEXECUTE PROCEDURE ${schemaName}new_trg_fn();\n` : `CREATE TRIGGER new_trg\nAFTER INSERT ON ${schemaName}target_table\nFOR EACH ROW\nEXECUTE FUNCTION ${schemaName}new_trg_fn();\n`,
+  };
+  templates["group-jobs"] = {
+    title: t("contextMenu.createJob"),
+    name: "new_job",
+    objectType: "JOB",
+    sql: `-- openGauss 作业通过 pkg_service 提交\nCALL pkg_service.job_submit(\n  1,\n  'new_job',\n  'begin\n    -- 作业要执行的逻辑\n    null;\n  end;',\n  'sysdate',\n  '1 day'\n);\n`,
+  };
+  const template = templates[node.type];
+  if (!template) return;
+  connectionStore.activeConnectionId = node.connectionId;
+  const tabId = queryStore.createTab(node.connectionId, node.database, template.title, "query", node.schema, undefined, node.catalog);
+  queryStore.updateSql(tabId, template.sql);
+  queryStore.setObjectSource(tabId, {
+    schema: node.schema,
+    name: template.name,
+    objectType: template.objectType as "PROCEDURE" | "FUNCTION" | "PACKAGE" | "TYPE" | "SEQUENCE" | "SYNONYM" | "TRIGGER" | "JOB",
+  });
+}
+
 function buildObjectGroupSidebarMenu(context: SidebarMenuFactoryContext): boolean {
   const { node, items } = context;
   // 9. Group Labels (group-columns, group-tables, etc.)
@@ -4616,8 +4685,10 @@ function buildObjectGroupSidebarMenu(context: SidebarMenuFactoryContext): boolea
     const mysqlObjectTemplate = node.connectionId ? mysqlObjectTemplateForGroup(connectionStore.getConfig(node.connectionId), node) : null;
     const hasMongoCreateIndexAction = node.type === "group-indexes" && canCreateMongoIndex.value;
     const hasMongoDropAllIndexesAction = node.type === "group-indexes" && canDropAllMongoIndexes.value;
-    const hasGroupAction = (node.type === "group-tables" && canCreateTable.value) || (node.type === "group-views" && !!node.connectionId && !!node.database) || !!mysqlObjectTemplate || hasMongoCreateIndexAction || hasMongoDropAllIndexesAction;
-    const canLoadAllObjectGroup = node.type === "group-tables" || node.type === "group-views" || node.type === "group-materialized-views";
+    const creatableObjectGroups = new Set<TreeNode["type"]>(["group-procedures", "group-functions", "group-packages", "group-types", "group-sequences", "group-synonyms", "group-triggers", "group-jobs"]);
+    const canCreateGroupObject = creatableObjectGroups.has(node.type) && !!node.connectionId && !!node.database;
+    const hasGroupAction = (node.type === "group-tables" && canCreateTable.value) || (node.type === "group-views" && !!node.connectionId && !!node.database) || !!mysqlObjectTemplate || hasMongoCreateIndexAction || hasMongoDropAllIndexesAction || canCreateGroupObject;
+    const canLoadAllObjectGroup = !!objectTypesForGroupNode(node.type);
     if (node.type === "group-tables" && canCreateTable.value) {
       items.push({ label: t("contextMenu.createTable"), action: createTable, icon: Plus });
       if (canOpenTableImport.value) {
@@ -4629,6 +4700,19 @@ function buildObjectGroupSidebarMenu(context: SidebarMenuFactoryContext): boolea
     }
     if (node.type === "group-views" && node.connectionId && node.database) {
       items.push({ label: t("contextMenu.createView"), action: createView, icon: Plus });
+    }
+    if (canCreateGroupObject) {
+      const labelByGroup: Partial<Record<TreeNode["type"], string>> = {
+        "group-procedures": t("contextMenu.createProcedure"),
+        "group-functions": t("contextMenu.createFunction"),
+        "group-packages": t("contextMenu.createPackage"),
+        "group-types": t("contextMenu.createType"),
+        "group-sequences": t("contextMenu.createSequence"),
+        "group-synonyms": t("contextMenu.createSynonym"),
+        "group-triggers": t("contextMenu.createTrigger"),
+        "group-jobs": t("contextMenu.createJob"),
+      };
+      items.push({ label: labelByGroup[node.type] ?? t("contextMenu.createObject"), action: createGroupObjectTemplate, icon: Plus });
     }
     if (mysqlObjectTemplate) {
       items.push({ label: t(mysqlObjectTemplate.titleKey), action: createMysqlObjectTemplate, icon: Plus });

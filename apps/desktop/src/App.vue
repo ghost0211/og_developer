@@ -117,6 +117,7 @@ const LoginPage = defineAsyncComponent(() => import("@/components/auth/LoginPage
 const QuickOpenDialog = defineAsyncComponent(() => import("@/components/quick-open/QuickOpenDialog.vue"));
 const ProjectDialog = defineAsyncComponent(() => import("@/components/projects/ProjectDialog.vue"));
 const MenuSearchDialog = defineAsyncComponent(() => import("@/components/search/MenuSearchDialog.vue"));
+const SessionsDialog = defineAsyncComponent(() => import("@/components/sessions/SessionsDialog.vue"));
 const QueryEditorDdlViewDialog = defineAsyncComponent(() => import("@/components/objects/DdlViewDialog.vue"));
 const QueryEditorObjectSourceDialog = defineAsyncComponent(() => import("@/components/objects/ObjectSourceDialog.vue"));
 
@@ -156,6 +157,7 @@ const showQuickOpen = ref(false);
 const projectStore = useProjectStore();
 const projectDialog = ref<{ open: boolean; mode: "create" | "open" }>({ open: false, mode: "create" });
 const menuSearchDialog = ref<{ open: boolean; mode: MenuSearchMode }>({ open: false, mode: "files" });
+const sessionsDialogOpen = ref(false);
 const showHistory = ref(false);
 const showAiPanel = ref(safeLocalStorageGet("dbx-ai-panel-open") === "true");
 const showSqlLibraryPanel = ref(safeLocalStorageGet("dbx-sql-library-open") === "true");
@@ -198,6 +200,7 @@ const queryEditorObjectSourceTarget = ref<{
   relationName?: string;
 } | null>(null);
 const showSaveSqlDialog = ref(false);
+const saveSqlAsNew = ref(false);
 const saveSqlName = ref("");
 const ROOT_SAVED_SQL_FOLDER = "__root__";
 const { selection: saveSqlFolderId, pending: saveSqlFolderCreationPending, reset: resetSaveSqlFolderSelection, invalidate: invalidateSaveSqlFolderSelection, select: selectSaveSqlFolder } = useSaveSqlFolderSelection(ROOT_SAVED_SQL_FOLDER);
@@ -882,6 +885,15 @@ async function handleSaveTab(tabId: string) {
   showSaveSqlDialog.value = true;
 }
 
+function openSaveSqlAsDialog() {
+  const tab = activeTab.value;
+  if (!tab || !canSaveSqlTab(tab)) return;
+  saveSqlAsNew.value = true;
+  saveSqlName.value = defaultSavedSqlName(tab.title);
+  resetSaveSqlFolderSelection(ROOT_SAVED_SQL_FOLDER);
+  showSaveSqlDialog.value = true;
+}
+
 async function openSaveSqlDialog() {
   const tab = activeTab.value;
   if (!tab || !canSaveSqlTab(tab)) return;
@@ -988,7 +1000,7 @@ async function confirmSaveSqlToLibrary() {
   try {
     const target = savedSqlTargetForSave(tab);
     const saved = await savedSqlStore.saveFile({
-      id: tab.savedSqlId,
+      id: saveSqlAsNew.value ? undefined : tab.savedSqlId,
       connectionId: target.connectionId,
       folderId: saveSqlFolderId.value === ROOT_SAVED_SQL_FOLDER ? undefined : saveSqlFolderId.value,
       name: defaultSavedSqlName(name),
@@ -998,6 +1010,7 @@ async function confirmSaveSqlToLibrary() {
     });
     queryStore.linkSavedSql(tab.id, saved.id, saved.name);
     queryStore.markTabClean(tab);
+    saveSqlAsNew.value = false;
     showSaveSqlDialog.value = false;
     closePendingSavedTab();
     toast(t("savedSql.saved"), 2000);
@@ -2287,6 +2300,7 @@ onUnmounted(() => {
           @new-query="newQuery"
           @open-editor-sql-file="openSqlFile"
           @save-sql="void openSaveSqlDialog()"
+          @save-sql-as="openSaveSqlAsDialog()"
           @import-result-archive="importResultArchive"
           @close-active-tab="closeActiveTab"
           @import-config="dialogs.onImportClick()"
@@ -2313,6 +2327,7 @@ onUnmounted(() => {
           @search-files="openMenuSearch('files')"
           @search-metadata="openMenuSearch('metadata')"
           @search-objects="openMenuSearch('objects')"
+          @open-sessions="sessionsDialogOpen = true"
           @open-transfer="dialogs.showTransferDialog.value = true"
           @open-sql-file="dialogs.showSqlFileDialog.value = true"
           @open-schema-diff="dialogs.showSchemaDiffDialog.value = true"
@@ -2573,6 +2588,7 @@ onUnmounted(() => {
         <CloseActionPromptDialog v-if="isDesktop && showCloseActionPrompt" :open="showCloseActionPrompt" @update:open="handleCloseActionPromptOpenChange" @quit="chooseQuit" @minimize="chooseMinimize" />
         <QuickOpenDialog :open="showQuickOpen" @update:open="showQuickOpen = $event" @select="handleQuickOpenSelect" />
         <ProjectDialog :open="projectDialog.open" :mode="projectDialog.mode" @update:open="projectDialog.open = $event" @create="onCreateProject" @select="onMenuSelectProject" />
+        <SessionsDialog :open="sessionsDialogOpen" @update:open="sessionsDialogOpen = $event" />
         <MenuSearchDialog :open="menuSearchDialog.open" :mode="menuSearchDialog.mode" @update:open="menuSearchDialog.open = $event" @open-file="openFileFromMenuSearch" @open-object="openObjectFromMenuSearch" />
       </div>
       <Teleport to="body">

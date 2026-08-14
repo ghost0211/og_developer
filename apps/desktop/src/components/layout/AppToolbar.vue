@@ -33,6 +33,7 @@ const emit = defineEmits<{
   "new-query": [];
   "open-editor-sql-file": [];
   "save-sql": [];
+  "save-sql-as": [];
   "import-result-archive": [];
   "close-active-tab": [];
   "import-config": [];
@@ -59,6 +60,7 @@ const emit = defineEmits<{
   "search-files": [];
   "search-metadata": [];
   "search-objects": [];
+  "open-sessions": [];
   "open-transfer": [];
   "open-sql-file": [];
   "open-schema-diff": [];
@@ -210,6 +212,7 @@ const toolbarStyle = computed(() => {
         @new-query="emit('new-query')"
         @open-editor-sql-file="emit('open-editor-sql-file')"
         @save-sql="emit('save-sql')"
+        @save-sql-as="emit('save-sql-as')"
         @import-result-archive="emit('import-result-archive')"
         @close-active-tab="emit('close-active-tab')"
         @import-config="emit('import-config')"
@@ -236,6 +239,7 @@ const toolbarStyle = computed(() => {
         @search-files="emit('search-files')"
         @search-metadata="emit('search-metadata')"
         @search-objects="emit('search-objects')"
+        @open-sessions="emit('open-sessions')"
         @open-transfer="emit('open-transfer')"
         @open-sql-file="emit('open-sql-file')"
         @open-schema-diff="emit('open-schema-diff')"

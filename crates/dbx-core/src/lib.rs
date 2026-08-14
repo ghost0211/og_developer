@@ -69,6 +69,7 @@ pub mod schema;
 pub mod schema_diff;
 pub mod script_generator;
 pub mod search;
+pub mod sessions;
 pub mod sql;
 pub mod sql_analysis;
 pub mod sql_diagnostics;

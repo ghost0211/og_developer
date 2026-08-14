@@ -1192,6 +1192,8 @@ function onKeydown(event: KeyboardEvent) {
                   node.type === 'group-synonyms' ||
                   node.type === 'group-packages' ||
                   node.type === 'group-package-bodies' ||
+                  node.type === 'group-types' ||
+                  node.type === 'group-jobs' ||
                   node.type === 'group-partitions') &&
                 node.objectCount != null
               "

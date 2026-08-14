@@ -1887,6 +1887,27 @@ export async function searchObjectDefinitions(query: string, limit = 100): Promi
   return post("/api/search/object-definitions", { query, limit });
 }
 
+export interface SessionInfo {
+  connection_id: string;
+  connection_name: string;
+  pid: number;
+  username: string;
+  database: string;
+  application_name: string;
+  client_addr: string;
+  state: string;
+  query: string;
+  backend_start: string;
+}
+
+export async function listSessions(): Promise<SessionInfo[]> {
+  return get("/api/sessions/list");
+}
+
+export async function killSession(connectionId: string, pid: number): Promise<void> {
+  return post("/api/sessions/kill", { connection_id: connectionId, pid });
+}
+
 export async function listDirectories(path: string): Promise<string[]> {
   return get(`/api/fs/list-dir?${qs({ path })}`);
 }

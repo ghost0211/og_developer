@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useI18n } from "vue-i18n";
-import { ArrowLeftRight, BookMarked, Clipboard, ClipboardPaste, Copy, DatabaseZap, FileCode, FileDown, FileInput, FileOutput, FilePlus2, FolderOpen, FolderSearch, GitCompareArrows, Info, Redo2, Scissors, Search, Settings, SunMoon, TableProperties, Undo2, X } from "@lucide/vue";
+import { ArrowLeftRight, BookMarked, Clipboard, ClipboardPaste, Copy, DatabaseZap, FileCode, FileDown, FileInput, FileOutput, FilePlus2, FolderOpen, FolderSearch, GitCompareArrows, Info, Network, Redo2, Scissors, Search, Settings, SunMoon, TableProperties, Undo2, X } from "@lucide/vue";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuPortal, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import type { AppThemeMode } from "@/lib/app/appTheme";
 import type { SqlProject } from "@/stores/projectStore";
@@ -21,6 +21,7 @@ const emit = defineEmits<{
   "new-query": [];
   "open-editor-sql-file": [];
   "save-sql": [];
+  "save-sql-as": [];
   "import-result-archive": [];
   "close-active-tab": [];
   "import-config": [];
@@ -40,6 +41,7 @@ const emit = defineEmits<{
   "search-files": [];
   "search-metadata": [];
   "search-objects": [];
+  "open-sessions": [];
   "close-other-tabs": [];
   "toggle-ai": [];
   "toggle-history": [];
@@ -84,6 +86,10 @@ const shortcutClass = "ml-auto pl-6 text-[10px] text-muted-foreground";
         <DropdownMenuItem :disabled="!canSaveSql" :class="menuItemClass" @select="emit('save-sql')">
           <FileDown :class="menuIconClass" />
           {{ t("menus.saveSql") }}
+        </DropdownMenuItem>
+        <DropdownMenuItem :disabled="!canSaveSql" :class="menuItemClass" @select="emit('save-sql-as')">
+          <FileOutput :class="menuIconClass" />
+          {{ t("menus.saveSqlAs") }}
         </DropdownMenuItem>
         <DropdownMenuItem :class="menuItemClass" @select="emit('import-result-archive')">
           <FileInput :class="menuIconClass" />
@@ -210,6 +216,10 @@ const shortcutClass = "ml-auto pl-6 text-[10px] text-muted-foreground";
         <button type="button" :class="menuTriggerClass" role="menuitem">{{ t("menus.tools") }}</button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" class="w-60">
+        <DropdownMenuItem :disabled="!hasConnections" :class="menuItemClass" @select="emit('open-sessions')">
+          <Network :class="menuIconClass" />
+          {{ t("sessions.title") }}
+        </DropdownMenuItem>
         <DropdownMenuItem :disabled="!hasConnections" :class="menuItemClass" @select="emit('open-transfer')">
           <ArrowLeftRight :class="menuIconClass" />
           {{ t("transfer.dataTransfer") }}

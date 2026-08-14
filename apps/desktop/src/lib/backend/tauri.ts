@@ -754,6 +754,14 @@ export async function searchObjectDefinitions(query: string, limit = 100): Promi
   return invoke("search_object_definitions", { query, limit });
 }
 
+export async function listSessions(): Promise<Awaited<ReturnType<typeof import("./http").listSessions>>[number][]> {
+  return invoke("list_sessions");
+}
+
+export async function killSession(connectionId: string, pid: number): Promise<void> {
+  return invoke("kill_session", { connectionId, pid });
+}
+
 export async function listDirectories(path: string): Promise<string[]> {
   return invoke("list_directories", { path });
 }

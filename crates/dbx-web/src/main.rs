@@ -375,6 +375,8 @@ async fn main() {
         .route("/schema/completion-assistant", post(routes::schema::completion_assistant_search))
         .route("/schema/object-source", get(routes::schema::get_object_source))
         .route("/search/files", get(routes::search::search_files))
+        .route("/sessions/list", get(routes::sessions::list_sessions))
+        .route("/sessions/kill", post(routes::sessions::kill_session))
         .route("/search/metadata", post(routes::search::search_metadata))
         .route("/search/object-definitions", post(routes::search::search_object_definitions))
         .route("/fs/list-dir", get(routes::search::list_dir))
