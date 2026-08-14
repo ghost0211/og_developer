@@ -87,6 +87,7 @@ export default {
     projectName: "Project Name",
     projectNamePlaceholder: "e.g. core-system",
     projectDirectory: "Project Directory",
+    projectDirectoryPlaceholder: "No directory selected",
     browse: "Browse",
     parentDirectory: "Parent Directory",
     noProjects: "No projects yet — create one first",

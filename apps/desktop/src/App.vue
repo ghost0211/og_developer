@@ -2343,6 +2343,7 @@ onUnmounted(() => {
             :classic-layout="isClassicLayout"
             @import="dialogs.onImportClick"
             @export="dialogs.onExportClick"
+            @new-connection="showConnectionDialog = true"
             @start-resize="startSidebarResize"
             @collapse="setSidebarOpen(false)"
             @open-settings="(initialTab) => openSettings(initialTab ?? 'appearance')"

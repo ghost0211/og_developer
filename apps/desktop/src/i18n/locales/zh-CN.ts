@@ -90,6 +90,7 @@ export default withEnglishFallback({
     projectName: "项目名称",
     projectNamePlaceholder: "例如：核心系统",
     projectDirectory: "项目目录",
+    projectDirectoryPlaceholder: "未选择目录",
     browse: "浏览",
     parentDirectory: "上级目录",
     noProjects: "暂无项目，请先创建",

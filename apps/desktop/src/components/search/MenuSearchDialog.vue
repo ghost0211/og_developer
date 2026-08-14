@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import * as api from "@/lib/backend/api";
 import { useProjectStore } from "@/stores/projectStore";
+import { isTauriRuntime } from "@/lib/backend/tauriRuntime";
 
 export type MenuSearchMode = "files" | "metadata" | "objects";
 
@@ -24,6 +25,18 @@ const emit = defineEmits<{
 
 const { t } = useI18n();
 const projectStore = useProjectStore();
+const isDesktop = isTauriRuntime();
+
+async function pickDirectory() {
+  if (!isDesktop) return;
+  try {
+    const { open } = await import("@tauri-apps/plugin-dialog");
+    const selected = await open({ directory: true, multiple: false });
+    if (typeof selected === "string") root.value = selected;
+  } catch (e: any) {
+    error.value = e?.message || String(e);
+  }
+}
 
 const dialogOpen = computed({
   get: () => props.open,
@@ -118,34 +131,45 @@ function openDefinition(hit: { connection_id: string; database: string; schema: 
         </TabsList>
 
         <div v-if="activeMode === 'files'" class="space-y-2">
-          <div class="flex items-center gap-2">
-            <Input v-model="root" :placeholder="t('menus.searchRootPlaceholder')" @keyup.enter="search" />
-            <Button type="button" variant="outline" @click="refreshDirs"><RefreshCw class="h-3.5 w-3.5" /></Button>
-          </div>
-          <div v-if="dirEntries.length" class="flex max-h-24 flex-wrap gap-1 overflow-y-auto rounded-md border bg-muted/20 p-1.5">
-            <button
-              type="button"
-              class="rounded-sm px-2 py-0.5 text-xs hover:bg-muted"
-              @click="
-                root = parentOf(root);
-                refreshDirs();
-              "
-            >
-              ../
-            </button>
-            <button
-              v-for="entry in dirEntries"
-              :key="entry"
-              type="button"
-              class="rounded-sm px-2 py-0.5 text-xs hover:bg-muted"
-              @click="
-                root = entry;
-                refreshDirs();
-              "
-            >
-              {{ entry.split(/[\\/]/).pop() }}
-            </button>
-          </div>
+          <template v-if="isDesktop">
+            <div class="flex items-center gap-2">
+              <Button type="button" variant="outline" size="sm" @click="pickDirectory">
+                <FolderOpen class="mr-1 h-3.5 w-3.5" />
+                {{ t("menus.browse") }}
+              </Button>
+              <span class="min-w-0 flex-1 truncate rounded-md border bg-muted/20 px-2 py-1.5 text-xs text-muted-foreground">{{ root || t("menus.searchRootPlaceholder") }}</span>
+            </div>
+          </template>
+          <template v-else>
+            <div class="flex items-center gap-2">
+              <Input v-model="root" :placeholder="t('menus.searchRootPlaceholder')" @keyup.enter="search" />
+              <Button type="button" variant="outline" @click="refreshDirs"><RefreshCw class="h-3.5 w-3.5" /></Button>
+            </div>
+            <div v-if="dirEntries.length" class="flex max-h-24 flex-wrap gap-1 overflow-y-auto rounded-md border bg-muted/20 p-1.5">
+              <button
+                type="button"
+                class="rounded-sm px-2 py-0.5 text-xs hover:bg-muted"
+                @click="
+                  root = parentOf(root);
+                  refreshDirs();
+                "
+              >
+                ../
+              </button>
+              <button
+                v-for="entry in dirEntries"
+                :key="entry"
+                type="button"
+                class="rounded-sm px-2 py-0.5 text-xs hover:bg-muted"
+                @click="
+                  root = entry;
+                  refreshDirs();
+                "
+              >
+                {{ entry.split(/[\\/]/).pop() }}
+              </button>
+            </div>
+          </template>
         </div>
 
         <div class="flex items-center gap-2">

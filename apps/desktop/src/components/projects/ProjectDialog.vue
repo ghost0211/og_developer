@@ -120,17 +120,27 @@ watch(dialogOpen, (open) => {
 
       <div class="space-y-1.5">
         <Label for="project-path">{{ t("menus.projectDirectory") }}</Label>
-        <div class="flex items-center gap-2">
-          <Input id="project-path" v-model="path" @keyup.enter="browse" />
-          <Button v-if="isDesktop" type="button" variant="outline" @click="pickDirectory">{{ t("menus.browse") }}</Button>
-          <Button type="button" variant="outline" :disabled="browsing" @click="browse">
-            <RefreshCw class="h-3.5 w-3.5" :class="{ 'animate-spin': browsing }" />
-          </Button>
-        </div>
-        <p v-if="browseError" class="text-xs text-destructive">{{ browseError }}</p>
+        <template v-if="isDesktop">
+          <div class="flex items-center gap-2">
+            <Button type="button" variant="outline" @click="pickDirectory">
+              <FolderOpen class="mr-1 h-3.5 w-3.5" />
+              {{ t("menus.browse") }}
+            </Button>
+            <span class="min-w-0 flex-1 truncate rounded-md border bg-muted/20 px-2 py-1.5 text-xs text-muted-foreground">{{ path || t("menus.projectDirectoryPlaceholder") }}</span>
+          </div>
+        </template>
+        <template v-else>
+          <div class="flex items-center gap-2">
+            <Input id="project-path" v-model="path" @keyup.enter="browse" />
+            <Button type="button" variant="outline" :disabled="browsing" @click="browse">
+              <RefreshCw class="h-3.5 w-3.5" :class="{ 'animate-spin': browsing }" />
+            </Button>
+          </div>
+          <p v-if="browseError" class="text-xs text-destructive">{{ browseError }}</p>
+        </template>
       </div>
 
-      <div class="max-h-48 space-y-0.5 overflow-y-auto rounded-md border bg-muted/20 p-1.5">
+      <div v-if="!isDesktop" class="max-h-48 space-y-0.5 overflow-y-auto rounded-md border bg-muted/20 p-1.5">
         <button
           type="button"
           class="flex w-full items-center gap-2 rounded-sm px-2 py-1 text-left text-xs hover:bg-muted"

@@ -2,7 +2,7 @@
 import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { translateBackendError } from "@/i18n/backend-errors";
-import { Upload, Download, FolderPlus, RefreshCw, ChevronsLeft, ChevronsUp, Trash2, FolderInput, Check, Minus, Square, X } from "@lucide/vue";
+import { Upload, Download, FolderPlus, RefreshCw, ChevronsLeft, ChevronsUp, Trash2, FolderInput, Check, Minus, Square, X, DatabaseZap } from "@lucide/vue";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -19,6 +19,7 @@ defineProps<{
 
 const emit = defineEmits<{
   import: [source: "dbx" | "navicat" | "dbeaver" | "datagrip"];
+  "new-connection": [];
   export: [];
   startResize: [event: MouseEvent];
   collapse: [];
@@ -197,6 +198,11 @@ defineExpose({ focusSearch });
           </LightTooltip>
         </template>
         <template v-else>
+          <LightTooltip :text="t('toolbar.newConnection')" side="bottom" :delay="0" :close-delay="0" nowrap>
+            <Button variant="ghost" size="icon" class="h-5 w-5" @click="emit('new-connection')">
+              <DatabaseZap class="h-3.5 w-3.5" />
+            </Button>
+          </LightTooltip>
           <LightTooltip :text="t('sidebar.import')" side="bottom" :delay="0" :close-delay="0" nowrap>
             <span class="inline-flex">
               <LightDropdown
