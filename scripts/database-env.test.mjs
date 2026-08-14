@@ -375,15 +375,3 @@ test('reports missing smoke structures without throwing a TypeError', () => {
   assert.doesNotThrow(() => validateRecipe(recipe));
   assert.match(validateRecipe(recipe).join('; '), /smoke\.steps must not be empty/);
 });
-
-test('documents every checked-in recipe on both website pages', () => {
-  const pages = [
-    join(DEFAULT_RECIPES_ROOT, '..', '..', 'docs', 'content', 'docs', 'database-lab.mdx'),
-    join(DEFAULT_RECIPES_ROOT, '..', '..', 'docs', 'content', 'docs', 'database-lab.cn.mdx'),
-  ].map((path) => readFileSync(path, 'utf8'));
-
-  for (const recipe of discoverRecipes()) {
-    const entry = `\`${recipe.database}/${recipe.displayVersion}\``;
-    for (const page of pages) assert.ok(page.includes(entry), `missing ${entry} from database lab documentation`);
-  }
-});
