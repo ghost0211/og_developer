@@ -30,7 +30,6 @@ import { useDataGridActions } from "@/composables/useDataGridActions";
 import { useTauriEvents } from "@/composables/useTauriEvents";
 import { useCloseActionPrompt, type AppCloseAction, type AppCloseRequestOptions } from "@/composables/useCloseActionPrompt";
 import { useVisibilityChange } from "@/composables/useVisibilityChange";
-import { useWebDavAutoUpload } from "@/composables/useWebDavAutoUpload";
 import { useScheduledDatabaseBackups } from "@/composables/useScheduledDatabaseBackups";
 import { shouldDrawDesktopWindowFrame } from "@/composables/useWindowControls";
 import { createOpenTabsRestorationBarrier, initializeDesktopOpenTabs, type OpenTabsRestorationBarrier } from "@/lib/app/openTabsStartup";
@@ -317,7 +316,6 @@ const { setupTauriListeners, cleanupTauriListeners } = useTauriEvents({
 });
 const { performCloseAction, setupCloseActionPromptListener, cleanupCloseActionPromptListener } = useCloseActionPrompt({ requestClose: requestAppClose });
 useVisibilityChange();
-useWebDavAutoUpload();
 useScheduledDatabaseBackups({ scheduler: true });
 
 const appVersion = ref("");

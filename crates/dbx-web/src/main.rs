@@ -771,32 +771,7 @@ async fn main() {
             "/app-settings/max-retries",
             get(routes::app_settings::load_max_retries).put(routes::app_settings::save_max_retries),
         )
-        .route("/app-settings/config/decrypt", post(routes::app_settings::decrypt_config))
-        // Cloud sync
-        .route("/cloud-sync/webdav/test", post(routes::cloud_sync::webdav_sync_test))
-        .route("/cloud-sync/webdav/password-status", post(routes::cloud_sync::webdav_password_status))
-        .route("/cloud-sync/webdav/save-password", post(routes::cloud_sync::save_webdav_saved_password))
-        .route("/cloud-sync/webdav/forget-password", post(routes::cloud_sync::forget_webdav_saved_password))
-        .route("/cloud-sync/webdav/sync-secrets-status", post(routes::cloud_sync::webdav_sync_secrets_status))
-        .route(
-            "/cloud-sync/webdav/save-sync-secrets-preference",
-            post(routes::cloud_sync::save_webdav_sync_secrets_preference),
-        )
-        .route(
-            "/cloud-sync/webdav/forget-sync-secrets-passphrase",
-            post(routes::cloud_sync::forget_webdav_sync_secrets_passphrase),
-        )
-        .route("/cloud-sync/webdav/upload", post(routes::cloud_sync::webdav_sync_upload))
-        .route("/cloud-sync/webdav/download", post(routes::cloud_sync::webdav_sync_download))
-        .route("/cloud-sync/snippet/test", post(routes::cloud_sync::snippet_sync_test))
-        .route("/cloud-sync/snippet/token-status", post(routes::cloud_sync::snippet_token_status))
-        .route("/cloud-sync/snippet/save-token", post(routes::cloud_sync::save_snippet_saved_token))
-        .route("/cloud-sync/snippet/forget-token", post(routes::cloud_sync::forget_snippet_saved_token))
-        .route("/cloud-sync/snippet/settings", post(routes::cloud_sync::snippet_sync_settings))
-        .route("/cloud-sync/snippet/save-id", post(routes::cloud_sync::save_snippet_sync_id))
-        .route("/cloud-sync/snippet/retry-legacy-cleanup", post(routes::cloud_sync::retry_snippet_legacy_cleanup))
-        .route("/cloud-sync/snippet/upload", post(routes::cloud_sync::snippet_sync_upload))
-        .route("/cloud-sync/snippet/download", post(routes::cloud_sync::snippet_sync_download));
+        .route("/app-settings/config/decrypt", post(routes::app_settings::decrypt_config));
 
     // Do not expose DuckDB-only handlers from builds that omit DuckDB sidecar support.
     #[cfg(feature = "duckdb-sidecar")]

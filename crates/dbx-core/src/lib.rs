@@ -18,7 +18,6 @@ mod ai_model_filter;
 pub mod ai_pi_agent_cli;
 pub mod backend_error;
 pub mod changelog;
-pub mod cloud_sync;
 pub mod config;
 pub mod connection;
 pub mod connection_secrets;

@@ -300,24 +300,6 @@ export const loadOpenTabsState = forward("loadOpenTabsState");
 export const saveOpenTabsState = forward("saveOpenTabsState");
 export const loadSavedSqlEditorPositions = forward("loadSavedSqlEditorPositions");
 export const saveSavedSqlEditorPositions = forward("saveSavedSqlEditorPositions");
-export const webdavSyncTest = forward("webdavSyncTest");
-export const webdavPasswordStatus = forward("webdavPasswordStatus");
-export const saveWebdavSavedPassword = forward("saveWebdavSavedPassword");
-export const forgetWebdavSavedPassword = forward("forgetWebdavSavedPassword");
-export const webdavSyncSecretsStatus = forward("webdavSyncSecretsStatus");
-export const saveWebdavSyncSecretsPreference = forward("saveWebdavSyncSecretsPreference");
-export const forgetWebdavSyncSecretsPassphrase = forward("forgetWebdavSyncSecretsPassphrase");
-export const webdavSyncUpload = forward("webdavSyncUpload");
-export const webdavSyncDownload = forward("webdavSyncDownload");
-export const snippetSyncTest = forward("snippetSyncTest");
-export const snippetTokenStatus = forward("snippetTokenStatus");
-export const saveSnippetSavedToken = forward("saveSnippetSavedToken");
-export const forgetSnippetSavedToken = forward("forgetSnippetSavedToken");
-export const snippetSyncSettings = forward("snippetSyncSettings");
-export const saveSnippetSyncId = forward("saveSnippetSyncId");
-export const retrySnippetLegacyCleanup = forward("retrySnippetLegacyCleanup");
-export const snippetSyncUpload = forward("snippetSyncUpload");
-export const snippetSyncDownload = forward("snippetSyncDownload");
 export const saveAiConversation = forward("saveAiConversation");
 export const loadAiConversations = forward("loadAiConversations");
 export const deleteAiConversation = forward("deleteAiConversation");
@@ -653,16 +635,6 @@ export type {
   DriverInstallProgress,
   DriverStoreMigrationResult,
   DriverStorePathInfo,
-  WebDavConfig,
-  WebDavPasswordStatus,
-  WebDavSyncSummary,
-  WebDavDownloadResult,
-  SnippetProvider,
-  SnippetSyncConfig,
-  SnippetSyncSettings,
-  SnippetSyncSummary,
-  SnippetDownloadResult,
-  SnippetTokenStatus,
   UpdateInfo,
   RedisBlob,
   RedisCollectionPage,

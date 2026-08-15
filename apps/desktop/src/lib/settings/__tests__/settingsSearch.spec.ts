@@ -14,7 +14,6 @@ const categoryLabels = {
   tunnels: "Tunnels",
   shortcuts: "Shortcuts",
   snippets: "Snippets",
-  sync: "Sync",
   ai: "AI",
   mcp: "MCP",
   security: "Security",
@@ -72,17 +71,10 @@ describe("settings search", () => {
     expect(entries.map((entry) => entry.id)).toEqual(["export", "font", "desktop"]);
   });
 
-  it("preserves nested settings routes on resolved entries", () => {
-    const [entry] = resolveSettingsSearchEntries([{ id: "snippet", category: "sync", title: "GitHub", targetId: "sync-snippet", route: { syncMethodTab: "snippet" } }], { isWeb: false, visibleCategories: new Set<SettingsCategory>(["sync"]) }, translate, categoryLabels);
-
-    expect(entry).toMatchObject({ targetId: "sync-snippet", route: { syncMethodTab: "snippet" } });
-  });
-
-  it("uses the open state for result visibility and applies nested routes before revealing targets", () => {
+  it("uses the open state for result visibility before revealing targets", () => {
     expect(settingsDialogSource).toContain("const settingsSearchVisible = computed(() => settingsSearchOpen.value && settingsSearchActive.value)");
     expect(settingsDialogSource).toContain('v-if="settingsSearchVisible" id="settings-search-results"');
-    expect(settingsDialogSource).toMatch(/function applySettingsSearchRoute[\s\S]*?syncMethodTab\.value = result\.route\.syncMethodTab/);
-    expect(settingsDialogSource).toMatch(/async function selectSettingsSearchResult[\s\S]*?applySettingsSearchRoute\(result\)[\s\S]*?revealSettingsSearchTarget/);
+    expect(settingsDialogSource).toMatch(/async function selectSettingsSearchResult[\s\S]*?revealSettingsSearchTarget/);
   });
 
   it("derives one search result for every built-in shortcut", () => {

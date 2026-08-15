@@ -1,7 +1,6 @@
 pub mod agents;
 pub mod ai;
 pub mod app_settings;
-pub mod cloud_sync;
 pub mod connection;
 pub mod data_compare;
 pub mod database_export;

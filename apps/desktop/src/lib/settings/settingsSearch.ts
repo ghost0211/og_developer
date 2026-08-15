@@ -1,4 +1,4 @@
-export type SettingsCategory = "editor" | "formatter" | "appearance" | "navigation" | "data" | "backups" | "tunnels" | "shortcuts" | "snippets" | "sync" | "ai" | "mcp" | "security" | "about";
+export type SettingsCategory = "editor" | "formatter" | "appearance" | "navigation" | "data" | "backups" | "tunnels" | "shortcuts" | "snippets" | "ai" | "mcp" | "security" | "about";
 
 export interface SettingsSearchContext {
   isWeb: boolean;
@@ -14,7 +14,6 @@ export interface SettingsSearchDefinition {
   descriptionKey?: string;
   /** Identifies a built-in shortcut row so its local filter can be restored on navigation. */
   shortcutId?: string;
-  route?: SettingsSearchRoute;
   /** The fixed settings-group anchor; omitted values use the owning tab. */
   targetId?: string;
   visible?: (context: SettingsSearchContext) => boolean;
@@ -28,13 +27,7 @@ export interface SettingsSearchEntry {
   categoryLabel: string;
   targetId: string;
   shortcutId?: string;
-  route?: SettingsSearchRoute;
 }
-
-export interface SettingsSearchRoute {
-  syncMethodTab?: "webdav" | "snippet";
-}
-
 export type Translate = (key: string) => string;
 
 type ToolbarVisibilityItemKey = "history" | "ai" | "theme";
@@ -180,18 +173,6 @@ export const SETTINGS_SEARCH_DEFINITIONS: readonly SettingsSearchDefinition[] = 
   { id: "tunnels", category: "tunnels", titleKey: "settings.tunnelsTab", targetId: "tunnels" },
   { id: "shortcuts", category: "shortcuts", titleKey: "settings.shortcutsTab", targetId: "shortcuts" },
   { id: "snippets", category: "snippets", titleKey: "settings.snippetsTab", descriptionKey: "settings.snippetsDescription", targetId: "snippets" },
-  { id: "sync-webdav", category: "sync", titleKey: "settings.syncWebDavTitle", descriptionKey: "settings.syncWebDavDescription", targetId: "sync-webdav", route: { syncMethodTab: "webdav" }, visible: desktopOnly },
-  { id: "sync-webdav-endpoint", category: "sync", titleKey: "settings.syncEndpoint", targetId: "sync-webdav", route: { syncMethodTab: "webdav" }, visible: desktopOnly },
-  { id: "sync-webdav-username", category: "sync", titleKey: "settings.syncUsername", targetId: "sync-webdav", route: { syncMethodTab: "webdav" }, visible: desktopOnly },
-  { id: "sync-webdav-password", category: "sync", titleKey: "settings.syncPassword", targetId: "sync-webdav", route: { syncMethodTab: "webdav" }, visible: desktopOnly },
-  { id: "sync-webdav-remote-path", category: "sync", titleKey: "settings.syncRemotePath", targetId: "sync-webdav", route: { syncMethodTab: "webdav" }, visible: desktopOnly },
-  { id: "sync-webdav-auto-upload", category: "sync", titleKey: "settings.syncAutoUploadInterval", targetId: "sync-webdav", route: { syncMethodTab: "webdav" }, visible: desktopOnly },
-  { id: "sync-snippet", category: "sync", titleKey: "settings.syncSnippetTitle", descriptionKey: "settings.syncSnippetDescription", targetId: "sync-snippet", route: { syncMethodTab: "snippet" }, visible: desktopOnly },
-  { id: "sync-snippet-provider", category: "sync", titleKey: "settings.syncSnippetProvider", targetId: "sync-snippet", route: { syncMethodTab: "snippet" }, visible: desktopOnly },
-  { id: "sync-snippet-id", category: "sync", titleKey: "settings.syncSnippetId", targetId: "sync-snippet", route: { syncMethodTab: "snippet" }, visible: desktopOnly },
-  { id: "sync-snippet-token", category: "sync", titleKey: "settings.syncSnippetToken", targetId: "sync-snippet", route: { syncMethodTab: "snippet" }, visible: desktopOnly },
-  { id: "sync-secrets", category: "sync", titleKey: "settings.syncSecrets", targetId: "sync", visible: desktopOnly },
-  { id: "sync-secrets-passphrase", category: "sync", titleKey: "settings.syncSecretsPassphrase", targetId: "sync", visible: desktopOnly },
   { id: "ai-config", category: "ai", titleKey: "ai.configList", targetId: "ai" },
   { id: "ai-prompts", category: "ai", titleKey: "ai.promptTemplates", descriptionKey: "ai.promptTemplatesDescription", targetId: "ai" },
   { id: "ai-agent-turn-limit", category: "ai", titleKey: "ai.maxAgentTurns", descriptionKey: "ai.maxAgentTurnsDescription", targetId: "ai" },
@@ -215,7 +196,6 @@ export function resolveSettingsSearchEntries(definitions: readonly SettingsSearc
       categoryLabel: categoryLabels[definition.category],
       targetId: definition.targetId ?? definition.category,
       shortcutId: definition.shortcutId,
-      route: definition.route,
     }))
     .sort((left, right) => (categoryOrder.get(left.category) ?? Number.MAX_SAFE_INTEGER) - (categoryOrder.get(right.category) ?? Number.MAX_SAFE_INTEGER));
 }
