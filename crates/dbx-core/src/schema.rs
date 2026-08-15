@@ -3151,6 +3151,62 @@ for line in sys.stdin:
     }
 
     #[test]
+    fn maps_external_driver_extension_query_rows_to_extension_infos() {
+        let result = db::QueryResult {
+            columns: vec!["extname".into(), "extversion".into(), "description".into(), "nspname".into()],
+            column_types: vec![],
+            column_sortables: vec![],
+            spatial_columns: vec![],
+            spatial_values: vec![],
+            rows: vec![
+                vec![
+                    serde_json::json!("plpgsql"),
+                    serde_json::json!("1.0"),
+                    serde_json::json!("PL/pgSQL procedural language"),
+                    serde_json::json!("pg_catalog"),
+                ],
+                vec![
+                    serde_json::json!("uuid-ossp"),
+                    serde_json::json!("1.1"),
+                    serde_json::Value::Null,
+                    serde_json::json!("public"),
+                ],
+            ],
+            affected_rows: 0,
+            execution_time_ms: 0,
+            messages: vec![],
+            truncated: false,
+            session_id: None,
+            has_more: false,
+            elasticsearch_raw_body: None,
+        };
+
+        let extensions = super::extensions_from_query_result(result);
+        assert_eq!(extensions.len(), 2);
+        assert_eq!(extensions[0].name, "plpgsql");
+        assert_eq!(extensions[0].version, "1.0");
+        assert_eq!(extensions[0].comment.as_deref(), Some("PL/pgSQL procedural language"));
+        assert_eq!(extensions[0].schema.as_deref(), Some("pg_catalog"));
+        assert_eq!(extensions[1].name, "uuid-ossp");
+        assert_eq!(extensions[1].comment, None);
+        assert_eq!(extensions[1].schema.as_deref(), Some("public"));
+    }
+
+    #[test]
+    fn opengauss_extension_catalog_sql_inlines_schema_filter_safely() {
+        let sql = super::opengauss_extensions_catalog_sql(Some("public"));
+        assert!(sql.contains("WHERE n.nspname = 'public'"));
+        assert!(sql.contains("pg_catalog.pg_extension"));
+        assert!(sql.contains("ORDER BY n.nspname, e.extname"));
+
+        let unfiltered = super::opengauss_extensions_catalog_sql(None);
+        assert!(!unfiltered.contains("WHERE"));
+
+        let quoted = super::opengauss_extensions_catalog_sql(Some("we'ird"));
+        assert!(quoted.contains("WHERE n.nspname = 'we''ird'"));
+    }
+
+    #[test]
     fn agent_paging_detection_avoids_double_offset_only_when_page_sized() {
         assert!(super::agent_paging_likely_applied(true, Some(500), 500));
         assert!(super::agent_paging_likely_applied(true, Some(500), 120));
@@ -5929,6 +5985,46 @@ pub async fn list_extensions_core(
         }
 
         let connections = state.connections.read().await;
+        if let Some(PoolKind::ExternalDriver { config, session, .. }) = connections.get(&pool_key) {
+            if db_config.as_ref().is_some_and(is_opengauss_family_config) {
+                // The official openGauss/GaussDB JDBC plugin exposes no
+                // extension metadata API. Prefer the native wire-driver
+                // catalogs (pg_extension); when native auth is unavailable
+                // (e.g. sha256 password servers) run the same catalog query
+                // through the existing JDBC session instead.
+                let config = config.clone();
+                let session = session.clone();
+                let native_config = db_config.clone().expect("opengauss family config present");
+                drop(connections);
+                match native_postgres_metadata_pool(state, connection_id, database, &native_config).await {
+                    Ok(Some(pool)) => return db::postgres::list_extensions(&pool, schema).await,
+                    Ok(None) => {}
+                    Err(error) => {
+                        log::warn!(
+                            "[schema][external-driver:list_extensions:native-fallback-failed] connection_id={} database={} schema={:?} error={}",
+                            connection_id,
+                            database,
+                            schema,
+                            error
+                        );
+                    }
+                }
+                let result: db::QueryResult = session
+                    .invoke_with_timeout(
+                        "executeQuery",
+                        serde_json::json!({
+                            "connection": config.as_ref(),
+                            "database": database,
+                            "schema": schema,
+                            "sql": opengauss_extensions_catalog_sql(schema),
+                            "maxRows": 10_000
+                        }),
+                        agent_metadata_timeout(Some(config.as_ref())),
+                    )
+                    .await?;
+                return Ok(extensions_from_query_result(result));
+            }
+        }
         let pool = connections.get(&pool_key).ok_or("Pool not found")?;
 
         match pool {
@@ -5961,6 +6057,42 @@ pub async fn list_available_extensions_core(
         }
 
         let connections = state.connections.read().await;
+        if let Some(PoolKind::ExternalDriver { config, session, .. }) = connections.get(&pool_key) {
+            if db_config.as_ref().is_some_and(is_opengauss_family_config) {
+                // Mirror list_extensions_core: native wire catalogs first, then
+                // the same catalog query through the existing JDBC session.
+                let config = config.clone();
+                let session = session.clone();
+                let native_config = db_config.clone().expect("opengauss family config present");
+                drop(connections);
+                match native_postgres_metadata_pool(state, connection_id, database, &native_config).await {
+                    Ok(Some(pool)) => return db::postgres::list_available_extensions(&pool).await,
+                    Ok(None) => {}
+                    Err(error) => {
+                        log::warn!(
+                            "[schema][external-driver:list_available_extensions:native-fallback-failed] connection_id={} database={} error={}",
+                            connection_id,
+                            database,
+                            error
+                        );
+                    }
+                }
+                let result: db::QueryResult = session
+                    .invoke_with_timeout(
+                        "executeQuery",
+                        serde_json::json!({
+                            "connection": config.as_ref(),
+                            "database": database,
+                            "schema": null,
+                            "sql": opengauss_available_extensions_catalog_sql(),
+                            "maxRows": 10_000
+                        }),
+                        agent_metadata_timeout(Some(config.as_ref())),
+                    )
+                    .await?;
+                return Ok(extensions_from_query_result(result));
+            }
+        }
         let pool = connections.get(&pool_key).ok_or("Pool not found")?;
 
         match pool {
@@ -5969,6 +6101,45 @@ pub async fn list_available_extensions_core(
         }
     })
     .await
+}
+
+fn opengauss_extensions_catalog_sql(schema: Option<&str>) -> String {
+    let schema_filter = schema
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| format!("WHERE n.nspname = '{}'", value.replace('\'', "''")));
+    format!(
+        "SELECT e.extname, COALESCE(e.extversion, '') AS extversion, d.description, n.nspname \
+         FROM pg_catalog.pg_extension e \
+         JOIN pg_catalog.pg_namespace n ON n.oid = e.extnamespace \
+         LEFT JOIN pg_catalog.pg_description d ON d.objoid = e.oid AND d.classoid = 'pg_extension'::regclass \
+         {} \
+         ORDER BY n.nspname, e.extname",
+        schema_filter.unwrap_or_default()
+    )
+}
+
+fn opengauss_available_extensions_catalog_sql() -> &'static str {
+    "SELECT name, default_version, comment \
+     FROM pg_catalog.pg_available_extensions \
+     WHERE installed_version IS NULL \
+     ORDER BY name"
+}
+
+fn extensions_from_query_result(result: db::QueryResult) -> Vec<db::ExtensionInfo> {
+    result
+        .rows
+        .into_iter()
+        .filter_map(|row| {
+            let name = query_result_cell_string(&row, 0)?;
+            Some(db::ExtensionInfo {
+                name,
+                version: query_result_cell_string(&row, 1).unwrap_or_default(),
+                comment: query_result_cell_string(&row, 2).filter(|value| !value.trim().is_empty()),
+                schema: query_result_cell_string(&row, 3).filter(|value| !value.trim().is_empty()),
+            })
+        })
+        .collect()
 }
 
 pub async fn list_owners_core(

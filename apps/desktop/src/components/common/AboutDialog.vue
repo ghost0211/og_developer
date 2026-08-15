@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useI18n } from "vue-i18n";
+import { FolderGit2 } from "@lucide/vue";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 const { t } = useI18n();
@@ -26,6 +27,10 @@ defineProps<{
         <p class="max-w-sm text-sm leading-6 text-muted-foreground">
           {{ t("about.description") }}
         </p>
+        <a href="https://github.com/ghost0211/og_developer" class="inline-flex items-center gap-1.5 text-sm text-primary hover:underline" target="_blank" rel="noopener noreferrer">
+          <FolderGit2 class="h-4 w-4" />
+          {{ t("about.repository") }}
+        </a>
       </div>
     </DialogContent>
   </Dialog>

@@ -2010,6 +2010,29 @@ mod tests {
         let _ = std::fs::remove_dir_all(fixture.dir);
     }
 
+    /// Run a table-export cancellation test on a thread with a larger stack.
+    ///
+    /// The export path nests many debug-build async state machines (pool
+    /// health checks, JDBC query dispatch, cursor paging). The cancellation
+    /// tests traverse the deepest chain (e.g. `remove_stale_connection_pool`'s
+    /// per-driver match) which alone can measure hundreds of KiB per frame in
+    /// debug builds, overflowing libtest's default 2 MiB test-thread stack.
+    /// Release builds and the real desktop app (8 MiB main thread) are not
+    /// affected; this only keeps `cargo test` from aborting in debug builds.
+    #[cfg(unix)]
+    fn run_external_driver_cancel_test(future: impl std::future::Future<Output = ()> + Send + 'static) {
+        std::thread::Builder::new()
+            .name("external-driver-cancel-test".to_string())
+            .stack_size(8 * 1024 * 1024)
+            .spawn(move || {
+                let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build().unwrap();
+                runtime.block_on(future);
+            })
+            .expect("spawn big-stack test thread")
+            .join()
+            .expect("external-driver cancel test panicked");
+    }
+
     /// Read and decompress a single entry from an in-memory XLSX (ZIP) buffer.
     fn read_zip_entry(bytes: &[u8], path: &str) -> String {
         let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes.to_vec())).expect("open xlsx as zip archive");
@@ -2440,44 +2463,47 @@ mod tests {
     }
 
     #[cfg(unix)]
-    #[tokio::test]
-    async fn external_driver_table_export_cancels_blocked_execute() {
-        let fixture = external_driver_export_fixture(
-            r#"  case "$line" in
+    #[test]
+    fn external_driver_table_export_cancels_blocked_execute() {
+        run_external_driver_cancel_test(async {
+            let fixture = external_driver_export_fixture(
+                r#"  case "$line" in
     *'"method":"executeQueryPage"'*)
       echo executeQueryPage >> "$CALLS"
       sleep 30
       ;;
   esac"#,
-            2,
-            None,
-            true,
-        )
-        .await;
+                2,
+                None,
+                true,
+            )
+            .await;
 
-        let export = run_external_driver_export(&fixture);
-        let cancel = async {
-            wait_for_external_driver_call(&fixture.calls, "executeQueryPage").await;
-            set_export_cancelled(&fixture.request.export_id).await;
-            tokio::time::Instant::now()
-        };
-        let (result, cancel_requested_at) =
-            tokio::time::timeout(Duration::from_secs(7), async { tokio::join!(export, cancel) })
-                .await
-                .expect("blocked JDBC execute should be interrupted promptly");
-        let progress = result.expect("cancelled JDBC export should complete without an error");
+            let export = run_external_driver_export(&fixture);
+            let cancel = async {
+                wait_for_external_driver_call(&fixture.calls, "executeQueryPage").await;
+                set_export_cancelled(&fixture.request.export_id).await;
+                tokio::time::Instant::now()
+            };
+            let (result, cancel_requested_at) =
+                tokio::time::timeout(Duration::from_secs(7), async { tokio::join!(export, cancel) })
+                    .await
+                    .expect("blocked JDBC execute should be interrupted promptly");
+            let progress = result.expect("cancelled JDBC export should complete without an error");
 
-        assert!(cancel_requested_at.elapsed() < Duration::from_secs(2));
-        assert!(matches!(progress.last().map(|event| &event.status), Some(ExportStatus::Cancelled)));
-        assert!(fixture.state.connections.read().await.is_empty());
-        clear_export_cancelled(&fixture.request.export_id).await;
-        cleanup_external_driver_export_fixture(fixture);
+            assert!(cancel_requested_at.elapsed() < Duration::from_secs(2));
+            assert!(matches!(progress.last().map(|event| &event.status), Some(ExportStatus::Cancelled)));
+            assert!(fixture.state.connections.read().await.is_empty());
+            clear_export_cancelled(&fixture.request.export_id).await;
+            cleanup_external_driver_export_fixture(fixture);
+        });
     }
 
     #[cfg(unix)]
-    #[tokio::test]
-    async fn external_driver_table_export_cancels_blocked_fetch() {
-        let fixture = external_driver_export_fixture(
+    #[test]
+    fn external_driver_table_export_cancels_blocked_fetch() {
+        run_external_driver_cancel_test(async {
+            let fixture = external_driver_export_fixture(
             r#"  case "$line" in
     *'"method":"executeQueryPage"'*)
       echo executeQueryPage >> "$CALLS"
@@ -2494,23 +2520,24 @@ mod tests {
         )
         .await;
 
-        let export = run_external_driver_export(&fixture);
-        let cancel = async {
-            wait_for_external_driver_call(&fixture.calls, "fetchQueryPage").await;
-            set_export_cancelled(&fixture.request.export_id).await;
-            tokio::time::Instant::now()
-        };
-        let (result, cancel_requested_at) =
-            tokio::time::timeout(Duration::from_secs(7), async { tokio::join!(export, cancel) })
-                .await
-                .expect("blocked JDBC fetch should be interrupted promptly");
-        let progress = result.expect("cancelled JDBC export should complete without an error");
+            let export = run_external_driver_export(&fixture);
+            let cancel = async {
+                wait_for_external_driver_call(&fixture.calls, "fetchQueryPage").await;
+                set_export_cancelled(&fixture.request.export_id).await;
+                tokio::time::Instant::now()
+            };
+            let (result, cancel_requested_at) =
+                tokio::time::timeout(Duration::from_secs(7), async { tokio::join!(export, cancel) })
+                    .await
+                    .expect("blocked JDBC fetch should be interrupted promptly");
+            let progress = result.expect("cancelled JDBC export should complete without an error");
 
-        assert!(cancel_requested_at.elapsed() < Duration::from_secs(2));
-        assert!(matches!(progress.last().map(|event| &event.status), Some(ExportStatus::Cancelled)));
-        assert!(fixture.state.connections.read().await.is_empty());
-        clear_export_cancelled(&fixture.request.export_id).await;
-        cleanup_external_driver_export_fixture(fixture);
+            assert!(cancel_requested_at.elapsed() < Duration::from_secs(2));
+            assert!(matches!(progress.last().map(|event| &event.status), Some(ExportStatus::Cancelled)));
+            assert!(fixture.state.connections.read().await.is_empty());
+            clear_export_cancelled(&fixture.request.export_id).await;
+            cleanup_external_driver_export_fixture(fixture);
+        });
     }
 
     #[test]
