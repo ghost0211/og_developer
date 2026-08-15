@@ -34,6 +34,7 @@ import { applySshConfigHostAliasPrefill as prefillSshConfigHostAlias } from "@/l
 import { canPersistConnectionTestResult, connectionEditDraftSyncAction } from "./connectionEditDraftSync";
 import { REDIS_SCAN_PAGE_SIZE_DEFAULT, REDIS_SCAN_PAGE_SIZE_MIN, REDIS_SCAN_PAGE_SIZE_MAX, REDIS_SCAN_PAGE_SIZE_OPTIONS } from "@/lib/redis/redisKeyPattern";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { currentLocale } from "@/i18n";
 import { useToast } from "@/composables/useToast";
 import DatabaseIcon from "@/components/icons/DatabaseIcon.vue";
 import * as api from "@/lib/backend/api";
@@ -98,6 +99,7 @@ import {
   Search,
   ShieldAlert,
   ShieldCheck,
+  Sparkles,
   Square,
   Trash2,
 } from "@lucide/vue";
@@ -133,7 +135,7 @@ type DbOption = { value: string; label: string };
 type DbCategoryKey = "sql" | "analytics" | "domestic" | "lightweight" | "document" | "graph_ai" | "timeseries" | "mq" | "registry_config";
 type DbCategory = { key: DbCategoryKey; title: string; options: DbOption[] };
 type DialogStep = "select" | "config";
-export type ConfigTab = "connection" | "advanced" | "tls" | "transport";
+export type ConfigTab = "connection" | "advanced" | "tls" | "transport" | "ai-recognize";
 type ProductionScope = "connection" | "databases";
 type MqTokenSigningMode = "none" | "hs256" | "rs256";
 type NacosAuthKind = NacosAuthConfig["kind"];
@@ -3295,6 +3297,100 @@ function ensureConnectionHostResolvedFromUrl(): boolean {
   return applyConnectionUrlToForm(connectionUrlInput.value.trim());
 }
 
+// ---------------------------------------------------------------------------
+// AI 自动识别连接配置：粘贴任意格式的配置文本，由默认大模型解析后填入表单
+// ---------------------------------------------------------------------------
+const recognizeInput = ref("");
+const recognizing = ref(false);
+const recognizeError = ref("");
+const recognizeSuccess = ref(false);
+
+function extractRecognizedConnectionJson(text: string): Record<string, unknown> {
+  const trimmed = text.trim();
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const candidate = fenced ? fenced[1] : trimmed;
+  const start = candidate.indexOf("{");
+  const end = candidate.lastIndexOf("}");
+  if (start < 0 || end <= start) {
+    throw new Error(t("connection.recognizeInvalidOutput"));
+  }
+  const parsed: unknown = JSON.parse(candidate.slice(start, end + 1));
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error(t("connection.recognizeInvalidOutput"));
+  }
+  return parsed as Record<string, unknown>;
+}
+
+function applyRecognizedConnectionConfig(parsed: Record<string, unknown>) {
+  const asString = (value: unknown): string | undefined => (typeof value === "string" ? value.trim() : value == null ? undefined : String(value));
+  const asNumber = (value: unknown): number | undefined => (typeof value === "number" ? value : typeof value === "string" && value.trim() ? Number(value.trim()) : undefined);
+
+  const host = asString(parsed.host);
+  if (host) form.value.host = host;
+  const port = asNumber(parsed.port);
+  if (port && port > 0 && port < 65536) form.value.port = port;
+  const username = asString(parsed.username);
+  if (username !== undefined) form.value.username = username;
+  const password = asString(parsed.password);
+  if (password !== undefined) form.value.password = password;
+  const database = asString(parsed.database);
+  if (database !== undefined) form.value.database = database || undefined;
+  const name = asString(parsed.name);
+  if (name) form.value.name = name;
+  const note = asString(parsed.note);
+  if (note !== undefined) form.value.note = note || "";
+  if (typeof parsed.ssl === "boolean") form.value.ssl = parsed.ssl;
+  const urlParams = asString(parsed.url_params);
+  if (urlParams !== undefined) form.value.url_params = urlParams;
+  const driverProfile = asString(parsed.driver_profile)?.toLowerCase();
+  if (driverProfile === "jdbc" || driverProfile === "opengauss-jdbc") {
+    setOpengaussConnectionMode(form.value, "jdbc");
+  } else if (driverProfile === "native" || driverProfile === "opengauss") {
+    setOpengaussConnectionMode(form.value, "native");
+  }
+  if (Array.isArray(parsed.jdbc_driver_paths)) {
+    const paths = parsed.jdbc_driver_paths.map(String).filter(Boolean);
+    if (paths.length > 0) form.value.jdbc_driver_paths = paths;
+  }
+}
+
+async function recognizeConnectionConfig() {
+  const aiConfig = settingsStore.aiConfigs.find((config) => config.isDefault) ?? settingsStore.aiConfigs[0];
+  if (!aiConfig) {
+    toast(t("connection.recognizeNoConfig"), 5000);
+    return;
+  }
+  const input = recognizeInput.value.trim();
+  if (!input) {
+    toast(t("connection.recognizeEmptyInput"), 5000);
+    return;
+  }
+  recognizing.value = true;
+  recognizeError.value = "";
+  recognizeSuccess.value = false;
+  const isZh = currentLocale() === "zh-CN";
+  try {
+    const systemPrompt = isZh
+      ? '你是数据库连接配置解析器。从用户粘贴的文本中识别 openGauss 连接信息，只输出一个 JSON 对象，不要输出任何解释、代码块围栏或其他文字。\n\n允许的字段（不确定的字段省略，不要编造）：\n{\n  "name": "连接名称",\n  "host": "主机名或 IP",\n  "port": 端口号（数字）,\n  "username": "用户名",\n  "password": "密码",\n  "database": "数据库名",\n  "ssl": true 或 false,\n  "driver_profile": "opengauss-jdbc" 或 "opengauss",\n  "url_params": "URL 查询参数",\n  "jdbc_driver_paths": ["驱动 jar 路径"]\n}\n\n解析规则：\n- 文本可能是 JDBC URL（如 jdbc:opengauss://host:port/db）、键值对（host=... port=... user=... password=... dbname=...）或自由描述\n- 从 JDBC URL 中提取 host、port、database；URL 查询参数中的 user/password 也需提取\n- driver_profile：出现 opengauss-jdbc、jdbc、官方驱动、JDBC 模式 → "opengauss-jdbc"；出现 native、原生、内置驱动 → "opengauss"；无法判断则省略\n- 密码若为占位符（****、xxxx 等）则省略 password'
+      : 'You are a database connection config parser. Extract openGauss connection info from the user\'s pasted text and output ONLY a JSON object — no explanations, no code fences, no extra text.\n\nAllowed fields (omit uncertain ones, never invent):\n{\n  "name": "connection name",\n  "host": "hostname or IP",\n  "port": 5432,\n  "username": "user",\n  "password": "password",\n  "database": "database name",\n  "ssl": true,\n  "driver_profile": "opengauss-jdbc" or "opengauss",\n  "url_params": "URL query params",\n  "jdbc_driver_paths": ["driver jar paths"]\n}\n\nRules:\n- The text may be a JDBC URL (jdbc:opengauss://host:port/db), key=value pairs (host=... port=... user=... password=... dbname=...), or free-form description.\n- Extract host, port, database from JDBC URLs; also extract user/password from URL query params.\n- driver_profile: "opengauss-jdbc" for jdbc/official-driver wording; "opengauss" for native wording; omit if unknown.\n- Omit password if it is a placeholder (****, xxxx, etc.).';
+    const raw = await api.aiComplete({
+      config: aiConfig,
+      systemPrompt,
+      messages: [{ role: "user", content: input }],
+      maxTokens: 2000,
+    });
+    applyRecognizedConnectionConfig(extractRecognizedConnectionJson(raw));
+    recognizeSuccess.value = true;
+    resetTestState();
+    configTab.value = "connection";
+    toast(t("connection.recognizeSuccess"), 3000);
+  } catch (e: any) {
+    recognizeError.value = e?.message || String(e);
+  } finally {
+    recognizing.value = false;
+  }
+}
+
 function formValueForSubmit(): Omit<ConnectionConfig, "id"> {
   const url = connectionUrlInput.value.trim();
   if (!url || url === appliedConnectionUrlInput.value) return form.value;
@@ -5156,6 +5252,7 @@ function openExternalUrl(url: string) {
                 <TabsTrigger v-if="supportsTlsToggle" value="tls">{{ t("connection.tlsTab") }}</TabsTrigger>
                 <TabsTrigger v-if="canUseTransportLayers" value="transport">{{ t("connection.sshTunnel") }}</TabsTrigger>
                 <TabsTrigger value="advanced">{{ t("connection.advancedTab") }}</TabsTrigger>
+                <TabsTrigger value="ai-recognize">{{ t("connection.recognizeTab") }}</TabsTrigger>
               </TabsList>
             </div>
 
@@ -7253,6 +7350,29 @@ function openExternalUrl(url: string) {
                       </SelectContent>
                     </Select>
                     <p class="text-xs text-muted-foreground">{{ t("settings.redisScanPageSizeDescription") }}</p>
+                  </div>
+                </div>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="ai-recognize" class="m-0 flex min-h-0 flex-1 flex-col overflow-hidden">
+              <div class="connection-form-body flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pt-4 pr-2">
+                <div class="space-y-2">
+                  <Label>{{ t("connection.recognizeHint") }}</Label>
+                  <textarea
+                    v-model="recognizeInput"
+                    class="flex min-h-44 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    :placeholder="t('connection.recognizePlaceholder')"
+                    spellcheck="false"
+                  />
+                  <div class="flex items-center gap-3">
+                    <Button :disabled="recognizing || !recognizeInput.trim()" @click="recognizeConnectionConfig">
+                      <Loader2 v-if="recognizing" class="mr-1 h-3 w-3 animate-spin" />
+                      <Sparkles v-else class="mr-1 h-3 w-3" />
+                      {{ t("connection.recognizeButton") }}
+                    </Button>
+                    <span v-if="recognizeError" class="min-w-0 flex-1 break-all text-xs text-destructive">{{ recognizeError }}</span>
+                    <span v-else-if="recognizeSuccess" class="text-xs text-green-600 dark:text-green-400">{{ t("connection.recognizeSuccessHint") }}</span>
                   </div>
                 </div>
               </div>

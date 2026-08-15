@@ -35,11 +35,11 @@ function dbLabel(dbType: DatabaseType): string {
   return labels[dbType] || dbType;
 }
 
-export type AiAction = "general" | "generate" | "explain" | "optimize" | "fix" | "convert" | "sampleData" | "query" | "exploreSchema" | "executeAndExplain";
+export type AiAction = "general" | "generate" | "explain" | "optimize" | "fix" | "convert" | "sampleData" | "query" | "exploreSchema" | "executeAndExplain" | "generatePlsql" | "fixPlsqlError";
 export type AiAssistantMode = "ask" | "agent";
 
 /** Actions shown in the Ask mode menu: SQL-producing, never auto-run. */
-export const ASK_ACTIONS: AiAction[] = ["general", "generate", "explain", "optimize", "fix", "convert", "sampleData"];
+export const ASK_ACTIONS: AiAction[] = ["general", "generate", "explain", "optimize", "fix", "convert", "sampleData", "generatePlsql", "fixPlsqlError"];
 
 /**
  * Actions shown in the Agent mode menu: task-oriented, drive tool use.
@@ -83,6 +83,8 @@ export interface AiContext {
   database: string;
   /** Selected schema when it is distinct from the connection database (for example Dameng). */
   schema?: string;
+  /** openGauss/GaussDB compatibility mode (A/B/C/PG/M) when known. */
+  sqlCompatibility?: string;
   currentSql: string;
   lastError?: string;
   lastResultPreview?: string;
@@ -115,6 +117,8 @@ export interface AiNamespaceSelection {
 export interface CustomPromptContext {
   globalInstructions?: string;
   activeTemplates?: PromptTemplate[];
+  /** Retrieved openGauss official documentation snippets injected at the end of the system prompt. */
+  docs?: string;
 }
 
 function buildCustomInstructionLines(custom: CustomPromptContext | undefined, isZh: boolean): string[] {
@@ -227,6 +231,7 @@ function actionParams(action: AiAction): { maxTokens: number } {
     case "query":
     case "exploreSchema":
     case "executeAndExplain":
+    case "generatePlsql":
       return { maxTokens: 3200 };
     case "sampleData":
       return { maxTokens: 2400 };
@@ -253,7 +258,8 @@ export function buildSystemPrompt(action: AiAction, context: AiContext, mode: Ai
 
   const isZh = isChineseLocale(currentLocale());
 
-  const lines: string[] = [...buildBasePromptLines(isZh), ...buildModePromptLines(mode, isZh), ...buildActionPromptLines(action, isZh), ...buildCustomInstructionLines(custom, isZh)];
+  const isOpenGaussFamily = context.databaseType === "opengauss" || context.databaseType === "gaussdb";
+  const lines: string[] = [...buildBasePromptLines(isZh), ...(isOpenGaussFamily ? buildOpenGaussDialectPromptLines(isZh, context.sqlCompatibility) : []), ...buildModePromptLines(mode, isZh), ...buildActionPromptLines(action, isZh), ...buildCustomInstructionLines(custom, isZh)];
 
   if (schemaScope === "focused_table") {
     lines.push(
@@ -283,6 +289,7 @@ export function buildSystemPrompt(action: AiAction, context: AiContext, mode: Ai
     lastError,
     resultPreview,
     `Schema:\n${schema}`,
+    custom?.docs?.trim() ? `\n${custom.docs.trim()}` : "",
   );
 
   return lines.filter(Boolean).join("\n");
@@ -312,6 +319,61 @@ function buildBasePromptLines(isZh: boolean): string[] {
     isZh ? "对于 UPDATE 或 DELETE，必须带 WHERE 并说明影响范围；生产库写操作只给建议，不主动建议执行。" : "For UPDATE or DELETE, require a WHERE clause and explain the affected scope; for production writes, provide guidance but do not proactively suggest execution.",
     isZh ? "当用户回复简短肯定词时（例如：需要、好、可以、对），直接执行你之前提议的动作，不要再反问确认。" : "When the user replies with a short affirmative (e.g.: Yes, OK, Sure, Do it), directly execute the action you previously proposed — do not ask for confirmation again.",
   ];
+}
+
+function buildOpenGaussDialectPromptLines(isZh: boolean, compatibility: string | undefined): string[] {
+  const mode = compatibility ? compatibility.trim().toUpperCase() : "";
+  const modeLabel: Record<string, string> = {
+    A: isZh ? "A（Oracle 兼容）" : "A (Oracle-compatible)",
+    B: isZh ? "B（MySQL 兼容）" : "B (MySQL-compatible)",
+    C: isZh ? "C（PostgreSQL 兼容）" : "C (PostgreSQL-compatible)",
+    PG: isZh ? "PG（PostgreSQL 兼容）" : "PG (PostgreSQL-compatible)",
+    M: isZh ? "M（SQL Server 兼容）" : "M (SQL Server-compatible)",
+  };
+
+  const common = isZh
+    ? [
+        "## openGauss 方言规则（优先于上方通用方言规则）",
+        '当前连接是 openGauss。标识符默认用双引号 "name"（B 模式也接受反引号 `name`）；字符串字面量用单引号。',
+        "openGauss 支持 ustore/astore 存储引擎与行存/列存表；列存表不支持 UPDATE/DELETE，生成相关语句时提醒用户。",
+        "建表可用 DISTRIBUTE BY HASH(列) 分布键与 RANGE/LIST/HASH/INTERVAL 分区；分页用 LIMIT/OFFSET（与 PostgreSQL 一致）。",
+        "系统目录为 pg_catalog，常用系统函数含 gs_* 系列；Oracle 的 DBMS_* 包在 openGauss 中对应 gms_* 包（如 gms_output、gms_sql、gms_utility）。",
+      ]
+    : [
+        "## openGauss dialect rules (override the generic dialect rules above)",
+        'The active connection is openGauss. Quote identifiers with double quotes "name" by default (backticks are also accepted in B mode); string literals use single quotes.',
+        "openGauss supports ustore/astore engines and row-store/column-store tables; column-store tables do not support UPDATE/DELETE — warn the user when generating such statements.",
+        "CREATE TABLE may use DISTRIBUTE BY HASH(column) distribution keys and RANGE/LIST/HASH/INTERVAL partitioning; pagination uses LIMIT/OFFSET (same as PostgreSQL).",
+        "System catalogs live in pg_catalog and many system functions use the gs_* prefix; Oracle DBMS_* packages map to gms_* packages in openGauss (e.g. gms_output, gms_sql, gms_utility).",
+      ];
+
+  const modeSpecific = mode
+    ? (() => {
+        if (mode === "A") {
+          return isZh
+            ? [`本库为 ${modeLabel.A}：支持 NVL、ROWNUM、SYSDATE、DUAL、TO_DATE/TO_CHAR，字符串拼接用 ||；写 PL/SQL 时使用 BEGIN...END 块、%TYPE/%ROWTYPE、游标与 EXCEPTION 异常处理。`]
+            : [`This database runs in ${modeLabel.A} mode: use NVL, ROWNUM, SYSDATE, DUAL, TO_DATE/TO_CHAR and || concatenation; for PL/SQL use BEGIN...END blocks, %TYPE/%ROWTYPE, cursors and EXCEPTION handlers.`];
+        }
+        if (mode === "B") {
+          return isZh
+            ? [`本库为 ${modeLabel.B}：支持 LIMIT、IFNULL/NOW()/DATE_FORMAT 等 MySQL 函数与反引号标识符；不支持 ROWNUM；AUTO_INCREMENT 可用。`]
+            : [`This database runs in ${modeLabel.B} mode: LIMIT, MySQL functions (IFNULL/NOW()/DATE_FORMAT) and backtick identifiers are supported; ROWNUM is not; AUTO_INCREMENT is available.`];
+        }
+        if (mode === "C" || mode === "PG") {
+          return isZh ? [`本库为 ${modeLabel[mode] ?? mode}：使用标准 PostgreSQL 语法（now()、ILIKE、||、SERIAL/IDENTITY）。`] : [`This database runs in ${modeLabel[mode] ?? mode} mode: standard PostgreSQL syntax applies (now(), ILIKE, ||, SERIAL/IDENTITY).`];
+        }
+        if (mode === "M") {
+          return isZh ? [`本库为 ${modeLabel.M}：支持 TOP n、GETDATE()、ISNULL 等 SQL Server 风格语法，标识符可用方括号 [name]。`] : [`This database runs in ${modeLabel.M} mode: SQL Server-style syntax applies (TOP n, GETDATE(), ISNULL) and identifiers may use brackets [name].`];
+        }
+        return isZh ? [`本库兼容模式为 ${mode}，生成 SQL 时遵循该模式语法。`] : [`This database runs in compatibility mode ${mode}; follow that mode's syntax.`];
+      })()
+    : [
+        isZh
+          ? "当前库的兼容模式未知（可能为 A/B/C/M 之一）：默认按 PostgreSQL 兼容语法生成，若用户要求 PL/SQL 或 MySQL/SQL Server 风格语法，按对应兼容模式处理。"
+          : "The compatibility mode of this database is unknown (could be A/B/C/M): default to PostgreSQL-compatible syntax; if the user requests PL/SQL or MySQL/SQL Server style syntax, follow the corresponding compatibility mode.",
+      ];
+
+  return [...common, ...modeSpecific];
 }
 
 function buildVectorSystemPrompt(context: AiContext, mode: AiAssistantMode, custom?: CustomPromptContext): string {
@@ -458,6 +520,7 @@ export async function buildAiContext(tab: QueryTab, connection: ConnectionConfig
   const maxFksPerTable = options.maxFksPerTable ?? 10;
   const databaseType = aiDatabaseTypeForConnection(connection);
   const { database, schema } = resolveAiDatabaseTarget(tab, connection);
+  const sqlCompatibility = connection.database_info?.sqlCompatibility?.trim().toUpperCase() || undefined;
   const tables: AiSchemaTable[] = [];
   const tableKeys = new Set<string>();
   let truncated = false;
@@ -574,6 +637,7 @@ export async function buildAiContext(tab: QueryTab, connection: ConnectionConfig
     databaseType,
     database,
     schema,
+    sqlCompatibility,
     currentSql: currentCollectionName ?? tab.sql,
     lastError: extractLastError(tab.result),
     lastResultPreview: formatResultPreview(tab.result),

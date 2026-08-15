@@ -154,6 +154,36 @@ export const AI_PROVIDER_PRESETS: Record<AiProvider, AiProviderPreset> = {
     authMethod: "bearer",
     requiresApiKey: true,
   },
+  kimi: {
+    label: "Kimi",
+    iconSlug: "kimi",
+    provider: "kimi",
+    endpoint: "https://api.moonshot.cn/v1",
+    model: "kimi-k2-0711-preview",
+    apiStyle: "completions",
+    authMethod: "bearer",
+    requiresApiKey: true,
+  },
+  glm: {
+    label: "GLM",
+    iconSlug: "zhipuglm",
+    provider: "glm",
+    endpoint: "https://open.bigmodel.cn/api/paas/v4",
+    model: "glm-4-plus",
+    apiStyle: "completions",
+    authMethod: "bearer",
+    requiresApiKey: true,
+  },
+  doubao: {
+    label: "豆包 (Volcengine)",
+    iconSlug: "doubao",
+    provider: "doubao",
+    endpoint: "https://ark.cn-beijing.volces.com/api/v3",
+    model: "doubao-seed-1-6-250615",
+    apiStyle: "completions",
+    authMethod: "bearer",
+    requiresApiKey: true,
+  },
   ollama: {
     label: "Ollama",
     iconSlug: "ollama",
@@ -475,6 +505,8 @@ export interface EditorSettings {
   dataTabReuseMode: DataTabReuseMode;
   prefillNewQueryWithSelect: boolean;
   updateNotificationsEnabled: boolean;
+  /** Inject retrieved openGauss official documentation snippets into AI requests. */
+  aiKnowledgeBaseEnabled: boolean;
   sidebarHiddenTablePrefixes: string[];
   sidebarObjectInfoMode: SidebarObjectInfoMode;
   sidebarAllowHorizontalScroll: boolean;
@@ -635,6 +667,7 @@ export const DEFAULT_EDITOR_SETTINGS: EditorSettings = {
   dataTabReuseMode: DEFAULT_DATA_TAB_REUSE_MODE,
   prefillNewQueryWithSelect: true,
   updateNotificationsEnabled: true,
+  aiKnowledgeBaseEnabled: true,
   sidebarHiddenTablePrefixes: [],
   sidebarObjectInfoMode: "comment-inline",
   sidebarAllowHorizontalScroll: false,
@@ -956,6 +989,7 @@ export function normalizeEditorSettings(settings: Partial<EditorSettings>, exist
     ),
     prefillNewQueryWithSelect: typeof settings.prefillNewQueryWithSelect === "boolean" ? settings.prefillNewQueryWithSelect : DEFAULT_EDITOR_SETTINGS.prefillNewQueryWithSelect,
     updateNotificationsEnabled: settings.updateNotificationsEnabled ?? DEFAULT_EDITOR_SETTINGS.updateNotificationsEnabled,
+    aiKnowledgeBaseEnabled: settings.aiKnowledgeBaseEnabled ?? DEFAULT_EDITOR_SETTINGS.aiKnowledgeBaseEnabled,
     sidebarHiddenTablePrefixes: normalizeSidebarHiddenTablePrefixes(settings.sidebarHiddenTablePrefixes),
     sidebarObjectInfoMode: normalizeSidebarObjectInfoMode(
       settings.sidebarObjectInfoMode,

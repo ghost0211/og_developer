@@ -97,6 +97,9 @@ pub(crate) fn model_is_assistant_compatible(provider: &AiProvider, model_id: &st
         | AiProvider::ClaudeCodeCli
         | AiProvider::PiAgentCli
         | AiProvider::MiniMax
+        | AiProvider::Kimi
+        | AiProvider::Glm
+        | AiProvider::Doubao
         | AiProvider::Custom => true,
     }
 }

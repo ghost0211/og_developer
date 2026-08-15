@@ -49,6 +49,7 @@ export const EDITOR_SETTINGS_DRAFT_KEYS = [
   "dataTabReuseMode",
   "prefillNewQueryWithSelect",
   "updateNotificationsEnabled",
+  "aiKnowledgeBaseEnabled",
   "sidebarObjectInfoMode",
   "sidebarAllowHorizontalScroll",
   "sidebarHiddenTablePrefixes",

@@ -83,8 +83,16 @@ export const AI_SKILL_DEFINITIONS: AiSkillDefinition[] = [
       zh: "逐步解释当前 SQL。指出危险操作、隐含假设和潜在性能问题。结合 Schema 中的索引和外键信息分析。",
     },
     systemRules: {
-      en: ["Explain what the SQL does without changing it. Reference schema, indexes, foreign keys, result preview, and risky assumptions when relevant."],
-      zh: ["解释当前 SQL 的作用，不要改写 SQL。必要时结合 Schema、索引、外键、结果预览和风险假设说明。"],
+      en: [
+        "Explain what the SQL does without changing it. Reference schema, indexes, foreign keys, result preview, and risky assumptions when relevant.",
+        "When explaining execution plans, read them like a performance engineer: call out full table scans (Seq Scan), missing index access paths, join order issues, and plan-level anomalies.",
+        "For openGauss/GaussDB plans, also note column-store vs row-store effects, distribution-key mismatches that force redistribution (Streaming/Redistribute), and hash-memory pressure on Hash Join; suggest concrete fixes (index, distribution key, partition pruning).",
+      ],
+      zh: [
+        "解释当前 SQL 的作用，不要改写 SQL。必要时结合 Schema、索引、外键、结果预览和风险假设说明。",
+        "解读执行计划时像性能工程师一样：指出全表扫描（Seq Scan）、缺少索引驱动的访问路径、连接顺序问题及计划级异常。",
+        "openGauss/GaussDB 计划还需关注：列存/行存差异、分布键不匹配导致的重新分布（Streaming/Redistribute）、Hash Join 的哈希内存压力；给出具体改进建议（索引、分布键、分区裁剪）。",
+      ],
     },
     outputContract: {
       en: ["Output format: summarize the SQL purpose first, then explain execution logic, risks, and performance notes step by step."],
@@ -171,8 +179,11 @@ export const AI_SKILL_DEFINITIONS: AiSkillDefinition[] = [
       zh: "为当前 Schema 生成安全的示例 INSERT 语句或模拟数据。不使用真实生产数据。在 ```sql 代码块中返回 SQL。",
     },
     systemRules: {
-      en: ["Generate mock data only. Do not use or imply real production data, credentials, personal data, or secrets."],
-      zh: ["只生成模拟数据。不要使用或暗示真实生产数据、凭据、个人数据或密钥。"],
+      en: [
+        "Generate mock data only. Do not use or imply real production data, credentials, personal data, or secrets.",
+        "When the schema contains sensitive-looking columns (phone, mobile, id_card, email, name, address, bank, etc.), use masked placeholders (e.g. 138****1234, a***@example.com) so the sample never resembles real personal data.",
+      ],
+      zh: ["只生成模拟数据。不要使用或暗示真实生产数据、凭据、个人数据或密钥。", "当 Schema 包含敏感字段（手机号、身份证、邮箱、姓名、地址、银行等）时，使用脱敏占位值（如 138****1234、a***@example.com），确保样例数据不接近真实个人信息。"],
     },
     outputContract: {
       en: ["Output format: provide safe sample SQL first, then explain which values are mock data."],
@@ -249,6 +260,72 @@ export const AI_SKILL_DEFINITIONS: AiSkillDefinition[] = [
     outputContract: {
       en: ["Output format: lead with an execution-result summary, then step through the key data and its meaning."],
       zh: ["输出格式：先给执行结果概要，再逐步解释关键数据和含义。"],
+    },
+  },
+  {
+    id: "generate_plsql",
+    action: "generatePlsql",
+    title: {
+      en: "Generate PL/SQL",
+      zh: "生成 PL/SQL",
+    },
+    riskPolicy: "readonly_preferred",
+    contextNeeds: ["schema", "databaseDialect", "currentSql"],
+    userInstruction: {
+      en: "Generate openGauss PL/SQL (procedures, functions, packages, triggers, anonymous blocks) that satisfies the user's request. Return the code in a ```sql code block first, followed by a brief note if needed.",
+      zh: "根据用户需求生成 openGauss 的 PL/SQL 代码（存储过程、函数、包、触发器、匿名块）。先把代码放在 ```sql 代码块中，再视需要附简短说明。",
+    },
+    systemRules: {
+      en: [
+        "Target openGauss A-compatible (Oracle-style) PL/SQL unless the user asks otherwise: CREATE OR REPLACE PROCEDURE/FUNCTION/PACKAGE, BEGIN...END blocks, %TYPE/%ROWTYPE, explicit cursors, and EXCEPTION handlers.",
+        "Use openGauss packages: gms_output (DBMS_OUTPUT), gms_sql (dynamic SQL), gms_utility, gms_stats; never reference Oracle-only packages that openGauss lacks.",
+        "Procedure parameters: IN/OUT/IN OUT with explicit data types; avoid relying on length for VARCHAR2 in OUT parameters (use VARCHAR2 with explicit size where required).",
+        "For triggers, include CREATE OR REPLACE TRIGGER with BEFORE/AFTER, FOR EACH ROW and :NEW/:OLD where relevant.",
+        "Keep anonymous blocks wrapped in BEGIN...END; include exception handling (WHEN OTHERS THEN) for anything that may fail.",
+        "If the request is ambiguous about mode (A/B/C/M), prefer A-mode PL/SQL and note the assumption.",
+      ],
+      zh: [
+        "除非用户另有要求，目标为 openGauss A 兼容（Oracle 风格）PL/SQL：CREATE OR REPLACE PROCEDURE/FUNCTION/PACKAGE、BEGIN...END 块、%TYPE/%ROWTYPE、显式游标、EXCEPTION 异常处理。",
+        "使用 openGauss 的包：gms_output（对应 DBMS_OUTPUT）、gms_sql（动态 SQL）、gms_utility、gms_stats；不要引用 openGauss 没有的 Oracle 专属包。",
+        "过程参数使用 IN/OUT/IN OUT 并给出明确数据类型；OUT 参数避免依赖省略长度的 VARCHAR2。",
+        "触发器使用 CREATE OR REPLACE TRIGGER + BEFORE/AFTER、FOR EACH ROW，必要时使用 :NEW/:OLD。",
+        "匿名块用 BEGIN...END 包裹，可能失败的地方包含 WHEN OTHERS THEN 异常处理。",
+        "如果用户未说明兼容模式（A/B/C/M），默认按 A 模式生成 PL/SQL 并说明该假设。",
+      ],
+    },
+    outputContract: {
+      en: ["Output format: PL/SQL code in a ```sql code block first, then a short usage note (how to call it, what it does)."],
+      zh: ["输出格式：先把 PL/SQL 代码放在 ```sql 代码块中，再附简短使用说明（如何调用、作用是什么）。"],
+    },
+  },
+  {
+    id: "fix_plsql_error",
+    action: "fixPlsqlError",
+    title: {
+      en: "Fix PL/SQL Error",
+      zh: "修复 PL/SQL 错误",
+    },
+    riskPolicy: "readonly",
+    contextNeeds: ["currentSql", "schema", "lastError", "databaseDialect"],
+    userInstruction: {
+      en: "Diagnose the openGauss PL/SQL compile/runtime error in the context and provide the corrected code. Return the fixed code in a ```sql code block first, then briefly explain the root cause.",
+      zh: "根据上下文中的 openGauss PL/SQL 编译/运行错误进行诊断，并给出修正后的代码。先把修正后的代码放在 ```sql 代码块中，再简要说明根因。",
+    },
+    systemRules: {
+      en: [
+        "Read the last error carefully (line/column numbers, error codes such as PLS- or GS-), locate the offending statement, and fix the root cause rather than masking it.",
+        "Common openGauss PL/SQL pitfalls: OUT VARCHAR2 without size, missing exception handlers, implicit conversions, cursor state after CLOSE, and packages that do not exist in openGauss (use gms_* equivalents).",
+        "If the error is missing (no lastError in context), ask the user to paste the error message or run the code first.",
+      ],
+      zh: [
+        "仔细阅读最近的错误（行列号、PLS-/GS- 等错误码），定位出错语句并从根因修复，不要掩盖问题。",
+        "openGauss PL/SQL 常见坑：OUT 参数 VARCHAR2 未指定长度、缺少异常处理、隐式类型转换、CLOSE 后游标状态、引用 openGauss 不存在的包（应改用 gms_* 等价包）。",
+        "如果上下文中没有错误信息，先请用户粘贴错误信息或先执行代码。",
+      ],
+    },
+    outputContract: {
+      en: ["Output format: fixed PL/SQL code in a ```sql code block first, then the root cause and what changed."],
+      zh: ["输出格式：先把修正后的 PL/SQL 代码放在 ```sql 代码块中，再说明根因和改动点。"],
     },
   },
 ];

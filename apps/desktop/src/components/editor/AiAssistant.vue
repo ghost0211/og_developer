@@ -9,10 +9,12 @@ import {
   ArrowRightLeft,
   AlertTriangle,
   Bot,
+  Bug,
   Check,
   ChevronLeft,
   ChevronRight,
   CircleSlash,
+  Code2,
   Copy,
   Database,
   FileCode,
@@ -56,6 +58,7 @@ import { useQueryStore } from "@/stores/queryStore";
 import { useToast } from "@/composables/useToast";
 import { useNavigationTargets } from "@/composables/useNavigationTargets";
 import { buildAiContext, resolveAiDatabaseTarget, resolveAiNamespaceSelection, resolveDefaultAiSchema, runAgentStream, isVectorDbType, isValidActionForMode, defaultActionForMode, type AiAction, type AiAssistantMode, type AiSqlFileContext, type CustomPromptContext } from "@/lib/ai/ai";
+import { formatOpengaussDocHits, searchOpengaussDocs } from "@/lib/ai/opengaussDocs";
 import { isAiConfigModelCandidate } from "@/lib/ai/aiConfigCandidates";
 import { addConfiguredAiModel, aiModelOptions } from "@/lib/ai/aiConfigList";
 import { orderAiConfigsForDisplay } from "@/lib/ai/aiConfigOrdering";
@@ -611,6 +614,8 @@ const askActionButtons: AiActionButton[] = [
   { action: "fix", icon: Wrench, key: "ai.actions.fix" },
   { action: "convert", icon: ArrowRightLeft, key: "ai.actions.convert" },
   { action: "sampleData", icon: TestTube, key: "ai.actions.sampleData" },
+  { action: "generatePlsql", icon: Code2, key: "ai.actions.generatePlsql" },
+  { action: "fixPlsqlError", icon: Bug, key: "ai.actions.fixPlsqlError" },
 ];
 
 /** Agent-mode actions: task-oriented, drive tool use and real results. */
@@ -662,7 +667,7 @@ watch(
 
 function selectAction(action: AiAction) {
   activeAction.value = action;
-  if (action === "fix" && props.tab?.result) {
+  if ((action === "fix" || action === "fixPlsqlError") && props.tab?.result) {
     if (isQueryExecutionErrorResult(props.tab.result)) {
       const errVal = props.tab.result.rows[0]?.[0];
       if (errVal != null) prompt.value = String(errVal);
@@ -1804,6 +1809,16 @@ async function send() {
       mentionedTables,
       sqlFiles,
     });
+    // Built-in openGauss documentation knowledge base: retrieve relevant official
+    // docs snippets for the user request and inject them into the system prompt.
+    if (settings.editorSettings.aiKnowledgeBaseEnabled) {
+      try {
+        const hits = await searchOpengaussDocs(modelInstruction);
+        if (hits.length > 0) customPromptContext.docs = formatOpengaussDocHits(hits);
+      } catch {
+        // Knowledge base is best-effort; a retrieval failure must not block the request.
+      }
+    }
     const history: AiMessage[] = messagesForAgentHistory(messages.value.slice(0, -2));
     await runAgentStream(
       {

@@ -10,7 +10,7 @@ const apiMock = vi.hoisted(() => ({
 
 vi.mock("@/lib/backend/api", () => apiMock);
 
-import { usePromptTemplateStore } from "../../apps/desktop/src/stores/promptTemplateStore.ts";
+import { BUILTIN_PROMPT_TEMPLATES, usePromptTemplateStore } from "../../apps/desktop/src/stores/promptTemplateStore.ts";
 
 const template: PromptTemplate = {
   id: "production-rules",
@@ -49,7 +49,7 @@ test("concurrent prompt initialization waits for one complete load", async () =>
   resolveGlobalInstructions("Always use read-only SQL first.");
 
   assert.deepEqual(await Promise.all([initialLoad, sendLoad]), [true, true]);
-  assert.deepEqual(store.templates, [template]);
+  assert.deepEqual(store.templates, [...BUILTIN_PROMPT_TEMPLATES, template]);
   assert.equal(store.globalInstructions, "Always use read-only SQL first.");
 });
 
@@ -65,7 +65,7 @@ test("failed prompt initialization remains retryable", async () => {
   assert.equal(store.isLoaded, false);
   assert.equal(await store.ensureLoaded(), true);
   assert.equal(store.globalInstructions, "Recovered instruction");
-  assert.deepEqual(store.templates, [template]);
+  assert.deepEqual(store.templates, [...BUILTIN_PROMPT_TEMPLATES, template]);
 });
 
 test("delayed load populates globalInstructions after async init resolves", async () => {

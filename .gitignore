@@ -75,3 +75,4 @@ DBX_*_x64-portable.zip
 # Local devtest connections (contains credentials; do not commit)
 dbx-devtest-connections.json
 .npmrc
+outputs/opengauss-docs/

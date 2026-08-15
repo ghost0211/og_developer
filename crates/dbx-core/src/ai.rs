@@ -70,6 +70,12 @@ pub enum AiProvider {
     Deepseek,
     Qwen,
     MiniMax,
+    #[serde(rename = "kimi")]
+    Kimi,
+    #[serde(rename = "glm")]
+    Glm,
+    #[serde(rename = "doubao")]
+    Doubao,
     Ollama,
     #[serde(rename = "openai-compatible")]
     OpenaiCompatible,
@@ -92,6 +98,9 @@ impl AiProvider {
             AiProvider::Deepseek => "deepseek",
             AiProvider::Qwen => "qwen",
             AiProvider::MiniMax => "minimax",
+            AiProvider::Kimi => "kimi",
+            AiProvider::Glm => "glm",
+            AiProvider::Doubao => "doubao",
             AiProvider::Ollama => "ollama",
             AiProvider::OpenaiCompatible => "openai-compatible",
             AiProvider::ClaudeCodeCli => "claude-code-cli",
@@ -597,6 +606,9 @@ pub fn resolve_endpoint(config: &AiConfig) -> String {
         | AiProvider::Deepseek
         | AiProvider::Qwen
         | AiProvider::MiniMax
+        | AiProvider::Kimi
+        | AiProvider::Glm
+        | AiProvider::Doubao
         | AiProvider::Ollama
         | AiProvider::OpenaiCompatible
         | AiProvider::Custom => {
@@ -1473,6 +1485,9 @@ pub async fn list_models_core(config: &AiConfig) -> Result<Vec<AiModelInfo>, Str
                 | AiProvider::Deepseek
                 | AiProvider::Qwen
                 | AiProvider::MiniMax
+                | AiProvider::Kimi
+                | AiProvider::Glm
+                | AiProvider::Doubao
                 | AiProvider::OpenaiCompatible => list_openai_compatible_models(&client, config).await?,
                 AiProvider::Custom => {
                     if uses_anthropic_messages_api(config) {
@@ -2405,6 +2420,9 @@ pub async fn complete(request: &AiCompletionRequest) -> Result<String, String> {
                 | AiProvider::Deepseek
                 | AiProvider::Qwen
                 | AiProvider::MiniMax
+                | AiProvider::Kimi
+                | AiProvider::Glm
+                | AiProvider::Doubao
                 | AiProvider::Ollama
                 | AiProvider::OpenaiCompatible => {
                     if request.config.api_style == AiApiStyle::Responses {
@@ -2457,6 +2475,9 @@ pub async fn stream(
         | AiProvider::Deepseek
         | AiProvider::Qwen
         | AiProvider::MiniMax
+        | AiProvider::Kimi
+        | AiProvider::Glm
+        | AiProvider::Doubao
         | AiProvider::Ollama
         | AiProvider::OpenaiCompatible => {
             if request.config.api_style == AiApiStyle::Responses {

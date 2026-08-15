@@ -14,6 +14,8 @@ const actions: AiAction[] = [
   "query",
   "exploreSchema",
   "executeAndExplain",
+  "generatePlsql",
+  "fixPlsqlError",
 ];
 
 test("defines one internal AI skill per assistant action", () => {

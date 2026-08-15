@@ -31,9 +31,9 @@ describe("AI action mode mapping", () => {
     });
 
     it("rejects Ask-only actions in Agent mode", () => {
-      // explain/optimize/fix/convert/sampleData are SQL-text operations and must not
-      // appear in the Agent (task-oriented) menu.
-      for (const action of ["explain", "optimize", "fix", "convert", "sampleData"] as const) {
+      // explain/optimize/fix/convert/sampleData/generatePlsql/fixPlsqlError are SQL-text
+      // operations and must not appear in the Agent (task-oriented) menu.
+      for (const action of ["explain", "optimize", "fix", "convert", "sampleData", "generatePlsql", "fixPlsqlError"] as const) {
         expect(isValidActionForMode(action, "agent")).toBe(false);
       }
     });
@@ -47,7 +47,7 @@ describe("AI action mode mapping", () => {
 
   describe("action sets", () => {
     it("Ask menu starts with general, then SQL-producing actions", () => {
-      expect(ASK_ACTIONS).toEqual(["general", "generate", "explain", "optimize", "fix", "convert", "sampleData"]);
+      expect(ASK_ACTIONS).toEqual(["general", "generate", "explain", "optimize", "fix", "convert", "sampleData", "generatePlsql", "fixPlsqlError"]);
     });
 
     it("Agent menu starts with general, then task-oriented actions", () => {

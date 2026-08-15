@@ -4,7 +4,7 @@ import type { Ref } from "vue";
 import type { EditorView as EditorViewType } from "@codemirror/view";
 import { useI18n } from "vue-i18n";
 import { translateBackendError } from "@/i18n/backend-errors";
-import { ArrowLeft, CheckCircle2, CircleHelp, Cloud, Copy, Download, ExternalLink, GripVertical, Loader2, Moon, Pencil, Plus, RotateCcw, Search, Settings, Sun, SunMoon, Trash2, Upload, X } from "@lucide/vue";
+import { ArrowLeft, CheckCircle2, CircleHelp, Copy, FolderGit2, GripVertical, Loader2, Moon, Pencil, Plus, RotateCcw, Search, Settings, Sun, SunMoon, Trash2, X } from "@lucide/vue";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -15,7 +15,6 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { HelpTooltip, Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
 import {
   useSettingsStore,
@@ -54,34 +53,7 @@ import { isTauriRuntime } from "@/lib/backend/tauriRuntime";
 import { useTheme } from "@/composables/useTheme";
 import { copyToClipboard } from "@/lib/common/clipboard";
 import { clearDebugLogs as clearStoredDebugLogs, downloadDebugLogs, getDebugLogBundleText } from "@/lib/backend/debugLog";
-import {
-  aiTestConnection,
-  forgetSnippetSavedToken,
-  forgetWebdavSyncSecretsPassphrase,
-  forgetWebdavSavedPassword,
-  loadMaxAgentTurns,
-  saveMaxAgentTurns,
-  loadMaxRetries,
-  saveMaxRetries,
-  saveWebdavSyncSecretsPreference,
-  saveWebdavSavedPassword,
-  saveSnippetSavedToken,
-  saveSnippetSyncId,
-  retrySnippetLegacyCleanup,
-  snippetSyncDownload,
-  snippetSyncSettings,
-  snippetSyncTest,
-  snippetSyncUpload,
-  snippetTokenStatus,
-  webdavPasswordStatus,
-  webdavSyncDownload,
-  webdavSyncSecretsStatus,
-  webdavSyncTest,
-  webdavSyncUpload,
-  type SnippetProvider,
-  type SnippetSyncConfig,
-  type WebDavConfig,
-} from "@/lib/backend/api";
+import { aiTestConnection, loadMaxAgentTurns, saveMaxAgentTurns, loadMaxRetries, saveMaxRetries } from "@/lib/backend/api";
 import { eventToModifierOnlyShortcut, eventToShortcut } from "@/lib/editor/keyboardShortcuts";
 import { SHORTCUT_DEFINITIONS, findShortcutConflict, normalizeShortcutSettings, type ShortcutActionId } from "@/lib/editor/shortcutRegistry";
 import { formatShortcutDisplay } from "@/lib/editor/shortcutDisplay";
@@ -103,13 +75,10 @@ import SqlFormatterSettingsPanel from "./SqlFormatterSettingsPanel.vue";
 import { APP_THEME_PALETTES, type AppCornerStyle, type AppThemeAppearance, type AppThemeMode, type AppThemePalette } from "@/lib/app/appTheme";
 import { editorSettingsDraftChanged, editorSettingsDraftFromSettings, editorSettingsPatchFromDraft, normalizeTableOpenPageSizeDraft, type EditorSettingsDraft } from "@/lib/settings/editorSettingsDraft";
 import { useConnectionStore } from "@/stores/connectionStore";
-import { useSavedSqlStore } from "@/stores/savedSqlStore";
 import { usePromptTemplateStore } from "@/stores/promptTemplateStore";
-import { useTunnelProfileStore } from "@/stores/tunnelProfileStore";
 import { currentLocale, setLocale, type Locale } from "@/i18n";
 import { SETTINGS_SEARCH_DEFINITIONS, TOOLBAR_VISIBILITY_ITEMS, createShortcutSettingsSearchDefinitions, resolveSettingsSearchEntries, searchSettings, toolbarVisibilityItemLabel, type SettingsCategory, type SettingsSearchEntry, type ToolbarVisibilityItem } from "@/lib/settings/settingsSearch";
 import { LOCALE_OPTIONS } from "@/lib/app/localeOptions";
-import { DEFAULT_WEB_DAV_AUTO_UPLOAD_INTERVAL_MINUTES, DEFAULT_WEB_DAV_REMOTE_PATH, normalizedWebDavAutoUploadInterval, writeWebDavAutoUploadFields } from "@/lib/webdav/webdavAutoUploadConfig";
 import { apiUrl } from "@/lib/common/webPath";
 import { DEFAULT_DATA_GRID_FONT_FAMILY, DEFAULT_UI_FONT_FAMILY, normalizeCustomFontFamilyInput, readableFontFamily, SYSTEM_UI_FONT_FAMILY } from "@/lib/app/appFonts";
 import { buildFontFamilyOptions, displayFontFamily, isPresetFontFamily, loadSystemFontNames } from "@/lib/app/fontFamilyOptions";
@@ -122,9 +91,7 @@ const { t } = useI18n();
 const { toast } = useToast();
 const settingsStore = useSettingsStore();
 const connectionStore = useConnectionStore();
-const savedSqlStore = useSavedSqlStore();
 const promptTemplateStore = usePromptTemplateStore();
-const tunnelProfileStore = useTunnelProfileStore();
 const { isDark, themeMode, themePalette, cornerStyle, setThemeMode, setThemePalette, setCornerStyle } = useTheme();
 
 const appThemePaletteOptions = computed(
@@ -346,6 +313,7 @@ const editDataTabReuseMode = ref<DataTabReuseMode>(settingsStore.editorSettings.
 const editPrefillNewQueryWithSelect = ref(settingsStore.editorSettings.prefillNewQueryWithSelect);
 const editClickTableNavigationTarget = ref<ClickTableNavigationTarget>(settingsStore.editorSettings.clickTableNavigationTarget);
 const editUpdateNotificationsEnabled = ref(settingsStore.editorSettings.updateNotificationsEnabled);
+const editAiKnowledgeBaseEnabled = ref(settingsStore.editorSettings.aiKnowledgeBaseEnabled);
 const editSidebarHiddenTablePrefixes = ref(settingsStore.editorSettings.sidebarHiddenTablePrefixes.join("\n"));
 const editSidebarObjectInfoMode = ref<SidebarObjectInfoMode>(settingsStore.editorSettings.sidebarObjectInfoMode);
 const editSidebarAllowHorizontalScroll = ref(settingsStore.editorSettings.sidebarAllowHorizontalScroll);
@@ -457,6 +425,7 @@ function currentEditorSettingsDraft(): EditorSettingsDraft {
     dataTabReuseMode: editDataTabReuseMode.value,
     prefillNewQueryWithSelect: editPrefillNewQueryWithSelect.value,
     updateNotificationsEnabled: editUpdateNotificationsEnabled.value,
+    aiKnowledgeBaseEnabled: editAiKnowledgeBaseEnabled.value,
     sidebarObjectInfoMode: editSidebarObjectInfoMode.value,
     sidebarAllowHorizontalScroll: editSidebarAllowHorizontalScroll.value,
     sidebarHiddenTablePrefixes: normalizeSidebarHiddenTablePrefixes(editSidebarHiddenTablePrefixes.value),
@@ -725,6 +694,7 @@ function syncEditorSettingsDraftFromStore() {
   editPrefillNewQueryWithSelect.value = settingsStore.editorSettings.prefillNewQueryWithSelect;
   editClickTableNavigationTarget.value = settingsStore.editorSettings.clickTableNavigationTarget;
   editUpdateNotificationsEnabled.value = settingsStore.editorSettings.updateNotificationsEnabled;
+  editAiKnowledgeBaseEnabled.value = settingsStore.editorSettings.aiKnowledgeBaseEnabled;
   editSidebarHiddenTablePrefixes.value = settingsStore.editorSettings.sidebarHiddenTablePrefixes.join("\n");
   editSidebarObjectInfoMode.value = settingsStore.editorSettings.sidebarObjectInfoMode;
   editSidebarAllowHorizontalScroll.value = settingsStore.editorSettings.sidebarAllowHorizontalScroll;
@@ -902,6 +872,7 @@ function resetDefaultsForTab(tab: SettingsCategory) {
     editPrefillNewQueryWithSelect.value = DEFAULT_EDITOR_SETTINGS.prefillNewQueryWithSelect;
     editClickTableNavigationTarget.value = DEFAULT_EDITOR_SETTINGS.clickTableNavigationTarget;
     editUpdateNotificationsEnabled.value = DEFAULT_EDITOR_SETTINGS.updateNotificationsEnabled;
+    editAiKnowledgeBaseEnabled.value = DEFAULT_EDITOR_SETTINGS.aiKnowledgeBaseEnabled;
     editSidebarObjectInfoMode.value = DEFAULT_EDITOR_SETTINGS.sidebarObjectInfoMode;
     editSidebarAllowHorizontalScroll.value = DEFAULT_EDITOR_SETTINGS.sidebarAllowHorizontalScroll;
     editSidebarHiddenTablePrefixes.value = DEFAULT_EDITOR_SETTINGS.sidebarHiddenTablePrefixes.join("\n");
@@ -1287,7 +1258,6 @@ const settingsCategoryNav = computed<{ value: SettingsCategory; label: string }[
   { value: "tunnels", label: t("settings.tunnelsTab") },
   { value: "shortcuts", label: t("settings.shortcutsTab") },
   { value: "snippets", label: t("settings.snippetsTab") },
-  ...(isWeb ? [] : [{ value: "sync" as const, label: t("settings.syncTab") }]),
   { value: "ai", label: t("settings.aiTab") },
   ...(isWeb ? [{ value: "security" as const, label: t("settings.securityTab") }] : []),
   { value: "about", label: t("about.title") },
@@ -1383,10 +1353,6 @@ function onSettingsCategoryClick(category: SettingsCategory) {
   activeSettingsTab.value = category;
 }
 
-function applySettingsSearchRoute(result: SettingsSearchEntry) {
-  if (result.route?.syncMethodTab) syncMethodTab.value = result.route.syncMethodTab;
-}
-
 function normalizeSettingsSearchText(value: string | null | undefined): string {
   return value?.replace(/\s+/g, " ").trim() ?? "";
 }
@@ -1430,7 +1396,6 @@ async function revealSettingsSearchTarget(result: SettingsSearchEntry) {
 async function selectSettingsSearchResult(result: SettingsSearchEntry) {
   pendingSettingsSearchResult = result;
   if (result.shortcutId) shortcutSearchQuery.value = result.title;
-  applySettingsSearchRoute(result);
   settingsSearchQuery.value = "";
   settingsSearchOpen.value = false;
   settingsSearchActiveIndex.value = 0;
@@ -1500,365 +1465,6 @@ async function exportDebugLogs() {
   }, 1500);
 }
 
-// ---------- WebDAV Sync ----------
-const webdavEndpoint = ref(localStorage.getItem("dbx-webdav-endpoint") || "");
-const webdavUsername = ref(localStorage.getItem("dbx-webdav-username") || "");
-const webdavPassword = ref("");
-const webdavRememberPassword = ref(localStorage.getItem("dbx-webdav-remember-password") === "true");
-const webdavHasSavedPassword = ref(false);
-const webdavRemotePath = ref(localStorage.getItem("dbx-webdav-remote-path") || DEFAULT_WEB_DAV_REMOTE_PATH);
-const webdavSyncSecrets = ref(false);
-const webdavSecretsPassphrase = ref("");
-const webdavHasSavedSecretsPassphrase = ref(false);
-const webdavAutoUploadEnabled = ref(localStorage.getItem("dbx-webdav-auto-upload-enabled") === "true");
-const webdavAutoUploadIntervalMinutes = ref(Number(localStorage.getItem("dbx-webdav-auto-upload-interval-minutes") || String(DEFAULT_WEB_DAV_AUTO_UPLOAD_INTERVAL_MINUTES)));
-const webdavBusy = ref<"" | "test" | "upload" | "download">("");
-const webdavMessage = ref("");
-const webdavError = ref(false);
-const syncMethodTab = ref<"webdav" | "snippet">("webdav");
-
-const snippetProvider = ref<SnippetProvider>((localStorage.getItem("dbx-snippet-provider") as SnippetProvider) || "github");
-const snippetId = ref("");
-const snippetToken = ref("");
-const snippetRememberToken = ref(localStorage.getItem(`dbx-snippet-remember-token-${snippetProvider.value}`) === "true");
-const snippetHasSavedToken = ref(false);
-const snippetPassphrase = ref("");
-const snippetSecretsPassphrase = ref("");
-const snippetIncludeSecrets = ref(false);
-const snippetRestoreSecrets = ref(false);
-const snippetBusy = ref<"" | "test" | "upload" | "download" | "migrate" | "cleanup">("");
-const snippetMessage = ref("");
-const snippetError = ref(false);
-const legacySnippetId = ref("");
-const pendingLegacyCleanupId = ref("");
-const snippetSyncSettingsLoading = ref(true);
-
-const webdavReady = computed(() => !!webdavEndpoint.value.trim() && !webdavBusy.value && (!webdavSyncSecrets.value || !!webdavSecretsPassphrase.value.trim() || webdavHasSavedSecretsPassphrase.value));
-const snippetReady = computed(() => !snippetSyncSettingsLoading.value && !snippetBusy.value && (!!snippetToken.value.trim() || snippetHasSavedToken.value));
-const snippetUploadReady = computed(() => snippetReady.value && !!snippetPassphrase.value.trim() && (!snippetIncludeSecrets.value || !!snippetSecretsPassphrase.value.trim()));
-// Legacy plaintext snippets have no outer encryption password. Let the
-// backend require one only after it detects an encrypted envelope so those
-// snapshots remain recoverable for migration.
-const snippetDownloadReady = computed(() => snippetReady.value && (!snippetRestoreSecrets.value || !!snippetSecretsPassphrase.value.trim()));
-
-function currentSnippetConfig(replaceLegacySnippet = false): SnippetSyncConfig {
-  return {
-    provider: snippetProvider.value,
-    token: snippetToken.value.trim() || undefined,
-    snippetId: snippetId.value.trim() || undefined,
-    replaceLegacySnippet: replaceLegacySnippet || undefined,
-  };
-}
-
-function currentSnippetAccountConfig(): SnippetSyncConfig {
-  return { ...currentSnippetConfig(), token: undefined };
-}
-
-async function refreshSnippetTokenStatus() {
-  try {
-    const status = await snippetTokenStatus(currentSnippetAccountConfig());
-    snippetHasSavedToken.value = status.hasSavedToken;
-    if (status.hasSavedToken) snippetRememberToken.value = true;
-  } catch {
-    snippetHasSavedToken.value = false;
-  }
-}
-
-async function refreshSnippetSyncSettings(provider = snippetProvider.value) {
-  try {
-    const settings = await snippetSyncSettings(provider);
-    if (provider !== snippetProvider.value) return;
-    pendingLegacyCleanupId.value = settings.legacyCleanupRequiredId || "";
-    if (settings.snippetId) {
-      snippetId.value = settings.snippetId;
-      return;
-    }
-    const legacyId = localStorage.getItem(`dbx-snippet-id-${provider}`)?.trim();
-    if (legacyId) {
-      await saveSnippetSyncId(provider, legacyId);
-      localStorage.removeItem(`dbx-snippet-id-${provider}`);
-    }
-    if (provider !== snippetProvider.value) return;
-    snippetId.value = legacyId || "";
-  } catch {
-    if (provider === snippetProvider.value) {
-      snippetId.value = "";
-      pendingLegacyCleanupId.value = "";
-    }
-  } finally {
-    if (provider === snippetProvider.value) snippetSyncSettingsLoading.value = false;
-  }
-}
-
-async function persistSnippetSyncId() {
-  await saveSnippetSyncId(snippetProvider.value, snippetId.value.trim() || undefined);
-}
-
-async function applySnippetTokenPreference() {
-  const token = snippetToken.value.trim();
-  if (snippetRememberToken.value && token) {
-    await saveSnippetSavedToken(currentSnippetAccountConfig(), token);
-    snippetHasSavedToken.value = true;
-    return;
-  }
-  if (!snippetRememberToken.value && snippetHasSavedToken.value) {
-    await forgetSnippetSavedToken(currentSnippetAccountConfig());
-    snippetHasSavedToken.value = false;
-  }
-}
-
-async function runSnippetAction(kind: "test" | "upload" | "download" | "migrate" | "cleanup", action: () => Promise<string>, persistCurrentSnippetId = true) {
-  snippetBusy.value = kind;
-  snippetMessage.value = "";
-  snippetError.value = false;
-  try {
-    localStorage.setItem("dbx-snippet-provider", snippetProvider.value);
-    localStorage.setItem(`dbx-snippet-remember-token-${snippetProvider.value}`, String(snippetRememberToken.value));
-    if (persistCurrentSnippetId) await persistSnippetSyncId();
-    await applySnippetTokenPreference();
-    snippetMessage.value = await action();
-  } catch (e: any) {
-    snippetMessage.value = e?.message || String(e);
-    if (kind === "upload" && snippetMessage.value.includes("legacy unencrypted ogdeveloper snapshot")) {
-      legacySnippetId.value = snippetId.value.trim();
-    }
-    snippetError.value = true;
-  } finally {
-    snippetBusy.value = "";
-  }
-}
-
-async function testSnippetSync() {
-  await runSnippetAction("test", async () => {
-    await snippetSyncTest(currentSnippetConfig());
-    return t("settings.syncSnippetTestSuccess");
-  });
-}
-
-async function uploadSnippetSnapshot() {
-  if (legacySnippetId.value) {
-    snippetMessage.value = t("settings.syncSnippetMigrateLegacyRequired");
-    snippetError.value = true;
-    return;
-  }
-  await runSnippetAction("upload", async () => {
-    const summary = await snippetSyncUpload(currentSnippetConfig(), settingsStore.editorSettings, snippetPassphrase.value, snippetIncludeSecrets.value, snippetIncludeSecrets.value ? snippetSecretsPassphrase.value : undefined);
-    snippetId.value = summary.snippetId;
-    await persistSnippetSyncId();
-    return t("settings.syncSnippetUploadSuccess", {
-      bytes: summary.bytes,
-      id: summary.snippetId,
-    });
-  });
-}
-
-async function migrateLegacySnippet() {
-  const id = legacySnippetId.value;
-  if (!id || !window.confirm(t("settings.syncSnippetMigrateLegacyConfirm", { id }))) return;
-  await runSnippetAction(
-    "migrate",
-    async () => {
-      const config = currentSnippetConfig(true);
-      config.snippetId = id;
-      const summary = await snippetSyncUpload(config, settingsStore.editorSettings, snippetPassphrase.value, snippetIncludeSecrets.value, snippetSecretsPassphrase.value || undefined);
-      snippetId.value = summary.snippetId;
-      await persistSnippetSyncId();
-      legacySnippetId.value = "";
-      pendingLegacyCleanupId.value = summary.legacyCleanupRequiredId || "";
-      if (!summary.legacyCleanupRequiredId) {
-        return t("settings.syncSnippetMigrateLegacySuccess", { id: summary.snippetId });
-      }
-      throw new Error(`${t("settings.syncSnippetMigrateLegacyCreated", { id: summary.snippetId })} ${t("settings.syncSnippetMigrateLegacyCleanupRequired", { id: summary.legacyCleanupRequiredId })}`);
-    },
-    false,
-  );
-}
-
-async function retryLegacySnippetCleanup() {
-  const id = pendingLegacyCleanupId.value;
-  if (!id) return;
-  await runSnippetAction("cleanup", async () => {
-    const settings = await retrySnippetLegacyCleanup(currentSnippetConfig());
-    if (settings.snippetId) snippetId.value = settings.snippetId;
-    pendingLegacyCleanupId.value = settings.legacyCleanupRequiredId || "";
-    if (settings.legacyCleanupRequiredId) {
-      throw new Error(t("settings.syncSnippetMigrateLegacyCleanupRequired", { id: settings.legacyCleanupRequiredId }));
-    }
-    return t("settings.syncSnippetLegacyCleanupSuccess", { id });
-  });
-}
-
-async function downloadSnippetSnapshot() {
-  if (!snippetId.value.trim() || !window.confirm(t("settings.syncDownloadConfirm"))) return;
-  await runSnippetAction("download", async () => {
-    const result = await snippetSyncDownload(currentSnippetConfig(), snippetPassphrase.value, snippetRestoreSecrets.value, snippetRestoreSecrets.value ? snippetSecretsPassphrase.value : undefined);
-    if (result.editorSettings && typeof result.editorSettings === "object") settingsStore.updateEditorSettings(result.editorSettings as any);
-    await settingsStore.updateDesktopSettings(result.desktopSettings);
-    await connectionStore.initFromDisk();
-    await savedSqlStore.initFromStorage();
-    // Snapshot downloads replace backend-managed tunnel profiles, so refresh
-    // the already-loaded Pinia store instead of leaving the UI stale.
-    await tunnelProfileStore.refresh();
-    await settingsStore.reloadAiConfigs();
-    let message = t("settings.syncSnippetDownloadSuccess", {
-      bytes: result.summary.bytes,
-      id: result.summary.snippetId,
-    });
-    if (result.applySummary.encryptedSecretsPresent && !result.applySummary.secretsApplied) message += ` ${t("settings.syncSecretsSkipped")}`;
-    if (result.applySummary.secretsApplied) message += ` ${t("settings.syncSecretsApplied")}`;
-    return message;
-  });
-}
-
-function currentWebDavConfig(): WebDavConfig {
-  return {
-    endpoint: webdavEndpoint.value.trim(),
-    username: webdavUsername.value.trim() || undefined,
-    password: webdavPassword.value || undefined,
-    remotePath: webdavRemotePath.value.trim() || DEFAULT_WEB_DAV_REMOTE_PATH,
-  };
-}
-
-function currentWebDavAccountConfig(): WebDavConfig {
-  const config = currentWebDavConfig();
-  return { ...config, password: undefined };
-}
-
-function rememberWebDavFields() {
-  writeWebDavAutoUploadFields(currentWebDavConfig(), {
-    enabled: webdavAutoUploadEnabled.value,
-    intervalMinutes: webdavAutoUploadIntervalMinutes.value,
-  });
-  window.dispatchEvent(new Event("dbx:webdav-auto-upload-config-changed"));
-}
-
-function setWebDavResult(message: string, error = false) {
-  webdavMessage.value = message;
-  webdavError.value = error;
-}
-
-async function runWebDavAction(kind: "test" | "upload" | "download", action: () => Promise<string>) {
-  webdavBusy.value = kind;
-  webdavMessage.value = "";
-  webdavError.value = false;
-  try {
-    rememberWebDavFields();
-    await applyWebDavPasswordPreference();
-    await applyWebDavSyncSecretsPreference();
-    setWebDavResult(await action());
-  } catch (e: any) {
-    setWebDavResult(e?.message || String(e), true);
-  } finally {
-    webdavBusy.value = "";
-  }
-}
-
-async function refreshWebDavPasswordStatus() {
-  if (!webdavEndpoint.value.trim()) {
-    webdavHasSavedPassword.value = false;
-    webdavRememberPassword.value = false;
-    return;
-  }
-  try {
-    const status = await webdavPasswordStatus(currentWebDavAccountConfig());
-    webdavHasSavedPassword.value = status.hasSavedPassword;
-    if (status.hasSavedPassword) webdavRememberPassword.value = true;
-  } catch {
-    webdavHasSavedPassword.value = false;
-  }
-}
-
-async function applyWebDavPasswordPreference() {
-  const password = webdavPassword.value;
-  if (webdavRememberPassword.value && password) {
-    await saveWebdavSavedPassword(currentWebDavAccountConfig(), password);
-    webdavHasSavedPassword.value = true;
-    return;
-  }
-  if (!webdavRememberPassword.value && webdavHasSavedPassword.value) {
-    await forgetWebdavSavedPassword(currentWebDavAccountConfig());
-    webdavHasSavedPassword.value = false;
-  }
-}
-
-async function refreshWebDavSyncSecretsStatus() {
-  try {
-    const status = await webdavSyncSecretsStatus();
-    webdavSyncSecrets.value = status.enabled;
-    webdavHasSavedSecretsPassphrase.value = status.hasSavedPassphrase;
-  } catch {
-    webdavSyncSecrets.value = false;
-    webdavHasSavedSecretsPassphrase.value = false;
-  }
-}
-
-async function applyWebDavSyncSecretsPreference() {
-  const passphrase = webdavSecretsPassphrase.value.trim();
-  if (!webdavSyncSecrets.value) {
-    await saveWebdavSyncSecretsPreference(false);
-    return;
-  }
-  await saveWebdavSyncSecretsPreference(true, passphrase || undefined);
-  if (passphrase) {
-    webdavHasSavedSecretsPassphrase.value = true;
-    webdavSecretsPassphrase.value = "";
-  }
-}
-
-async function clearWebDavSyncSecretsPassphrase() {
-  try {
-    await forgetWebdavSyncSecretsPassphrase();
-    webdavHasSavedSecretsPassphrase.value = false;
-    webdavSecretsPassphrase.value = "";
-  } catch (e: any) {
-    setWebDavResult(e?.message || String(e), true);
-  }
-}
-
-async function testWebDav() {
-  await runWebDavAction("test", async () => {
-    await webdavSyncTest(currentWebDavConfig());
-    return t("settings.syncTestSuccess");
-  });
-}
-
-async function uploadWebDavSnapshot() {
-  await runWebDavAction("upload", async () => {
-    const summary = await webdavSyncUpload(currentWebDavConfig(), settingsStore.editorSettings, webdavSyncSecrets.value ? webdavSecretsPassphrase.value : undefined);
-    return t("settings.syncUploadSuccess", {
-      bytes: summary.bytes,
-      path: summary.remotePath,
-    });
-  });
-}
-
-async function downloadWebDavSnapshot() {
-  if (!window.confirm(t("settings.syncDownloadConfirm"))) return;
-  await runWebDavAction("download", async () => {
-    const result = await webdavSyncDownload(currentWebDavConfig(), webdavSyncSecrets.value ? webdavSecretsPassphrase.value : undefined);
-    if (result.editorSettings && typeof result.editorSettings === "object") {
-      settingsStore.updateEditorSettings(result.editorSettings as any);
-    }
-    await settingsStore.updateDesktopSettings(result.desktopSettings);
-    await connectionStore.initFromDisk();
-    await savedSqlStore.initFromStorage();
-    // Keep the shared tunnel profile UI consistent with the downloaded snapshot.
-    await tunnelProfileStore.refresh();
-    await settingsStore.reloadAiConfigs();
-    const message = t("settings.syncDownloadSuccess", {
-      bytes: result.summary.bytes,
-      path: result.summary.remotePath,
-    });
-    if (result.applySummary.encryptedSecretsPresent && !result.applySummary.secretsApplied) {
-      return `${message} ${t("settings.syncSecretsSkipped")}`;
-    }
-    if (result.applySummary.secretsApplied) {
-      return `${message} ${t("settings.syncSecretsApplied")}`;
-    }
-    return message;
-  });
-}
-
 const oldPassword = ref("");
 const newPassword = ref("");
 const confirmNewPassword = ref("");
@@ -1888,7 +1494,6 @@ watch(
     if (open) {
       resetSettingsSearchState();
       void focusSettingsSearchInput();
-      snippetSyncSettingsLoading.value = true;
       aiConfigListMode.value = "list";
       aiEditConfigId.value = null;
       activeSettingsTab.value = props.initialTab || "appearance";
@@ -1901,13 +1506,6 @@ watch(
       editIconTheme.value = settingsStore.desktopSettings.icon_theme;
       editDebugLoggingEnabled.value = settingsStore.desktopSettings.debug_logging_enabled;
       editSidebarTablePageSize.value = settingsStore.desktopSettings.sidebar_table_page_size ?? DEFAULT_SIDEBAR_TABLE_PAGE_SIZE;
-      webdavPassword.value = "";
-      snippetToken.value = "";
-      webdavSecretsPassphrase.value = "";
-      await refreshWebDavPasswordStatus();
-      await refreshWebDavSyncSecretsStatus();
-      await refreshSnippetTokenStatus();
-      await refreshSnippetSyncSettings();
       syncAiEditState();
       await scrollToInitialSettingsSection();
     } else {
@@ -1941,28 +1539,6 @@ watch(
     void scrollToInitialSettingsSection();
   },
 );
-
-watch([webdavEndpoint, webdavUsername], () => {
-  void refreshWebDavPasswordStatus();
-});
-watch(webdavRememberPassword, (val) => {
-  localStorage.setItem("dbx-webdav-remember-password", String(val));
-});
-watch([webdavAutoUploadEnabled, webdavAutoUploadIntervalMinutes], () => {
-  webdavAutoUploadIntervalMinutes.value = normalizedWebDavAutoUploadInterval(webdavAutoUploadIntervalMinutes.value);
-  rememberWebDavFields();
-});
-watch(snippetProvider, (provider) => {
-  localStorage.setItem("dbx-snippet-provider", provider);
-  snippetId.value = "";
-  snippetRememberToken.value = localStorage.getItem(`dbx-snippet-remember-token-${provider}`) === "true";
-  snippetToken.value = "";
-  legacySnippetId.value = "";
-  pendingLegacyCleanupId.value = "";
-  snippetSyncSettingsLoading.value = true;
-  void refreshSnippetTokenStatus();
-  void refreshSnippetSyncSettings(provider);
-});
 
 watch(activeSettingsTab, async (tab) => {
   void resetSettingsContentScroll();
@@ -2003,7 +1579,6 @@ watch(
 );
 
 onMounted(() => {
-  void refreshWebDavPasswordStatus();
   checkLayoutDescTruncation();
   checkIconThemeDescTruncation();
   initTruncationObservers();
@@ -4657,266 +4232,6 @@ onUnmounted(() => {
               </div>
             </section>
 
-            <section v-else-if="activeSettingsTab === 'sync'" data-settings-search-id="sync" :class="['py-2', settingsSearchTargetClass('sync')]">
-              <Tabs v-model="syncMethodTab" class="w-full">
-                <TabsList class="grid w-full grid-cols-2">
-                  <TabsTrigger value="webdav">WebDAV</TabsTrigger>
-                  <TabsTrigger value="snippet">GitHub / Gitee</TabsTrigger>
-                </TabsList>
-
-                <TabsContent value="webdav" data-settings-search-id="sync-webdav" :class="['mt-5 space-y-5', settingsSearchTargetClass('sync-webdav')]">
-                  <div class="space-y-1">
-                    <div class="flex items-center gap-2 text-sm font-medium">
-                      <Cloud class="h-4 w-4 text-muted-foreground" />
-                      {{ t("settings.syncWebDavTitle") }}
-                    </div>
-                    <p class="text-xs text-muted-foreground">
-                      {{ t("settings.syncWebDavDescription") }}
-                    </p>
-                  </div>
-
-                  <div class="grid gap-4 md:grid-cols-2">
-                    <div class="space-y-2 md:col-span-2">
-                      <Label for="webdav-endpoint">{{ t("settings.syncEndpoint") }}</Label>
-                      <Input id="webdav-endpoint" v-model="webdavEndpoint" autocomplete="off" placeholder="https://example.com/remote.php/dav/files/user/" />
-                    </div>
-                    <div class="space-y-2">
-                      <Label for="webdav-username">{{ t("settings.syncUsername") }}</Label>
-                      <Input id="webdav-username" v-model="webdavUsername" autocomplete="username" />
-                    </div>
-                    <div class="space-y-2">
-                      <Label for="webdav-password">{{ t("settings.syncPassword") }}</Label>
-                      <div class="relative">
-                        <PasswordInput id="webdav-password" v-model="webdavPassword" :placeholder="webdavHasSavedPassword ? '••••••••' : t('settings.syncPasswordPlaceholder')" :disabled="webdavHasSavedPassword" :show-toggle="!webdavHasSavedPassword" autocomplete="current-password" />
-                        <button
-                          v-if="webdavHasSavedPassword"
-                          type="button"
-                          class="absolute right-1 top-1/2 inline-flex size-7 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-3 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50"
-                          :title="t('settings.syncClearSavedPassword')"
-                          @click="
-                            webdavRememberPassword = false;
-                            forgetWebdavSavedPassword(currentWebDavAccountConfig());
-                            webdavHasSavedPassword = false;
-                            webdavPassword = '';
-                          "
-                        >
-                          <X class="size-3.5" />
-                        </button>
-                      </div>
-                      <div class="flex items-center gap-2 text-xs text-muted-foreground">
-                        <label class="flex items-center gap-2">
-                          <input v-model="webdavRememberPassword" type="checkbox" class="h-4 w-4 shrink-0 accent-primary" />
-                          <span>
-                            {{ t("settings.syncRememberWebDavPassword") }}
-                            <span v-if="webdavHasSavedPassword">{{ t("settings.syncSavedPassword") }}</span>
-                          </span>
-                        </label>
-                        <HelpTooltip :label="t('settings.syncRememberWebDavPassword')">
-                          {{ t("settings.syncRememberWebDavPasswordDescription") }}
-                        </HelpTooltip>
-                      </div>
-                    </div>
-                    <div class="space-y-2 md:col-span-2">
-                      <Label for="webdav-remote-path">{{ t("settings.syncRemotePath") }}</Label>
-                      <Input id="webdav-remote-path" v-model="webdavRemotePath" autocomplete="off" />
-                      <p class="text-xs text-muted-foreground">
-                        {{ t("settings.syncRemotePathDescription") }}
-                      </p>
-                    </div>
-                    <div class="space-y-2 md:col-span-2 rounded-md border bg-muted/20 px-3 py-3">
-                      <label class="flex items-center gap-2 text-xs">
-                        <input v-model="webdavAutoUploadEnabled" type="checkbox" class="h-4 w-4 shrink-0 accent-primary" />
-                        <span class="font-medium">{{ t("settings.syncAutoUpload") }}</span>
-                      </label>
-                      <div class="flex items-center gap-2">
-                        <Label for="webdav-auto-upload-interval" class="text-xs text-muted-foreground">{{ t("settings.syncAutoUploadInterval") }}</Label>
-                        <Input id="webdav-auto-upload-interval" v-model.number="webdavAutoUploadIntervalMinutes" type="number" min="1" max="1440" step="1" class="h-7 w-24 text-xs" :disabled="!webdavAutoUploadEnabled" />
-                        <span class="text-xs text-muted-foreground">{{ t("settings.syncAutoUploadMinutes") }}</span>
-                      </div>
-                      <p class="text-xs text-muted-foreground">
-                        {{ t("settings.syncAutoUploadDescription") }}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div v-if="webdavMessage" class="text-xs" :class="webdavError ? 'text-destructive' : 'text-green-600 dark:text-green-400'">
-                    {{ webdavMessage }}
-                  </div>
-                  <div class="flex flex-wrap justify-end gap-2">
-                    <Button variant="outline" size="sm" :disabled="!webdavReady" @click="testWebDav">
-                      <Loader2 v-if="webdavBusy === 'test'" class="mr-1 h-3 w-3 animate-spin" />
-                      {{ t("settings.syncTest") }}
-                    </Button>
-                    <Button variant="outline" size="sm" :disabled="!webdavReady" @click="downloadWebDavSnapshot">
-                      <Loader2 v-if="webdavBusy === 'download'" class="mr-1 h-3 w-3 animate-spin" />
-                      <Download v-else class="mr-1 h-3 w-3" />
-                      {{ t("settings.syncDownload") }}
-                    </Button>
-                    <Button size="sm" :disabled="!webdavReady" @click="uploadWebDavSnapshot">
-                      <Loader2 v-if="webdavBusy === 'upload'" class="mr-1 h-3 w-3 animate-spin" />
-                      <Upload v-else class="mr-1 h-3 w-3" />
-                      {{ t("settings.syncUpload") }}
-                    </Button>
-                  </div>
-                </TabsContent>
-
-                <TabsContent value="snippet" data-settings-search-id="sync-snippet" :class="['mt-5 space-y-5', settingsSearchTargetClass('sync-snippet')]">
-                  <div class="space-y-1">
-                    <div class="flex items-center justify-between gap-3">
-                      <div class="flex items-center gap-2 text-sm font-medium">
-                        <Cloud class="h-4 w-4 text-muted-foreground" />
-                        {{ t("settings.syncSnippetTitle") }}
-                      </div>
-                      <Button type="button" variant="ghost" size="sm" class="h-7 px-2 text-xs" @click="openExternalUrl(`https://dbxio.com/${currentLocale() === 'zh-CN' ? 'cn' : 'en'}/docs/cloud-sync`)">
-                        <ExternalLink class="mr-1 h-3 w-3" />
-                        {{ t("settings.syncSnippetGuide") }}
-                      </Button>
-                    </div>
-                    <p class="text-xs text-muted-foreground">
-                      {{ t("settings.syncSnippetDescription") }}
-                    </p>
-                  </div>
-
-                  <div class="grid gap-4 rounded-md border p-4 md:grid-cols-2">
-                    <div class="space-y-2">
-                      <Label>{{ t("settings.syncSnippetProvider") }}</Label>
-                      <Select v-model="snippetProvider" :disabled="!!snippetBusy">
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="github">GitHub Gist</SelectItem>
-                          <SelectItem value="gitee">{{ t("settings.syncSnippetProviderGitee") }}</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div class="space-y-2">
-                      <Label for="snippet-sync-id">{{ t("settings.syncSnippetId") }}</Label>
-                      <Input id="snippet-sync-id" v-model="snippetId" autocomplete="off" :disabled="snippetSyncSettingsLoading || !!snippetBusy" :placeholder="t('settings.syncSnippetIdPlaceholder')" @blur="persistSnippetSyncId" />
-                    </div>
-                    <div class="space-y-2 md:col-span-2">
-                      <Label for="snippet-sync-token">{{ t("settings.syncSnippetToken") }}</Label>
-                      <div class="relative">
-                        <PasswordInput id="snippet-sync-token" v-model="snippetToken" :placeholder="snippetHasSavedToken ? '••••••••' : ''" :disabled="snippetHasSavedToken" :show-toggle="!snippetHasSavedToken" autocomplete="off" />
-                        <button
-                          v-if="snippetHasSavedToken"
-                          type="button"
-                          class="absolute right-1 top-1/2 inline-flex size-7 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-                          :title="t('settings.syncClearSavedPassword')"
-                          @click="
-                            snippetRememberToken = false;
-                            forgetSnippetSavedToken(currentSnippetAccountConfig());
-                            snippetHasSavedToken = false;
-                            snippetToken = '';
-                          "
-                        >
-                          <X class="size-3.5" />
-                        </button>
-                      </div>
-                      <label class="flex items-center gap-2 text-xs text-muted-foreground">
-                        <input v-model="snippetRememberToken" type="checkbox" class="h-4 w-4 shrink-0 accent-primary" />
-                        <span>{{ t("settings.syncSnippetRememberToken") }}</span>
-                      </label>
-                      <p class="text-xs text-muted-foreground">
-                        {{ t("settings.syncSnippetTokenDescription") }}
-                      </p>
-                    </div>
-                    <div class="space-y-2 md:col-span-2">
-                      <Label for="snippet-sync-passphrase">{{ t("settings.syncSnippetPassphrase") }}</Label>
-                      <PasswordInput id="snippet-sync-passphrase" v-model="snippetPassphrase" autocomplete="new-password" />
-                      <p class="text-xs text-muted-foreground">
-                        {{ t("settings.syncSnippetPassphraseDescription") }}
-                      </p>
-                    </div>
-                    <div class="space-y-2 md:col-span-2">
-                      <label class="flex items-center gap-2 text-xs text-muted-foreground">
-                        <input v-model="snippetIncludeSecrets" type="checkbox" class="h-4 w-4 shrink-0 accent-primary" />
-                        <span>{{ t("settings.syncSnippetIncludeSecrets") }}</span>
-                      </label>
-                      <label class="flex items-center gap-2 text-xs text-muted-foreground">
-                        <input v-model="snippetRestoreSecrets" type="checkbox" class="h-4 w-4 shrink-0 accent-primary" />
-                        <span>{{ t("settings.syncSnippetRestoreSecrets") }}</span>
-                      </label>
-                    </div>
-                    <div v-if="snippetIncludeSecrets || snippetRestoreSecrets || legacySnippetId" class="space-y-2 md:col-span-2">
-                      <Label for="snippet-sync-secrets-passphrase">{{ t("settings.syncSecretsPassphrase") }}</Label>
-                      <PasswordInput id="snippet-sync-secrets-passphrase" v-model="snippetSecretsPassphrase" autocomplete="new-password" />
-                      <p class="text-xs text-muted-foreground">
-                        {{ t("settings.syncSecretsPassphraseDescription") }}
-                      </p>
-                    </div>
-                    <div v-if="pendingLegacyCleanupId" class="flex items-center justify-between gap-3 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-xs text-destructive md:col-span-2">
-                      <span>{{ t("settings.syncSnippetMigrateLegacyCleanupRequired", { id: pendingLegacyCleanupId }) }}</span>
-                      <Button variant="destructive" size="sm" :disabled="!snippetReady" @click="retryLegacySnippetCleanup">
-                        <Loader2 v-if="snippetBusy === 'cleanup'" class="mr-1 h-3 w-3 animate-spin" />
-                        {{ t("settings.syncSnippetRetryLegacyCleanup") }}
-                      </Button>
-                    </div>
-                    <div class="flex flex-wrap items-center justify-between gap-3 md:col-span-2">
-                      <div v-if="snippetMessage" class="min-w-0 flex-1 text-xs" :class="snippetError ? 'text-destructive' : 'text-green-600 dark:text-green-400'">
-                        {{ snippetMessage }}
-                      </div>
-                      <div v-else class="flex-1" />
-                      <div class="flex shrink-0 flex-wrap justify-end gap-2">
-                        <Button variant="outline" size="sm" :disabled="!snippetReady" @click="testSnippetSync">
-                          <Loader2 v-if="snippetBusy === 'test'" class="mr-1 h-3 w-3 animate-spin" />
-                          {{ t("settings.syncTest") }}
-                        </Button>
-                        <Button variant="outline" size="sm" :disabled="!snippetDownloadReady || !snippetId.trim()" @click="downloadSnippetSnapshot">
-                          <Loader2 v-if="snippetBusy === 'download'" class="mr-1 h-3 w-3 animate-spin" />
-                          <Download v-else class="mr-1 h-3 w-3" />
-                          {{ t("settings.syncDownload") }}
-                        </Button>
-                        <Button size="sm" :disabled="!snippetUploadReady" @click="uploadSnippetSnapshot">
-                          <Loader2 v-if="snippetBusy === 'upload'" class="mr-1 h-3 w-3 animate-spin" />
-                          <Upload v-else class="mr-1 h-3 w-3" />
-                          {{ t("settings.syncUpload") }}
-                        </Button>
-                        <Button v-if="legacySnippetId" variant="destructive" size="sm" :disabled="!snippetUploadReady" @click="migrateLegacySnippet">
-                          <Loader2 v-if="snippetBusy === 'migrate'" class="mr-1 h-3 w-3 animate-spin" />
-                          {{ t("settings.syncSnippetMigrateLegacy") }}
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                </TabsContent>
-              </Tabs>
-
-              <div class="mt-5 space-y-3 rounded-md border bg-muted/20 px-3 py-3">
-                <div class="flex items-center justify-between gap-4">
-                  <div class="space-y-1">
-                    <Label for="sync-secrets">{{ t("settings.syncSecrets") }}</Label>
-                    <p class="text-xs text-muted-foreground">
-                      {{ t("settings.syncSecretsSharedDescription") }}
-                    </p>
-                  </div>
-                  <Switch id="sync-secrets" v-model="webdavSyncSecrets" />
-                </div>
-                <div class="rounded-md border bg-background/60 px-3 py-2 text-xs text-muted-foreground">
-                  {{ t("settings.syncSecretNotice") }}
-                </div>
-                <div v-if="webdavSyncSecrets" class="space-y-2">
-                  <Label for="sync-secrets-passphrase">{{ t("settings.syncSecretsPassphrase") }}</Label>
-                  <div class="flex items-center gap-2">
-                    <PasswordInput id="sync-secrets-passphrase" v-model="webdavSecretsPassphrase" class="min-w-0 flex-1" :placeholder="webdavHasSavedSecretsPassphrase ? '••••••••' : ''" :show-toggle="!webdavHasSavedSecretsPassphrase || !!webdavSecretsPassphrase" autocomplete="new-password" />
-                    <Button
-                      v-if="webdavHasSavedSecretsPassphrase"
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      class="h-9 w-9 shrink-0 text-muted-foreground hover:text-foreground"
-                      :title="t('settings.syncClearSavedPassword')"
-                      :aria-label="t('settings.syncClearSavedPassword')"
-                      @click="clearWebDavSyncSecretsPassphrase"
-                    >
-                      <X class="size-3.5" />
-                    </Button>
-                  </div>
-                  <p class="text-xs text-muted-foreground">
-                    {{ t("settings.syncSecretsPassphraseDescription") }}
-                  </p>
-                </div>
-              </div>
-            </section>
-
             <!-- AI Settings Tab -->
             <section v-else-if="activeSettingsTab === 'ai'" data-settings-search-id="ai" :class="['flex flex-col gap-5 py-2', settingsSearchTargetClass('ai')]">
               <!-- Config List View -->
@@ -5028,6 +4343,22 @@ onUnmounted(() => {
                 </div>
               </div>
 
+              <!-- openGauss 官方文档知识库 (list mode, global) -->
+              <div v-if="aiConfigListMode === 'list'" class="space-y-3">
+                <Separator />
+                <div class="flex items-start justify-between gap-4">
+                  <div class="space-y-1">
+                    <h3 class="text-sm font-medium">
+                      {{ t("ai.knowledgeBaseEnabled") }}
+                    </h3>
+                    <p class="text-xs text-muted-foreground">
+                      {{ t("ai.knowledgeBaseEnabledDescription") }}
+                    </p>
+                  </div>
+                  <Switch id="ai-knowledge-base-enabled" v-model="editAiKnowledgeBaseEnabled" />
+                </div>
+              </div>
+
               <!-- Global Custom Instructions (list mode) -->
               <div v-if="aiConfigListMode === 'list'" class="space-y-3">
                 <Separator />
@@ -5077,13 +4408,14 @@ onUnmounted(() => {
                 <div v-if="!templateFormOpen && promptTemplateStore.templates.length > 0" class="space-y-1.5">
                   <div v-for="tpl in promptTemplateStore.templates" :key="tpl.id" class="flex items-center justify-between rounded-md border p-3">
                     <div class="min-w-0 flex-1">
-                      <div class="text-sm font-medium truncate">
+                      <div class="flex items-center gap-2 text-sm font-medium truncate">
                         {{ tpl.name }}
+                        <span v-if="tpl.builtin" class="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-normal text-muted-foreground">{{ t("ai.promptTemplateBuiltin") }}</span>
                       </div>
                       <div class="text-xs text-muted-foreground truncate">{{ tpl.content.slice(0, 100) }}{{ tpl.content.length > 100 ? "..." : "" }}</div>
                     </div>
                     <div class="flex items-center gap-1 shrink-0 ml-2">
-                      <Button type="button" size="sm" variant="ghost" @click="openEditTemplate(tpl)">{{ t("common.edit") }}</Button>
+                      <Button v-if="!tpl.builtin" type="button" size="sm" variant="ghost" @click="openEditTemplate(tpl)">{{ t("common.edit") }}</Button>
                       <Button type="button" size="sm" variant="ghost" class="text-destructive" @click="templateDeleteConfirm = tpl">{{ t("common.delete") }}</Button>
                     </div>
                   </div>
@@ -5371,6 +4703,10 @@ onUnmounted(() => {
                 <p class="max-w-sm text-sm leading-6 text-muted-foreground">
                   {{ t("about.description") }}
                 </p>
+                <a href="https://github.com/ghost0211/og_developer" class="inline-flex items-center gap-1.5 text-sm text-primary hover:underline" @click.prevent="openExternalUrl('https://github.com/ghost0211/og_developer')">
+                  <FolderGit2 class="h-4 w-4" />
+                  {{ t("about.repository") }}
+                </a>
               </div>
             </section>
           </div>
@@ -5428,12 +4764,6 @@ onUnmounted(() => {
               <Button variant="outline" @click="aiEnterListMode()">{{ t("common.cancel") }}</Button>
               <Button :disabled="!aiEditConfigName.trim() || !!aiCliValidationError" @click="aiSaveConfig">{{ t("settings.apply") }}</Button>
             </template>
-          </DialogFooter>
-
-          <DialogFooter v-else-if="activeSettingsTab === 'sync'" class="mx-0 mb-0 flex-row flex-wrap items-center justify-end gap-2 rounded-none border-t border-border/60 bg-transparent px-0 pb-0 pt-3 sm:flex-row sm:gap-2 [&>button]:w-auto [&>button]:shrink-0">
-            <Button variant="outline" @click="closeSettings">
-              {{ t("common.close") }}
-            </Button>
           </DialogFooter>
 
           <DialogFooter v-else-if="activeSettingsTab === 'security' && isWeb" class="mx-0 mb-0 flex-row flex-wrap items-center justify-end gap-2 rounded-none border-t border-border/60 bg-transparent px-0 pb-0 pt-3 sm:flex-row sm:gap-2 [&>button]:w-auto [&>button]:shrink-0">

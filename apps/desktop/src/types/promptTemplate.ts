@@ -4,6 +4,8 @@ export interface PromptTemplate {
   content: string;
   createdAt: string;
   updatedAt: string;
+  /** Built-in templates ship with the app; they are merged into the store and are not persisted to the backend. */
+  builtin?: boolean;
 }
 
 export const PROMPT_TEMPLATE_NAME_MAX = 50;
