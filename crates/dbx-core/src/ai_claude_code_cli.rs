@@ -580,6 +580,7 @@ mod tests {
             claude_code_cli_env: Default::default(),
             pi_agent_cli_path: None,
             pi_agent_cli_env: Default::default(),
+            agent_permission_level: crate::agent_tools::AgentPermissionLevel::default(),
         }
     }
 

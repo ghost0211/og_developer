@@ -1,5 +1,7 @@
 export type AiProvider = "claude" | "openai" | "gemini" | "deepseek" | "qwen" | "minimax" | "kimi" | "glm" | "doubao" | "ollama" | "anthropic-compatible" | "openai-compatible" | "claude-code-cli" | "pi-agent-cli" | "codex-cli" | "custom";
 export type AiApiStyle = "completions" | "responses" | "anthropic-messages";
+/** Permission level for the AI agent's database access. Production databases always degrade to "readonly". */
+export type AiAgentPermissionLevel = "readonly" | "data" | "full";
 export type AiAuthMethod = "api-key" | "bearer";
 export type AiEffortLevel = "low" | "medium" | "high" | "xhigh" | "max";
 export type AiReasoningLevel = "default" | "minimal" | AiEffortLevel;
@@ -47,6 +49,8 @@ export interface AiConfig {
   piAgentCliPath?: string | null;
   piAgentCliEnv?: Record<string, string>;
   runtimeEffort?: AiEffortSelection | null;
+  /** Permission level for the AI agent's database access; defaults to "readonly". */
+  agentPermissionLevel?: AiAgentPermissionLevel;
 }
 
 export interface AiTestConnectionResult {

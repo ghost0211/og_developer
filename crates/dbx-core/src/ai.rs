@@ -382,6 +382,10 @@ pub struct AiConfig {
     pub pi_agent_cli_path: Option<String>,
     #[serde(default)]
     pub pi_agent_cli_env: HashMap<String, String>,
+    /// Permission level for the AI agent's database access (readonly/data/full).
+    /// Production databases always degrade to readonly regardless of this value.
+    #[serde(default)]
+    pub agent_permission_level: crate::agent_tools::AgentPermissionLevel,
 }
 
 fn default_enable_thinking() -> bool {
@@ -4109,6 +4113,7 @@ mod tests {
                 claude_code_cli_env: Default::default(),
                 pi_agent_cli_path: None,
                 pi_agent_cli_env: Default::default(),
+                agent_permission_level: crate::agent_tools::AgentPermissionLevel::default(),
             },
             system_prompt: "Be concise.".to_string(),
             messages: vec![AiMessage {
@@ -4715,6 +4720,7 @@ mod tests {
             claude_code_cli_env: Default::default(),
             pi_agent_cli_path: None,
             pi_agent_cli_env: Default::default(),
+            agent_permission_level: crate::agent_tools::AgentPermissionLevel::default(),
         };
 
         let err = build_ai_http_client(&config, 1).unwrap_err();
@@ -4745,6 +4751,7 @@ mod tests {
             claude_code_cli_env: Default::default(),
             pi_agent_cli_path: None,
             pi_agent_cli_env: Default::default(),
+            agent_permission_level: crate::agent_tools::AgentPermissionLevel::default(),
         };
 
         build_ai_http_client(&config, 1).unwrap();
@@ -4773,6 +4780,7 @@ mod tests {
             claude_code_cli_env: Default::default(),
             pi_agent_cli_path: None,
             pi_agent_cli_env: Default::default(),
+            agent_permission_level: crate::agent_tools::AgentPermissionLevel::default(),
         };
 
         build_ai_http_client(&config, 1).unwrap();
@@ -4801,6 +4809,7 @@ mod tests {
             claude_code_cli_env: Default::default(),
             pi_agent_cli_path: None,
             pi_agent_cli_env: Default::default(),
+            agent_permission_level: crate::agent_tools::AgentPermissionLevel::default(),
         };
 
         assert_eq!(
@@ -4833,6 +4842,7 @@ mod tests {
             claude_code_cli_env: Default::default(),
             pi_agent_cli_path: None,
             pi_agent_cli_env: Default::default(),
+            agent_permission_level: crate::agent_tools::AgentPermissionLevel::default(),
         };
 
         assert_eq!(resolve_endpoint(&ollama), "http://localhost:11434/v1/chat/completions");
@@ -4862,6 +4872,7 @@ mod tests {
             claude_code_cli_env: Default::default(),
             pi_agent_cli_path: None,
             pi_agent_cli_env: Default::default(),
+            agent_permission_level: crate::agent_tools::AgentPermissionLevel::default(),
         };
 
         for provider in
@@ -4910,6 +4921,7 @@ mod tests {
             claude_code_cli_env: Default::default(),
             pi_agent_cli_path: None,
             pi_agent_cli_env: Default::default(),
+            agent_permission_level: crate::agent_tools::AgentPermissionLevel::default(),
         };
         assert_eq!(resolve_model_list_endpoint(&openai).unwrap(), "https://api.openai.com/v1/models");
 
@@ -4934,6 +4946,7 @@ mod tests {
             claude_code_cli_env: Default::default(),
             pi_agent_cli_path: None,
             pi_agent_cli_env: Default::default(),
+            agent_permission_level: crate::agent_tools::AgentPermissionLevel::default(),
         };
         assert_eq!(resolve_model_list_endpoint(&claude).unwrap(), "https://api.anthropic.com/v1/models");
     }
@@ -4961,6 +4974,7 @@ mod tests {
             claude_code_cli_env: Default::default(),
             pi_agent_cli_path: None,
             pi_agent_cli_env: Default::default(),
+            agent_permission_level: crate::agent_tools::AgentPermissionLevel::default(),
         };
 
         assert!(uses_anthropic_messages_api(&config));
@@ -5040,6 +5054,7 @@ mod tests {
             claude_code_cli_env: Default::default(),
             pi_agent_cli_path: None,
             pi_agent_cli_env: Default::default(),
+            agent_permission_level: crate::agent_tools::AgentPermissionLevel::default(),
         };
 
         assert!(!uses_anthropic_messages_api(&config));
@@ -5079,6 +5094,7 @@ mod tests {
             claude_code_cli_env: Default::default(),
             pi_agent_cli_path: None,
             pi_agent_cli_env: Default::default(),
+            agent_permission_level: crate::agent_tools::AgentPermissionLevel::default(),
         };
         assert_eq!(resolve_endpoint(&config), "https://api.example.com/v1/chat/completions");
         assert_eq!(resolve_model_list_endpoint(&config).unwrap(), "https://api.example.com/v1/models");
@@ -5142,6 +5158,7 @@ mod tests {
             claude_code_cli_env: Default::default(),
             pi_agent_cli_path: None,
             pi_agent_cli_env: Default::default(),
+            agent_permission_level: crate::agent_tools::AgentPermissionLevel::default(),
         };
 
         assert_eq!(resolve_endpoint(&config), "https://api.openai.com/v1/responses");
@@ -5177,6 +5194,7 @@ mod tests {
             claude_code_cli_env: Default::default(),
             pi_agent_cli_path: None,
             pi_agent_cli_env: Default::default(),
+            agent_permission_level: crate::agent_tools::AgentPermissionLevel::default(),
         };
 
         let api_key_headers = claude_headers(&config).unwrap();
@@ -5292,6 +5310,7 @@ mod tests {
             claude_code_cli_env: Default::default(),
             pi_agent_cli_path: None,
             pi_agent_cli_env: Default::default(),
+            agent_permission_level: crate::agent_tools::AgentPermissionLevel::default(),
         };
         assert_eq!(resolve_ollama_show_endpoint(&config).unwrap(), "http://localhost:11434/api/show");
 
@@ -5324,6 +5343,7 @@ mod tests {
             claude_code_cli_env: Default::default(),
             pi_agent_cli_path: None,
             pi_agent_cli_env: Default::default(),
+            agent_permission_level: crate::agent_tools::AgentPermissionLevel::default(),
         };
 
         assert_eq!(ollama_selected_model_tool_support(&config).await.unwrap(), Some(true));
@@ -5405,6 +5425,7 @@ mod tests {
             claude_code_cli_env: Default::default(),
             pi_agent_cli_path: None,
             pi_agent_cli_env: Default::default(),
+            agent_permission_level: crate::agent_tools::AgentPermissionLevel::default(),
         };
         let models = vec![
             AiModelInfo::new("qwen3:0.6b", None),
@@ -5666,6 +5687,7 @@ mod tests {
             claude_code_cli_env: Default::default(),
             pi_agent_cli_path: None,
             pi_agent_cli_env: Default::default(),
+            agent_permission_level: crate::agent_tools::AgentPermissionLevel::default(),
         };
 
         let mut body = serde_json::json!({
@@ -5877,6 +5899,7 @@ mod tests {
             claude_code_cli_env: Default::default(),
             pi_agent_cli_path: None,
             pi_agent_cli_env: Default::default(),
+            agent_permission_level: crate::agent_tools::AgentPermissionLevel::default(),
         };
         let mut body = serde_json::json!({
             "model": &config.model,
@@ -5914,6 +5937,7 @@ mod tests {
             claude_code_cli_env: Default::default(),
             pi_agent_cli_path: None,
             pi_agent_cli_env: Default::default(),
+            agent_permission_level: crate::agent_tools::AgentPermissionLevel::default(),
         };
         let mut body = serde_json::json!({ "model": &config.model });
 
@@ -5957,6 +5981,7 @@ mod tests {
             claude_code_cli_env: Default::default(),
             pi_agent_cli_path: None,
             pi_agent_cli_env: Default::default(),
+            agent_permission_level: crate::agent_tools::AgentPermissionLevel::default(),
         };
         let mut body = serde_json::json!({ "model": &config.model });
 
@@ -5994,6 +6019,7 @@ mod tests {
             claude_code_cli_env: Default::default(),
             pi_agent_cli_path: None,
             pi_agent_cli_env: Default::default(),
+            agent_permission_level: crate::agent_tools::AgentPermissionLevel::default(),
         };
         let mut body = serde_json::json!({ "model": &config.model });
 
@@ -6027,6 +6053,7 @@ mod tests {
             claude_code_cli_env: Default::default(),
             pi_agent_cli_path: None,
             pi_agent_cli_env: Default::default(),
+            agent_permission_level: crate::agent_tools::AgentPermissionLevel::default(),
         };
         let mut body = serde_json::json!({ "model": &config.model });
 
@@ -6091,6 +6118,7 @@ mod tests {
             claude_code_cli_env: Default::default(),
             pi_agent_cli_path: None,
             pi_agent_cli_env: Default::default(),
+            agent_permission_level: crate::agent_tools::AgentPermissionLevel::default(),
         };
         let request = AiCompletionRequest {
             config: config.clone(),
@@ -6149,6 +6177,7 @@ mod tests {
             claude_code_cli_env: Default::default(),
             pi_agent_cli_path: None,
             pi_agent_cli_env: Default::default(),
+            agent_permission_level: crate::agent_tools::AgentPermissionLevel::default(),
         };
         let mut body = serde_json::json!({
             "model": &config.model,

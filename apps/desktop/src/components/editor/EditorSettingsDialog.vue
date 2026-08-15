@@ -61,6 +61,7 @@ import { normalizeSidebarHiddenTablePrefixes } from "@/lib/sidebar/sidebarTableN
 import { currentStatementFrameRangeTo, visualSqlColumnsWithInlineHints } from "@/lib/sql/currentStatementFrame";
 import { normalizeSqlFormatterSettings, type SqlFormatterSettings } from "@/lib/sql/sqlFormatterConfig";
 import { validateConfigName, generateId, type AiConfigItem, type ConfigNameValidationResult } from "@/lib/ai/aiConfigList";
+import type { AiAgentPermissionLevel } from "@/types/ai";
 import { currentExecutableStatementRange, type SqlTextRange } from "@/lib/sql/sqlStatementRanges";
 import { executableStatementRangeCacheForDoc, executableStatementRangeStartingAt, type ExecutableStatementRangeCache } from "@/lib/sql/executableStatementRangeCache";
 import { EMPTY_TABLE_COLUMN_TEMPLATE_DATA_TYPE, parseTableColumnTemplateFields, TABLE_COLUMN_TEMPLATE_DATABASE_TYPES } from "@/lib/table/tableColumnTemplates";
@@ -1850,6 +1851,7 @@ const aiEditProxyEnabled = ref(false);
 const aiEditProxyUrl = ref("");
 const aiEditEnableThinking = ref(true);
 const aiEditReasoningLevel = ref<AiReasoningLevel>("default");
+const aiEditPermissionLevel = ref<AiAgentPermissionLevel>("readonly");
 const aiEditContextWindow = ref<number | undefined>(undefined);
 const aiEditCodexCliPath = ref("");
 const aiEditCodexCliEnvRows = ref<AiEnvRow[]>([]);
@@ -2018,6 +2020,7 @@ function currentAiEditConfig() {
     proxyUrl: aiEditProxyUrl.value,
     enableThinking: aiEditEnableThinking.value,
     reasoningLevel: aiEditReasoningLevel.value,
+    agentPermissionLevel: aiEditPermissionLevel.value,
     contextWindow: aiEditContextWindow.value || undefined,
     codexCliPath: aiEditCodexCliPath.value.trim() || undefined,
     codexCliEnv: aiIsCodexCli.value ? cliEnvFromRows(aiEditCodexCliEnvRows.value) : {},
@@ -2050,6 +2053,7 @@ function aiSelectProvider(provider: AiProvider) {
   aiEditApiStyle.value = preset.apiStyle;
   aiEditEnableThinking.value = true;
   aiEditReasoningLevel.value = "default";
+  aiEditPermissionLevel.value = "readonly";
 }
 
 function aiSelectApiStyle(style: AiApiStyle) {
@@ -2086,6 +2090,7 @@ function aiEnterEditMode(configId?: string) {
       aiEditProxyUrl.value = config.proxyUrl ?? "";
       aiEditEnableThinking.value = config.enableThinking ?? true;
       aiEditReasoningLevel.value = config.reasoningLevel ?? "default";
+      aiEditPermissionLevel.value = config.agentPermissionLevel ?? "readonly";
       aiEditContextWindow.value = config.contextWindow;
       aiEditCodexCliPath.value = config.codexCliPath ?? "";
       aiEditCodexCliEnvRows.value = aiEnvRowsFromConfig(config.codexCliEnv);
@@ -2107,6 +2112,7 @@ function aiEnterEditMode(configId?: string) {
     aiEditProxyUrl.value = "";
     aiEditEnableThinking.value = true;
     aiEditReasoningLevel.value = "default";
+    aiEditPermissionLevel.value = "readonly";
     aiEditContextWindow.value = undefined;
     aiEditCodexCliPath.value = "";
     aiEditCodexCliEnvRows.value = [];
@@ -4670,6 +4676,26 @@ onUnmounted(() => {
                 <div v-if="!aiIsCliProvider" class="grid grid-cols-3 items-center gap-3">
                   <Label class="text-right text-xs">{{ t("ai.proxyUrl") }}</Label>
                   <Input v-model="aiEditProxyUrl" autocomplete="off" class="col-span-2" inputClass="h-8 text-xs" placeholder="socks5://127.0.0.1:7890" :disabled="!aiEditProxyEnabled" />
+                </div>
+
+                <!-- Agent database permission level -->
+                <div class="grid grid-cols-3 items-start gap-3">
+                  <Label class="text-right pt-1.5 text-xs">{{ t("ai.permissionLevel") }}</Label>
+                  <div class="col-span-2 space-y-1.5">
+                    <Select v-model="aiEditPermissionLevel">
+                      <SelectTrigger class="h-8 w-full text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="readonly">{{ t("ai.permissionLevelReadonly") }}</SelectItem>
+                        <SelectItem value="data">{{ t("ai.permissionLevelData") }}</SelectItem>
+                        <SelectItem value="full">{{ t("ai.permissionLevelFull") }}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p class="text-xs text-muted-foreground">
+                      {{ t("ai.permissionLevelDescription") }}
+                    </p>
+                  </div>
                 </div>
               </div>
             </section>

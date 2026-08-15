@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::agent_events::{ToolCall, ToolDefinition, ToolResult};
@@ -27,6 +28,28 @@ const BROWSE_COLLECTION_LIMIT: usize = 20;
 /// Absolute maximum rows any query tool may request.
 const MAX_ALLOWED_ROWS: usize = 100;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AgentPermissionLevel {
+    /// Read-only: SELECT/SHOW/EXPLAIN and metadata tools only.
+    #[default]
+    ReadOnly,
+    /// Data level: read queries plus INSERT/UPDATE/DELETE/MERGE. DDL blocked.
+    Data,
+    /// Full level: reads, data modifications and DDL (CREATE/ALTER/DROP/TRUNCATE).
+    Full,
+}
+
+impl std::fmt::Display for AgentPermissionLevel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AgentPermissionLevel::ReadOnly => write!(f, "readonly"),
+            AgentPermissionLevel::Data => write!(f, "data"),
+            AgentPermissionLevel::Full => write!(f, "full"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AgentSqlPermissions {
     pub allow_writes: bool,
@@ -35,6 +58,9 @@ pub struct AgentSqlPermissions {
     /// (after trimming only surrounding whitespace). Set by the frontend
     /// when the user confirms a specific write-SQL proposal.
     pub confirmed_write_sql: Option<String>,
+    /// Permission level configured for the AI provider. ReadOnly is the
+    /// fail-closed default; production databases always degrade to ReadOnly.
+    pub permission_level: AgentPermissionLevel,
 }
 
 /// Build the write permissions for one AI-agent run from an explicit user
@@ -52,6 +78,47 @@ pub fn confirmed_write_sql_permissions(
         allow_writes: write_sql_confirmed,
         allow_dangerous: write_sql_confirmed,
         confirmed_write_sql: write_sql_confirmed.then_some(confirmed_write_sql).flatten(),
+        // A user-confirmed single statement is the highest authorization; the
+        // execution path still pins it to that exact SQL via confirmed_write_sql.
+        permission_level: AgentPermissionLevel::Full,
+    }
+}
+
+/// Build agent SQL permissions from the configured permission level.
+///
+/// - Production databases always degrade to read-only (fail-closed).
+/// - A user-confirmed write SQL (the per-run confirmation flow) pins the run
+///   to that exact statement regardless of level.
+/// - Otherwise the level decides: Data allows data modifications, Full also
+///   allows DDL; ReadOnly never allows writes.
+pub fn agent_permissions_for_request(
+    production_database: bool,
+    confirmed_write_sql: Option<String>,
+    level: AgentPermissionLevel,
+) -> AgentSqlPermissions {
+    let confirmed = confirmed_write_sql.filter(|sql| !sql.trim().is_empty());
+    if production_database {
+        return AgentSqlPermissions {
+            allow_writes: false,
+            allow_dangerous: false,
+            confirmed_write_sql: None,
+            permission_level: AgentPermissionLevel::ReadOnly,
+        };
+    }
+    if confirmed.is_some() {
+        // Per-run confirmation: only the exact confirmed SQL may be executed.
+        return AgentSqlPermissions {
+            allow_writes: true,
+            allow_dangerous: true,
+            confirmed_write_sql: confirmed,
+            permission_level: level,
+        };
+    }
+    AgentSqlPermissions {
+        allow_writes: level >= AgentPermissionLevel::Data,
+        allow_dangerous: level >= AgentPermissionLevel::Full,
+        confirmed_write_sql: None,
+        permission_level: level,
     }
 }
 
@@ -96,11 +163,11 @@ pub fn verify_confirmed_target(
     (allow_write_sql, confirmed_write_sql)
 }
 
-fn sql_risk_allowed(risk: SqlRisk, permissions: AgentSqlPermissions) -> bool {
+fn sql_risk_allowed(risk: SqlRisk, permissions: &AgentSqlPermissions) -> bool {
     match risk {
         SqlRisk::ReadOnly => true,
-        SqlRisk::Write => permissions.allow_writes,
-        SqlRisk::Ddl => permissions.allow_dangerous,
+        SqlRisk::Write => permissions.permission_level >= AgentPermissionLevel::Data && permissions.allow_writes,
+        SqlRisk::Ddl => permissions.permission_level >= AgentPermissionLevel::Full && permissions.allow_dangerous,
         SqlRisk::Transaction => false,
     }
 }
@@ -251,13 +318,24 @@ fn get_columns_tool() -> ToolDefinition {
 }
 /// execute_query tool definition.
 fn execute_query_tool(sql_permissions: AgentSqlPermissions) -> ToolDefinition {
-    let description = if sql_permissions.allow_dangerous {
-        "Execute SQL after the user explicitly confirmed this operation. Read queries, writes, and DDL are allowed for this run."
-    } else if sql_permissions.allow_writes {
-        "Execute SQL after the user explicitly confirmed this operation. Read queries and non-DDL writes are allowed for this run."
-    } else {
-        "Execute a read-only SQL query and return results (max 50 rows). Only SELECT, WITH, SHOW, DESCRIBE, EXPLAIN statements are allowed. Write operations (INSERT/UPDATE/DELETE/DDL) are blocked."
+    let description = match sql_permissions.permission_level {
+        AgentPermissionLevel::Full => {
+            "Execute SQL against the configured database and return results (max 50 rows). \
+             Read queries, data modifications (INSERT/UPDATE/DELETE/MERGE) and DDL \
+             (CREATE/ALTER/DROP/TRUNCATE) are allowed at the configured permission level. \
+             Production databases are always read-only."
+        }
+        AgentPermissionLevel::Data => {
+            "Execute SQL against the configured database and return results (max 50 rows). \
+             Read queries and data modifications (INSERT/UPDATE/DELETE/MERGE) are allowed at \
+             the configured permission level. DDL (CREATE/ALTER/DROP/TRUNCATE) is blocked. \
+             Production databases are always read-only."
+        }
+        AgentPermissionLevel::ReadOnly => {
+            "Execute a read-only SQL query and return results (max 50 rows). Only SELECT, WITH, SHOW, DESCRIBE, EXPLAIN statements are allowed. Write operations (INSERT/UPDATE/DELETE/DDL) are blocked."
+        }
     };
+    let _ = sql_permissions.allow_dangerous;
     ToolDefinition {
         name: "execute_query",
         description,
@@ -628,7 +706,7 @@ async fn execute_execute_query(
             return Err("Blocked: AI agents cannot execute writes or DDL on a production database. Return the SQL for the user to review and execute manually in DBX.".to_string());
         }
     }
-    if !sql_risk_allowed(risk, sql_permissions.clone()) {
+    if !sql_risk_allowed(risk, &sql_permissions) {
         if risk == SqlRisk::Transaction {
             return Err("Blocked: transaction control statements are not available to the AI agent.".to_string());
         }
@@ -1178,25 +1256,40 @@ for line in sys.stdin:
     fn confirmed_sql_permissions_update_execute_query_contract() {
         let tools = all_tools(
             DatabaseType::Mysql,
-            AgentSqlPermissions { allow_writes: true, allow_dangerous: true, confirmed_write_sql: None },
+            AgentSqlPermissions {
+                allow_writes: true,
+                allow_dangerous: true,
+                confirmed_write_sql: None,
+                permission_level: AgentPermissionLevel::Full,
+            },
         );
         let execute_query = tools.iter().find(|tool| tool.name == "execute_query").unwrap();
 
-        assert!(execute_query.description.contains("explicitly confirmed"));
+        assert!(execute_query.description.contains("permission level"));
         assert!(execute_query.description.contains("DDL"));
     }
 
     #[test]
     fn sql_permissions_keep_writes_blocked_until_confirmation() {
-        assert!(!sql_risk_allowed(SqlRisk::Write, AgentSqlPermissions::default()));
-        assert!(!sql_risk_allowed(SqlRisk::Ddl, AgentSqlPermissions::default()));
+        assert!(!sql_risk_allowed(SqlRisk::Write, &AgentSqlPermissions::default()));
+        assert!(!sql_risk_allowed(SqlRisk::Ddl, &AgentSqlPermissions::default()));
         assert!(sql_risk_allowed(
             SqlRisk::Ddl,
-            AgentSqlPermissions { allow_writes: true, allow_dangerous: true, confirmed_write_sql: None }
+            &AgentSqlPermissions {
+                allow_writes: true,
+                allow_dangerous: true,
+                confirmed_write_sql: None,
+                permission_level: AgentPermissionLevel::Full,
+            }
         ));
         assert!(!sql_risk_allowed(
             SqlRisk::Transaction,
-            AgentSqlPermissions { allow_writes: true, allow_dangerous: true, confirmed_write_sql: None }
+            &AgentSqlPermissions {
+                allow_writes: true,
+                allow_dangerous: true,
+                confirmed_write_sql: None,
+                permission_level: AgentPermissionLevel::Full,
+            }
         ));
     }
 
@@ -1563,8 +1656,60 @@ for line in sys.stdin:
             allow_writes: true,
             allow_dangerous: true,
             confirmed_write_sql: Some("CREATE TABLE t (c INT)".to_string()),
+            permission_level: AgentPermissionLevel::Full,
         };
         assert_eq!(perms.confirmed_write_sql.as_deref(), Some("CREATE TABLE t (c INT)"));
+    }
+
+    #[test]
+    fn permission_levels_gate_write_and_ddl_risks() {
+        // ReadOnly (default): reads allowed, writes and DDL blocked.
+        let readonly = AgentSqlPermissions::default();
+        assert_eq!(readonly.permission_level, AgentPermissionLevel::ReadOnly);
+        assert!(sql_risk_allowed(SqlRisk::ReadOnly, &readonly));
+        assert!(!sql_risk_allowed(SqlRisk::Write, &readonly));
+        assert!(!sql_risk_allowed(SqlRisk::Ddl, &readonly));
+
+        // Data: writes allowed, DDL blocked.
+        let data = agent_permissions_for_request(false, None, AgentPermissionLevel::Data);
+        assert!(data.allow_writes);
+        assert!(!data.allow_dangerous);
+        assert!(sql_risk_allowed(SqlRisk::ReadOnly, &data));
+        assert!(sql_risk_allowed(SqlRisk::Write, &data));
+        assert!(!sql_risk_allowed(SqlRisk::Ddl, &data));
+
+        // Full: writes and DDL allowed.
+        let full = agent_permissions_for_request(false, None, AgentPermissionLevel::Full);
+        assert!(full.allow_writes);
+        assert!(full.allow_dangerous);
+        assert!(sql_risk_allowed(SqlRisk::Ddl, &full));
+        assert!(!sql_risk_allowed(SqlRisk::Transaction, &full));
+    }
+
+    #[test]
+    fn permission_levels_are_fail_closed_for_production_databases() {
+        for level in [AgentPermissionLevel::ReadOnly, AgentPermissionLevel::Data, AgentPermissionLevel::Full] {
+            let permissions = agent_permissions_for_request(true, None, level);
+            assert!(!permissions.allow_writes, "production must not allow writes at {level:?}");
+            assert!(!permissions.allow_dangerous, "production must not allow DDL at {level:?}");
+            assert_eq!(permissions.permission_level, AgentPermissionLevel::ReadOnly);
+            assert!(sql_risk_allowed(SqlRisk::ReadOnly, &permissions));
+            assert!(!sql_risk_allowed(SqlRisk::Write, &permissions));
+            assert!(!sql_risk_allowed(SqlRisk::Ddl, &permissions));
+        }
+    }
+
+    #[test]
+    fn confirmed_sql_pins_the_run_even_at_higher_levels() {
+        let permissions = agent_permissions_for_request(
+            false,
+            Some("DELETE FROM sessions WHERE id = 7".to_string()),
+            AgentPermissionLevel::Full,
+        );
+        assert!(permissions.allow_writes);
+        assert!(permissions.allow_dangerous);
+        assert!(sql_matches_confirmed_write("DELETE FROM sessions WHERE id = 7", &permissions.confirmed_write_sql));
+        assert!(!sql_matches_confirmed_write("DROP TABLE sessions", &permissions.confirmed_write_sql));
     }
 
     #[test]

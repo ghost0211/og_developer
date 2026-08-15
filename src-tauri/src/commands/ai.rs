@@ -170,7 +170,7 @@ pub async fn ai_agent_stream(
     // between the user's confirmation and this backend request.  The frontend
     // also verifies this synchronously, but this backend check provides
     // defense-in-depth for CLI-provider and API-driven paths.
-    let (allow_write_sql, confirmed_write_sql) = dbx_core::agent_tools::verify_confirmed_target(
+    let (_, confirmed_write_sql) = dbx_core::agent_tools::verify_confirmed_target(
         allow_write_sql,
         confirmed_write_sql,
         confirmed_connection_id,
@@ -184,10 +184,14 @@ pub async fn ai_agent_stream(
     // production.  Writes are only allowed when a specific SQL statement was
     // confirmed — an empty confirmed_write_sql is treated as "no confirmation"
     // so the agent cannot execute arbitrary write/DDL statements.
-    let sql_permissions = dbx_core::agent_tools::confirmed_write_sql_permissions(
+    // Permission level from the AI provider config gates the agent's database
+    // access (readonly/data/full); production databases always degrade to
+    // read-only. A per-run confirmed SQL (frontend confirmation flow) pins the
+    // run to that exact statement; the level still decides the ceiling.
+    let sql_permissions = dbx_core::agent_tools::agent_permissions_for_request(
         production_database,
-        allow_write_sql.unwrap_or(false),
         confirmed_write_sql,
+        request.config.agent_permission_level,
     );
     let agent_ctx = AgentLoopContext {
         state: state.inner().clone(),

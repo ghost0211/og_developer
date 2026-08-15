@@ -2071,6 +2071,12 @@ export default withEnglishFallback({
     proxy: "プロキシ",
     proxyEnable: "プロキシ経由でAIリクエストを送信",
     proxyUrl: "プロキシURL",
+    permissionLevel: "Agent のデータベース権限",
+    permissionLevelReadonly: "読み取り専用（デフォルト）",
+    permissionLevelData: "データ読み書き",
+    permissionLevelFull: "完全（DDL 含む）",
+    permissionLevelDescription:
+      "Agent モードで AI エージェントが設定済みデータベースに直接アクセスできるようにします。読み取り専用は SELECT/SHOW/EXPLAIN のみ許可。データ読み書きは INSERT/UPDATE/DELETE を追加。完全は DDL（CREATE/ALTER/DROP/TRUNCATE）も許可。本番データベースはこの設定に関係なく常に読み取り専用です。",
     enableThinking: "思考",
     enableThinkingOn: "有効",
     enableThinkingOff: "無効",

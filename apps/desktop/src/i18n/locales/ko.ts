@@ -1888,6 +1888,12 @@ export default withEnglishFallback({
     proxy: "프록시",
     proxyEnable: "프록시를 통해 AI 요청 전송",
     proxyUrl: "프록시 URL",
+    permissionLevel: "Agent 데이터베이스 권한",
+    permissionLevelReadonly: "읽기 전용(기본)",
+    permissionLevelData: "데이터 읽기/쓰기",
+    permissionLevelFull: "완전(DDL 포함)",
+    permissionLevelDescription:
+      "Agent 모드에서 AI 에이전트가 구성된 데이터베이스에 직접 접근할 수 있게 합니다. 읽기 전용은 SELECT/SHOW/EXPLAIN만 허용하고, 데이터 읽기/쓰기는 INSERT/UPDATE/DELETE를 추가하며, 완전 권한은 DDL(CREATE/ALTER/DROP/TRUNCATE)도 허용합니다. 프로덕션 데이터베이스는 이 설정과 관계없이 항상 읽기 전용입니다.",
     enableThinking: "사고",
     enableThinkingOn: "활성화됨",
     enableThinkingOff: "비활성화됨",

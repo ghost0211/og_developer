@@ -300,6 +300,7 @@ export function normalizeAiConfig(config: Partial<AiConfig> | null | undefined):
     claudeCodeCliEnv: normalizeAiEnv(config?.claudeCodeCliEnv),
     piAgentCliPath: config?.piAgentCliPath?.trim() || undefined,
     piAgentCliEnv: normalizeAiEnv(config?.piAgentCliEnv),
+    agentPermissionLevel: config?.agentPermissionLevel ?? "readonly",
   };
 }
 

@@ -2035,6 +2035,12 @@ export default withEnglishFallback({
     proxy: "Proxy",
     proxyEnable: "Enviar solicitudes de IA mediante proxy",
     proxyUrl: "URL del proxy",
+    permissionLevel: "Permiso de base de datos del agente",
+    permissionLevelReadonly: "Solo lectura (predeterminado)",
+    permissionLevelData: "Lectura/escritura de datos",
+    permissionLevelFull: "Completo (incluye DDL)",
+    permissionLevelDescription:
+      "Permite que el agente de IA acceda directamente a la base de datos configurada en el modo Agente. Solo lectura admite únicamente SELECT/SHOW/EXPLAIN; Lectura/escritura añade INSERT/UPDATE/DELETE; Completo también permite DDL (CREATE/ALTER/DROP/TRUNCATE). Las bases de datos de producción son siempre de solo lectura, independientemente de este ajuste.",
     enableThinking: "Razonamiento",
     enableThinkingOn: "Activado",
     enableThinkingOff: "Desactivado",

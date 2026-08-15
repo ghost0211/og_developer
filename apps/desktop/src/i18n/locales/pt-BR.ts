@@ -2037,6 +2037,12 @@ export default withEnglishFallback({
     proxy: "Proxy",
     proxyEnable: "Enviar requisições de AI através do proxy",
     proxyUrl: "URL do Proxy",
+    permissionLevel: "Permissão de banco de dados do agente",
+    permissionLevelReadonly: "Somente leitura (padrão)",
+    permissionLevelData: "Leitura/escrita de dados",
+    permissionLevelFull: "Completo (inclui DDL)",
+    permissionLevelDescription:
+      "Permite que o agente de IA acesse diretamente o banco de dados configurado no modo Agente. Somente leitura permite apenas SELECT/SHOW/EXPLAIN; Leitura/escrita adiciona INSERT/UPDATE/DELETE; Completo também permite DDL (CREATE/ALTER/DROP/TRUNCATE). Bancos de dados de produção são sempre somente leitura, independentemente desta configuração.",
     anthropicMessagesHint: "APIs compatíveis com Anthropic Messages geralmente usam /v1/messages.",
     openAiCompatibleEndpointHint: "A maioria das APIs compatíveis com OpenAI requer o prefixo de caminho /v1.",
     contextWindow: "Janela de Contexto",

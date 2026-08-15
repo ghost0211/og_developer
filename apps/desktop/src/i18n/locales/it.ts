@@ -1977,6 +1977,12 @@ export default withEnglishFallback({
     proxy: "Proxy",
     proxyEnable: "Invia richieste AI tramite proxy",
     proxyUrl: "URL Proxy",
+    permissionLevel: "Permesso database agente",
+    permissionLevelReadonly: "Sola lettura (predefinito)",
+    permissionLevelData: "Lettura/scrittura dati",
+    permissionLevelFull: "Completo (incl. DDL)",
+    permissionLevelDescription:
+      "Consente all'agente AI di accedere direttamente al database configurato in modalità Agente. Sola lettura consente solo SELECT/SHOW/EXPLAIN; Lettura/scrittura aggiunge INSERT/UPDATE/DELETE; Completo consente anche DDL (CREATE/ALTER/DROP/TRUNCATE). I database di produzione sono sempre in sola lettura indipendentemente da questa impostazione.",
     enableThinking: "Pensiero (Thinking)",
     enableThinkingOn: "Abilitato",
     enableThinkingOff: "Disabilitato",

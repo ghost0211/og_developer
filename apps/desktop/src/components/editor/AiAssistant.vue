@@ -1786,7 +1786,12 @@ async function send() {
     }
   }
   // Agent confirmation cannot grant autonomous writes while the active database is production.
-  const allowWriteSql = requestedMode === "agent" && allowWriteSqlForNextRun && !productionContext.value.active;
+  // The configured permission level (readonly/data/full) raises the ceiling: data/full
+  // levels authorize writes for this run without a per-statement confirmation, while
+  // readonly keeps the explicit confirmation flow. Production always stays read-only.
+  const permissionLevel = activeFullConfig.value?.agentPermissionLevel ?? "readonly";
+  const levelGrantsWrites = permissionLevel === "data" || permissionLevel === "full";
+  const allowWriteSql = requestedMode === "agent" && !productionContext.value.active && (levelGrantsWrites || allowWriteSqlForNextRun);
   const confirmedWriteSql = allowWriteSql ? confirmedWriteSqlText : undefined;
   // Capture the confirmed target snapshot before clearing the one-shot grant
   // state, so the values survive to be passed through to the backend.
