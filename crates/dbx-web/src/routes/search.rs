@@ -31,7 +31,7 @@ pub struct ReadFileQuery {
 }
 
 pub async fn search_files(
-    State(state): State<Arc<WebState>>,
+    State(_state): State<Arc<WebState>>,
     Query(q): Query<FileSearchQuery>,
 ) -> Result<Json<Vec<dbx_core::search::FileSearchHit>>, AppError> {
     let hits =

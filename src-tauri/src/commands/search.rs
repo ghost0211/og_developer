@@ -8,7 +8,7 @@ use dbx_core::connection::AppState;
 
 #[tauri::command]
 pub async fn search_files(
-    state: State<'_, Arc<AppState>>,
+    _state: State<'_, Arc<AppState>>,
     root: String,
     query: String,
     limit: Option<usize>,

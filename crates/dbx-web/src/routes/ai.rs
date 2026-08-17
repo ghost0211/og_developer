@@ -423,7 +423,7 @@ pub async fn ai_agent_stream(
     });
     // Reject the confirmed-write grant when the connection or database changed
     // between the user's confirmation and this backend request (defense-in-depth).
-    let (allow_write_sql, confirmed_write_sql) = dbx_core::agent_tools::verify_confirmed_target(
+    let (_allow_write_sql, confirmed_write_sql) = dbx_core::agent_tools::verify_confirmed_target(
         Some(body.allow_write_sql),
         body.confirmed_write_sql,
         body.confirmed_connection_id,
@@ -527,6 +527,7 @@ mod tests {
             claude_code_cli_env: Default::default(),
             pi_agent_cli_path: None,
             pi_agent_cli_env: Default::default(),
+            agent_permission_level: dbx_core::agent_tools::AgentPermissionLevel::default(),
         }
     }
 
@@ -614,6 +615,7 @@ mod tests {
             claude_code_cli_env: Default::default(),
             pi_agent_cli_path: None,
             pi_agent_cli_env: Default::default(),
+            agent_permission_level: dbx_core::agent_tools::AgentPermissionLevel::default(),
         };
 
         let body = super::AiTestConnectionRequest { config };

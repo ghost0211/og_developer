@@ -43,10 +43,10 @@ pub const GAUSSDB_M_JDBC_DRIVER_CLASS: &str = "com.huawei.gaussdb.jdbc.Driver";
 /// the official driver supports it (AUTH_REQ_SHA256/MD5_SHA256encode).
 ///
 /// The official driver changed its entry class and URL scheme between
-/// releases: 6.0 keeps pgJDBC branding (org.postgresql.Driver +
-/// jdbc:postgresql://) while 7.0 uses openGauss branding (org.opengauss.Driver
-/// + jdbc:opengauss://). The pairing is strict, so it is resolved by sniffing
-/// the selected jar.
+/// releases: 6.0 keeps pgJDBC branding (`org.postgresql.Driver` with
+/// `jdbc:postgresql://`) while 7.0 uses openGauss branding
+/// (`org.opengauss.Driver` with `jdbc:opengauss://`). The pairing is strict,
+/// so it is resolved by sniffing the selected jar.
 pub const OPENGAUSS_JDBC_DRIVER_PROFILE: &str = "opengauss-jdbc";
 pub const OPENGAUSS_JDBC_DRIVER_CLASS: &str = "org.postgresql.Driver";
 

@@ -804,7 +804,7 @@ mod tests {
 
         // Cleanup.
         opengauss_debug_stop(&state, &start.session_id).await.expect("stop");
-        let schema = "gaussdb";
+        let _schema = "gaussdb";
         postgres::execute_query(&pool, "drop procedure if exists og_dbg_live").await.expect("drop fixture");
         drop(dir);
     }

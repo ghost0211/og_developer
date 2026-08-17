@@ -79,6 +79,7 @@ impl AppLocaleState {
         *self.locale.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(locale);
     }
 
+    #[allow(dead_code)]
     fn get(&self) -> String {
         self.locale
             .lock()
@@ -477,6 +478,7 @@ fn prepare_main_window_for_display<R: tauri::Runtime>(app: &tauri::AppHandle<R>)
     window_state_guard::enforce_main_window_bounds(app);
 }
 
+#[allow(dead_code)]
 fn clear_main_webview_focus<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.eval(
@@ -592,6 +594,7 @@ fn app_menu_quit_label(locale: &str, app_name: &str) -> String {
     }
 }
 
+#[allow(dead_code)]
 fn current_app_locale<R: tauri::Runtime, M: Manager<R>>(manager: &M) -> String {
     match manager.try_state::<AppLocaleState>() {
         Some(state) => state.get(),
@@ -602,8 +605,8 @@ fn current_app_locale<R: tauri::Runtime, M: Manager<R>>(manager: &M) -> String {
 /// Rebuilds the tray menu (and the macOS app menu) so native labels follow the
 /// UI language after the frontend reports a locale change.
 pub(crate) fn refresh_native_menus(app: &tauri::AppHandle) -> tauri::Result<()> {
-    #[cfg_attr(not(target_os = "macos"), allow(unused_variables))]
-    let app = app;
+    #[cfg(not(target_os = "macos"))]
+    let _ = app;
     #[cfg(target_os = "macos")]
     {
         let _ = app.set_menu(build_app_menu(app)?)?;
@@ -682,12 +685,12 @@ pub(crate) fn apply_desktop_settings(app: &tauri::AppHandle, desktop_settings: &
 #[allow(clippy::items_after_test_module)]
 mod tests {
     use super::{
-        app_menu_copy_support_info_label, app_menu_quit_label, linux_appimage_system_gtk_immodules_cache,
-        linux_appimage_wayland_backend_override, linux_drm_render_devices_from_paths, linux_nvidia_driver_from_state,
-        linux_selected_drm_render_device, linux_webkit_rendering_workarounds, native_window_decorations_override,
-        should_confirm_app_exit_request, should_enable_single_instance, should_fallback_to_native_quit,
-        should_show_main_window_after_setup, should_show_main_window_before_setup_tasks, startup_data_dir_mode,
-        uses_application_level_icon, LinuxDrmRenderDevice, LinuxNvidiaDriver,
+        linux_appimage_system_gtk_immodules_cache, linux_appimage_wayland_backend_override,
+        linux_drm_render_devices_from_paths, linux_nvidia_driver_from_state, linux_selected_drm_render_device,
+        linux_webkit_rendering_workarounds, native_window_decorations_override, should_confirm_app_exit_request,
+        should_enable_single_instance, should_fallback_to_native_quit, should_show_main_window_after_setup,
+        should_show_main_window_before_setup_tasks, startup_data_dir_mode, uses_application_level_icon,
+        LinuxDrmRenderDevice, LinuxNvidiaDriver,
     };
     use crate::data_dir::DataDirMode;
     use std::ffi::OsStr;

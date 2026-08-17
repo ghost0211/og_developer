@@ -1007,6 +1007,7 @@ async fn postgres_query_one_cached(
     }
 }
 
+#[allow(clippy::large_enum_variant)]
 enum PreparedSelectOutcome {
     Complete(QueryResult),
     TextFallback { column_types: Vec<String>, unsupported_type: String },

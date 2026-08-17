@@ -1023,6 +1023,7 @@ mod tests {
                 rows: vec![vec![serde_json::json!("relation customer_orders does not exist")]],
                 affected_rows: 0,
                 execution_time_ms: 0,
+                messages: vec![],
                 truncated: false,
                 session_id: None,
                 has_more: false,
