@@ -87,9 +87,8 @@ contributors）的**派生 fork**，基于 Apache License 2.0 分发。
 ### 分支
 
 - `main` —— 产品主线：品牌化、入口裁剪与 openGauss 特性。
-- `opengauss-fixes` —— 干净的 openGauss 修复集，随时可作为 PR 提交给上游。
 
-上游以 `upstream` remote 跟踪，定期合并。
+上游以 `upstream` remote 跟踪，用于同步上游修复。
 
 ## 快速开始
 
@@ -146,9 +145,7 @@ cargo test -p dbx-core --no-default-features \
 ## 贡献
 
 见 [CONTRIBUTING.zh-CN.md](CONTRIBUTING.zh-CN.md)（或
-[CONTRIBUTING.md](CONTRIBUTING.md)）。回馈上游最规范的方式：把
-`opengauss-fixes` 分支的修复以 PR 形式提交给
-[上游 dbx](https://github.com/t8y2/dbx)。
+[CONTRIBUTING.md](CONTRIBUTING.md)）。
 
 ## 许可证
 

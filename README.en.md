@@ -103,10 +103,8 @@ This repository is a **derivative fork of [dbx](https://github.com/t8y2/dbx)**
 ### Branches
 
 - `main` — the product line: branding, entry trimming and openGauss features.
-- `opengauss-fixes` — a clean, self-contained set of openGauss fixes, kept
-  ready to be submitted as pull requests to upstream dbx.
 
-Upstream is tracked as the `upstream` remote and merged periodically.
+Upstream is tracked as the `upstream` remote for syncing upstream fixes.
 
 ## Getting started
 
@@ -163,9 +161,7 @@ the test target; see the `db-*` targets in the [Makefile](Makefile).
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) (or
-[CONTRIBUTING.zh-CN.md](CONTRIBUTING.zh-CN.md)). The cleanest way to give back
-is to submit the openGauss fixes from the `opengauss-fixes` branch as PRs to
-[upstream dbx](https://github.com/t8y2/dbx).
+[CONTRIBUTING.zh-CN.md](CONTRIBUTING.zh-CN.md)).
 
 ## License
 
