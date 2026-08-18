@@ -854,7 +854,7 @@ export interface ObjectReferenceInfo {
 }
 
 export async function listObjectReferences(connectionId: string, database: string, schema: string, objectType: string, name: string, direction: string): Promise<ObjectReferenceInfo[]> {
-  return get(`/api/schema/object-references?${qs({ connection_id: connectionId, database, schema, object_type: objectType, name, direction })}`);
+  return get(`/api/schema/object-references?${qs({ connection_id: connectionId, database, schema, object_type_name: objectType, name, direction })}`);
 }
 
 export async function listDialectDataTypes(dialectName: string): Promise<string[]> {

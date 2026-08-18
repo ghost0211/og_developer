@@ -36,6 +36,8 @@ import {
   Square,
   X,
   RefreshCw,
+  ArrowLeftRight,
+  GitFork,
 } from "@lucide/vue";
 import { useConnectionStore } from "@/stores/connectionStore";
 import { useQueryStore } from "@/stores/queryStore";
@@ -238,6 +240,10 @@ function getIconInfo(node: TreeNode): { icon: any; colorClass: string } | null {
     case "group-table-partitions":
     case "group-table-subpartitions":
       return { icon: node.isExpanded ? FolderOpen : FolderClosed, colorClass: "text-green-400" };
+    case "group-references":
+      return { icon: ArrowLeftRight, colorClass: "text-orange-500" };
+    case "group-referenced-by":
+      return { icon: GitFork, colorClass: "text-teal-500" };
     case "object-browser":
       return { icon: TableProperties, colorClass: "text-primary" };
     case "user-admin":
