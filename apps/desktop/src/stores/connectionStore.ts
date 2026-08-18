@@ -4281,6 +4281,9 @@ export const useConnectionStore = defineStore("connection", () => {
   }
 
   async function loadObjectGroupChildren(node: TreeNode, options?: LoadTreeOptions) {
+    if (node.type === "group-materialized-views") {
+      console.log("[ogdbg] MV group expand", node.type, "force=", options?.force);
+    }
     const configForScope = node.connectionId ? getConfig(node.connectionId) : undefined;
     const objectTypesForScope = objectTypesForGroupNode(node.type);
     const pageSizeForScope = sidebarObjectGroupPageSize();
@@ -5078,6 +5081,7 @@ export const useConnectionStore = defineStore("connection", () => {
       const refs = await api.listObjectReferences(node.connectionId, node.database, querySchema, node.referenceObjectType, node.objectName, node.referenceDirection);
       const targetNode = treeNodeLoadTarget(load);
       if (!targetNode) return;
+      console.log("[ogdbg] reference loaded", node.referenceObjectType, node.objectName, node.referenceDirection, "rows=", refs.length);
       setChildren(
         targetNode,
         refs.map((ref) => ({
