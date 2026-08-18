@@ -4696,7 +4696,11 @@ async fn list_objects_once(
                 // objects through the native wire driver instead.
                 match native_postgres_metadata_pool(state, connection_id, database, native_config).await {
                     Ok(Some(pool)) => {
-                        return db::postgres::list_objects(&pool, schema).await.map(unpaged_object_list);
+                        let mut objects = db::postgres::list_objects(&pool, schema).await?;
+                        if let Some(types) = object_types.as_deref().filter(|t| !t.is_empty()) {
+                            objects.retain(|o| types.contains(&o.object_type));
+                        }
+                        return Ok(unpaged_object_list(objects));
                     }
                     Ok(None) => {}
                     Err(error) => {
