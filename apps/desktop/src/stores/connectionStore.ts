@@ -5029,6 +5029,41 @@ export const useConnectionStore = defineStore("connection", () => {
     }
   }
 
+  /**
+   * Map a reference-result object_type (relkind char or the parsed kind) to a
+   * tree node type so reference rows render with the right icon and label.
+   */
+  function referenceResultNodeType(objectType: string): TreeNode["type"] {
+    switch (objectType.toLowerCase()) {
+      case "r":
+        return "table";
+      case "v":
+        return "view";
+      case "m":
+        return "materialized_view";
+      case "s":
+        return "sequence";
+      case "f":
+        return "function";
+      case "p":
+      case "procedure":
+        return "procedure";
+      case "synonym_target":
+      case "synonym":
+        return "synonym";
+      case "package":
+        return "package";
+      case "type":
+        return "type";
+      case "foreign_key":
+        return "table";
+      case "column":
+        return "table";
+      default:
+        return "object-browser";
+    }
+  }
+
   /** Load the children of a References / Referenced-by group node. */
   async function loadReferenceGroupChildren(node: TreeNode) {
     if (!node.connectionId || !node.database || !node.objectName || !node.referenceObjectType || !node.referenceDirection) return;
@@ -5043,7 +5078,7 @@ export const useConnectionStore = defineStore("connection", () => {
         refs.map((ref) => ({
           id: `${node.id}:${ref.schema}:${ref.name}:${ref.objectType}`,
           label: `${ref.schema}.${ref.name}${ref.detail ? ` (${ref.detail})` : ""}`,
-          type: "object-browser" as TreeNode["type"],
+          type: referenceResultNodeType(ref.objectType),
           connectionId: node.connectionId,
           database: node.database,
           schema: ref.schema,
