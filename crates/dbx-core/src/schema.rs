@@ -1827,6 +1827,16 @@ async fn list_tables_once(
                 .await
                 .map(|tables| filter_table_infos(tables, filter, limit, offset, object_types, table_name_filter));
             }
+            if db_config.as_ref().is_some_and(is_opengauss_family_config) {
+                // The official openGauss JDBC driver cannot report materialized
+                // views (or openGauss-specific table kinds) through
+                // DatabaseMetaData.getTables. Use the native wire catalog so the
+                // materialized-view group renders like the built-in driver.
+                if let Some(p) = opengauss_metadata_postgres_pool(state, connection_id, database, &pool_key).await? {
+                    let tables = db::postgres::list_tables(&p, schema).await?;
+                    return Ok(filter_table_infos(tables, filter, limit, offset, object_types, table_name_filter));
+                }
+            }
             let mut params =
                 serde_json::json!({ "connection": config.as_ref(), "database": database, "schema": schema });
             if let Some(filter) = filter.map(str::trim).filter(|value| !value.is_empty()) {
