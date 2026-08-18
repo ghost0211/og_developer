@@ -2941,6 +2941,11 @@ pub(crate) fn opengauss_routine_references_sql() -> &'static str {
 /// Resolves intermediate rows (rewrite rules → views, constraints → tables,
 /// column defaults → columns) into readable references.
 pub(crate) fn opengauss_referenced_by_sql() -> &'static str {
+    // Only external references: rows whose pg_depend objid resolves to the
+    // target itself (own column defaults, own primary/unique constraints) are
+    // excluded. Column defaults only show when they reference another object
+    // (e.g. a sequence via nextval), foreign keys only when they point at the
+    // target from another table.
     "SELECT DISTINCT ref_schema, ref_name, ref_kind, detail FROM ( \
        SELECT n.nspname AS ref_schema, c.relname AS ref_name, \
               CASE c.relkind WHEN 'v' THEN 'view' WHEN 'm' THEN 'materialized_view' \
@@ -2952,14 +2957,15 @@ pub(crate) fn opengauss_referenced_by_sql() -> &'static str {
        JOIN pg_catalog.pg_class c ON c.oid = rw.ev_class \
        JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
        WHERE d.refobjid = $1 AND d.refclassid = 'pg_catalog.pg_class'::regclass \
+         AND rw.ev_class <> $1 \
        UNION ALL \
-       SELECT n.nspname, c.relname, 'constraint', con.conname \
+       SELECT n.nspname, c.relname, 'foreign_key', con.conname \
        FROM pg_catalog.pg_depend d \
        JOIN pg_catalog.pg_constraint con ON con.oid = d.objid \
        JOIN pg_catalog.pg_class c ON c.oid = con.conrelid \
        JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
        WHERE d.refobjid = $1 AND d.refclassid = 'pg_catalog.pg_class'::regclass \
-         AND con.contype IN ('f','p','u','c') \
+         AND con.contype = 'f' AND con.conrelid <> $1 \
        UNION ALL \
        SELECT n.nspname, c.relname, 'column', a.attname || ' default' \
        FROM pg_catalog.pg_depend d \
@@ -2968,6 +2974,7 @@ pub(crate) fn opengauss_referenced_by_sql() -> &'static str {
        JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
        JOIN pg_catalog.pg_attribute a ON a.attrelid = ad.adrelid AND a.attnum = ad.adnum \
        WHERE d.refobjid = $1 \
+         AND ad.adrelid <> $1 \
        UNION ALL \
        SELECT n.nspname, p.proname, 'function', '' \
        FROM pg_catalog.pg_depend d \
