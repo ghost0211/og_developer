@@ -750,6 +750,16 @@ function runRowClickAction(clickDetail: number) {
     void openObjectBrowser();
     return;
   }
+  // Reference / synonym-target rows open their target object's DDL source
+  // instead of the data table (tables are not covered by object source).
+  if (node.targetKind && node.targetName) {
+    if (clickDetail > 1) return;
+    const sourceKind = objectSourceKindForTreeNode(node.type);
+    if (sourceKind) {
+      openObjectSourceDialog(false);
+    }
+    return;
+  }
   if (node.type === "mongo-gridfs") {
     openMongoTreeData(node);
     return;
