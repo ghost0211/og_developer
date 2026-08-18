@@ -5909,16 +5909,12 @@ pub async fn list_opengauss_package_subprograms_core(
 ) -> Result<Vec<db::FunctionInfo>, String> {
     retry_metadata_connection(state, connection_id, Some(database), || async {
         let pool_key = state.get_or_create_metadata_pool_for_session(connection_id, Some(database), None).await?;
-        let db_config = connection_config(state, connection_id).await;
-        let connections = state.connections.read().await;
-        let pool = connections.get(&pool_key).ok_or("Pool not found")?;
-
-        match pool {
-            PoolKind::Postgres(p) if db_config.as_ref().is_some_and(is_opengauss_family_config) => {
-                db::postgres::list_opengauss_package_subprograms(p, schema, package).await
-            }
-            _ => Ok(vec![]),
-        }
+        // The official openGauss JDBC plugin cannot list package subprograms, so
+        // JDBC-mode connections fall back to the native wire catalogs.
+        let Some(p) = opengauss_metadata_postgres_pool(state, connection_id, database, &pool_key).await? else {
+            return Ok(vec![]);
+        };
+        db::postgres::list_opengauss_package_subprograms(&p, schema, package).await
     })
     .await
 }
@@ -5941,6 +5937,15 @@ pub async fn list_sequences_core(
                 db::postgres::list_opengauss_sequences(p, schema, with_last_values).await
             }
             PoolKind::Postgres(p) => db::postgres::list_sequences(p, schema, with_last_values).await,
+            PoolKind::ExternalDriver { .. } if db_config.as_ref().is_some_and(is_opengauss_family_config) => {
+                // JDBC-mode openGauss: fall back to native wire catalogs for
+                // openGauss-specific sequence semantics.
+                if let Some(p) = opengauss_metadata_postgres_pool(state, connection_id, database, &pool_key).await? {
+                    db::postgres::list_opengauss_sequences(&p, schema, with_last_values).await
+                } else {
+                    Ok(vec![])
+                }
+            }
             _ => Ok(vec![]),
         }
     })
