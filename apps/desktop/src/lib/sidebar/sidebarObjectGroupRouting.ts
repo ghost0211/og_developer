@@ -5,6 +5,7 @@ import { objectTypesForGroupNode } from "@/lib/table/tableTree";
 export interface SidebarObjectGroupLoaders {
   loadTriggers(connectionId: string, database: string, table: string, schema?: string, nodeId?: string, catalog?: string): Promise<void>;
   loadObjectGroupChildren(node: TreeNode): Promise<void>;
+  loadReferenceGroupChildren(node: TreeNode): Promise<void>;
 }
 
 /**
@@ -16,6 +17,13 @@ export async function loadSidebarObjectGroup(node: TreeNode, loaders: SidebarObj
   if (node.type === "group-triggers" && node.connectionId && hasTreeNodeDatabaseContext(node) && node.tableName) {
     await loaders.loadTriggers(node.connectionId, node.database, node.tableName, node.schema, node.id, node.catalog);
     return true;
+  }
+
+  if (node.type === "group-references" || node.type === "group-referenced-by") {
+    if (node.connectionId && hasTreeNodeDatabaseContext(node) && node.referenceObjectType && node.objectName && node.referenceDirection) {
+      await loaders.loadReferenceGroupChildren(node);
+      return true;
+    }
   }
 
   if (!objectTypesForGroupNode(node.type)) return false;
