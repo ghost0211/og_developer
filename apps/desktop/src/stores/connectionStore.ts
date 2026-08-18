@@ -5033,8 +5033,8 @@ export const useConnectionStore = defineStore("connection", () => {
    * Map a reference-result object_type (relkind char or the parsed kind) to a
    * tree node type so reference rows render with the right icon and label.
    */
-  function referenceResultNodeType(objectType: string): TreeNode["type"] {
-    switch (objectType.toLowerCase()) {
+  function referenceResultNodeType(objectType: string | undefined): TreeNode["type"] {
+    switch ((objectType ?? "").toLowerCase()) {
       case "r":
         return "table";
       case "v":
