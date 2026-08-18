@@ -4948,7 +4948,7 @@ export const useConnectionStore = defineStore("connection", () => {
       await loadTableGroups(connectionId, database, target.targetName, target.targetSchema, node.id, undefined, synonymTargetObjectType(target.targetKind));
       const live = findNode(treeNodes.value, node.id);
       if (live) {
-        live.children = [...(live.children ?? []), ...buildObjectReferenceGroupNodes(node, "synonym", synonym, "references", true), ...buildObjectReferenceGroupNodes(node, "synonym", synonym, "referencedBy", true)];
+        live.children = [...(live.children ?? []), ...buildObjectReferenceGroupNodes(node, "synonym", synonym, "references", true)];
       }
       return;
     }
@@ -4956,7 +4956,7 @@ export const useConnectionStore = defineStore("connection", () => {
     try {
       const targetNode = treeNodeLoadTarget(load);
       if (!targetNode) return;
-      const children: TreeNode[] = [...buildObjectReferenceGroupNodes(node, "synonym", synonym, "references", true), ...buildObjectReferenceGroupNodes(node, "synonym", synonym, "referencedBy", true)];
+      const children: TreeNode[] = [...buildObjectReferenceGroupNodes(node, "synonym", synonym, "references", true)];
       if (target) {
         children.unshift({
           id: `${node.id}:__target`,
@@ -5478,6 +5478,13 @@ export const useConnectionStore = defineStore("connection", () => {
       await loadSubpartitions(node.connectionId, node.database, node.tableName, node.schema, node.id, node.catalog);
     } else if ((node.type === "package" || node.type === "package-body") && node.connectionId && hasTreeNodeDatabaseContext(node) && node.objectName) {
       await loadOpengaussPackageSubprograms(node.connectionId, node.database, node.objectName, node.schema, node.id);
+      const config = getConfig(node.connectionId);
+      if (isOpengaussFamilyConfig(config)) {
+        const live = findNode(treeNodes.value, node.id);
+        if (live) {
+          live.children = [...(live.children ?? []), ...buildObjectReferenceGroupNodes(node, "package", node.objectName, "references", true), ...buildObjectReferenceGroupNodes(node, "package", node.objectName, "referencedBy", true)];
+        }
+      }
     } else if (objectTypesForGroupNode(node.type)) {
       await loadObjectGroupChildren(node, options);
     } else if (node.type === "group-partitions") {
@@ -5490,10 +5497,10 @@ export const useConnectionStore = defineStore("connection", () => {
       await loadSynonymGroups(node.connectionId, node.database, node.label, node.schema, node);
     } else if (node.type === "type" && node.connectionId && hasTreeNodeDatabaseContext(node)) {
       await loadTypeGroups(node.connectionId, node.database, node.label, node.schema, node);
-    } else if ((node.type === "sequence" || node.type === "function" || node.type === "procedure" || node.type === "package") && node.connectionId && hasTreeNodeDatabaseContext(node)) {
+    } else if ((node.type === "sequence" || node.type === "function" || node.type === "procedure") && node.connectionId && hasTreeNodeDatabaseContext(node)) {
       const config = getConfig(node.connectionId);
       if (isOpengaussFamilyConfig(config)) {
-        await loadRoutineReferenceGroups(node, node.type, node.label);
+        await loadRoutineReferenceGroups(node, node.type, node.objectName || node.label);
       }
     }
   }
