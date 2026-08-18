@@ -1065,6 +1065,12 @@ function requestDeleteSelectedNode(): boolean {
 
 function onDoubleClick(event: MouseEvent) {
   if (dataTabOpenModeFromTreeClick(activeNode.value.type, event, settingsStore.editorSettings.shortcuts.openDataInNewTab) === "new-tab") return;
+  const node = activeNode.value;
+  // Reference / synonym-target rows open their target object's DDL source.
+  if (node.targetKind && node.targetName && objectSourceKindForTreeNode(node.type)) {
+    openObjectSourceDialog(false);
+    return;
+  }
   const action = treeNodeRowDoubleClickAction(activeNode.value.type, canOpenObjectBrowser.value, settingsStore.editorSettings.sidebarActivation, canExpand.value);
   if (action === "open-object-browser") {
     void openObjectBrowser();

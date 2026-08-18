@@ -474,7 +474,12 @@ export const useConnectionStore = defineStore("connection", () => {
     const errorRevision = connectionErrorRevision(scope.connectionId);
     const result = await load();
     clearConnectionErrorIfUnchanged(scope.connectionId, errorRevision);
-    metadataListPageCache.set(scope, result);
+    // Do not cache empty list pages: a transient backend failure or an older
+    // driver that lacked the metadata would otherwise pin an empty result for
+    // the whole TTL, forcing manual refreshes to reveal objects.
+    if (result.length > 0) {
+      metadataListPageCache.set(scope, result);
+    }
     logMetadataLoadTrace(metadataTraceLogger, trace, "done", {
       cacheStatus: options?.force ? "refresh" : "miss",
       resultCount: result.length,
