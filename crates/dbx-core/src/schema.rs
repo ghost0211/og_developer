@@ -6035,6 +6035,35 @@ pub async fn list_extensions_core(
     .await
 }
 
+/// Obtain a PostgreSQL metadata pool for openGauss family connections: the
+/// native wire pool directly, or the native-fallback pool for the official
+/// JDBC (ExternalDriver) mode, which does not expose these catalogs.
+async fn opengauss_metadata_postgres_pool(
+    state: &AppState,
+    connection_id: &str,
+    database: &str,
+    pool_key: &str,
+) -> Result<Option<deadpool_postgres::Pool>, String> {
+    let db_config = connection_config(state, connection_id).await;
+    let connections = state.connections.read().await;
+    match connections.get(pool_key) {
+        Some(PoolKind::Postgres(p)) => {
+            let p = p.clone();
+            drop(connections);
+            Ok(Some(p))
+        }
+        Some(PoolKind::ExternalDriver { .. }) if db_config.as_ref().is_some_and(is_opengauss_family_config) => {
+            let native_config = db_config.clone().expect("opengauss family config present");
+            drop(connections);
+            native_postgres_metadata_pool(state, connection_id, database, &native_config).await
+        }
+        _ => {
+            drop(connections);
+            Ok(None)
+        }
+    }
+}
+
 pub async fn list_available_extensions_core(
     state: &AppState,
     connection_id: &str,
@@ -6140,6 +6169,228 @@ fn extensions_from_query_result(result: db::QueryResult) -> Vec<db::ExtensionInf
             })
         })
         .collect()
+}
+
+/// Target of an openGauss synonym (pg_catalog.pg_synonym), resolved through
+/// possible synonym chains. `target_kind` mirrors pg_class.relkind
+/// ('r' table, 'v' view, 'm' materialized view, 'S' sequence, ...).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SynonymTargetInfo {
+    pub target_schema: String,
+    pub target_name: String,
+    pub target_kind: String,
+}
+
+/// Resolve what an openGauss synonym points at. Synonyms may chain to other
+/// synonyms, so the chain is walked up to 5 hops.
+pub async fn resolve_synonym_target_core(
+    state: &AppState,
+    connection_id: &str,
+    database: &str,
+    schema: &str,
+    synonym: &str,
+) -> Result<Option<SynonymTargetInfo>, String> {
+    retry_metadata_connection(state, connection_id, Some(database), || async {
+        let pool_key = state.get_or_create_metadata_pool_for_session(connection_id, Some(database), None).await?;
+        let Some(p) = opengauss_metadata_postgres_pool(state, connection_id, database, &pool_key).await? else {
+            return Ok(None);
+        };
+        let client = db::postgres::checkout_postgres_client(&p, None, db::connection_timeout()).await?;
+
+        let mut current_schema = schema.to_string();
+        let mut current_name = synonym.to_string();
+        for _ in 0..5 {
+            let rows = client
+                .query(db::postgres::opengauss_synonym_target_sql(), &[&current_name, &current_schema])
+                .await
+                .map_err(|e| e.to_string())?;
+            let Some(row) = rows.first() else {
+                return Ok(None);
+            };
+            let target_schema: String = row.get(0);
+            let target_name: String = row.get(1);
+            // Next hop may be another synonym.
+            let kind_rows = client
+                .query(db::postgres::opengauss_synonym_target_kind_sql(), &[&target_schema, &target_name])
+                .await
+                .map_err(|e| e.to_string())?;
+            let kind: String = kind_rows.first().map(|row| row.get::<_, String>(0)).unwrap_or_default();
+            if kind == "v" || kind == "m" || kind == "S" || kind == "r" || kind == "f" || kind == "p" {
+                return Ok(Some(SynonymTargetInfo {
+                    target_schema: target_schema.clone(),
+                    target_name: target_name.clone(),
+                    target_kind: kind,
+                }));
+            }
+            // Target is a synonym (or unknown): keep following the chain.
+            current_schema = target_schema;
+            current_name = target_name;
+            if kind_rows.is_empty() {
+                return Ok(None);
+            }
+        }
+        Ok(None)
+    })
+    .await
+}
+
+/// Member attributes of an openGauss composite/enum type, shaped like table
+/// columns so the sidebar can expand types the same way it expands tables.
+pub async fn list_type_attributes_core(
+    state: &AppState,
+    connection_id: &str,
+    database: &str,
+    schema: &str,
+    type_name: &str,
+) -> Result<Vec<db::ColumnInfo>, String> {
+    retry_metadata_connection(state, connection_id, Some(database), || async {
+        let pool_key = state.get_or_create_metadata_pool_for_session(connection_id, Some(database), None).await?;
+        let Some(p) = opengauss_metadata_postgres_pool(state, connection_id, database, &pool_key).await? else {
+            return Ok(vec![]);
+        };
+        let client = db::postgres::checkout_postgres_client(&p, None, db::connection_timeout()).await?;
+        let stmt =
+            client.prepare_cached(db::postgres::opengauss_type_attributes_sql()).await.map_err(|e| e.to_string())?;
+        let rows = client.query(&stmt, &[&type_name, &schema]).await.map_err(|e| e.to_string())?;
+        Ok(rows
+            .iter()
+            .map(|row| db::ColumnInfo {
+                name: row.try_get::<_, String>(0).unwrap_or_default(),
+                data_type: row.try_get::<_, String>(1).unwrap_or_default(),
+                is_nullable: row.try_get::<_, bool>(2).unwrap_or(true),
+                comment: row.try_get::<_, Option<String>>(3).ok().flatten().filter(|c| !c.trim().is_empty()),
+                ..Default::default()
+            })
+            .collect())
+    })
+    .await
+}
+
+/// One entry in the object reference graph (references / referenced-by).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ObjectReferenceInfo {
+    pub schema: String,
+    pub name: String,
+    pub object_type: String,
+    pub detail: Option<String>,
+}
+
+/// List which objects a database object references, or which reference it.
+///
+/// openGauss only tracks certain dependency classes in pg_depend:
+/// - views / materialized views record their table references via rewrite rules;
+/// - functions/procedures/packages only record signature-level (pg_proc) deps —
+///   body references are not tracked;
+/// - synonyms record nothing in pg_depend, so only their `references` side is
+///   served from pg_synonym itself.
+///
+/// `object_type` is one of: table, view, materialized_view, procedure,
+/// function, package, synonym, sequence, type. `direction` is
+/// "references" | "referencedBy".
+pub async fn list_object_references_core(
+    state: &AppState,
+    connection_id: &str,
+    database: &str,
+    schema: &str,
+    object_type: &str,
+    object_name: &str,
+    direction: &str,
+) -> Result<Vec<ObjectReferenceInfo>, String> {
+    retry_metadata_connection(state, connection_id, Some(database), || async {
+        let pool_key = state.get_or_create_metadata_pool_for_session(connection_id, Some(database), None).await?;
+        let Some(p) = opengauss_metadata_postgres_pool(state, connection_id, database, &pool_key).await? else {
+            return Ok(vec![]);
+        };
+        let client = db::postgres::checkout_postgres_client(&p, None, db::connection_timeout()).await?;
+
+        if direction == "referencedBy" {
+            let oid_sql = match object_type {
+                "sequence" => "SELECT c.oid FROM pg_catalog.pg_class c WHERE c.relkind = 'S' AND c.relname = $1 AND c.relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = $2)",
+                "type" => {
+                    "SELECT t.oid FROM pg_catalog.pg_type t WHERE t.typname = $1 AND t.typnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = $2)"
+                }
+                "synonym" => {
+                    "SELECT s.synname FROM pg_catalog.pg_synonym s WHERE s.synname = $1 AND s.synnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = $2)"
+                }
+                "function" | "procedure" | "package" => {
+                    "SELECT p.oid FROM pg_catalog.pg_proc p WHERE p.proname = $1 AND p.pronamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = $2) LIMIT 1"
+                }
+                _ => {
+                    // table / view / materialized_view
+                    "SELECT c.oid FROM pg_catalog.pg_class c WHERE c.relname = $1 AND c.relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = $2)"
+                }
+            };
+            if object_type == "synonym" {
+                // openGauss does not record synonym references in pg_depend.
+                return Ok(vec![]);
+            }
+            let oid_rows = client
+                .query(oid_sql, &[&object_name, &schema])
+                .await
+                .map_err(|e| e.to_string())?;
+            let Some(row) = oid_rows.first() else {
+                return Ok(vec![]);
+            };
+            let object_oid: u32 = row.get(0);
+            let rows = client
+                .query(db::postgres::opengauss_referenced_by_sql(), &[&object_oid])
+                .await
+                .map_err(|e| e.to_string())?;
+            return Ok(rows
+                .iter()
+                .map(|row| ObjectReferenceInfo {
+                    schema: row.try_get::<_, String>(0).unwrap_or_default(),
+                    name: row.try_get::<_, String>(1).unwrap_or_default(),
+                    object_type: row.try_get::<_, String>(2).unwrap_or_default(),
+                    detail: row.try_get::<_, String>(3).ok().filter(|d| !d.trim().is_empty()),
+                })
+                .collect());
+        }
+
+        // direction == "references"
+        match object_type {
+            "view" | "materialized_view" => query_reference_rows(&client, db::postgres::opengauss_view_references_sql(), object_name, schema).await,
+            "function" | "procedure" | "package" => query_reference_rows(&client, db::postgres::opengauss_routine_references_sql(), object_name, schema).await,
+            "synonym" => {
+                // Synonym references: the object it points at (from pg_synonym).
+                let rows = client
+                    .query(db::postgres::opengauss_synonym_target_sql(), &[&object_name, &schema])
+                    .await
+                    .map_err(|e| e.to_string())?;
+                Ok(rows
+                    .iter()
+                    .map(|row| ObjectReferenceInfo {
+                        schema: row.try_get::<_, String>(0).unwrap_or_default(),
+                        name: row.try_get::<_, String>(1).unwrap_or_default(),
+                        object_type: "synonym_target".to_string(),
+                        detail: None,
+                    })
+                    .collect())
+            }
+            // Tables, sequences and types do not expose a "references" side.
+            _ => Ok(vec![]),
+        }
+    })
+    .await
+}
+
+async fn query_reference_rows(
+    client: &deadpool_postgres::Client,
+    sql: &str,
+    object_name: &str,
+    schema: &str,
+) -> Result<Vec<ObjectReferenceInfo>, String> {
+    let stmt = client.prepare_cached(sql).await.map_err(|e| e.to_string())?;
+    let rows = client.query(&stmt, &[&object_name, &schema]).await.map_err(|e| e.to_string())?;
+    Ok(rows
+        .iter()
+        .map(|row| ObjectReferenceInfo {
+            schema: row.try_get::<_, String>(0).unwrap_or_default(),
+            name: row.try_get::<_, String>(1).unwrap_or_default(),
+            object_type: row.try_get::<_, String>(2).unwrap_or_default(),
+            detail: None,
+        })
+        .collect())
 }
 
 pub async fn list_owners_core(

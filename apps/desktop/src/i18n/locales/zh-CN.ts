@@ -2586,6 +2586,9 @@ export default withEnglishFallback({
     loadMore: "加载更多...",
     objectBrowser: "在对象浏览器中查看 ({count})",
     extensions: "扩展",
+    references: "引用",
+    referencedBy: "被引用",
+    typeAttributes: "属性",
   },
   extension: {
     installTitle: "安装扩展",

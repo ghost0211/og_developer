@@ -832,6 +832,31 @@ export async function listAvailableExtensions(connectionId: string, database: st
   return get(`/api/schema/available-extensions?${qs({ connection_id: connectionId, database })}`);
 }
 
+export interface SynonymTargetInfo {
+  targetSchema: string;
+  targetName: string;
+  targetKind: string;
+}
+
+export async function resolveSynonymTarget(connectionId: string, database: string, schema: string, name: string): Promise<SynonymTargetInfo | null> {
+  return get(`/api/schema/synonym-target?${qs({ connection_id: connectionId, database, schema, name })}`);
+}
+
+export async function listTypeAttributes(connectionId: string, database: string, schema: string, name: string): Promise<ColumnInfo[]> {
+  return get(`/api/schema/type-attributes?${qs({ connection_id: connectionId, database, schema, name })}`);
+}
+
+export interface ObjectReferenceInfo {
+  schema: string;
+  name: string;
+  objectType: string;
+  detail?: string;
+}
+
+export async function listObjectReferences(connectionId: string, database: string, schema: string, objectType: string, name: string, direction: string): Promise<ObjectReferenceInfo[]> {
+  return get(`/api/schema/object-references?${qs({ connection_id: connectionId, database, schema, object_type: objectType, name, direction })}`);
+}
+
 export async function listDialectDataTypes(dialectName: string): Promise<string[]> {
   return get(`/api/dialect/data-types?${qs({ dialect_name: dialectName })}`);
 }

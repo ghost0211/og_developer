@@ -1610,6 +1610,31 @@ export async function listAvailableExtensions(connectionId: string, database: st
   return invoke("list_available_extensions", { connectionId, database });
 }
 
+export interface SynonymTargetInfo {
+  targetSchema: string;
+  targetName: string;
+  targetKind: string;
+}
+
+export async function resolveSynonymTarget(connectionId: string, database: string, schema: string, name: string): Promise<SynonymTargetInfo | null> {
+  return invoke("resolve_synonym_target", { connectionId, database, schema, name });
+}
+
+export async function listTypeAttributes(connectionId: string, database: string, schema: string, name: string): Promise<ColumnInfo[]> {
+  return invoke("list_type_attributes", { connectionId, database, schema, name });
+}
+
+export interface ObjectReferenceInfo {
+  schema: string;
+  name: string;
+  objectType: string;
+  detail?: string;
+}
+
+export async function listObjectReferences(connectionId: string, database: string, schema: string, objectType: string, name: string, direction: string): Promise<ObjectReferenceInfo[]> {
+  return invoke("list_object_references", { connectionId, database, schema, objectType, name, direction });
+}
+
 export async function saveConnections(configs: ConnectionConfig[]): Promise<void> {
   return invoke("save_connections", { configs });
 }

@@ -2388,6 +2388,9 @@ export default withEnglishFallback({
     loadMore: "더 불러오기...",
     objectBrowser: "객체 브라우저에서 탐색 ({count})",
     extensions: "확장",
+    references: "참조",
+    referencedBy: "참조됨",
+    typeAttributes: "속성",
   },
   extension: {
     manageTitle: "확장 관리",

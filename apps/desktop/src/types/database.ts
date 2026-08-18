@@ -806,6 +806,8 @@ export type TreeNodeType =
   | "group-jobs"
   | "group-partitions"
   | "group-extensions"
+  | "group-references"
+  | "group-referenced-by"
   | "extension"
   | "object-browser"
   | "user-admin"
@@ -876,6 +878,14 @@ export interface TreeNode {
   objectName?: string;
   /** Parent object name for hierarchical members (e.g. the package of a subprogram). */
   parentName?: string;
+  /** Reference direction for group-references / group-referenced-by nodes. */
+  referenceDirection?: "references" | "referencedBy";
+  /** Backend object_type of the object a reference group belongs to. */
+  referenceObjectType?: string;
+  /** Resolved synonym target table (schema/name/kind) for synonym expansion. */
+  targetSchema?: string;
+  targetName?: string;
+  targetKind?: string;
   signature?: string;
   tableType?: string;
   comment?: string | null;

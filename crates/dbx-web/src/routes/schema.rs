@@ -17,6 +17,9 @@ pub struct SchemaQuery {
     pub catalog: Option<String>,
     pub filter: Option<String>,
     pub limit: Option<usize>,
+    pub name: Option<String>,
+    pub direction: Option<String>,
+    pub object_type_name: Option<String>,
     pub offset: Option<usize>,
     pub object_type: Option<dbx_core::db::ObjectSourceKind>,
     pub signature: Option<String>,
@@ -601,6 +604,72 @@ pub async fn list_extensions(
     let result = dbx_core::schema::list_extensions_core(&state.app, &q.connection_id, database, q.schema.as_deref())
         .await
         .map_err(AppError::from)?;
+    Ok(Json(serde_json::to_value(result).map_err(|e| AppError::from(e.to_string()))?))
+}
+
+pub async fn resolve_synonym_target(
+    State(state): State<Arc<WebState>>,
+    Query(q): Query<SchemaQuery>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let database = q.database.as_deref().unwrap_or("");
+    let schema = q.schema.as_deref().unwrap_or("");
+    let synonym = q.name.as_deref().ok_or_else(|| AppError::from("name is required".to_string()))?;
+    let result = dbx_core::schema::resolve_synonym_target_core(&state.app, &q.connection_id, database, schema, synonym)
+        .await
+        .map_err(AppError::from)?;
+    Ok(Json(serde_json::to_value(result).map_err(|e| AppError::from(e.to_string()))?))
+}
+
+pub async fn list_type_attributes(
+    State(state): State<Arc<WebState>>,
+    Query(q): Query<SchemaQuery>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let database = q.database.as_deref().unwrap_or("");
+    let schema = q.schema.as_deref().unwrap_or("");
+    let type_name = q.name.as_deref().ok_or_else(|| AppError::from("name is required".to_string()))?;
+    let result = dbx_core::schema::list_type_attributes_core(&state.app, &q.connection_id, database, schema, type_name)
+        .await
+        .map_err(AppError::from)?;
+    Ok(Json(serde_json::to_value(result).map_err(|e| AppError::from(e.to_string()))?))
+}
+
+pub async fn list_object_references(
+    State(state): State<Arc<WebState>>,
+    Query(q): Query<SchemaQuery>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let database = q.database.as_deref().unwrap_or("");
+    let schema = q.schema.as_deref().unwrap_or("");
+    let object_name = q.name.as_deref().ok_or_else(|| AppError::from("name is required".to_string()))?;
+    let object_type = q
+        .object_type_name
+        .as_deref()
+        .or_else(|| {
+            q.object_type.as_ref().map(|kind| match kind {
+                dbx_core::types::ObjectSourceKind::View => "view",
+                dbx_core::types::ObjectSourceKind::MaterializedView => "materialized_view",
+                dbx_core::types::ObjectSourceKind::Procedure => "procedure",
+                dbx_core::types::ObjectSourceKind::Function => "function",
+                dbx_core::types::ObjectSourceKind::Synonym => "synonym",
+                dbx_core::types::ObjectSourceKind::Package => "package",
+                dbx_core::types::ObjectSourceKind::Sequence => "sequence",
+                dbx_core::types::ObjectSourceKind::Type => "type",
+                _ => "table",
+            })
+        })
+        .unwrap_or("table")
+        .to_string();
+    let direction = q.direction.as_deref().unwrap_or("references");
+    let result = dbx_core::schema::list_object_references_core(
+        &state.app,
+        &q.connection_id,
+        database,
+        schema,
+        &object_type,
+        object_name,
+        direction,
+    )
+    .await
+    .map_err(AppError::from)?;
     Ok(Json(serde_json::to_value(result).map_err(|e| AppError::from(e.to_string()))?))
 }
 

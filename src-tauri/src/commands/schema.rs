@@ -535,3 +535,47 @@ pub async fn list_available_extensions(
 ) -> Result<Vec<db::ExtensionInfo>, String> {
     dbx_core::schema::list_available_extensions_core(&state, &connection_id, &database).await
 }
+
+#[tauri::command]
+pub async fn resolve_synonym_target(
+    state: State<'_, Arc<AppState>>,
+    connection_id: String,
+    database: String,
+    schema: String,
+    name: String,
+) -> Result<Option<dbx_core::schema::SynonymTargetInfo>, String> {
+    dbx_core::schema::resolve_synonym_target_core(&state, &connection_id, &database, &schema, &name).await
+}
+
+#[tauri::command]
+pub async fn list_type_attributes(
+    state: State<'_, Arc<AppState>>,
+    connection_id: String,
+    database: String,
+    schema: String,
+    name: String,
+) -> Result<Vec<db::ColumnInfo>, String> {
+    dbx_core::schema::list_type_attributes_core(&state, &connection_id, &database, &schema, &name).await
+}
+
+#[tauri::command]
+pub async fn list_object_references(
+    state: State<'_, Arc<AppState>>,
+    connection_id: String,
+    database: String,
+    schema: String,
+    object_type: String,
+    name: String,
+    direction: String,
+) -> Result<Vec<dbx_core::schema::ObjectReferenceInfo>, String> {
+    dbx_core::schema::list_object_references_core(
+        &state,
+        &connection_id,
+        &database,
+        &schema,
+        &object_type,
+        &name,
+        &direction,
+    )
+    .await
+}

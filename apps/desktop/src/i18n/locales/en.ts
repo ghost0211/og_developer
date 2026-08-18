@@ -2583,6 +2583,9 @@ export default {
     loadMore: "Load more...",
     objectBrowser: "Browse in Object Browser ({count})",
     extensions: "Extensions",
+    references: "References",
+    referencedBy: "Referenced by",
+    typeAttributes: "Attributes",
   },
   extension: {
     manageTitle: "Manage Extensions",

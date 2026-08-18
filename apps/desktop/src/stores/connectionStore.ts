@@ -4728,10 +4728,11 @@ export const useConnectionStore = defineStore("connection", () => {
     return normalizeSidebarObjectKind(type);
   }
 
-  async function loadTableGroups(connectionId: string, database: string, table: string, schema?: string, nodeId?: string, catalog?: string) {
+  async function loadTableGroups(connectionId: string, database: string, table: string, schema?: string, nodeId?: string, catalog?: string, effectiveType?: string) {
     const parentId = nodeId ?? (schema ? `${connectionId}:${database}:${schema}:${table}` : `${connectionId}:${database}:${table}`);
     const node = findNode(treeNodes.value, parentId);
     if (!node) return;
+    const resolvedType = effectiveType ?? node.type;
     let load = beginTreeNodeLoad(node);
 
     try {
@@ -4755,7 +4756,7 @@ export const useConnectionStore = defineStore("connection", () => {
       const effectiveDbType = effectiveDatabaseTypeForConnection(config);
       const metadataCapabilities = getTableMetadataCapabilities(effectiveDbType);
       const isXugu = effectiveDbType === "xugu";
-      const supportsXuguChildMetadata = isXugu && node.type === "table" && (await supportsXuguTableChildMetadata());
+      const supportsXuguChildMetadata = isXugu && resolvedType === "table" && (await supportsXuguTableChildMetadata());
       load = reclaimTreeNodeLoad(load, node);
       if (supportsXuguChildMetadata) {
         children.push({
@@ -4772,7 +4773,7 @@ export const useConnectionStore = defineStore("connection", () => {
         });
       }
       const isMongoView = node.type === "mongo-collection" && mongoCollectionKindFromNode(node) === "view";
-      if ((node.type === "table" || node.type === "mongo-collection") && !isMongoView && !parseSqlServerLinkedSchema(schema)) {
+      if ((resolvedType === "table" || node.type === "mongo-collection") && !isMongoView && !parseSqlServerLinkedSchema(schema)) {
         if (metadataCapabilities.indexes && !isXugu) {
           children.push({
             id: `${parentId}:__indexes`,
@@ -4791,7 +4792,7 @@ export const useConnectionStore = defineStore("connection", () => {
           });
         }
       }
-      if (node.type === "table" && !parseSqlServerLinkedSchema(schema)) {
+      if (resolvedType === "table" && !parseSqlServerLinkedSchema(schema)) {
         if (metadataCapabilities.foreignKeys) {
           children.push({
             id: `${parentId}:__fkeys`,
@@ -4866,10 +4867,198 @@ export const useConnectionStore = defineStore("connection", () => {
         }
       }
 
+      if (isOpengaussFamilyConfig(config)) {
+        if (resolvedType === "table" || resolvedType === "view" || resolvedType === "materialized_view") {
+          const objectName = node.label === table ? node.label : table;
+          const refType = resolvedType === "materialized_view" ? "materialized_view" : resolvedType;
+          const canReference = resolvedType !== "table";
+          children.push(...buildObjectReferenceGroupNodes(node, refType, objectName, "references", canReference));
+          children.push(...buildObjectReferenceGroupNodes(node, refType, objectName, "referencedBy", true));
+        }
+      }
       const targetNode = treeNodeLoadTarget(load);
       if (!targetNode) return;
       setChildren(targetNode, children);
       targetNode.isExpanded = true;
+    } finally {
+      finishTreeNodeLoad(load);
+    }
+  }
+
+  function isOpengaussFamilyConfig(config?: ConnectionConfig): boolean {
+    if (!config) return false;
+    const t = effectiveDatabaseTypeForConnection(config);
+    return t === "opengauss" || t === "gaussdb";
+  }
+
+  /**
+   * Build the "References" / "Referenced by" group nodes for an openGauss
+   * object node. Tables, sequences and types expose only "Referenced by";
+   * views, routines, packages and synonyms expose both sides.
+   */
+  function buildObjectReferenceGroupNodes(node: TreeNode, objectType: string, objectName: string, direction: "references" | "referencedBy", enabled: boolean): TreeNode[] {
+    if (!enabled || !node.connectionId || !node.database) return [];
+    const labelKey = direction === "references" ? "tree.references" : "tree.referencedBy";
+    const nodeType = direction === "references" ? ("group-references" as const) : ("group-referenced-by" as const);
+    return [
+      {
+        id: `${node.id}:__${direction}`,
+        label: labelKey,
+        type: nodeType,
+        referenceDirection: direction,
+        referenceObjectType: objectType,
+        objectName,
+        connectionId: node.connectionId,
+        database: node.database,
+        schema: node.schema,
+        isExpanded: false,
+        children: [],
+      },
+    ];
+  }
+
+  /** Map an openGauss relkind to the backend object_type string. */
+  function synonymTargetObjectType(relkind: string): string {
+    switch (relkind) {
+      case "r":
+        return "table";
+      case "v":
+        return "view";
+      case "m":
+        return "materialized_view";
+      case "S":
+        return "sequence";
+      case "f":
+        return "function";
+      case "p":
+        return "procedure";
+      default:
+        return "table";
+    }
+  }
+
+  /** Expand an openGauss synonym to its target object's table-style children. */
+  async function loadSynonymGroups(connectionId: string, database: string, synonym: string, schema: string | undefined, node: TreeNode) {
+    const querySchema = metadataQuerySchema(connectionId, database, schema);
+    const target = await api.resolveSynonymTarget(connectionId, database, querySchema, synonym).catch(() => null);
+    if (target && (target.targetKind === "r" || target.targetKind === "v" || target.targetKind === "m")) {
+      // The target is a table/view/materialized view: reuse the table-style
+      // child groups (columns/indexes/fks/triggers/partitions) then append the
+      // synonym-level reference groups.
+      await loadTableGroups(connectionId, database, target.targetName, target.targetSchema, node.id, undefined, synonymTargetObjectType(target.targetKind));
+      const live = findNode(treeNodes.value, node.id);
+      if (live) {
+        live.children = [...(live.children ?? []), ...buildObjectReferenceGroupNodes(node, "synonym", synonym, "references", true), ...buildObjectReferenceGroupNodes(node, "synonym", synonym, "referencedBy", true)];
+      }
+      return;
+    }
+    const load = beginTreeNodeLoad(node);
+    try {
+      const targetNode = treeNodeLoadTarget(load);
+      if (!targetNode) return;
+      const children: TreeNode[] = [...buildObjectReferenceGroupNodes(node, "synonym", synonym, "references", true), ...buildObjectReferenceGroupNodes(node, "synonym", synonym, "referencedBy", true)];
+      if (target) {
+        children.unshift({
+          id: `${node.id}:__target`,
+          label: `${target.targetSchema}.${target.targetName}`,
+          type: "object-browser" as TreeNode["type"],
+          connectionId,
+          database,
+          schema: target.targetSchema,
+          tableName: target.targetName,
+          targetSchema: target.targetSchema,
+          targetName: target.targetName,
+          targetKind: target.targetKind,
+          isExpanded: false,
+          comment: "synonym target",
+        });
+      }
+      setChildren(targetNode, children);
+      targetNode.isExpanded = true;
+    } catch (e) {
+      recordMetadataLoadError(node.connectionId!, e, load);
+      throw e;
+    } finally {
+      finishTreeNodeLoad(load);
+    }
+  }
+
+  /** Expand a TYPE node: list its attributes plus reference groups. */
+  async function loadTypeGroups(connectionId: string, database: string, typeName: string, schema: string | undefined, node: TreeNode) {
+    const load = beginTreeNodeLoad(node);
+    try {
+      const querySchema = metadataQuerySchema(connectionId, database, schema);
+      const attributes = await api.listTypeAttributes(connectionId, database, querySchema, typeName).catch(() => [] as ColumnInfo[]);
+      const targetNode = treeNodeLoadTarget(load);
+      if (!targetNode) return;
+      const attributeNode: TreeNode[] = attributes.map((attr) => ({
+        id: `${node.id}:__attr:${attr.name}`,
+        label: `${attr.name}: ${attr.data_type}${attr.is_nullable ? "" : " NOT NULL"}`,
+        type: "column" as const,
+        connectionId,
+        database,
+        schema,
+        comment: attr.comment ?? null,
+        meta: attr,
+        isExpanded: false,
+      }));
+      setChildren(targetNode, [...attributeNode, ...buildObjectReferenceGroupNodes(node, "type", typeName, "referencedBy", true)]);
+      targetNode.isExpanded = true;
+    } catch (e) {
+      recordMetadataLoadError(node.connectionId!, e, load);
+      throw e;
+    } finally {
+      finishTreeNodeLoad(load);
+    }
+  }
+
+  /** Expand a non-table object (sequence/function/procedure/package) into reference groups. */
+  async function loadRoutineReferenceGroups(node: TreeNode, objectType: string, objectName: string) {
+    const load = beginTreeNodeLoad(node);
+    try {
+      const targetNode = treeNodeLoadTarget(load);
+      if (!targetNode) return;
+      const canReference = objectType !== "sequence" && objectType !== "type";
+      setChildren(targetNode, [...buildObjectReferenceGroupNodes(node, objectType, objectName, "references", canReference), ...buildObjectReferenceGroupNodes(node, objectType, objectName, "referencedBy", true)]);
+      targetNode.isExpanded = true;
+    } catch (e) {
+      recordMetadataLoadError(node.connectionId!, e, load);
+      throw e;
+    } finally {
+      finishTreeNodeLoad(load);
+    }
+  }
+
+  /** Load the children of a References / Referenced-by group node. */
+  async function loadReferenceGroupChildren(node: TreeNode) {
+    if (!node.connectionId || !node.database || !node.objectName || !node.referenceObjectType || !node.referenceDirection) return;
+    const load = beginTreeNodeLoad(node);
+    try {
+      const querySchema = metadataQuerySchema(node.connectionId, node.database, node.schema);
+      const refs = await api.listObjectReferences(node.connectionId, node.database, querySchema, node.referenceObjectType, node.objectName, node.referenceDirection);
+      const targetNode = treeNodeLoadTarget(load);
+      if (!targetNode) return;
+      setChildren(
+        targetNode,
+        refs.map((ref) => ({
+          id: `${node.id}:${ref.schema}:${ref.name}:${ref.objectType}`,
+          label: `${ref.schema}.${ref.name}${ref.detail ? ` (${ref.detail})` : ""}`,
+          type: "object-browser" as TreeNode["type"],
+          connectionId: node.connectionId,
+          database: node.database,
+          schema: ref.schema,
+          objectName: ref.name,
+          targetSchema: ref.schema,
+          targetName: ref.name,
+          targetKind: ref.objectType,
+          isExpanded: false,
+          comment: ref.objectType,
+        })),
+      );
+      targetNode.isExpanded = true;
+    } catch (e) {
+      recordMetadataLoadError(node.connectionId, e, load);
+      throw e;
     } finally {
       finishTreeNodeLoad(load);
     }
@@ -5295,6 +5484,17 @@ export const useConnectionStore = defineStore("connection", () => {
       node.isExpanded = true;
     } else if (node.type === "group-extensions" && node.connectionId && hasTreeNodeDatabaseContext(node)) {
       await loadExtensions(node.connectionId, node.database || "");
+    } else if ((node.type === "group-references" || node.type === "group-referenced-by") && node.connectionId && hasTreeNodeDatabaseContext(node)) {
+      await loadReferenceGroupChildren(node);
+    } else if (node.type === "synonym" && node.connectionId && hasTreeNodeDatabaseContext(node)) {
+      await loadSynonymGroups(node.connectionId, node.database, node.label, node.schema, node);
+    } else if (node.type === "type" && node.connectionId && hasTreeNodeDatabaseContext(node)) {
+      await loadTypeGroups(node.connectionId, node.database, node.label, node.schema, node);
+    } else if ((node.type === "sequence" || node.type === "function" || node.type === "procedure" || node.type === "package") && node.connectionId && hasTreeNodeDatabaseContext(node)) {
+      const config = getConfig(node.connectionId);
+      if (isOpengaussFamilyConfig(config)) {
+        await loadRoutineReferenceGroups(node, node.type, node.label);
+      }
     }
   }
 
@@ -7042,6 +7242,9 @@ export const useConnectionStore = defineStore("connection", () => {
     loadTableForLocate,
     loadObjectGroupChildren,
     loadMoreObjectGroupChildren,
+    loadSynonymGroups,
+    loadTypeGroups,
+    loadReferenceGroupChildren,
     loadAllObjectGroupChildren,
     loadTableGroups,
     loadTreeNodeChildren,

@@ -2879,6 +2879,104 @@ fn opengauss_packages_sql() -> &'static str {
      WHERE n.nspname = $1 AND p.pkgbodydeclsrc IS NOT NULL"
 }
 
+/// Resolve the object a synonym points at (pg_catalog.pg_synonym). Returns the
+/// target schema/name plus its relkind when the target is a pg_class object.
+/// Synonyms can chain to other synonyms, so the caller resolves iteratively.
+pub(crate) fn opengauss_synonym_target_sql() -> &'static str {
+    "SELECT synobjschema, synobjname FROM pg_catalog.pg_synonym \
+     WHERE synname = $1 \
+       AND synnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = $2)"
+}
+
+pub(crate) fn opengauss_synonym_target_kind_sql() -> &'static str {
+    "SELECT c.relkind::text FROM pg_catalog.pg_class c \
+     JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
+     WHERE n.nspname = $1 AND c.relname = $2"
+}
+
+/// Column/attribute definitions of an openGauss composite or enum type
+/// (pg_attribute rows behind pg_type.typrelid). Mirrors the table column
+/// shape so the sidebar can render type members like table columns.
+pub(crate) fn opengauss_type_attributes_sql() -> &'static str {
+    "SELECT a.attname, format_type(a.atttypid, a.atttypmod) AS data_type, \
+            (NOT a.attnotnull) AS is_nullable, \
+            col_description(a.attrelid, a.attnum) AS comment \
+     FROM pg_catalog.pg_attribute a \
+     JOIN pg_catalog.pg_type t ON t.typrelid = a.attrelid \
+     WHERE t.typname = $1 \
+       AND t.typnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = $2) \
+       AND a.attnum > 0 AND NOT a.attisdropped \
+     ORDER BY a.attnum"
+}
+
+/// Objects referenced by a view/materialized view (its rewrite rules depend on
+/// tables/views; the rewrite itself is excluded).
+pub(crate) fn opengauss_view_references_sql() -> &'static str {
+    "SELECT DISTINCT n.nspname, c.relname, c.relkind::text \
+     FROM pg_catalog.pg_depend d \
+     JOIN pg_catalog.pg_rewrite rw ON rw.oid = d.objid \
+     JOIN pg_catalog.pg_class v ON v.oid = rw.ev_class \
+     JOIN pg_catalog.pg_class c ON c.oid = d.refobjid AND c.oid <> v.oid \
+     JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
+     WHERE v.relname = $1 \
+       AND v.relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = $2) \
+       AND d.refclassid = 'pg_catalog.pg_class'::regclass"
+}
+
+/// Tables/views referenced by a function/procedure/package (signature-level
+/// dependencies recorded in pg_depend; function-body references are not
+/// tracked by openGauss).
+pub(crate) fn opengauss_routine_references_sql() -> &'static str {
+    "SELECT DISTINCT n.nspname, c.relname, c.relkind::text \
+     FROM pg_catalog.pg_depend d \
+     JOIN pg_catalog.pg_proc p ON p.oid = d.objid \
+     JOIN pg_catalog.pg_class c ON c.oid = d.refobjid \
+     JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
+     WHERE p.proname = $1 \
+       AND p.pronamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = $2) \
+       AND d.refclassid = 'pg_catalog.pg_class'::regclass"
+}
+
+/// Objects that reference the given object (pg_depend refobjid = object oid).
+/// Resolves intermediate rows (rewrite rules → views, constraints → tables,
+/// column defaults → columns) into readable references.
+pub(crate) fn opengauss_referenced_by_sql() -> &'static str {
+    "SELECT DISTINCT ref_schema, ref_name, ref_kind, detail FROM ( \
+       SELECT n.nspname AS ref_schema, c.relname AS ref_name, \
+              CASE c.relkind WHEN 'v' THEN 'view' WHEN 'm' THEN 'materialized_view' \
+                   WHEN 'r' THEN 'table' WHEN 'S' THEN 'sequence' \
+                   ELSE c.relkind::text END AS ref_kind, \
+              'view definition' AS detail \
+       FROM pg_catalog.pg_depend d \
+       JOIN pg_catalog.pg_rewrite rw ON rw.oid = d.objid \
+       JOIN pg_catalog.pg_class c ON c.oid = rw.ev_class \
+       JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
+       WHERE d.refobjid = $1 AND d.refclassid = 'pg_catalog.pg_class'::regclass \
+       UNION ALL \
+       SELECT n.nspname, c.relname, 'constraint', con.conname \
+       FROM pg_catalog.pg_depend d \
+       JOIN pg_catalog.pg_constraint con ON con.oid = d.objid \
+       JOIN pg_catalog.pg_class c ON c.oid = con.conrelid \
+       JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
+       WHERE d.refobjid = $1 AND d.refclassid = 'pg_catalog.pg_class'::regclass \
+         AND con.contype IN ('f','p','u','c') \
+       UNION ALL \
+       SELECT n.nspname, c.relname, 'column', a.attname || ' default' \
+       FROM pg_catalog.pg_depend d \
+       JOIN pg_catalog.pg_attrdef ad ON ad.oid = d.objid \
+       JOIN pg_catalog.pg_class c ON c.oid = ad.adrelid \
+       JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
+       JOIN pg_catalog.pg_attribute a ON a.attrelid = ad.adrelid AND a.attnum = ad.adnum \
+       WHERE d.refobjid = $1 \
+       UNION ALL \
+       SELECT n.nspname, p.proname, 'function', '' \
+       FROM pg_catalog.pg_depend d \
+       JOIN pg_catalog.pg_proc p ON p.oid = d.objid \
+       JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace \
+       WHERE d.refobjid = $1 AND d.classid = 'pg_catalog.pg_proc'::regclass \
+     ) refs ORDER BY ref_kind, ref_name"
+}
+
 /// openGauss synonyms live in pg_catalog.pg_synonym (not present in vanilla
 /// PostgreSQL). The comment column carries the referenced target so the sidebar
 /// can show what each synonym points at.
