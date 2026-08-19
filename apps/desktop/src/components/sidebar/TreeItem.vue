@@ -1033,6 +1033,7 @@ function onToggleMouseDown(event: MouseEvent) {
 }
 
 function onClick(event: MouseEvent) {
+  console.log("[ogdbg] TreeItem onClick", props.node.id, props.node.type, "label=", props.node.label, "on=", props.node.objectName);
   if (suppressNextTableReferenceClick) {
     suppressNextTableReferenceClick = false;
     event.preventDefault();
@@ -1068,6 +1069,7 @@ function onClick(event: MouseEvent) {
 }
 
 function onDoubleClick(event: MouseEvent) {
+  console.log("[ogdbg] TreeItem dblclick", props.node.id, props.node.type, "label=", props.node.label, "on=", props.node.objectName);
   treeRuntime.handleRowDoubleClick(props.node, event);
 }
 

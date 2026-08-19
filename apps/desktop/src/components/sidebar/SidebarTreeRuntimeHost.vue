@@ -745,19 +745,19 @@ function runRowClickAction(clickDetail: number) {
     void loadMoreObjectGroupChildren();
     return;
   }
-  if (node.type === "object-browser") {
-    if (clickDetail > 1) return;
-    void openObjectBrowser();
-    return;
-  }
   // Reference / synonym-target rows open their target object's DDL source
-  // instead of the data table (tables are not covered by object source).
+  // instead of the data table / object browser (checked before object-browser).
   if (node.targetKind && node.targetName) {
     if (clickDetail > 1) return;
     const sourceKind = objectSourceKindForTreeNode(node.type);
     if (sourceKind) {
       openObjectSourceDialog(false);
     }
+    return;
+  }
+  if (node.type === "object-browser") {
+    if (clickDetail > 1) return;
+    void openObjectBrowser();
     return;
   }
   if (node.type === "mongo-gridfs") {

@@ -6194,6 +6194,7 @@ fn extensions_from_query_result(result: db::QueryResult) -> Vec<db::ExtensionInf
 /// possible synonym chains. `target_kind` mirrors pg_class.relkind
 /// ('r' table, 'v' view, 'm' materialized view, 'S' sequence, ...).
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SynonymTargetInfo {
     pub target_schema: String,
     pub target_name: String,
@@ -6287,6 +6288,7 @@ pub async fn list_type_attributes_core(
 
 /// One entry in the object reference graph (references / referenced-by).
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ObjectReferenceInfo {
     pub schema: String,
     pub name: String,

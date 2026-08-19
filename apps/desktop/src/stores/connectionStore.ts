@@ -5044,14 +5044,21 @@ export const useConnectionStore = defineStore("connection", () => {
   function referenceResultNodeType(objectType: string | undefined): TreeNode["type"] {
     switch ((objectType ?? "").toLowerCase()) {
       case "r":
+      case "table":
+      case "foreign_key":
+      case "column":
         return "table";
       case "v":
+      case "view":
         return "view";
       case "m":
+      case "materialized_view":
         return "materialized_view";
       case "s":
+      case "sequence":
         return "sequence";
       case "f":
+      case "function":
         return "function";
       case "p":
       case "procedure":
@@ -5061,12 +5068,13 @@ export const useConnectionStore = defineStore("connection", () => {
         return "synonym";
       case "package":
         return "package";
+      case "package_body":
+        return "package-body";
       case "type":
+      case "type_body":
         return "type";
-      case "foreign_key":
-        return "table";
-      case "column":
-        return "table";
+      case "job":
+        return "job";
       default:
         return "object-browser";
     }
