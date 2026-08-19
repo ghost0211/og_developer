@@ -6488,18 +6488,38 @@ async fn get_table_ddl_core_with_options(
         }));
     }
     if matches!(object_type, Some(db::ObjectSourceKind::MaterializedView)) {
-        let source = get_object_source_core(
-            state,
-            connection_id,
-            database,
-            schema,
-            table,
-            db::ObjectSourceKind::MaterializedView,
-            None,
-            None,
-        )
-        .await?;
-        return Ok(source.source);
+        // Do not route through get_object_source: that path builds the DDL from
+        // pg_get_viewdef + pg_class.relispopulated (a column PostgreSQL has but
+        // openGauss does not) and is schema-sensitive. Query the definition by
+        // table name across schemas instead so both the built-in and official
+        // JDBC drivers return the materialized-view DDL regardless of how the
+        // sidebar resolved the schema.
+        return retry_metadata_connection(state, connection_id, Some(database), || async {
+            let pool_key = state.get_or_create_metadata_pool_for_session(connection_id, Some(database), None).await?;
+            let Some(p) = opengauss_metadata_postgres_pool(state, connection_id, database, &pool_key).await? else {
+                return Err("Materialized view DDL requires a PostgreSQL-compatible metadata connection".to_string());
+            };
+            let client = db::postgres::checkout_postgres_client(&p, None, db::connection_timeout()).await?;
+            let rows = client
+                .query(
+                    "SELECT n.nspname, pg_get_viewdef(c.oid, 0) FROM pg_catalog.pg_class c \
+                     JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
+                     WHERE c.relkind = 'm' AND c.relname = $1 ORDER BY c.oid LIMIT 1",
+                    &[&table],
+                )
+                .await
+                .map_err(|e| e.to_string())?;
+            let row = rows.first().ok_or_else(|| "Object source not found".to_string())?;
+            let nspname: String = row.get(0);
+            let definition: String = row.get(1);
+            Ok(format!(
+                "CREATE MATERIALIZED VIEW {}.{} AS {}",
+                db::postgres::pg_quote_ident(&nspname),
+                db::postgres::pg_quote_ident(table),
+                definition.trim_end()
+            ))
+        })
+        .await;
     }
 
     retry_metadata_connection(state, connection_id, Some(database), || {
