@@ -1929,7 +1929,7 @@ defineExpose({ focusSearch, createNewGroup, collapseAllTreeNodes });
       :database="sidebarDdlTarget.database!"
       :catalog="sidebarDdlTarget.catalog"
       :schema="sidebarDdlTarget.schema"
-      :table-name="sidebarDdlTarget.label"
+      :table-name="sidebarDdlTarget.tableName || sidebarDdlTarget.objectName || sidebarDdlTarget.label"
       :object-type="tableDdlObjectTypeForSidebarNode(sidebarDdlTarget.type)"
       :database-type="sidebarDdlDatabaseType"
       :dialect="codeMirrorSqlDialect(sidebarDdlDatabaseType)"
