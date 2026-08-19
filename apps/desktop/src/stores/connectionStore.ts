@@ -5100,6 +5100,7 @@ export const useConnectionStore = defineStore("connection", () => {
           database: node.database,
           schema: ref.schema,
           objectName: ref.name,
+          tableName: ref.name,
           targetSchema: ref.schema,
           targetName: ref.name,
           targetKind: ref.objectType,
