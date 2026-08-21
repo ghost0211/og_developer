@@ -223,7 +223,7 @@ function getIconInfo(node: TreeNode): { icon: any; colorClass: string } | null {
     case "materialized_view":
       return { icon: Eye, colorClass: "text-indigo-500" };
     case "column":
-      if ((node.meta as ColumnInfo).is_primary_key) {
+      if ((node.meta as ColumnInfo | undefined)?.is_primary_key) {
         return { icon: Columns3, colorClass: "text-orange-400" };
       } else {
         return { icon: Columns3, colorClass: "text-muted-foreground" };

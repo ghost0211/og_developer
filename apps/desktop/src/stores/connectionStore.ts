@@ -5052,6 +5052,16 @@ export const useConnectionStore = defineStore("connection", () => {
             database: node.database,
             schema: node.schema,
             isExpanded: false,
+            // column 渲染路径（图标/拖拽/复制名）都会读 meta，必须补全
+            meta: {
+              name: p.name || `arg_${p.ordinal}`,
+              data_type: p.dataType,
+              is_nullable: true,
+              column_default: null,
+              is_primary_key: false,
+              extra: p.mode,
+              comment: null,
+            },
           }));
         } catch (paramError) {
           // 参数加载失败不阻塞引用组展开，仅在日志可见
