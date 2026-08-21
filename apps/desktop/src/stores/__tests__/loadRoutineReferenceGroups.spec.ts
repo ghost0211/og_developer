@@ -18,6 +18,7 @@ const ogConfig = {
   id: "og-1",
   name: "og",
   db_type: "opengauss",
+  driver_profile: "opengauss-jdbc",
   host: "127.0.0.1",
   port: 5432,
   username: "u",

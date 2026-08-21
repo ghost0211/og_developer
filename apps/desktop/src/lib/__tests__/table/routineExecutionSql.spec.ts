@@ -209,7 +209,7 @@ describe("openGauss graphical routine invocation", () => {
       routineName: "dbg_demo",
       parameters: [param("x", "integer", "IN", 1, "1")],
     });
-    expect(sql).toBe("BEGIN\n  public.dbg_demo(1);\nEND;");
+    expect(sql).toBe("DECLARE\n  v_arg_1 integer := 1;\nBEGIN\n  public.dbg_demo(v_arg_1);\nEND;");
     expect(sql).not.toContain("CALL ");
   });
 
@@ -220,7 +220,7 @@ describe("openGauss graphical routine invocation", () => {
       routineName: "ogdev_out_demo",
       parameters: [param("x", "int", "IN", 1, "4"), param("y", "numeric", "OUT", 2), param("z", "text", "INOUT", 3, "in")],
     });
-    expect(sql).toBe("DECLARE\n  v_arg_2 numeric;\n  v_arg_3 text := 'in';\nBEGIN\n  public.ogdev_out_demo(4, v_arg_2, v_arg_3);\n\n  -- Output variable capture\n  RAISE NOTICE '[DBX_OUT] y=%', v_arg_2;\n  RAISE NOTICE '[DBX_OUT] z=%', v_arg_3;\nEND;");
+    expect(sql).toBe("DECLARE\n  v_arg_1 int := 4;\n  v_arg_2 numeric;\n  v_arg_3 text := 'in';\nBEGIN\n  public.ogdev_out_demo(v_arg_1, v_arg_2, v_arg_3);\n\n  -- Output variable capture\n  RAISE NOTICE '[DBX_OUT] y=%', v_arg_2;\n  RAISE NOTICE '[DBX_OUT] z=%', v_arg_3;\nEND;");
   });
 
   it("functions use SELECT * FROM", () => {

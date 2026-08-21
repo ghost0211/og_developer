@@ -189,23 +189,30 @@ export function buildOpenGaussRoutineExecutionSql(options: BuildRoutineExecution
     return `SELECT * FROM ${routine}(${args.join(", ")});`;
   }
 
-  // PL/SQL Developer style anonymous block with RAISE NOTICE output captures
+  // PL/SQL Developer 测试窗口风格：所有参数都在 DECLARE 中定义为变量，
+  // BEGIN 中以变量调用；OUT/INOUT 执行后用 RAISE NOTICE 回显。
   const declarations: string[] = [];
   const noticePrints: string[] = [];
-  const args = sorted.map((parameter) => {
+  const args: string[] = [];
+  for (const parameter of sorted) {
     const variable = `v_arg_${parameter.ordinal}`;
     if (parameter.mode === "OUT") {
       declarations.push(`${variable} ${parameter.dataType || "text"};`);
       noticePrints.push(`RAISE NOTICE '[DBX_OUT] ${parameter.name}=%', ${variable};`);
-      return variable;
+      args.push(variable);
+      continue;
     }
     if (parameter.mode === "INOUT") {
       declarations.push(`${variable} ${parameter.dataType || "text"} := ${routineParameterSqlValue("opengauss", parameter)};`);
       noticePrints.push(`RAISE NOTICE '[DBX_OUT] ${parameter.name}=%', ${variable};`);
-      return variable;
+      args.push(variable);
+      continue;
     }
-    return shouldIncludeParameter(parameter) ? routineParameterSqlValue("opengauss", parameter) : "NULL";
-  });
+    // IN：useDefault 时省略该参数让 DEFAULT 生效，否则声明变量并赋输入值
+    if (!shouldIncludeParameter(parameter)) continue;
+    declarations.push(`${variable} ${parameter.dataType || "text"} := ${routineParameterSqlValue("opengauss", parameter)};`);
+    args.push(variable);
+  }
 
   const bodyParts = [`  ${routine}(${args.join(", ")});`];
   if (noticePrints.length > 0) {

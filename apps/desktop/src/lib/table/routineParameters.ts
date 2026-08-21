@@ -16,12 +16,22 @@ export interface LoadRoutineParametersOptions {
 
 export async function loadRoutineParameters(options: LoadRoutineParametersOptions): Promise<RoutineParameter[]> {
   const sql = routineParametersQuery(options);
-  if (!sql) return [];
-  const result = await api.executeQuery(options.connectionId, options.database, sql, options.schema, undefined, {
-    maxRows: 200,
-    pageSize: 200,
-  });
-  return routineParametersFromResult(result, options.databaseType);
+  if (!sql) {
+    console.warn("[routine-params] unsupported database type, no SQL generated", options.databaseType, options.routineName);
+    return [];
+  }
+  try {
+    const result = await api.executeQuery(options.connectionId, options.database, sql, options.schema, undefined, {
+      maxRows: 200,
+      pageSize: 200,
+    });
+    const parameters = routineParametersFromResult(result, options.databaseType);
+    console.debug("[routine-params]", options.routineName, "schema=", options.schema, "rows=", result.rows?.length ?? 0, "parsed=", parameters.length);
+    return parameters;
+  } catch (error) {
+    console.warn("[routine-params] query failed for", options.routineName, "schema=", options.schema, error);
+    throw error;
+  }
 }
 
 export function supportsRoutineParameterMetadata(databaseType?: DatabaseType): boolean {
