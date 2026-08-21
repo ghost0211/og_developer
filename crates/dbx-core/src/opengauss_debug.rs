@@ -25,9 +25,9 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::{Mutex, RwLock};
 use tokio::task::JoinHandle;
 
-use crate::connection::{connection_url_for_endpoint, AppState, PoolKind};
+use crate::connection::{connection_url_for_endpoint, database_connection_config, AppState};
 use crate::db::postgres;
-use crate::models::connection::ConnectionConfig;
+use crate::models::connection::{ConnectionConfig, DatabaseType};
 
 const DEBUG_POOL_SIZE: usize = 1;
 const DEBUG_CALL_LOG_TAG: &str = "[opengauss][debug]";
@@ -285,8 +285,10 @@ async fn run_debug_query(client: &Object, sql: &str) -> Result<Vec<tokio_postgre
 // Session lifecycle
 // ---------------------------------------------------------------------------
 
-async fn connect_pinned_pool(config: &ConnectionConfig) -> Result<Pool, String> {
-    let url = connection_url_for_endpoint(config, &config.host, config.port);
+async fn connect_pinned_pool(state: &AppState, connection_id: &str, config: &ConnectionConfig) -> Result<Pool, String> {
+    // connection_host_port 处理 SSH 隧道（本地转发端口）等场景。
+    let (host, port) = state.connection_host_port(connection_id, config).await?;
+    let url = connection_url_for_endpoint(config, &host, port);
     postgres::connect_with_pool_size(&url, Duration::from_secs(10), DEBUG_POOL_SIZE).await
 }
 
@@ -307,26 +309,26 @@ pub async fn opengauss_debug_start(
         let configs = state.configs.read().await;
         configs.get(connection_id).cloned().ok_or_else(|| format!("Connection config not found: {connection_id}"))?
     };
-    let mut endpoint_config = config.clone();
-    endpoint_config.database = Some(database.to_string());
+    // dbe_pldebugger 只接受原生 PostgreSQL 协议会话；JDBC 插件会话不行。
+    // 与元数据回退路径一致：JDBC profile 的连接也用其 host/port/账号直接
+    // 建立原生连接（含 SSH 隧道），db_type 规范为 Postgres 以生成正确 URL。
+    let mut endpoint_config = database_connection_config(&config, Some(database));
+    endpoint_config.db_type = DatabaseType::Postgres;
+    endpoint_config.validate_native_url_params()?;
 
-    // 1. Resolve oid on a metadata pool.
-    let metadata_pool_key = state.get_or_create_pool(connection_id, Some(database)).await?;
+    // 1. Two pinned native sessions.
+    let debuggee_pool = connect_pinned_pool(state, connection_id, &endpoint_config).await?;
+    let debugger_pool = connect_pinned_pool(state, connection_id, &endpoint_config).await?;
+    let debugger = debugger_pool.get().await.map_err(|err| format!("Failed to open debugger session: {err}"))?;
+
+    // 2. Resolve the target oid on the (native) debuggee session.
     let oid = {
-        let connections = state.connections.read().await;
-        let Some(PoolKind::Postgres(pool)) = connections.get(&metadata_pool_key) else {
-            return Err("PL debugger requires a native PostgreSQL-protocol connection".to_string());
-        };
-        let client = postgres::checkout_postgres_client(pool, None, Duration::from_secs(10)).await?;
+        let debuggee = debuggee_pool.get().await.map_err(|err| format!("Failed to open debuggee session: {err}"))?;
         let sql = opengauss_debug_resolve_oid_sql(schema, name, kind, signature);
-        let row = client
-            .query_opt(&sql, &[])
-            .await
-            .map_err(|err| postgres::debug_error_to_string(&err))?
-            .ok_or_else(|| format!("Debug target not found: {schema}.{name}"))?;
-        row_i64(&row, 0).ok_or_else(|| format!("Failed to read oid for {schema}.{name}"))?
+        let rows = run_debug_query(&debuggee, &sql).await?;
+        let row = rows.first().ok_or_else(|| format!("Debug target not found: {schema}.{name}"))?;
+        row_i64(row, 0).ok_or_else(|| format!("Failed to read oid for {schema}.{name}"))?
     };
-    drop(metadata_pool_key);
 
     let target = OpenGaussDebugTarget {
         oid,
@@ -335,11 +337,6 @@ pub async fn opengauss_debug_start(
         kind: kind.to_string(),
         signature: signature.map(str::to_string),
     };
-
-    // 2. Two pinned sessions.
-    let debuggee_pool = connect_pinned_pool(&endpoint_config).await?;
-    let debugger_pool = connect_pinned_pool(&endpoint_config).await?;
-    let debugger = debugger_pool.get().await.map_err(|err| format!("Failed to open debugger session: {err}"))?;
 
     // 3. turn_on(oid) on the DEBUGGEE session (server side marks the routine).
     let turn_on_rows = {
@@ -623,6 +620,7 @@ pub async fn opengauss_debug_call_result(state: &AppState, session_id: &str) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::connection::PoolKind;
 
     #[test]
     fn resolve_oid_sql_matches_standalone_procedure() {
