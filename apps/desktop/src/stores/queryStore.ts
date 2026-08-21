@@ -1467,6 +1467,43 @@ export const useQueryStore = defineStore("query", () => {
     return id;
   }
 
+  function openRoutineTest(options: { connectionId: string; database: string; schema?: string; routineName: string; routineKind?: "procedure" | "function"; signature?: string; catalog?: string }) {
+    const { connectionId, database, schema, routineName, routineKind, signature, catalog } = options;
+    const title = `Test - ${routineName}`;
+    const existing = tabs.value.find(
+      (tab) => tab.mode === "routine-test" && tab.connectionId === connectionId && tab.database === database && (tab.routineTest?.schema || "") === (schema || "") && tab.routineTest?.routineName === routineName && (tab.routineTest?.signature || "") === (signature || ""),
+    );
+    if (existing) {
+      switchTab(existing.id);
+      return existing.id;
+    }
+
+    const id = uuid();
+    const tab: QueryTab = {
+      id,
+      title,
+      customTitle: true,
+      connectionId,
+      database,
+      schema,
+      catalog,
+      sql: "",
+      isExecuting: false,
+      isCancelling: false,
+      isExplaining: false,
+      mode: "routine-test",
+      routineTest: {
+        schema,
+        routineName,
+        routineKind,
+        signature,
+      },
+    };
+    tabs.value.push(tab);
+    activeTabId.value = id;
+    return id;
+  }
+
   function switchTab(tabId: string) {
     activeTabId.value = tabId;
     settingsStore.settingsPageActive = false;
@@ -5389,6 +5426,7 @@ export const useQueryStore = defineStore("query", () => {
     rollbackTransaction,
     renameTab,
     openObjectBrowser,
+    openRoutineTest,
     openMongoGridFs,
     openMongoBucket,
     openUserAdmin,

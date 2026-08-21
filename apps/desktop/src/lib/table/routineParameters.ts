@@ -59,11 +59,17 @@ export function routineParametersQuery(options: Pick<LoadRoutineParametersOption
     const signatureFilter = options.signature?.trim() ? `\n  AND pg_get_function_identity_arguments(p.oid) = ${quoteSqlLiteral(options.signature)}` : "";
     // 独立例程不要混入同名包成员（openGauss 才有 propackageid）。
     const standalonePackageFilter = !packageMember && options.databaseType === "opengauss" ? "\n  AND (p.propackageid = 0 OR p.propackageid IS NULL)" : "";
+    // openGauss 不支持 `CROSS JOIN LATERAL (SELECT ...)`（6.0-lite 实测语法错误），
+    // 参数展开改用 generate_series 等值 JOIN；has_default 以“第几个 IN 类参数”
+    // （input_ordinal）超过 pronargs - pronargdefaults 判定，窗口函数就地计算。
     return `
 SELECT
-  NULLIF(arg.name, '') AS name,
-  arg.data_type,
-  CASE arg.mode
+  NULLIF(p.proargnames[gs.ordinal], '') AS name,
+  CASE
+    WHEN p.proallargtypes IS NULL THEN p.proargtypes[gs.ordinal - 1]
+    ELSE p.proallargtypes[gs.ordinal]
+  END::regtype::text AS data_type,
+  CASE COALESCE(p.proargmodes[gs.ordinal], 'i')
     WHEN 'i' THEN 'IN'
     WHEN 'o' THEN 'OUT'
     WHEN 'b' THEN 'INOUT'
@@ -71,29 +77,22 @@ SELECT
     WHEN 't' THEN 'OUT'
     ELSE 'IN'
   END AS mode,
-  arg.ordinal,
+  gs.ordinal AS ordinal,
   CASE
-    WHEN COALESCE(arg.mode, 'i') IN ('i', 'b', 'v') AND p.pronargdefaults > 0 AND arg.input_ordinal > p.pronargs - p.pronargdefaults THEN TRUE
+    WHEN COALESCE(p.proargmodes[gs.ordinal], 'i') IN ('i', 'b', 'v')
+      AND p.pronargdefaults > 0
+      AND COUNT(*) FILTER (WHERE COALESCE(p.proargmodes[gs.ordinal], 'i') IN ('i', 'b', 'v')) OVER (ORDER BY gs.ordinal) > p.pronargs - p.pronargdefaults
+    THEN TRUE
     ELSE FALSE
   END AS has_default
 FROM pg_proc p
 JOIN pg_namespace n ON n.oid = p.pronamespace
-${packageJoin}CROSS JOIN LATERAL (
-  SELECT
-    gs.ordinal AS ordinal,
-    p.proargnames[gs.ordinal] AS name,
-    CASE
-      WHEN p.proallargtypes IS NULL THEN p.proargtypes[gs.ordinal - 1]
-      ELSE p.proallargtypes[gs.ordinal]
-    END::regtype::text AS data_type,
-    COALESCE(p.proargmodes[gs.ordinal], 'i') AS mode,
-    COUNT(*) FILTER (WHERE COALESCE(p.proargmodes[gs.ordinal], 'i') IN ('i', 'b', 'v')) OVER (ORDER BY gs.ordinal) AS input_ordinal
-  FROM generate_series(1, COALESCE(array_length(p.proallargtypes, 1), p.pronargs)) AS gs(ordinal)
-) arg
+${packageJoin}JOIN generate_series(1, 100) AS gs(ordinal)
+  ON gs.ordinal <= COALESCE(array_length(p.proallargtypes, 1), p.pronargs)
 WHERE ${prokindFilter}
   AND n.nspname = ${schema}
   AND ${nameFilter}${signatureFilter}${standalonePackageFilter}
-ORDER BY arg.ordinal;`.trim();
+ORDER BY gs.ordinal;`.trim();
   }
   if (options.databaseType === "mysql" || options.databaseType === "doris" || options.databaseType === "starrocks") {
     return `

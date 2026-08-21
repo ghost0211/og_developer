@@ -734,11 +734,10 @@ async function toggle() {
       await connectionStore.loadOpengaussPackageSubprograms(node.connectionId, node.database, node.objectName, node.schema, node.id);
     } else if (node.type === "group-extensions" && node.connectionId && hasTreeNodeDatabaseContext(node)) {
       await connectionStore.refreshTreeNode(node);
-    } else if ((node.type === "sequence" || node.type === "synonym") && node.connectionId && hasTreeNodeDatabaseContext(node)) {
-      // Routines/synonyms/sequences have no dedicated toggle dispatch; route
-      // them through the store's loader, which expands an openGauss sequence
-      // into its "Referenced by" group and a synonym into its target entity's
-      // children (and keeps other databases no-ops).
+    } else if ((node.type === "procedure" || node.type === "function" || node.type === "sequence" || node.type === "synonym") && node.connectionId && hasTreeNodeDatabaseContext(node)) {
+      // Routines/synonyms/sequences route through the store's loader, which
+      // expands an openGauss routine/sequence into its reference groups
+      // or package subprograms, and a synonym into its target entity's children.
       await connectionStore.loadTreeNodeChildren(node);
     }
     emitNodeToggled(node, wasExpanded);
@@ -3433,6 +3432,10 @@ function createMysqlObjectTemplate() {
 }
 
 const canExpand = computed(() => {
+  // 存储过程/函数（含包成员）可展开查看参数；包/包体展开为子程序。
+  if (activeNode.value.type === "procedure" || activeNode.value.type === "function" || activeNode.value.type === "package" || activeNode.value.type === "package-body") {
+    return true;
+  }
   // openGauss-family sequences expand into a "Referenced by" group (column
   // defaults via nextval, etc); synonyms expand into their target entity's
   // children. Other databases treat both as leaves.

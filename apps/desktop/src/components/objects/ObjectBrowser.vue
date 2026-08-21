@@ -1187,9 +1187,16 @@ async function openNewQuery(row: ObjectBrowserRow) {
 }
 
 function openProcedureExecution(row: ObjectBrowserRow) {
-  if (row.type !== "PROCEDURE") return;
-  procedureExecutionTarget.value = row;
-  showProcedureExecutionConfirm.value = true;
+  if (row.type !== "PROCEDURE" && row.type !== "FUNCTION") return;
+  const schema = row.schema || selectedSchema.value;
+  queryStore.openRoutineTest({
+    connectionId: props.connection.id,
+    database: props.database,
+    schema,
+    routineName: row.name,
+    routineKind: row.type === "FUNCTION" ? "function" : "procedure",
+    catalog: props.catalog,
+  });
 }
 
 function openProcedureExecutionSql(sql: string) {

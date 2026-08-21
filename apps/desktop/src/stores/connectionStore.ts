@@ -66,6 +66,7 @@ import { connectionIsDorisFamilyCatalogCapable, isInternalDorisCatalog, isSchema
 import { connectionObjectTreeNodeSchema, connectionObjectTreeQuerySchema, connectionShouldDiscoverJdbcSchemas, connectionShouldLoadIdentifierQuote, connectionUsesDatabaseObjectTreeMode, effectiveDatabaseTypeForConnection, gaussdbIdentifierQuoteOverride } from "@/lib/database/jdbcDialect";
 import { buildDatabaseTreeNodes, buildDuckDbConnectionTreeNodes, compareSidebarNames, sortSidebarDatabases, sortSidebarNames, shouldIncludeDefaultDatabaseNode } from "@/lib/database/databaseTree";
 import { buildSqlServerDatabaseTreeNodes } from "@/lib/database/sqlServerTree";
+import { loadRoutineParameters } from "@/lib/table/routineParameters";
 import { collapseExpandedTreeNodes } from "@/lib/sidebar/sidebarTreeCollapse";
 import { findDatabaseTreeNode } from "@/lib/sidebar/treeRefreshTarget";
 import { simpleModeEmptyShellNeedsConfirmedLoad, treeNodeLoadedChildrenContentPresent } from "@/lib/sidebar/treeLoadedChildrenMarker";
@@ -5020,14 +5021,49 @@ export const useConnectionStore = defineStore("connection", () => {
     }
   }
 
-  /** Expand a non-table object (sequence/function/procedure/package) into reference groups. */
+  /** Expand a non-table object (sequence/function/procedure/package) into arguments/parameters and reference groups. */
   async function loadRoutineReferenceGroups(node: TreeNode, objectType: string, objectName: string) {
     const load = beginTreeNodeLoad(node);
     try {
       const targetNode = treeNodeLoadTarget(load);
       if (!targetNode) return;
-      const canReference = objectType !== "sequence" && objectType !== "type";
-      setChildren(targetNode, [...buildObjectReferenceGroupNodes(node, objectType, objectName, "references", canReference), ...buildObjectReferenceGroupNodes(node, objectType, objectName, "referencedBy", true)]);
+      const config = node.connectionId ? getConfig(node.connectionId) : undefined;
+      const dbType = effectiveDatabaseTypeForConnection(config);
+
+      let paramNodes: TreeNode[] = [];
+      if (objectType === "procedure" || objectType === "function") {
+        try {
+          // 包内成员的参数查询必须带包名前缀（routineParameters 按 `包.成员` 识别）
+          const routineName = node.parentName ? `${node.parentName}.${objectName}` : objectName;
+          const rawParams = await loadRoutineParameters({
+            connectionId: node.connectionId!,
+            database: node.database!,
+            databaseType: dbType,
+            schema: node.schema,
+            routineName,
+            routineKind: objectType as "procedure" | "function",
+            signature: node.signature,
+          });
+          paramNodes = rawParams.map((p) => ({
+            id: `${node.id}:__arg:${p.ordinal}:${p.name}`,
+            label: `${p.name || `arg_${p.ordinal}`}: ${p.dataType} (${p.mode})${p.hasDefault ? " = DEFAULT" : ""}`,
+            type: "column" as const,
+            connectionId: node.connectionId,
+            database: node.database,
+            schema: node.schema,
+            isExpanded: false,
+          }));
+        } catch (paramError) {
+          // 参数加载失败不阻塞引用组展开，仅在日志可见
+          console.warn("[sidebar] routine parameter load failed", paramError);
+        }
+      }
+
+      // 引用组只有 openGauss 家族有后端支持（list_object_references 其他库返回空），
+      // 非 openGauss 连接只展开参数，不显示两个永远为空的引用组。
+      const isOpengaussFamily = isOpengaussFamilyConfig(config);
+      const canReference = isOpengaussFamily && objectType !== "sequence" && objectType !== "type";
+      setChildren(targetNode, [...paramNodes, ...buildObjectReferenceGroupNodes(node, objectType, objectName, "references", canReference), ...buildObjectReferenceGroupNodes(node, objectType, objectName, "referencedBy", isOpengaussFamily)]);
       targetNode.isExpanded = true;
     } catch (e) {
       recordMetadataLoadError(node.connectionId!, e, load);
@@ -5148,7 +5184,6 @@ export const useConnectionStore = defineStore("connection", () => {
             schema,
             parentName: packageName,
             isExpanded: false,
-            children: undefined,
           };
         }),
       );
@@ -5545,11 +5580,8 @@ export const useConnectionStore = defineStore("connection", () => {
       await loadSynonymGroups(node.connectionId, node.database, node.label, node.schema, node);
     } else if (node.type === "type" && node.connectionId && hasTreeNodeDatabaseContext(node)) {
       await loadTypeGroups(node.connectionId, node.database, node.label, node.schema, node);
-    } else if ((node.type === "sequence" || node.type === "function" || node.type === "procedure") && node.connectionId && hasTreeNodeDatabaseContext(node) && !node.parentName) {
-      const config = getConfig(node.connectionId);
-      if (isOpengaussFamilyConfig(config)) {
-        await loadRoutineReferenceGroups(node, node.type, node.objectName || node.label);
-      }
+    } else if ((node.type === "sequence" || node.type === "function" || node.type === "procedure") && node.connectionId && hasTreeNodeDatabaseContext(node)) {
+      await loadRoutineReferenceGroups(node, node.type, node.objectName || node.label);
     }
   }
 

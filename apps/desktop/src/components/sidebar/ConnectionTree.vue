@@ -70,6 +70,7 @@ const sidebarContextMenuRef = ref<{ close: () => void } | null>(null);
 const sidebarContextMenuItems = ref<ContextMenuItem[]>([]);
 const emit = defineEmits<{
   "open-settings": [initialTab: string];
+  "debug-procedure": [target: { connectionId: string; database: string; schema?: string; kind: string; routineName: string; signature?: string; callSql: string }];
 }>();
 
 const sidebarContextMenuTarget = ref<SidebarActionTarget | null>(null);
@@ -1329,9 +1330,16 @@ function openSidebarSettings(initialTab: string) {
 
 function openSidebarProcedure(node: TreeNode) {
   if ((node.type !== "procedure" && node.type !== "function") || !node.connectionId || !node.database) return;
-  beginSidebarAction();
-  sidebarProcedureTarget.value = createSidebarActionTarget(node);
-  sidebarProcedureOpen.value = true;
+  const routineName = node.parentName ? `${node.parentName}.${node.objectName || node.label}` : node.objectName || node.label;
+  queryStore.openRoutineTest({
+    connectionId: node.connectionId,
+    database: node.database,
+    schema: node.schema,
+    routineName,
+    routineKind: node.type === "function" ? "function" : "procedure",
+    signature: node.signature,
+    catalog: node.catalog,
+  });
 }
 
 function openSidebarData(node: TreeNode, requireSelection: boolean, openMode: "default" | "new-tab", runner: (node: TreeNode, request: SidebarDataOpenRequest) => Promise<void>) {
@@ -1439,7 +1447,7 @@ async function executeSidebarProcedureSql(sql: string) {
 function debugSidebarProcedureSql(sql: string) {
   const target = sidebarProcedureTarget.value;
   if (!target?.connectionId || !target.database || !sql) return;
-  sidebarDebugTarget.value = {
+  const debugTarget = {
     connectionId: target.connectionId,
     database: target.database,
     schema: target.schema,
@@ -1448,6 +1456,12 @@ function debugSidebarProcedureSql(sql: string) {
     signature: target.signature,
     callSql: sql,
   };
+  sidebarDebugTarget.value = debugTarget;
+  sidebarDebugOpen.value = true;
+}
+
+function triggerDebug(debugTarget: { connectionId: string; database: string; schema?: string; kind: string; routineName: string; signature?: string; callSql: string }) {
+  sidebarDebugTarget.value = debugTarget;
   sidebarDebugOpen.value = true;
 }
 
@@ -1730,7 +1744,7 @@ onUnmounted(() => {
   if (sidebarTreeContentMeasureFrame) window.cancelAnimationFrame(sidebarTreeContentMeasureFrame);
 });
 
-defineExpose({ focusSearch, createNewGroup, collapseAllTreeNodes });
+defineExpose({ focusSearch, createNewGroup, collapseAllTreeNodes, triggerDebug });
 </script>
 
 <template>

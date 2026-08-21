@@ -418,5 +418,6 @@ export function tabModeLabel(tab: QueryTab, t: Translate): string {
   if (tab.mode === "nacos") return "Nacos";
   if (tab.mode === "objects") return t("tabs.objects");
   if (tab.mode === "users") return t("tabs.users");
+  if (tab.mode === "routine-test") return t("contextMenu.executeProcedure");
   return tab.mode;
 }

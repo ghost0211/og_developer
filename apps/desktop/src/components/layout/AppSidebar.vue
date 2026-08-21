@@ -24,6 +24,7 @@ const emit = defineEmits<{
   startResize: [event: MouseEvent];
   collapse: [];
   "open-settings": [initialTab: string];
+  "debug-procedure": [target: { connectionId: string; database: string; schema?: string; kind: string; routineName: string; signature?: string; callSql: string }];
 }>();
 
 type ImportSource = "dbx" | "navicat" | "dbeaver" | "datagrip";
@@ -146,7 +147,11 @@ function confirmCreateSelectedGroup() {
   showCreateSelectedGroupDialog.value = false;
 }
 
-defineExpose({ focusSearch });
+function triggerDebug(target: { connectionId: string; database: string; schema?: string; kind: string; routineName: string; signature?: string; callSql: string }) {
+  connectionTreeRef.value?.triggerDebug(target);
+}
+
+defineExpose({ focusSearch, triggerDebug });
 </script>
 
 <template>
@@ -250,7 +255,7 @@ defineExpose({ focusSearch });
         </template>
       </div>
       <div class="flex-1 min-h-0">
-        <ConnectionTree ref="connectionTreeRef" @open-settings="(initialTab) => emit('open-settings', initialTab)" />
+        <ConnectionTree ref="connectionTreeRef" @open-settings="(initialTab) => emit('open-settings', initialTab)" @debug-procedure="(target) => emit('debug-procedure', target)" />
       </div>
     </div>
     <div class="panel-resize-handle panel-resize-handle--right" @mousedown="emit('startResize', $event)" />

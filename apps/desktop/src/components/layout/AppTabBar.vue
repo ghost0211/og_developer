@@ -2,7 +2,7 @@
 import { computed, ref, watch, nextTick, onUnmounted } from "vue";
 import type { CSSProperties } from "vue";
 import { useI18n } from "vue-i18n";
-import { X, Pin, ChevronDown, Table2, Code2, TableProperties, PencilRuler, KeyRound, Pencil, Package, Lock, Copy, AlertTriangle, Network, Minimize2, Maximize2, CalendarClock, Activity, Gauge, ShieldCheck } from "@lucide/vue";
+import { X, Pin, ChevronDown, Table2, Code2, TableProperties, PencilRuler, KeyRound, Pencil, Package, Lock, Copy, AlertTriangle, Network, Minimize2, Maximize2, CalendarClock, Activity, Gauge, ShieldCheck, TerminalSquare } from "@lucide/vue";
 import CustomContextMenu, { type ContextMenuItem } from "@/components/ui/CustomContextMenu.vue";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -598,8 +598,8 @@ function onOverflowItemKeydown(event: KeyboardEvent, tabId: string, kind: "regul
                     class="app-tab-pill group flex items-center gap-1 px-2 text-xs cursor-pointer transition-colors whitespace-nowrap select-none"
                     :class="
                       isClassicLayout
-                        ? [compactTabTitle ? 'min-w-24' : 'min-w-38', 'h-full border-r border-border/80 font-medium dark:border-border/45', tab.id === queryStore.activeTabId && !driverStoreActive ? 'bg-background text-foreground' : 'text-foreground/70 hover:text-foreground/90']
-                        : [compactTabTitle ? 'min-w-24' : 'min-w-38', 'h-7 rounded-md border', tab.id === queryStore.activeTabId && !driverStoreActive ? 'text-foreground font-medium' : 'border-border/60 text-foreground/70 hover:border-border hover:text-foreground/90']
+                        ? [compactTabTitle ? 'min-w-24 max-w-44' : 'min-w-38 max-w-56', 'h-full border-r border-border/80 font-medium dark:border-border/45', tab.id === queryStore.activeTabId && !driverStoreActive ? 'bg-background text-foreground' : 'text-foreground/70 hover:text-foreground/90']
+                        : [compactTabTitle ? 'min-w-24 max-w-44' : 'min-w-38 max-w-56', 'h-7 rounded-md border', tab.id === queryStore.activeTabId && !driverStoreActive ? 'text-foreground font-medium' : 'border-border/60 text-foreground/70 hover:border-border hover:text-foreground/90']
                     "
                     :style="[tabColorStyle(tab), tabDropStyle(tab.id)]"
                     :data-active-tab="tab.id === queryStore.activeTabId && !driverStoreActive"
@@ -623,6 +623,7 @@ function onOverflowItemKeydown(event: KeyboardEvent, tabId: string, kind: "regul
                       <PencilRuler v-else-if="tab.mode === 'structure'" class="h-3.5 w-3.5" />
                       <CalendarClock v-else-if="tab.mode === 'dameng-jobs'" class="h-3.5 w-3.5" />
                       <Activity v-else-if="tab.mode === 'processlist'" class="h-3.5 w-3.5" />
+                      <TerminalSquare v-else-if="tab.mode === 'routine-test'" class="h-3.5 w-3.5 text-primary" />
                       <Gauge v-else-if="tab.mode === 'mysql-dashboard' || tab.mode === 'postgres-dashboard' || tab.mode === 'nacos-dashboard'" class="h-3.5 w-3.5" />
                       <Code2 v-else class="h-3.5 w-3.5" />
                     </span>
@@ -764,8 +765,8 @@ function onOverflowItemKeydown(event: KeyboardEvent, tabId: string, kind: "regul
                     class="app-tab-pill group flex items-center gap-1 px-2 text-xs cursor-pointer transition-colors whitespace-nowrap select-none"
                     :class="
                       isClassicLayout
-                        ? [compactTabTitle ? 'min-w-24' : 'min-w-38', 'h-full border-r border-border/80 font-medium dark:border-border/45', tab.id === queryStore.activeTabId && !driverStoreActive ? 'bg-background text-foreground' : 'text-foreground/70 hover:text-foreground/90']
-                        : [compactTabTitle ? 'min-w-24' : 'min-w-38', 'h-7 rounded-md border', tab.id === queryStore.activeTabId && !driverStoreActive ? 'text-foreground font-medium' : 'border-border/60 text-foreground/70 hover:border-border hover:text-foreground/90']
+                        ? [compactTabTitle ? 'min-w-24 max-w-44' : 'min-w-38 max-w-56', 'h-full border-r border-border/80 font-medium dark:border-border/45', tab.id === queryStore.activeTabId && !driverStoreActive ? 'bg-background text-foreground' : 'text-foreground/70 hover:text-foreground/90']
+                        : [compactTabTitle ? 'min-w-24 max-w-44' : 'min-w-38 max-w-56', 'h-7 rounded-md border', tab.id === queryStore.activeTabId && !driverStoreActive ? 'text-foreground font-medium' : 'border-border/60 text-foreground/70 hover:border-border hover:text-foreground/90']
                     "
                     :style="[tabColorStyle(tab), tabDropStyle(tab.id)]"
                     :data-active-tab="tab.id === queryStore.activeTabId && !driverStoreActive"
@@ -789,6 +790,7 @@ function onOverflowItemKeydown(event: KeyboardEvent, tabId: string, kind: "regul
                       <PencilRuler v-else-if="tab.mode === 'structure'" class="h-3.5 w-3.5" />
                       <CalendarClock v-else-if="tab.mode === 'dameng-jobs'" class="h-3.5 w-3.5" />
                       <Activity v-else-if="tab.mode === 'processlist'" class="h-3.5 w-3.5" />
+                      <TerminalSquare v-else-if="tab.mode === 'routine-test'" class="h-3.5 w-3.5 text-primary" />
                       <Gauge v-else-if="tab.mode === 'mysql-dashboard' || tab.mode === 'postgres-dashboard' || tab.mode === 'nacos-dashboard'" class="h-3.5 w-3.5" />
                       <Code2 v-else class="h-3.5 w-3.5" />
                     </span>

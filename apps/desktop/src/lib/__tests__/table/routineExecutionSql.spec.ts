@@ -212,14 +212,14 @@ describe("openGauss graphical routine invocation", () => {
     expect(sql).toBe("CALL public.dbg_demo(1);");
   });
 
-  it("procedures with OUT/INOUT params use CALL with NULL placeholders (values return as a row)", () => {
+  it("procedures with OUT/INOUT params generate a PL/SQL block with RAISE NOTICE output captures", () => {
     const sql = buildOpenGaussRoutineExecutionSql({
       databaseType: "opengauss",
       schema: "public",
       routineName: "ogdev_out_demo",
       parameters: [param("x", "int", "IN", 1, "4"), param("y", "numeric", "OUT", 2), param("z", "text", "INOUT", 3, "in")],
     });
-    expect(sql).toBe("CALL public.ogdev_out_demo(4, NULL, 'in');");
+    expect(sql).toBe("DECLARE\n  v_arg_2 numeric;\n  v_arg_3 text := 'in';\nBEGIN\n  public.ogdev_out_demo(4, v_arg_2, v_arg_3);\n\n  -- Output variable capture\n  RAISE NOTICE '[DBX_OUT] y=%', v_arg_2;\n  RAISE NOTICE '[DBX_OUT] z=%', v_arg_3;\nEND;");
   });
 
   it("functions use SELECT * FROM", () => {

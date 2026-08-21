@@ -2452,6 +2452,21 @@ onUnmounted(() => {
                     @execute-sql="onExecuteSql"
                     @click-table="onClickTable"
                     @view-table-data="onViewTableData"
+                    @debug-procedure="
+                      (sql) => {
+                        if (activeTab?.routineTest) {
+                          appSidebarRef?.triggerDebug({
+                            connectionId: activeTab.connectionId,
+                            database: activeTab.database,
+                            schema: activeTab.routineTest.schema,
+                            kind: activeTab.routineTest.routineKind || 'procedure',
+                            routineName: activeTab.routineTest.routineName,
+                            signature: activeTab.routineTest.signature,
+                            callSql: sql,
+                          });
+                        }
+                      }
+                    "
                     @edit-table-structure="onEditTableStructure"
                     @view-table-ddl="onViewTableDdl"
                     @open-object-source="onOpenObjectSource"

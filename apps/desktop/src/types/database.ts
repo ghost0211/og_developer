@@ -1047,9 +1047,17 @@ export interface QueryTab {
     | "dameng-jobs"
     | "processlist"
     | "mysql-dashboard"
-    | "postgres-dashboard";
+    | "postgres-dashboard"
+    | "routine-test";
   /** Ephemeral navigation intent; it is consumed by HBaseBrowser and is not persisted. */
   hbaseCreateTableOnOpen?: boolean;
+  /** Routine test window (PL/SQL Developer style graphical call page). */
+  routineTest?: {
+    schema?: string;
+    routineName: string;
+    routineKind?: "procedure" | "function";
+    signature?: string;
+  };
   mqTenant?: string;
   mqInitialTab?: "topics";
   mqttInitialTopic?: string;

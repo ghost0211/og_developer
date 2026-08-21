@@ -175,13 +175,10 @@ function qualifiedOpenGaussRoutineName(options: BuildRoutineExecutionSqlOptions)
 /**
  * Builds the execution script shown in the graphical call dialog:
  * - function → SELECT * FROM schema.func(...) (grid shows the return value)
- * - procedure → CALL schema.proc(...) with NULL placeholders for OUT/INOUT
- *   outputs; openGauss returns the OUT/INOUT values as a result row.
- *
- * Note: we deliberately avoid gms_output.put_line capture on this path —
- * gms_output.enable() followed by any put_line statement closes the native
- * session on openGauss 7.0-lite through tokio-postgres (reproduced live).
- * The JDBC plugin still captures DBMS_OUTPUT internally where it works.
+ * - procedure without OUT/INOUT → CALL schema.proc(...)
+ * - procedure with OUT/INOUT → PL/SQL anonymous block using local variables,
+ *   routine invocation, and RAISE NOTICE with [DBX_OUT] tags so the client can
+ *   parse and populate the output grid directly (PL/SQL Developer style).
  */
 export function buildOpenGaussRoutineExecutionSql(options: BuildRoutineExecutionSqlOptions & { parameters: RoutineParameterValue[]; isFunction?: boolean }): string {
   const routine = qualifiedOpenGaussRoutineName(options);
@@ -192,11 +189,39 @@ export function buildOpenGaussRoutineExecutionSql(options: BuildRoutineExecution
     return `SELECT * FROM ${routine}(${args.join(", ")});`;
   }
 
+  const hasOutOrInOut = sorted.some((p) => p.mode === "OUT" || p.mode === "INOUT");
+  if (!hasOutOrInOut) {
+    const args = sorted.map((parameter) => (shouldIncludeParameter(parameter) ? routineParameterSqlValue("opengauss", parameter) : "NULL"));
+    return `CALL ${routine}(${args.join(", ")});`;
+  }
+
+  // PL/SQL Developer style anonymous block with RAISE NOTICE output captures
+  const declarations: string[] = [];
+  const noticePrints: string[] = [];
   const args = sorted.map((parameter) => {
-    if (parameter.mode === "OUT") return "NULL";
+    const variable = `v_arg_${parameter.ordinal}`;
+    if (parameter.mode === "OUT") {
+      declarations.push(`${variable} ${parameter.dataType || "text"};`);
+      noticePrints.push(`RAISE NOTICE '[DBX_OUT] ${parameter.name}=%', ${variable};`);
+      return variable;
+    }
+    if (parameter.mode === "INOUT") {
+      declarations.push(`${variable} ${parameter.dataType || "text"} := ${routineParameterSqlValue("opengauss", parameter)};`);
+      noticePrints.push(`RAISE NOTICE '[DBX_OUT] ${parameter.name}=%', ${variable};`);
+      return variable;
+    }
     return shouldIncludeParameter(parameter) ? routineParameterSqlValue("opengauss", parameter) : "NULL";
   });
-  return `CALL ${routine}(${args.join(", ")});`;
+
+  const bodyParts = [`  ${routine}(${args.join(", ")});`];
+  if (noticePrints.length > 0) {
+    bodyParts.push("");
+    bodyParts.push(`  -- Output variable capture`);
+    bodyParts.push(...noticePrints.map((p) => `  ${p}`));
+  }
+
+  const body = `BEGIN\n${bodyParts.join("\n")}\nEND;`;
+  return declarations.length > 0 ? `DECLARE\n  ${declarations.join("\n  ")}\n${body}` : body;
 }
 
 /**

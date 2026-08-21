@@ -68,6 +68,7 @@ const ProcessListPanel = defineAsyncComponent(() => import("@/components/admin/P
 const MySqlDashboard = defineAsyncComponent(() => import("@/components/admin/MySqlDashboard.vue"));
 const PostgresDashboard = defineAsyncComponent(() => import("@/components/admin/PostgresDashboard.vue"));
 const DamengJobAdmin = defineAsyncComponent(() => import("@/components/admin/DamengJobAdmin.vue"));
+const RoutineTestPanel = defineAsyncComponent(() => import("@/components/objects/RoutineTestPanel.vue"));
 const ExplainPlanViewer = defineAsyncComponent(() => import("@/components/explain/ExplainPlanViewer.vue"));
 const QueryChart = defineAsyncComponent(() => import("@/components/chart/QueryChart.vue"));
 import { useQueryStore } from "@/stores/queryStore";
@@ -171,6 +172,7 @@ const emit = defineEmits<{
   objectBrowserViewportChange: [tabId: string, viewport: ObjectBrowserViewport];
   structureEditorSaved: [commentChanged: boolean];
   structureEditorClose: [];
+  debugProcedure: [sql: string];
   openSettings: [initialTab?: string, initialSection?: string];
   openConnectionSettings: [connectionId: string, initialTab: "advanced"];
 }>();
@@ -2005,6 +2007,23 @@ defineExpose({ focusSearch, refreshData, refreshQueryEditorCompletionCache, hand
 
     <template v-else-if="activeTab.mode === 'dameng-jobs' && activeConnection">
       <DamengJobAdmin :key="activeTab.id" :connection="activeConnection" />
+    </template>
+
+    <!-- Routine Test mode: graphical procedure/function test window (PL/SQL Developer style) -->
+    <template v-else-if="activeTab.mode === 'routine-test' && activeTab.routineTest">
+      <div class="min-h-0 flex-1">
+        <RoutineTestPanel
+          :key="activeTab.id"
+          :connection-id="activeTab.connectionId"
+          :database="activeTab.database"
+          :database-type="activeEffectiveDatabaseType"
+          :schema="activeTab.routineTest.schema"
+          :routine-name="activeTab.routineTest.routineName"
+          :routine-kind="activeTab.routineTest.routineKind"
+          :signature="activeTab.routineTest.signature"
+          @debug="emit('debugProcedure', $event)"
+        />
+      </div>
     </template>
   </div>
 </template>

@@ -5,11 +5,8 @@ const leafTypes: Set<TreeNodeType> = new Set([
   "index",
   "fkey",
   "trigger",
-  "procedure",
-  "function",
   "job",
   "scheduler",
-  "type",
   "type-body",
   "object-browser",
   "redis-db",
@@ -27,8 +24,9 @@ const leafTypes: Set<TreeNodeType> = new Set([
   "table-search-control",
   "load-more",
   "extension",
-  // Sequences have no expandable child objects; treat them as leaves so the
-  // tree does not render a misleading expander arrow.
+  // Sequences are leaves on most databases; openGauss-family servers get an
+  // expander via the TreeItem/SidebarTreeRuntimeHost override (Referenced-by
+  // group), not via this layout set.
   "sequence",
 ]);
 
