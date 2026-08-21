@@ -20,8 +20,8 @@ import { EditorState } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import * as langSql from "@codemirror/lang-sql";
-import { loadRoutineParameters } from "@/lib/table/routineParameters";
-import { acceptsRoutineInput, buildOpenGaussRoutineDebugCallSql, buildOpenGaussRoutineExecutionSql, buildProcedureExecutionSql, buildProcedureExecutionSqlFromValues, type RoutineParameterValue } from "@/lib/table/routineExecutionSql";
+import { loadRoutineParameters, loadRoutineReturnInfo } from "@/lib/table/routineParameters";
+import { acceptsRoutineInput, buildOpenGaussRoutineDebugCallSql, buildOpenGaussRoutineExecutionSql, buildProcedureExecutionSql, buildProcedureExecutionSqlFromValues, type RoutineParameterValue, type RoutineReturnInfo } from "@/lib/table/routineExecutionSql";
 import * as api from "@/lib/backend/api";
 import type { DatabaseType, QueryResult } from "@/types/database";
 
@@ -55,6 +55,7 @@ const executing = ref(false);
 const loadError = ref("");
 const parametersLoaded = ref(false);
 const parameters = ref<RoutineParameterValue[]>([]);
+const functionReturn = ref<RoutineReturnInfo | null>(null);
 const outputResults = ref<Record<string, string>>({});
 const serverLogs = ref<string[]>([]);
 const resultData = ref<QueryResult | null>(null);
@@ -84,6 +85,7 @@ const generatedSql = computed(() => {
       routineName: props.routineName,
       parameters: parameters.value,
       isFunction: props.routineKind === "function",
+      functionReturn: functionReturn.value,
     });
   }
   if (parameters.value.length) {
@@ -163,6 +165,21 @@ async function refreshParameters() {
       routineKind: props.routineKind,
       signature: props.signature,
     });
+    if (token !== loadToken) return;
+
+    // 函数额外探测返回形态：标量返回用变量接收 + NOTICE 回显
+    functionReturn.value =
+      props.routineKind === "function"
+        ? await loadRoutineReturnInfo({
+            connectionId: props.connectionId,
+            database: props.database,
+            databaseType: props.databaseType,
+            schema: props.schema,
+            routineName: props.routineName,
+            routineKind: props.routineKind,
+            signature: props.signature,
+          })
+        : null;
     if (token !== loadToken) return;
 
     parameters.value = loaded.map((parameter) => ({

@@ -244,6 +244,30 @@ describe("openGauss graphical routine invocation", () => {
     expect(sql).toBe("SELECT * FROM public.emp_pkg.get_salary(7);");
   });
 
+  it("scalar-returning functions receive the result into a variable and print it via RAISE NOTICE", () => {
+    const sql = buildOpenGaussRoutineExecutionSql({
+      databaseType: "opengauss",
+      schema: "hr_app",
+      routineName: "calc_annual_compensation",
+      parameters: [param("p_emp_id", "numeric", "IN", 1, "7")],
+      isFunction: true,
+      functionReturn: { returnType: "numeric", isSetof: false },
+    });
+    expect(sql).toBe("DECLARE\n  p_emp_id numeric := 7;\n  v_result numeric;\nBEGIN\n  v_result := hr_app.calc_annual_compensation(p_emp_id);\n\n  RAISE NOTICE '[DBX_OUT] result=%', v_result;\nEND;");
+  });
+
+  it("setof-returning functions keep the SELECT * FROM grid form", () => {
+    const sql = buildOpenGaussRoutineExecutionSql({
+      databaseType: "opengauss",
+      schema: "hr_app",
+      routineName: "list_emps",
+      parameters: [],
+      isFunction: true,
+      functionReturn: { returnType: "SETOF text", isSetof: true },
+    });
+    expect(sql).toBe("SELECT * FROM hr_app.list_emps();");
+  });
+
   it("mixed-case routine names stay quoted", () => {
     const sql = buildOpenGaussRoutineExecutionSql({
       databaseType: "opengauss",

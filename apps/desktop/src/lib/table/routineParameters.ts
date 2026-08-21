@@ -1,6 +1,6 @@
 import * as api from "@/lib/backend/api";
 import type { DatabaseType, QueryResult } from "@/types/database";
-import type { RoutineParameter, RoutineParameterMode } from "@/lib/table/routineExecutionSql";
+import type { RoutineParameter, RoutineParameterMode, RoutineReturnInfo } from "@/lib/table/routineExecutionSql";
 
 export interface LoadRoutineParametersOptions {
   connectionId: string;
@@ -31,6 +31,49 @@ export async function loadRoutineParameters(options: LoadRoutineParametersOption
   } catch (error) {
     console.warn("[routine-params] query failed for", options.routineName, "schema=", options.schema, error);
     throw error;
+  }
+}
+
+/**
+ * 探测函数的返回形态（pg_get_function_result + proretset）。
+ * 标量返回的函数在执行窗口里用变量接收 + RAISE NOTICE 回显；
+ * SETOF/TABLE/record 或探测失败时保持 SELECT * FROM 结果集形式。
+ */
+export async function loadRoutineReturnInfo(options: LoadRoutineParametersOptions): Promise<RoutineReturnInfo | null> {
+  if (options.databaseType !== "postgres" && options.databaseType !== "opengauss") return null;
+  if (options.routineKind === "procedure") return null;
+  const effectiveSchema = options.schema || "public";
+  const schema = quoteSqlLiteral(effectiveSchema);
+  const parts = options.routineName
+    .split(".")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const packageMember = options.databaseType === "opengauss" && parts.length === 2 ? { packageName: parts[0], memberName: parts[1] } : null;
+  const packageJoin = packageMember ? "JOIN pg_catalog.gs_package pkg ON pkg.oid = p.propackageid\n" : "";
+  const nameFilter = packageMember ? `pkg.pkgname = ${quoteSqlLiteral(packageMember.packageName)}\n  AND p.proname = ${quoteSqlLiteral(packageMember.memberName)}` : `p.proname = ${quoteSqlLiteral(options.routineName)}`;
+  const signatureFilter = options.signature?.trim() ? `\n  AND pg_get_function_identity_arguments(p.oid) = ${quoteSqlLiteral(options.signature)}` : "";
+  const standalonePackageFilter = !packageMember && options.databaseType === "opengauss" ? "\n  AND (p.propackageid = 0 OR p.propackageid IS NULL)" : "";
+  const sql = `SELECT pg_get_function_result(p.oid) AS return_type, p.proretset AS is_setof
+FROM pg_proc p
+JOIN pg_namespace n ON n.oid = p.pronamespace
+${packageJoin}WHERE p.prokind = 'f'
+  AND n.nspname = ${schema}
+  AND ${nameFilter}${signatureFilter}${standalonePackageFilter}
+LIMIT 1;`;
+  try {
+    const result = await api.executeQuery(options.connectionId, options.database, sql, options.schema, undefined, {
+      maxRows: 5,
+      pageSize: 5,
+    });
+    const row = result.rows?.[0];
+    if (!row) return null;
+    const rawSetof = row[1];
+    const isSetof = typeof rawSetof === "boolean" ? rawSetof : ["t", "true", "1", "yes"].includes(String(rawSetof ?? "").toLowerCase());
+    console.debug("[routine-params] return info", options.routineName, "=", row[0], "setof=", isSetof);
+    return { returnType: String(row[0] ?? ""), isSetof };
+  } catch (error) {
+    console.warn("[routine-params] return info query failed for", options.routineName, error);
+    return null;
   }
 }
 

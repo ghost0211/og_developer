@@ -172,6 +172,12 @@ function qualifiedOpenGaussRoutineName(options: BuildRoutineExecutionSqlOptions)
   return qualified.map(quoteOpenGaussIdentifierWhenNeeded).join(".");
 }
 
+/** openGauss/Postgres routine return-shape probe result (pg_get_function_result + proretset). */
+export interface RoutineReturnInfo {
+  returnType: string;
+  isSetof: boolean;
+}
+
 /** Variable name for a routine parameter: the parameter name itself
  *  (quoted only when it would not round-trip bare), v_arg_N for unnamed args. */
 function routineVariableName(parameter: RoutineParameterValue): string {
@@ -196,13 +202,32 @@ function routineVariableInitializer(databaseType: DatabaseType | undefined, para
  *   typed variable named after the parameter; OUT/INOUT values are printed
  *   afterwards via RAISE NOTICE with [DBX_OUT] tags for client-side parsing.
  */
-export function buildOpenGaussRoutineExecutionSql(options: BuildRoutineExecutionSqlOptions & { parameters: RoutineParameterValue[]; isFunction?: boolean }): string {
+export function buildOpenGaussRoutineExecutionSql(options: BuildRoutineExecutionSqlOptions & { parameters: RoutineParameterValue[]; isFunction?: boolean; functionReturn?: RoutineReturnInfo | null }): string {
   const routine = qualifiedOpenGaussRoutineName(options);
   const sorted = [...options.parameters].sort((a, b) => a.ordinal - b.ordinal);
 
   if (options.isFunction) {
-    const args = sorted.filter(shouldIncludeParameter).map((parameter) => routineParameterSqlValue("opengauss", parameter));
-    return `SELECT * FROM ${routine}(${args.join(", ")});`;
+    const functionReturn = options.functionReturn;
+    const returnsSet = !!functionReturn && (functionReturn.isSetof || /^SETOF\b/i.test(functionReturn.returnType) || /^TABLE\s*\(/i.test(functionReturn.returnType) || functionReturn.returnType === "record");
+    // 探测失败、返回结果集/record/void 的函数保持 SELECT 形式（结果进网格）。
+    if (!functionReturn || returnsSet || functionReturn.returnType === "void") {
+      const args = sorted.filter(shouldIncludeParameter).map((parameter) => routineParameterSqlValue("opengauss", parameter));
+      return `SELECT * FROM ${routine}(${args.join(", ")});`;
+    }
+    // 标量返回函数：与过程一致的测试窗口风格——参数声明为变量，
+    // 返回值用变量接收后 RAISE NOTICE 回显。
+    const declarations: string[] = [];
+    const args: string[] = [];
+    for (const parameter of sorted) {
+      if (!shouldIncludeParameter(parameter)) continue;
+      const variable = routineVariableName(parameter);
+      declarations.push(`${variable} ${parameter.dataType || "text"}${routineVariableInitializer("opengauss", parameter)};`);
+      args.push(variable);
+    }
+    let resultVar = "v_result";
+    if (sorted.some((parameter) => (parameter.name || "").trim().toLowerCase() === resultVar)) resultVar = "v_return_value";
+    declarations.push(`${resultVar} ${functionReturn.returnType};`);
+    return `DECLARE\n  ${declarations.join("\n  ")}\nBEGIN\n  ${resultVar} := ${routine}(${args.join(", ")});\n\n  RAISE NOTICE '[DBX_OUT] result=%', ${resultVar};\nEND;`;
   }
 
   // PL/SQL Developer 测试窗口风格：所有参数都在 DECLARE 中定义为变量
