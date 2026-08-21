@@ -573,6 +573,31 @@ async fn list_databases_once(state: &AppState, connection_id: &str) -> Result<Ve
             let config = config.clone();
             let session = session.clone();
             drop(connections);
+            // openGauss/GaussDB official JDBC drivers only report the currently
+            // connected database through DatabaseMetaData.getCatalogs(), so a
+            // sidecar connection would list just `postgres`. Enumerating via SQL
+            // on the same session returns every connectable database regardless
+            // of which postgres-family driver is in use.
+            if db_config.as_ref().is_some_and(|c| crate::db_admin_sql::is_postgres_family_database(c.db_type)) {
+                let result: db::QueryResult = session
+                    .invoke_with_timeout(
+                        "executeQuery",
+                        serde_json::json!({
+                            "connection": config.as_ref(),
+                            "database": config.effective_database().unwrap_or(""),
+                            "sql": "SELECT datname FROM pg_database WHERE datallowconn = true ORDER BY datname",
+                            "maxRows": 4096
+                        }),
+                        agent_metadata_timeout(Some(config.as_ref())),
+                    )
+                    .await?;
+                return Ok(result
+                    .rows
+                    .iter()
+                    .filter_map(|row| row.first().and_then(|value| value.as_str()).map(str::to_string))
+                    .map(|name| db::DatabaseInfo { name })
+                    .collect());
+            }
             return session
                 .invoke_with_timeout::<Vec<db::DatabaseInfo>>(
                     "listDatabases",
@@ -6848,7 +6873,8 @@ fn sqlite_object_type(kind: &db::ObjectSourceKind) -> &'static str {
         | db::ObjectSourceKind::PackageBody
         | db::ObjectSourceKind::Type
         | db::ObjectSourceKind::TypeBody
-        | db::ObjectSourceKind::Job => "routine",
+        | db::ObjectSourceKind::Job
+        | db::ObjectSourceKind::Scheduler => "routine",
     }
 }
 
@@ -6865,6 +6891,7 @@ fn sqlserver_object_type_filter(kind: &db::ObjectSourceKind) -> &'static str {
         | db::ObjectSourceKind::Type
         | db::ObjectSourceKind::TypeBody
         | db::ObjectSourceKind::Job
+        | db::ObjectSourceKind::Scheduler
         | db::ObjectSourceKind::MaterializedView => "''",
     }
 }
@@ -7184,18 +7211,28 @@ fn postgres_object_source_sql_inner(
             )
         }
         // openGauss DBMS_JOB 条目：pg_job 只携带元数据（不同构建的字段有差异，
-        // lite 版没有动作文本列），重建一份可读的定义。
-        db::ObjectSourceKind::Job if unwrap_opengauss_record => {
+        // lite 版没有动作文本列），重建一份可读的定义。无名作业（job_name 为
+        // NULL）在树里以 job_id 显示，因此同时按 job_id 匹配。
+        db::ObjectSourceKind::Job | db::ObjectSourceKind::Scheduler if unwrap_opengauss_record => {
             format!(
-                "SELECT 'JOB ' || j.job_name || CHR(10) || \
-                   '  status: ' || CASE WHEN j.enable THEN 'enabled' ELSE 'disabled' END || CHR(10) || \
-                   '  interval: ' || COALESCE(j.interval, '-') || CHR(10) || \
-                   '  next run: ' || COALESCE(j.next_run_date::text, '-') \
+                "SELECT '-- openGauss ' || CASE WHEN j.job_name IS NOT NULL AND length(j.job_name) > 0 THEN 'Scheduler: ' || j.job_name ELSE 'Job: #' || j.job_id::text END || CHR(10) || \
+                   '-- Status: ' || CASE WHEN j.job_status = 'd' THEN 'disabled' WHEN j.job_status = 'r' THEN 'running' WHEN j.job_status = 'f' THEN 'failed' ELSE 'enabled' END || CHR(10) || \
+                   '-- Interval: ' || COALESCE(j.interval, 'null') || CHR(10) || \
+                   '-- Next Run: ' || COALESCE(j.next_run_date::text, 'null') || CHR(10) || \
+                   '-- Last Run: ' || COALESCE(j.last_start_date::text, 'never') || CHR(10) || \
+                   '-- Failures: ' || COALESCE(j.failure_count::text, '0') || CHR(10) || CHR(10) || \
+                   COALESCE(p.what, '-- (no action content)') \
                  FROM pg_catalog.pg_job j \
-                 WHERE j.nspname::text = {} AND j.job_name = {} AND j.dbname = current_database()::name \
+                 LEFT JOIN pg_catalog.pg_job_proc p ON j.job_id = p.job_id \
+                 WHERE (j.nspname::text = {} OR (j.nspname IS NULL AND {} = 'public') OR ({} = 'public' AND j.nspname IN ('public', 'dbms_scheduler'))) \
+                   AND (j.job_name = {} OR j.job_id::text = {}) \
+                   AND j.dbname = current_database()::name \
                  LIMIT 1",
                 sql_string(schema),
-                sql_string(name)
+                sql_string(schema),
+                sql_string(schema),
+                sql_string(name),
+                sql_string(name),
             )
         }
         // 自定义类型（composite/enum）的原始 CREATE 不落 gs_source，从目录重建。
@@ -7243,7 +7280,8 @@ fn postgres_object_source_sql_inner(
         | db::ObjectSourceKind::PackageBody
         | db::ObjectSourceKind::Type
         | db::ObjectSourceKind::TypeBody
-        | db::ObjectSourceKind::Job => "SELECT NULL WHERE FALSE".to_string(),
+        | db::ObjectSourceKind::Job
+        | db::ObjectSourceKind::Scheduler => "SELECT NULL WHERE FALSE".to_string(),
     }
 }
 
@@ -7260,7 +7298,7 @@ pub fn oracle_object_source_sql(schema: &str, name: &str, kind: &db::ObjectSourc
         db::ObjectSourceKind::PackageBody => "PACKAGE_BODY",
         db::ObjectSourceKind::Type => "TYPE",
         db::ObjectSourceKind::TypeBody => "TYPE_BODY",
-        db::ObjectSourceKind::Job => "JOB",
+        db::ObjectSourceKind::Job | db::ObjectSourceKind::Scheduler => "JOB",
     };
     if schema.trim().is_empty() {
         format!("SELECT DBMS_METADATA.GET_DDL({}, {}) FROM DUAL", sql_string(object_type), sql_string(name))
@@ -7317,7 +7355,8 @@ pub fn mysql_object_source_sql(database: &str, name: &str, kind: &db::ObjectSour
         | db::ObjectSourceKind::PackageBody
         | db::ObjectSourceKind::Type
         | db::ObjectSourceKind::TypeBody
-        | db::ObjectSourceKind::Job => String::new(),
+        | db::ObjectSourceKind::Job
+        | db::ObjectSourceKind::Scheduler => String::new(),
         // Doris and StarRocks expose materialized views via `SHOW CREATE MATERIALIZED VIEW`.
         // MySQL itself never reaches this arm in normal use: the desktop capabilities map at
         // apps/desktop/src/lib/database/databaseObjectCapabilities.ts has no "mysql" entry,
@@ -7352,7 +7391,8 @@ pub(crate) fn mysql_object_source_ddl_column_index(kind: &db::ObjectSourceKind) 
         | db::ObjectSourceKind::PackageBody
         | db::ObjectSourceKind::Type
         | db::ObjectSourceKind::TypeBody
-        | db::ObjectSourceKind::Job => 2,
+        | db::ObjectSourceKind::Job
+        | db::ObjectSourceKind::Scheduler => 2,
     }
 }
 

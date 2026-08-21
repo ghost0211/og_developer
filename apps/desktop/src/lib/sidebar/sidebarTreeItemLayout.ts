@@ -7,8 +7,8 @@ const leafTypes: Set<TreeNodeType> = new Set([
   "trigger",
   "procedure",
   "function",
-  "synonym",
   "job",
+  "scheduler",
   "type",
   "type-body",
   "object-browser",
@@ -27,6 +27,9 @@ const leafTypes: Set<TreeNodeType> = new Set([
   "table-search-control",
   "load-more",
   "extension",
+  // Sequences have no expandable child objects; treat them as leaves so the
+  // tree does not render a misleading expander arrow.
+  "sequence",
 ]);
 
 const fullWidthLabelTypes: Set<TreeNodeType> = new Set(["table", "view", "materialized_view", "mongo-collection", "mongo-bucket", "vector-collection", "elasticsearch-index"]);

@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import CreateJobDialog from "@/components/objects/CreateJobDialog.vue";
 
 const props = defineProps<{ controller: Record<string, any> }>();
 const emit = defineEmits<{ closed: [] }>();
@@ -126,6 +127,22 @@ const {
   updateEditDatabaseCharset,
 } = toRefs(props.controller);
 
+const showCreateJobDialog = computed({
+  get: () => !!props.controller.showCreateJobDialog,
+  set: (val) => {
+    if (props.controller.showCreateJobDialog !== undefined) {
+      props.controller.showCreateJobDialog = val;
+    }
+  },
+});
+const createJobDialogMode = computed<"job" | "scheduler">(() => props.controller.createJobDialogMode ?? "job");
+const createJobDialogNode = computed(() => props.controller.createJobDialogNode ?? null);
+const createJobDialogIsEdit = computed(() => !!props.controller.createJobDialogIsEdit);
+const createJobDialogEditName = computed(() => props.controller.createJobDialogEditName ?? "");
+const onJobCreated = computed(() => props.controller.onJobCreated);
+const onJobOpenInEditor = computed(() => props.controller.onJobOpenInEditor);
+const tableStructureDatabaseTypeForNode = computed(() => props.controller.tableStructureDatabaseTypeForNode);
+
 function pasteTargetsMissing(entries: Array<{ targetName: string }>): boolean {
   return entries.every((entry) => !entry.targetName.trim());
 }
@@ -180,6 +197,7 @@ watch(
     showRedisDatabaseAliasDialog,
     showCreateSchemaDialog,
     showEditSchemaCommentDialog,
+    showCreateJobDialog,
   ],
   (open) => {
     if (open.every((value) => !value)) emit("closed");
@@ -732,4 +750,18 @@ watch(
       </DialogFooter>
     </DialogContent>
   </Dialog>
+
+  <CreateJobDialog
+    v-if="showCreateJobDialog && (createJobDialogNode || node)"
+    v-model:open="showCreateJobDialog"
+    :connection-id="(createJobDialogNode || node)?.connectionId || ''"
+    :database="(createJobDialogNode || node)?.database || ''"
+    :schema="(createJobDialogNode || node)?.schema"
+    :database-type="tableStructureDatabaseTypeForNode ? tableStructureDatabaseTypeForNode(createJobDialogNode || node) : undefined"
+    :initial-mode="createJobDialogMode"
+    :is-edit="createJobDialogIsEdit"
+    :edit-name="createJobDialogEditName"
+    @created="(m, nameOrId) => (onJobCreated ? onJobCreated(m, nameOrId) : undefined)"
+    @open-in-editor="(sql) => (onJobOpenInEditor ? onJobOpenInEditor(sql) : undefined)"
+  />
 </template>

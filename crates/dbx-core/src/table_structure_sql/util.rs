@@ -1,5 +1,7 @@
 use super::dialect::StructureDialect;
 use super::types::EditableStructureColumn;
+use crate::sql_dialect::is_postgres_reserved_identifier;
+use crate::sql_dialect::is_simple_lower_identifier;
 
 pub(super) fn qualified_table(dialect: StructureDialect, schema: Option<&str>, table_name: &str) -> String {
     if matches!(
@@ -26,9 +28,21 @@ pub(super) fn quote_ident(dialect: StructureDialect, name: &str) -> String {
         | StructureDialect::Questdb => {
             format!("`{}`", name.replace('`', "``"))
         }
+        StructureDialect::Postgres => quote_postgres_minimally_quoted(name),
         StructureDialect::SqlServer => format!("[{}]", name.replace(']', "]]")),
         StructureDialect::Informix if is_simple_informix_identifier(name) => name.to_string(),
         _ => format!("\"{}\"", name.replace('"', "\"\"")),
+    }
+}
+
+/// Quotes a PostgreSQL-family identifier only when necessary: safe lowercase
+/// identifiers that are not reserved words stay unquoted (the same policy as
+/// the admin DDL builders in `db_admin_sql`).
+fn quote_postgres_minimally_quoted(name: &str) -> String {
+    if is_simple_lower_identifier(name) && !is_postgres_reserved_identifier(name) {
+        name.to_string()
+    } else {
+        format!("\"{}\"", name.replace('"', "\"\""))
     }
 }
 

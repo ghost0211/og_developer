@@ -1332,7 +1332,7 @@ async function confirmDrop() {
     const sql = dropPreviewSql.value || (await buildDropSqlForRow(row, { cascade: canDropTargetCascade.value && dropTableCascade.value }));
     const executed = await executeObjectBrowserSqlWithProductionGuard(sql, () => api.executeQuery(props.connection.id, props.database, sql));
     if (!executed) return;
-    const successKey = row.type === "VIEW" ? "contextMenu.dropViewSuccess" : row.type === "PROCEDURE" ? "contextMenu.dropProcedureSuccess" : row.type === "FUNCTION" ? "contextMenu.dropFunctionSuccess" : "contextMenu.dropTableSuccess";
+    const successKey = row.type === "VIEW" ? "contextMenu.dropViewSuccess" : row.type === "PROCEDURE" ? "contextMenu.dropProcedureSuccess" : row.type === "FUNCTION" ? "contextMenu.dropFunctionSuccess" : row.type === "SEQUENCE" ? "contextMenu.dropSequenceSuccess" : "contextMenu.dropTableSuccess";
     toast(t(successKey, { name: row.name }));
     closeDroppedTableObjectTabsForRow(row);
     removePinnedObjectBrowserRows([row]);
@@ -1355,6 +1355,9 @@ async function buildDropSqlForRow(row: ObjectBrowserRow, options?: { cascade?: b
     objectType: row.type,
     schema: row.schema || selectedSchema.value,
     name: row.name,
+    // Routines need their signature so overloaded postgres-family functions are
+    // dropped unambiguously (`DROP FUNCTION f(args)`) instead of by name alone.
+    signature: row.signature,
   });
 }
 
@@ -1378,6 +1381,7 @@ function dropConfirmTitle(): string {
   if (type === "VIEW" || type === "MATERIALIZED_VIEW") return t("contextMenu.confirmDropViewTitle");
   if (type === "PROCEDURE") return t("contextMenu.confirmDropProcedureTitle");
   if (type === "FUNCTION") return t("contextMenu.confirmDropFunctionTitle");
+  if (type === "SEQUENCE") return t("contextMenu.confirmDropSequenceTitle");
   return t("contextMenu.confirmDropTableTitle");
 }
 
@@ -1388,6 +1392,7 @@ function dropConfirmMessage(): string {
   if (type === "VIEW" || type === "MATERIALIZED_VIEW") return t("contextMenu.confirmDropViewMessage", { name });
   if (type === "PROCEDURE") return t("contextMenu.confirmDropProcedureMessage", { name });
   if (type === "FUNCTION") return t("contextMenu.confirmDropFunctionMessage", { name });
+  if (type === "SEQUENCE") return t("contextMenu.confirmDropSequenceMessage", { name });
   return t("contextMenu.confirmDropTableMessage", { name });
 }
 
@@ -2708,7 +2713,7 @@ function getProcFuncMenuItems(item: ObjectBrowserRow): ContextMenuItem[] {
     ...(canRename(item) ? [{ label: t("contextMenu.renameObject"), action: () => requestRename(item), icon: Pencil }] : []),
     { label: "", separator: true },
     {
-      label: item.type === "PROCEDURE" ? t("contextMenu.dropProcedure") : t("contextMenu.dropFunction"),
+      label: item.type === "PROCEDURE" ? t("contextMenu.dropProcedure") : item.type === "SEQUENCE" ? t("contextMenu.dropSequence") : t("contextMenu.dropFunction"),
       action: () => requestDrop(item),
       icon: Trash2,
       variant: "destructive" as const,

@@ -29,6 +29,7 @@ import {
   Check,
   UsersRound,
   CalendarClock,
+  Timer,
   Gauge,
   ShieldCheck,
   Lock,
@@ -297,6 +298,8 @@ function getIconInfo(node: TreeNode): { icon: any; colorClass: string } | null {
       return { icon: FileCode, colorClass: "text-cyan-400" };
     case "job":
       return { icon: CalendarClock, colorClass: "text-orange-500" };
+    case "scheduler":
+      return { icon: Timer, colorClass: "text-amber-500" };
     case "type":
       return { icon: Braces, colorClass: "text-violet-500" };
     case "type-body":
@@ -321,6 +324,8 @@ function getIconInfo(node: TreeNode): { icon: any; colorClass: string } | null {
       return { icon: FileCode, colorClass: "text-cyan-400" };
     case "group-jobs":
       return { icon: CalendarClock, colorClass: "text-orange-500" };
+    case "group-schedulers":
+      return { icon: Timer, colorClass: "text-amber-500" };
     case "group-types":
       return { icon: Braces, colorClass: "text-violet-500" };
     case "group-partitions":
@@ -547,12 +552,26 @@ async function cancelConnectionAttempt() {
   }
 }
 
-const canExpand = computed(() =>
-  canTreeNodeShowExpander({
+const canExpand = computed(() => {
+  // On openGauss-family servers a sequence expands into its "Referenced by"
+  // group (column defaults via nextval, etc); a synonym expands into its
+  // target entity's children. Everywhere else both are leaves, so keep the
+  // expander hidden by default.
+  if (activeNode.value.type === "sequence" && isOpenGaussFamilyDatabaseType(currentDatabaseType())) {
+    return true;
+  }
+  if (activeNode.value.type === "synonym" && isOpenGaussFamilyDatabaseType(currentDatabaseType())) {
+    return true;
+  }
+  return canTreeNodeShowExpander({
     type: activeNode.value.type,
     childCount: activeNode.value.children?.length ?? 0,
-  }),
-);
+  });
+});
+
+function isOpenGaussFamilyDatabaseType(databaseType: DatabaseType | undefined): boolean {
+  return databaseType === "opengauss" || databaseType === "gaussdb";
+}
 
 const isPinned = computed(() => activeNode.value.pinned || connectionStore.isTreeNodePinned(activeNode.value));
 
@@ -1202,6 +1221,7 @@ function onKeydown(event: KeyboardEvent) {
                   node.type === 'group-package-bodies' ||
                   node.type === 'group-types' ||
                   node.type === 'group-jobs' ||
+                  node.type === 'group-schedulers' ||
                   node.type === 'group-partitions') &&
                 node.objectCount != null
               "

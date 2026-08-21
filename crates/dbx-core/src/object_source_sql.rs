@@ -339,6 +339,7 @@ fn object_type_keyword(object_type: &ObjectSourceKind) -> &'static str {
         ObjectSourceKind::Type => "TYPE",
         ObjectSourceKind::TypeBody => "TYPE BODY",
         ObjectSourceKind::Job => "JOB",
+        ObjectSourceKind::Scheduler => "SCHEDULER",
     }
 }
 

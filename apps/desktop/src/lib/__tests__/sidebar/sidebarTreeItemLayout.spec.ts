@@ -26,6 +26,18 @@ describe("sidebar tree item layout", () => {
     expect(canTreeNodeShowExpander({ type: "etcd-access-control", childCount: 0 })).toBe(false);
   });
 
+  it("never shows an expander for a sequence leaf even when it has children", () => {
+    expect(canTreeNodeShowExpander({ type: "sequence", childCount: 0 })).toBe(false);
+    expect(canTreeNodeShowExpander({ type: "sequence" })).toBe(false);
+  });
+
+  it("keeps synonym/synonym-target rows expandable at the layout level", () => {
+    // Sequences stay leaves by default; synonyms are expandable so the sidebar
+    // toggle can load the target entity's children (DB gating happens in the
+    // component layer, not here).
+    expect(canTreeNodeShowExpander({ type: "synonym", childCount: 0 })).toBe(true);
+  });
+
   it("aligns comments to the longest sibling name without crossing parent groups", () => {
     const widths = alignedSidebarCommentLabelWidths([
       { id: "tables", depth: 1, alignable: false, hasComment: false, labelWidth: 0 },

@@ -579,7 +579,11 @@ function generateDropSql(obj: SchemaDiffObject): string {
     owner: "OWNED BY",
   };
   const sqlType = typeMap[obj.objectKind] || obj.objectKind.toUpperCase();
-  return `DROP ${sqlType} IF EXISTS ${obj.name};`;
+  // Routines keep their identity argument list so overloaded postgres-family
+  // functions are dropped unambiguously (`DROP FUNCTION f(args)`) rather than
+  // by name alone, which fails with "is not unique"/"asks parameters".
+  const argumentsClause = obj.objectKind === "function" && obj.arguments?.trim() ? `(${obj.arguments.trim()})` : "";
+  return `DROP ${sqlType} IF EXISTS ${obj.name}${argumentsClause};`;
 }
 
 /** Detect column renames in raw SQL and replace DROP+ADD with RENAME COLUMN. */

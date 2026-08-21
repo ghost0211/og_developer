@@ -236,7 +236,7 @@ fn builds_xugu_type_change_with_native_syntax() {
 
     assert_eq!(
         postgres_result.statements,
-        vec!["ALTER TABLE \"public\".\"info_x\" ALTER COLUMN \"code\" TYPE integer USING \"code\"::integer;"]
+        vec!["ALTER TABLE public.info_x ALTER COLUMN code TYPE integer USING code::integer;"]
     );
 }
 
@@ -262,8 +262,8 @@ fn builds_postgres_explicit_type_cast_for_renamed_column() {
     assert_eq!(
         result.statements,
         vec![
-            "ALTER TABLE \"public\".\"items\" RENAME COLUMN \"old code\" TO \"new code\";",
-            "ALTER TABLE \"public\".\"items\" ALTER COLUMN \"new code\" TYPE bigint USING \"new code\"::bigint;",
+            "ALTER TABLE public.items RENAME COLUMN \"old code\" TO \"new code\";",
+            "ALTER TABLE public.items ALTER COLUMN \"new code\" TYPE bigint USING \"new code\"::bigint;",
         ]
     );
 }
@@ -290,7 +290,7 @@ fn builds_postgres_atomic_type_change_with_existing_default() {
 
     assert_eq!(
         result.statements,
-        vec!["ALTER TABLE \"public\".\"items\" ALTER COLUMN \"code\" DROP DEFAULT, ALTER COLUMN \"code\" TYPE varchar(20) USING \"code\"::varchar(20), ALTER COLUMN \"code\" SET DEFAULT '7';"]
+        vec!["ALTER TABLE public.items ALTER COLUMN code DROP DEFAULT, ALTER COLUMN code TYPE varchar(20) USING code::varchar(20), ALTER COLUMN code SET DEFAULT '7';"]
     );
 }
 
@@ -315,7 +315,7 @@ fn builds_postgres_type_change_that_drops_default() {
 
     assert_eq!(
         result.statements,
-        vec!["ALTER TABLE \"items\" ALTER COLUMN \"code\" DROP DEFAULT, ALTER COLUMN \"code\" TYPE bigint USING \"code\"::bigint;"]
+        vec!["ALTER TABLE items ALTER COLUMN code DROP DEFAULT, ALTER COLUMN code TYPE bigint USING code::bigint;"]
     );
 }
 
@@ -337,7 +337,7 @@ fn builds_postgres_array_and_domain_type_casts_without_affecting_xugu() {
     });
     assert_eq!(
         postgres.statements,
-        vec!["ALTER TABLE \"catalog\".\"items\" ALTER COLUMN \"tags\" TYPE text[] USING \"tags\"::text[];"]
+        vec!["ALTER TABLE catalog.items ALTER COLUMN tags TYPE text[] USING tags::text[];"]
     );
 
     let mut status = column("status");
@@ -356,7 +356,7 @@ fn builds_postgres_array_and_domain_type_casts_without_affecting_xugu() {
     });
     assert_eq!(
         postgres.statements,
-        vec!["ALTER TABLE \"catalog\".\"items\" ALTER COLUMN \"status\" TYPE catalog.status_domain USING \"status\"::catalog.status_domain;"]
+        vec!["ALTER TABLE catalog.items ALTER COLUMN status TYPE catalog.status_domain USING status::catalog.status_domain;"]
     );
 }
 
@@ -508,8 +508,8 @@ fn builds_highgo_foreign_key_changes_with_postgres_syntax() {
     assert_eq!(
         result.statements,
         vec![
-            "ALTER TABLE \"public\".\"orders\" DROP CONSTRAINT \"orders_user_id_fkey\";",
-            "ALTER TABLE \"public\".\"orders\" ADD CONSTRAINT \"orders_account_id_fkey\" FOREIGN KEY (\"account_id\") REFERENCES \"crm\".\"accounts\" (\"id\") ON DELETE CASCADE;",
+            "ALTER TABLE public.orders DROP CONSTRAINT orders_user_id_fkey;",
+            "ALTER TABLE public.orders ADD CONSTRAINT orders_account_id_fkey FOREIGN KEY (account_id) REFERENCES crm.accounts (id) ON DELETE CASCADE;",
         ]
     );
 }
@@ -1387,10 +1387,10 @@ fn builds_postgres_create_table_with_comments_and_index() {
     assert_eq!(
         result.statements,
         vec![
-            "CREATE TABLE \"public\".\"users\" (\n  \"id\" integer,\n  \"name\" text,\n  PRIMARY KEY (\"id\")\n);",
-            "COMMENT ON COLUMN \"public\".\"users\".\"name\" IS 'Display name';",
-            "CREATE INDEX \"idx_users_name\" ON \"public\".\"users\" USING GIN (\"name\");",
-            "COMMENT ON INDEX \"idx_users_name\" IS 'search';",
+            "CREATE TABLE public.users (\n  id integer,\n  name text,\n  PRIMARY KEY (id)\n);",
+            "COMMENT ON COLUMN public.users.name IS 'Display name';",
+            "CREATE INDEX idx_users_name ON public.users USING GIN (name);",
+            "COMMENT ON INDEX idx_users_name IS 'search';",
         ]
     );
 }
@@ -1578,7 +1578,7 @@ fn builds_kingbase_add_column_without_column_keyword() {
     });
 
     assert_eq!(result.warnings, Vec::<String>::new());
-    assert_eq!(result.statements, vec!["ALTER TABLE \"dbo\".\"dw_bill_info_copy\" ADD \"flag\" varchar(100);"]);
+    assert_eq!(result.statements, vec!["ALTER TABLE dbo.dw_bill_info_copy ADD flag varchar(100);"]);
 }
 
 #[test]
@@ -2598,7 +2598,7 @@ fn builds_postgres_alter_table_add_primary_key() {
     ));
 
     assert_eq!(result.warnings, Vec::<String>::new());
-    assert_eq!(result.statements, vec!["ALTER TABLE \"public\".\"users\" ADD PRIMARY KEY (\"id\");"]);
+    assert_eq!(result.statements, vec!["ALTER TABLE public.users ADD PRIMARY KEY (id);"]);
 }
 
 #[test]
@@ -2883,7 +2883,7 @@ fn builds_postgres_alter_table_drop_primary_key() {
     ));
 
     assert_eq!(result.warnings, Vec::<String>::new());
-    assert_eq!(result.statements, vec!["ALTER TABLE \"public\".\"users\" DROP CONSTRAINT \"users_pkey\";"]);
+    assert_eq!(result.statements, vec!["ALTER TABLE public.users DROP CONSTRAINT users_pkey;"]);
 }
 
 #[test]
@@ -3592,7 +3592,7 @@ fn unchanged_postgres_trigger_does_not_block_column_rename() {
     });
 
     assert_eq!(result.warnings, Vec::<String>::new());
-    assert_eq!(result.statements, vec!["ALTER TABLE \"public\".\"users\" RENAME COLUMN \"name\" TO \"display_name\";"]);
+    assert_eq!(result.statements, vec!["ALTER TABLE public.users RENAME COLUMN name TO display_name;"]);
 }
 
 #[test]
@@ -3884,7 +3884,7 @@ fn postgres_empty_string_default_is_not_quoted_again() {
         column: col,
     });
 
-    assert_eq!(result.statements, vec!["ALTER TABLE \"core\".\"products\" ALTER COLUMN \"sku\" SET DEFAULT '';"]);
+    assert_eq!(result.statements, vec!["ALTER TABLE core.products ALTER COLUMN sku SET DEFAULT '';"]);
 }
 
 #[test]
@@ -3936,7 +3936,7 @@ fn postgres_integer_default_is_not_quoted() {
         column: col,
     });
 
-    assert_eq!(result.statements, vec!["ALTER TABLE \"core\".\"products\" ALTER COLUMN \"stock\" SET DEFAULT 0;"]);
+    assert_eq!(result.statements, vec!["ALTER TABLE core.products ALTER COLUMN stock SET DEFAULT 0;"]);
 }
 
 #[test]

@@ -304,17 +304,19 @@ pub(super) fn build_doris_existing_column_sql(
 }
 
 pub(super) fn build_postgres_existing_column_sql(table: &str, column: &EditableStructureColumn) -> Vec<String> {
-    build_postgres_like_existing_column_sql(table, column, false)
+    build_postgres_like_existing_column_sql(table, column, StructureDialect::Postgres, false)
 }
 
 pub(super) fn build_xugu_existing_column_sql(table: &str, column: &EditableStructureColumn) -> Vec<String> {
     // Xugu shares PostgreSQL's per-attribute ALTER flow, but its type clause omits TYPE entirely.
-    build_postgres_like_existing_column_sql(table, column, true)
+    // Its identifiers still follow the Oracle-like full-quoting policy (Xugu maps to the Oracle dialect).
+    build_postgres_like_existing_column_sql(table, column, StructureDialect::Oracle, true)
 }
 
 fn build_postgres_like_existing_column_sql(
     table: &str,
     column: &EditableStructureColumn,
+    quote_dialect: StructureDialect,
     use_xugu_type_syntax: bool,
 ) -> Vec<String> {
     let Some(original) = &column.original else {
@@ -325,13 +327,13 @@ fn build_postgres_like_existing_column_sql(
     if column.name != original.name {
         statements.push(format!(
             "ALTER TABLE {table} RENAME COLUMN {} TO {};",
-            quote_ident(StructureDialect::Postgres, &original.name),
-            quote_ident(StructureDialect::Postgres, &column.name)
+            quote_ident(quote_dialect, &original.name),
+            quote_ident(quote_dialect, &column.name)
         ));
     }
     let type_changed = column.data_type.trim() != original.data_type.trim();
     if type_changed {
-        let column_name = quote_ident(StructureDialect::Postgres, current_name);
+        let column_name = quote_ident(quote_dialect, current_name);
         let data_type = column_data_type(StructureDialect::Postgres, column);
         if use_xugu_type_syntax {
             statements.push(format!("ALTER TABLE {table} ALTER COLUMN {column_name} {data_type};"));
@@ -357,10 +359,8 @@ fn build_postgres_like_existing_column_sql(
     }
     if column.is_nullable != original.is_nullable {
         let action = if column.is_nullable { "DROP NOT NULL" } else { "SET NOT NULL" };
-        statements.push(format!(
-            "ALTER TABLE {table} ALTER COLUMN {} {action};",
-            quote_ident(StructureDialect::Postgres, current_name)
-        ));
+        statements
+            .push(format!("ALTER TABLE {table} ALTER COLUMN {} {action};", quote_ident(quote_dialect, current_name)));
     }
     if (!type_changed || use_xugu_type_syntax)
         && normalize_default(Some(&column.default_value)) != original_default(column)
@@ -374,17 +374,15 @@ fn build_postgres_like_existing_column_sql(
                 format_default_for_sql(StructureDialect::Postgres, &column.data_type, &default_value)
             )
         };
-        statements.push(format!(
-            "ALTER TABLE {table} ALTER COLUMN {} {action};",
-            quote_ident(StructureDialect::Postgres, current_name)
-        ));
+        statements
+            .push(format!("ALTER TABLE {table} ALTER COLUMN {} {action};", quote_ident(quote_dialect, current_name)));
     }
     if clean(&column.comment) != original_comment(column) {
         let comment_value =
             if clean(&column.comment).is_empty() { "NULL".to_string() } else { quote_string(&clean(&column.comment)) };
         statements.push(format!(
             "COMMENT ON COLUMN {table}.{} IS {comment_value};",
-            quote_ident(StructureDialect::Postgres, current_name)
+            quote_ident(quote_dialect, current_name)
         ));
     }
     statements

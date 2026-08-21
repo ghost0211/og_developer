@@ -3002,15 +3002,27 @@ fn opengauss_synonyms_sql() -> &'static str {
      WHERE n.nspname = $1"
 }
 
-/// openGauss scheduled jobs live in the shared pg_job catalog (DBMS_JOB).
-/// Scoped to the current database and schema; the comment carries schedule
-/// state for quick scanning in the sidebar.
+/// openGauss scheduled jobs live in the shared pg_job catalog.
+/// Jobs without a job_name are classified as JOB (Classic Jobs, identified by job_id),
+/// while jobs with a job_name are classified as SCHEDULER (DBMS_SCHEDULER jobs).
+/// Status correctly considers job_status ('d'/'f'/'r'/'s') and enable flag.
+/// NOTE: openGauss A-compatibility treats '' as NULL, so empty-name checks must
+/// use length() instead of `= ''` / `!= ''` comparisons (which never match there).
+/// Rows created through the dbms_scheduler compat package may carry
+/// nspname='dbms_scheduler' (the procedure schema shadows the session's
+/// current_schema inside pkg_service.job_submit). Those rows are surfaced under
+/// 'public' (and the owner's own schema) instead of the synthetic compat schema.
 fn opengauss_jobs_sql() -> &'static str {
-    "SELECT j.job_name AS object_name, \
+    "SELECT j.job_id::text AS object_name, \
        'JOB' AS object_type, \
-       (CASE WHEN j.enable THEN 'enabled' ELSE 'disabled' END || \
+       (CASE \
+         WHEN j.job_status = 'd' THEN 'disabled' \
+         WHEN j.job_status = 'f' THEN 'failed' \
+         WHEN j.job_status = 'r' THEN 'running' \
+         ELSE 'enabled' \
+       END || \
          COALESCE(' · every ' || j.interval, '') || \
-         COALESCE(' · next: ' || j.next_run_date::text, ''))::text AS object_comment, \
+         COALESCE(' · next: ' || to_char(j.next_run_date, 'YYYY-MM-DD HH24:MI:SS'), ''))::text AS object_comment, \
        j.start_date::text AS created_at, \
        NULL::text AS updated_at, \
        NULL::text AS parent_schema, \
@@ -3018,7 +3030,35 @@ fn opengauss_jobs_sql() -> &'static str {
        NULL::text AS signature, \
        7 AS sort_order \
      FROM pg_catalog.pg_job j \
-     WHERE j.nspname::text = $1 AND j.dbname = current_database()::name"
+     WHERE (j.job_name IS NULL OR length(j.job_name) = 0) \
+       AND (j.nspname::text = $1 OR (j.nspname IS NULL AND $1 = 'public')) \
+       AND j.dbname = current_database()::name \
+     UNION ALL \
+     SELECT j.job_name AS object_name, \
+       'SCHEDULER' AS object_type, \
+       (CASE \
+         WHEN j.job_status = 'd' THEN 'disabled' \
+         WHEN j.job_status = 'f' THEN 'failed' \
+         WHEN j.job_status = 'r' THEN 'running' \
+         ELSE 'enabled' \
+       END || \
+         COALESCE(' · every ' || j.interval, '') || \
+         COALESCE(' · next: ' || to_char(j.next_run_date, 'YYYY-MM-DD HH24:MI:SS'), ''))::text AS object_comment, \
+       j.start_date::text AS created_at, \
+       NULL::text AS updated_at, \
+       NULL::text AS parent_schema, \
+       NULL::text AS parent_name, \
+       NULL::text AS signature, \
+       8 AS sort_order \
+     FROM pg_catalog.pg_job j \
+     WHERE (j.job_name IS NOT NULL AND length(j.job_name) > 0) \
+       AND ( \
+         (j.nspname::text = $1 AND j.nspname::text <> 'dbms_scheduler') \
+         OR (j.nspname IS NULL AND $1 = 'public') \
+         OR (j.nspname IN ('public', 'dbms_scheduler') AND ($1 = 'public' OR $1 = j.log_user OR $1 = j.priv_user)) \
+         OR ($1 = 'public' AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_namespace n WHERE n.nspname = j.nspname::name)) \
+       ) \
+       AND j.dbname = current_database()::name"
 }
 
 fn postgres_has_pg_catalog_relation_sql(relation_name: &str) -> String {
@@ -7109,9 +7149,21 @@ mod tests {
         let sql = list_objects_sql_full(false, true, false, true, false, false, true, true);
         assert!(sql.contains("pg_catalog.pg_job j"));
         assert!(sql.contains("'JOB' AS object_type"));
+        assert!(sql.contains("'SCHEDULER' AS object_type"));
         assert!(sql.contains("j.nspname::text = $1"));
         assert!(sql.contains("j.dbname = current_database()::name"));
         assert!(sql.contains("j.next_run_date"));
+        // openGauss A-compatibility folds '' to NULL, so job_name emptiness must
+        // be tested via length(); `= ''` / `!= ''` never match there and would
+        // hide every scheduler row from the sidebar.
+        assert!(sql.contains("j.job_name IS NULL OR length(j.job_name) = 0"));
+        assert!(sql.contains("j.job_name IS NOT NULL AND length(j.job_name) > 0"));
+        assert!(!sql.contains("j.job_name != ''"));
+        assert!(!sql.contains("j.job_name = ''"));
+        // Rows stored with nspname='dbms_scheduler' (created through the compat
+        // package, whose schema shadows the session's current_schema) must not
+        // surface under the synthetic compat schema in the sidebar.
+        assert!(sql.contains("j.nspname::text <> 'dbms_scheduler'"));
     }
 
     #[test]

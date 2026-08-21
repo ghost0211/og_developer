@@ -109,6 +109,7 @@ pub enum ObjectSourceKind {
     Type,
     TypeBody,
     Job,
+    Scheduler,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

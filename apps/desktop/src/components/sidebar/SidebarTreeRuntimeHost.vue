@@ -22,6 +22,7 @@ import {
   ListTree,
   Pencil,
   Play,
+  Power,
   Plug,
   Unplug,
   Pin,
@@ -260,6 +261,11 @@ import {
   showDeleteGroupConfirm,
   showMoveToNewGroupDialog,
   moveToNewGroupName,
+  showCreateJobDialog,
+  createJobDialogMode,
+  createJobDialogNode,
+  createJobDialogIsEdit,
+  createJobDialogEditName,
   type DuplicateStructureSource,
 } from "./sidebarTreeDialogState";
 
@@ -518,6 +524,7 @@ const groupTypes: Set<TreeNodeType> = new Set([
   "group-package-bodies",
   "group-types",
   "group-jobs",
+  "group-schedulers",
   "group-partitions",
   "group-extensions",
 ]);
@@ -727,6 +734,12 @@ async function toggle() {
       await connectionStore.loadOpengaussPackageSubprograms(node.connectionId, node.database, node.objectName, node.schema, node.id);
     } else if (node.type === "group-extensions" && node.connectionId && hasTreeNodeDatabaseContext(node)) {
       await connectionStore.refreshTreeNode(node);
+    } else if ((node.type === "sequence" || node.type === "synonym") && node.connectionId && hasTreeNodeDatabaseContext(node)) {
+      // Routines/synonyms/sequences have no dedicated toggle dispatch; route
+      // them through the store's loader, which expands an openGauss sequence
+      // into its "Referenced by" group and a synonym into its target entity's
+      // children (and keeps other databases no-ops).
+      await connectionStore.loadTreeNodeChildren(node);
     }
     emitNodeToggled(node, wasExpanded);
   } catch (e: any) {
@@ -762,6 +775,10 @@ function runRowClickAction(clickDetail: number) {
   }
   if (node.type === "mongo-gridfs") {
     openMongoTreeData(node);
+    return;
+  }
+  if (node.type === "job" || node.type === "scheduler") {
+    openEditJobDialog(node);
     return;
   }
   const action = treeNodeRowAction(node.type, canExpand.value, settingsStore.editorSettings.sidebarActivation);
@@ -1069,6 +1086,10 @@ function onDoubleClick(event: MouseEvent) {
   // Reference / synonym-target rows open their target object's DDL source.
   if (node.targetKind && node.targetName && objectSourceKindForTreeNode(node.type)) {
     openObjectSourceDialog(false);
+    return;
+  }
+  if (node.type === "job" || node.type === "scheduler") {
+    openEditJobDialog(node);
     return;
   }
   const action = treeNodeRowDoubleClickAction(activeNode.value.type, canOpenObjectBrowser.value, settingsStore.editorSettings.sidebarActivation, canExpand.value);
@@ -1524,13 +1545,53 @@ function dropObjectSqlOptions(): DropObjectSqlOptions | null {
 }
 
 function dropObjectSqlOptionsForNode(node: TreeNode): DropObjectSqlOptions | null {
-  if (node.type !== "view" && node.type !== "materialized_view" && node.type !== "procedure" && node.type !== "function") return null;
+  if (
+    node.type !== "view" &&
+    node.type !== "materialized_view" &&
+    node.type !== "procedure" &&
+    node.type !== "function" &&
+    node.type !== "sequence" &&
+    node.type !== "synonym" &&
+    node.type !== "package" &&
+    node.type !== "package-body" &&
+    // openGauss offers no DROP TYPE BODY statement in the tested release, so
+    // type bodies keep no delete menu item (dropping the type drops its body).
+    node.type !== "type" &&
+    node.type !== "job" &&
+    node.type !== "scheduler"
+  )
+    return null;
   return {
     databaseType: tableStructureDatabaseTypeForNode(node),
-    objectType: node.type === "view" ? "VIEW" : node.type === "materialized_view" ? "MATERIALIZED_VIEW" : node.type === "procedure" ? "PROCEDURE" : "FUNCTION",
+    objectType:
+      node.type === "view"
+        ? "VIEW"
+        : node.type === "materialized_view"
+          ? "MATERIALIZED_VIEW"
+          : node.type === "procedure"
+            ? "PROCEDURE"
+            : node.type === "function"
+              ? "FUNCTION"
+              : node.type === "synonym"
+                ? "SYNONYM"
+                : node.type === "package"
+                  ? "PACKAGE"
+                  : node.type === "package-body"
+                    ? "PACKAGE_BODY"
+                    : node.type === "type"
+                      ? "TYPE"
+                      : node.type === "job"
+                        ? "JOB"
+                        : node.type === "scheduler"
+                          ? "SCHEDULER"
+                          : "SEQUENCE",
     schema: node.schema,
     name: node.objectName || node.label,
-    signature: node.signature,
+    // Routines always carry an argument list. Zero-argument routines report an
+    // empty metadata signature ("") which tableTree collapses to undefined, so
+    // default to "" here to keep `DROP FUNCTION f()` exact instead of name-only
+    // (which silently deletes the wrong overload on some servers).
+    signature: node.type === "procedure" || node.type === "function" ? (node.signature ?? "") : node.signature,
   };
 }
 
@@ -1594,6 +1655,12 @@ function dropObjectConfirmTitle(): string {
   if (activeNode.value.type === "materialized_view") return t("contextMenu.confirmDropViewTitle");
   if (activeNode.value.type === "procedure") return t("contextMenu.confirmDropProcedureTitle");
   if (activeNode.value.type === "function") return t("contextMenu.confirmDropFunctionTitle");
+  if (activeNode.value.type === "sequence") return t("contextMenu.confirmDropSequenceTitle");
+  if (activeNode.value.type === "synonym") return t("contextMenu.confirmDropSynonymTitle");
+  if (activeNode.value.type === "package" || activeNode.value.type === "package-body") return t("contextMenu.confirmDropPackageTitle");
+  if (activeNode.value.type === "type") return t("contextMenu.confirmDropTypeTitle");
+  if (activeNode.value.type === "job") return t("contextMenu.confirmDropJobTitle");
+  if (activeNode.value.type === "scheduler") return t("contextMenu.confirmDropSchedulerTitle");
   return t("contextMenu.confirmDropObjectTitle");
 }
 
@@ -1602,6 +1669,12 @@ function dropObjectConfirmMessage(): string {
   if (activeNode.value.type === "materialized_view") return t("contextMenu.confirmDropViewMessage", { name: activeNode.value.label });
   if (activeNode.value.type === "procedure") return t("contextMenu.confirmDropProcedureMessage", { name: activeNode.value.label });
   if (activeNode.value.type === "function") return t("contextMenu.confirmDropFunctionMessage", { name: activeNode.value.label });
+  if (activeNode.value.type === "sequence") return t("contextMenu.confirmDropSequenceMessage", { name: activeNode.value.label });
+  if (activeNode.value.type === "synonym") return t("contextMenu.confirmDropSynonymMessage", { name: activeNode.value.label });
+  if (activeNode.value.type === "package" || activeNode.value.type === "package-body") return t("contextMenu.confirmDropPackageMessage", { name: activeNode.value.label });
+  if (activeNode.value.type === "type") return t("contextMenu.confirmDropTypeMessage", { name: activeNode.value.label });
+  if (activeNode.value.type === "job") return t("contextMenu.confirmDropJobMessage", { name: activeNode.value.label });
+  if (activeNode.value.type === "scheduler") return t("contextMenu.confirmDropSchedulerMessage", { name: activeNode.value.label });
   return t("contextMenu.confirmDropObjectMessage", { name: activeNode.value.label });
 }
 
@@ -1717,7 +1790,7 @@ function requestDropTableChildObject() {
 function canDropTreeNode(node: TreeNode): boolean {
   if (isSqlServerLinkedNode(node)) return false;
   if (node.type === "table") return !!node.connectionId && !!node.database;
-  if (node.type === "view" || node.type === "materialized_view" || node.type === "procedure" || node.type === "function") {
+  if (node.type === "view" || node.type === "materialized_view" || node.type === "procedure" || node.type === "function" || node.type === "sequence" || node.type === "synonym" || node.type === "package" || node.type === "package-body" || node.type === "type" || node.type === "job") {
     return !!node.connectionId && !!node.database && !!dropObjectSqlOptionsForNode(node);
   }
   if (canDropMongoIndexNode(node)) return true;
@@ -2127,7 +2200,26 @@ async function confirmDropObject() {
     await connectionStore.ensureConnected(node.connectionId);
     const sql = dropObjectPreviewSql.value || (await buildDropObjectSql(options));
     await executeTreeNodeSqlWithProductionGuard(node, sql, { database: node.database, schema: node.schema });
-    const msgKey = node.type === "view" ? "contextMenu.dropViewSuccess" : node.type === "materialized_view" ? "contextMenu.dropViewSuccess" : node.type === "procedure" ? "contextMenu.dropProcedureSuccess" : "contextMenu.dropFunctionSuccess";
+    const msgKey =
+      node.type === "view" || node.type === "materialized_view"
+        ? "contextMenu.dropViewSuccess"
+        : node.type === "procedure"
+          ? "contextMenu.dropProcedureSuccess"
+          : node.type === "function"
+            ? "contextMenu.dropFunctionSuccess"
+            : node.type === "sequence"
+              ? "contextMenu.dropSequenceSuccess"
+              : node.type === "synonym"
+                ? "contextMenu.dropSynonymSuccess"
+                : node.type === "package"
+                  ? "contextMenu.dropPackageSuccess"
+                  : node.type === "package-body"
+                    ? "contextMenu.dropPackageBodySuccess"
+                    : node.type === "type"
+                      ? "contextMenu.dropTypeSuccess"
+                      : node.type === "job"
+                        ? "contextMenu.dropJobSuccess"
+                        : "contextMenu.dropFunctionSuccess";
     toast(t(msgKey, { name: node.label }), 3000);
     closeDroppedTableObjectTabsForNode(node);
     // Refresh the parent object list so group badges and children stay in sync.
@@ -3340,12 +3432,20 @@ function createMysqlObjectTemplate() {
   queryStore.updateSql(tabId, template.sql);
 }
 
-const canExpand = computed(() =>
-  canTreeNodeShowExpander({
+const canExpand = computed(() => {
+  // openGauss-family sequences expand into a "Referenced by" group (column
+  // defaults via nextval, etc); synonyms expand into their target entity's
+  // children. Other databases treat both as leaves.
+  if (activeNode.value.type === "sequence" || activeNode.value.type === "synonym") {
+    const config = activeNode.value.connectionId ? connectionStore.getConfig(activeNode.value.connectionId) : undefined;
+    const dbType = config ? effectiveDatabaseTypeForConnection(config) : undefined;
+    if (dbType === "opengauss" || dbType === "gaussdb") return true;
+  }
+  return canTreeNodeShowExpander({
     type: activeNode.value.type,
     childCount: activeNode.value.children?.length ?? 0,
-  }),
-);
+  });
+});
 
 const canPin = computed(() => canTreeNodePin(activeNode.value.type));
 
@@ -3732,6 +3832,14 @@ function objectDialogCapabilities() {
     pasteTableMode,
     pasteTableDataCopySupported: pasteTableDataCopySupported.value,
     confirmPasteTable,
+    showCreateJobDialog,
+    createJobDialogMode,
+    createJobDialogNode,
+    createJobDialogIsEdit,
+    createJobDialogEditName,
+    onJobCreated,
+    onJobOpenInEditor,
+    tableStructureDatabaseTypeForNode,
   };
 }
 
@@ -4595,13 +4703,93 @@ function buildObjectSidebarMenu(context: SidebarMenuFactoryContext): boolean {
     items.push({ label: t("contextMenu.viewSource"), action: () => openObjectSourceDialog(false), icon: Code2 });
     items.push({ label: t("contextMenu.copyName"), action: copyName, icon: Copy, shortcut: shortcutCopyName.value });
     items.push({ label: t("contextMenu.changeOpenMode"), action: () => emit("open-settings", "navigation"), icon: Settings2 });
+    items.push({ label: "", separator: true });
+    items.push({
+      label: deleteMenuLabel(t("contextMenu.dropSequence")),
+      action: deleteMenuAction(requestDropObject),
+      icon: Trash2,
+      shortcut: shortcutDelete,
+      variant: "destructive" as const,
+    });
     return true;
   }
 
-  if (node.type === "trigger" || node.type === "package" || node.type === "package-body" || node.type === "type" || node.type === "type-body" || node.type === "job") {
+  if (node.type === "synonym") {
     items.push({ label: t("contextMenu.viewSource"), action: () => openObjectSourceDialog(false), icon: Code2 });
     items.push({ label: t("contextMenu.copyName"), action: copyName, icon: Copy, shortcut: shortcutCopyName.value });
     items.push({ label: t("contextMenu.changeOpenMode"), action: () => emit("open-settings", "navigation"), icon: Settings2 });
+    items.push({ label: "", separator: true });
+    items.push({
+      label: deleteMenuLabel(t("contextMenu.dropSynonym")),
+      action: deleteMenuAction(requestDropObject),
+      icon: Trash2,
+      shortcut: shortcutDelete,
+      variant: "destructive" as const,
+    });
+    return true;
+  }
+
+  if (node.type === "package" || node.type === "package-body") {
+    items.push({ label: t("contextMenu.viewSource"), action: () => openObjectSourceDialog(false), icon: Code2 });
+    items.push({ label: t("contextMenu.copyName"), action: copyName, icon: Copy, shortcut: shortcutCopyName.value });
+    items.push({ label: t("contextMenu.changeOpenMode"), action: () => emit("open-settings", "navigation"), icon: Settings2 });
+    items.push({ label: "", separator: true });
+    items.push({
+      label: deleteMenuLabel(node.type === "package" ? t("contextMenu.dropPackage") : t("contextMenu.dropPackageBody")),
+      action: deleteMenuAction(requestDropObject),
+      icon: Trash2,
+      shortcut: shortcutDelete,
+      variant: "destructive" as const,
+    });
+    return true;
+  }
+
+  if (node.type === "job" || node.type === "scheduler") {
+    items.push({
+      label: node.type === "job" ? t("contextMenu.editJob") || "编辑作业" : t("contextMenu.editScheduler") || "编辑调度",
+      action: () => openEditJobDialog(node),
+      icon: Pencil,
+    });
+    items.push({
+      label: t("contextMenu.runJob") || "立即运行",
+      action: () => void runJob(node),
+      icon: Play,
+    });
+    const isCurrentlyDisabled = node.comment === "disabled" || node.comment?.includes("disabled");
+    items.push({
+      label: isCurrentlyDisabled ? t("contextMenu.enableJob") || "启用" : t("contextMenu.disableJob") || "禁用",
+      action: () => void toggleJobEnabled(node),
+      icon: Power,
+    });
+    items.push({ label: t("contextMenu.viewSource"), action: () => openObjectSourceDialog(false), icon: Code2 });
+    items.push({ label: t("contextMenu.copyName"), action: copyName, icon: Copy, shortcut: shortcutCopyName.value });
+    items.push({ label: t("contextMenu.changeOpenMode"), action: () => emit("open-settings", "navigation"), icon: Settings2 });
+    items.push({ label: "", separator: true });
+    items.push({
+      label: deleteMenuLabel(node.type === "job" ? t("contextMenu.dropJob") : t("contextMenu.dropScheduler")),
+      action: deleteMenuAction(requestDropObject),
+      icon: Trash2,
+      shortcut: shortcutDelete,
+      variant: "destructive" as const,
+    });
+    return true;
+  }
+
+  if (node.type === "trigger" || node.type === "type" || node.type === "type-body") {
+    items.push({ label: t("contextMenu.viewSource"), action: () => openObjectSourceDialog(false), icon: Code2 });
+    items.push({ label: t("contextMenu.copyName"), action: copyName, icon: Copy, shortcut: shortcutCopyName.value });
+    items.push({ label: t("contextMenu.changeOpenMode"), action: () => emit("open-settings", "navigation"), icon: Settings2 });
+    // openGauss has no DROP TYPE BODY; only types get delete items.
+    if (node.type === "type") {
+      items.push({ label: "", separator: true });
+      items.push({
+        label: deleteMenuLabel(t("contextMenu.dropType")),
+        action: deleteMenuAction(requestDropObject),
+        icon: Trash2,
+        shortcut: shortcutDelete,
+        variant: "destructive" as const,
+      });
+    }
     return true;
   }
   return false;
@@ -4688,12 +4876,6 @@ function createGroupObjectTemplate() {
     objectType: "TRIGGER",
     sql: isOpenGauss ? `CREATE TRIGGER new_trg\nAFTER INSERT ON ${schemaName}target_table\nFOR EACH ROW\nEXECUTE PROCEDURE ${schemaName}new_trg_fn();\n` : `CREATE TRIGGER new_trg\nAFTER INSERT ON ${schemaName}target_table\nFOR EACH ROW\nEXECUTE FUNCTION ${schemaName}new_trg_fn();\n`,
   };
-  templates["group-jobs"] = {
-    title: t("contextMenu.createJob"),
-    name: "new_job",
-    objectType: "JOB",
-    sql: `-- openGauss 作业通过 pkg_service 提交\nCALL pkg_service.job_submit(\n  1,\n  'new_job',\n  'begin\n    -- 作业要执行的逻辑\n    null;\n  end;',\n  'sysdate',\n  '1 day'\n);\n`,
-  };
   const template = templates[node.type];
   if (!template) return;
   connectionStore.activeConnectionId = node.connectionId;
@@ -4706,6 +4888,126 @@ function createGroupObjectTemplate() {
   });
 }
 
+function openCreateJobDialog(node: TreeNode, targetMode: "job" | "scheduler" = "job") {
+  claimTreeItemDialogOwnership();
+  createJobDialogMode.value = targetMode;
+  createJobDialogNode.value = node;
+  createJobDialogIsEdit.value = false;
+  createJobDialogEditName.value = "";
+  showCreateJobDialog.value = true;
+  routeTreeItemDialogController();
+}
+
+function openEditJobDialog(node: TreeNode = activeNode.value) {
+  claimTreeItemDialogOwnership();
+  createJobDialogMode.value = node.type === "scheduler" ? "scheduler" : "job";
+  createJobDialogNode.value = node;
+  createJobDialogIsEdit.value = true;
+  createJobDialogEditName.value = node.label;
+  showCreateJobDialog.value = true;
+  routeTreeItemDialogController();
+}
+
+async function runJob(node: TreeNode = activeNode.value) {
+  if (!node.connectionId || !node.database) return;
+  const connectionId = node.connectionId;
+  const database = node.database;
+  const name = node.label;
+  try {
+    const escaped = name.replace(/'/g, "''");
+    // 经典作业节点 label 是 job_id，调度节点 label 是 job_name
+    const lookupSql = `SELECT j.job_id, j.job_status, j.failure_count, j.last_start_date::text FROM pg_catalog.pg_job j ` + `WHERE (j.job_name = '${escaped}' OR j.job_id::text = '${escaped}') AND j.dbname = current_database() LIMIT 1;`;
+    const lookup = await api.executeQuery(connectionId, database, lookupSql);
+    const row = lookup?.rows?.[0];
+    if (!row) {
+      toast(t("contextMenu.runJobFailed", { message: `job not found: ${name}` }), 5000);
+      return;
+    }
+    const [jobId, jobStatus, failuresBefore, lastStartBefore] = row;
+    if (String(jobStatus) === "d") {
+      toast(t("contextMenu.runJobDisabled", { name }), 5000);
+      return;
+    }
+    // openGauss PKG_SERVICE 没有 JOB_RUN：将下次执行时间改为当前时间，
+    // 由调度器在原生上下文（nspname / priv_user）立即执行，运行结果计入
+    // pg_job 簿记（last_start_date / failure_count），调度器约 1 秒拾取。
+    await api.executeQuery(connectionId, database, `SELECT pkg_service.job_update(${jobId}, sysdate, NULL, NULL);`);
+
+    const outcome = await waitJobRunStarted(connectionId, database, Number(jobId), Number(failuresBefore ?? 0) || 0, lastStartBefore);
+    if (outcome.status === "failed") {
+      toast(t("contextMenu.runJobFailed", { message: outcome.message || t("contextMenu.runJobFailedGeneric") }), 6000);
+    } else if (outcome.status === "started") {
+      toast(t("contextMenu.runJobSuccess", { name }));
+    } else {
+      toast(t("contextMenu.runJobTriggered", { name }));
+    }
+    void refresh();
+  } catch (e: any) {
+    toast(t("contextMenu.runJobFailed", { message: translateBackendError(t, e) || String(e) }), 5000);
+  }
+}
+
+/// 轮询等待调度器拾取作业：last_start_date 变化视为已开始执行，
+/// failure_count 增加视为执行失败（附带 failure_msg）。
+async function waitJobRunStarted(connectionId: string, database: string, jobId: number, failuresBefore: number, lastStartBefore: unknown): Promise<{ status: "started" | "failed" | "timeout"; message?: string }> {
+  const sql = `SELECT j.last_start_date::text, j.failure_count, j.failure_msg FROM pg_catalog.pg_job j WHERE j.job_id = ${jobId};`;
+  const deadline = Date.now() + 8000;
+  await new Promise((resolve) => setTimeout(resolve, 1200));
+  while (Date.now() < deadline) {
+    try {
+      const result = await api.executeQuery(connectionId, database, sql);
+      const row = result?.rows?.[0];
+      if (row) {
+        const [lastStart, failures, failureMsg] = row;
+        if ((Number(failures ?? 0) || 0) > failuresBefore) {
+          return { status: "failed", message: failureMsg ? String(failureMsg) : undefined };
+        }
+        if (lastStart && String(lastStart) !== String(lastStartBefore ?? "")) {
+          return { status: "started" };
+        }
+      }
+    } catch {
+      // 轮询失败忽略，继续重试直到超时
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+  return { status: "timeout" };
+}
+
+async function toggleJobEnabled(node: TreeNode = activeNode.value) {
+  if (!node.connectionId || !node.database) return;
+  const name = node.label;
+  try {
+    const escaped = name.replace(/'/g, "''");
+    const isCurrentlyDisabled = node.comment === "disabled" || node.comment?.includes("disabled");
+    const newEnabled = isCurrentlyDisabled ? true : false;
+    if (node.type === "job") {
+      const sql = `SELECT pkg_service.job_finish(${name}, ${newEnabled ? "false, sysdate" : "true"});`;
+      await api.executeQuery(node.connectionId, node.database, sql);
+    } else {
+      const callSql = `CALL dbms_scheduler.set_job_enabled('${escaped}', ${newEnabled});`;
+      await api.executeQuery(node.connectionId, node.database, callSql);
+    }
+    toast(newEnabled ? t("contextMenu.enableJobSuccess", { name }) || `作业 "${name}" 已启用` : t("contextMenu.disableJobSuccess", { name }) || `作业 "${name}" 已禁用`);
+    void refresh();
+  } catch (e: any) {
+    toast(translateBackendError(t, e) || String(e), 5000);
+  }
+}
+
+function onJobCreated(_createdMode: "job" | "scheduler", _nameOrId: string) {
+  void refresh();
+}
+
+function onJobOpenInEditor(sql: string) {
+  const target = createJobDialogNode.value || activeNode.value;
+  if (!target?.connectionId || !target?.database) return;
+  connectionStore.activeConnectionId = target.connectionId;
+  const title = createJobDialogMode.value === "scheduler" ? t("contextMenu.createScheduler") : t("contextMenu.createJob");
+  const tabId = queryStore.createTab(target.connectionId, target.database, title, "query", target.schema, undefined, target.catalog);
+  queryStore.updateSql(tabId, sql);
+}
+
 function buildObjectGroupSidebarMenu(context: SidebarMenuFactoryContext): boolean {
   const { node, items } = context;
   // 9. Group Labels (group-columns, group-tables, etc.)
@@ -4713,9 +5015,10 @@ function buildObjectGroupSidebarMenu(context: SidebarMenuFactoryContext): boolea
     const mysqlObjectTemplate = node.connectionId ? mysqlObjectTemplateForGroup(connectionStore.getConfig(node.connectionId), node) : null;
     const hasMongoCreateIndexAction = node.type === "group-indexes" && canCreateMongoIndex.value;
     const hasMongoDropAllIndexesAction = node.type === "group-indexes" && canDropAllMongoIndexes.value;
-    const creatableObjectGroups = new Set<TreeNode["type"]>(["group-procedures", "group-functions", "group-packages", "group-package-bodies", "group-types", "group-sequences", "group-synonyms", "group-triggers", "group-jobs", "group-materialized-views"]);
+    const canCreateJobDialog = (node.type === "group-jobs" || node.type === "group-schedulers") && !!node.connectionId && !!node.database;
+    const creatableObjectGroups = new Set<TreeNode["type"]>(["group-procedures", "group-functions", "group-packages", "group-package-bodies", "group-types", "group-sequences", "group-synonyms", "group-triggers", "group-materialized-views"]);
     const canCreateGroupObject = creatableObjectGroups.has(node.type) && !!node.connectionId && !!node.database;
-    const hasGroupAction = (node.type === "group-tables" && canCreateTable.value) || (node.type === "group-views" && !!node.connectionId && !!node.database) || !!mysqlObjectTemplate || hasMongoCreateIndexAction || hasMongoDropAllIndexesAction || canCreateGroupObject;
+    const hasGroupAction = (node.type === "group-tables" && canCreateTable.value) || (node.type === "group-views" && !!node.connectionId && !!node.database) || !!mysqlObjectTemplate || hasMongoCreateIndexAction || hasMongoDropAllIndexesAction || canCreateGroupObject || canCreateJobDialog;
     const canLoadAllObjectGroup = !!objectTypesForGroupNode(node.type);
     if (node.type === "group-tables" && canCreateTable.value) {
       items.push({ label: t("contextMenu.createTable"), action: createTable, icon: Plus });
@@ -4729,6 +5032,13 @@ function buildObjectGroupSidebarMenu(context: SidebarMenuFactoryContext): boolea
     if (node.type === "group-views" && node.connectionId && node.database) {
       items.push({ label: t("contextMenu.createView"), action: createView, icon: Plus });
     }
+    if (canCreateJobDialog) {
+      if (node.type === "group-jobs") {
+        items.push({ label: t("contextMenu.createJob"), action: () => openCreateJobDialog(node, "job"), icon: Plus });
+      } else if (node.type === "group-schedulers") {
+        items.push({ label: t("contextMenu.createScheduler"), action: () => openCreateJobDialog(node, "scheduler"), icon: Plus });
+      }
+    }
     if (canCreateGroupObject) {
       const labelByGroup: Partial<Record<TreeNode["type"], string>> = {
         "group-procedures": t("contextMenu.createProcedure"),
@@ -4739,7 +5049,6 @@ function buildObjectGroupSidebarMenu(context: SidebarMenuFactoryContext): boolea
         "group-sequences": t("contextMenu.createSequence"),
         "group-synonyms": t("contextMenu.createSynonym"),
         "group-triggers": t("contextMenu.createTrigger"),
-        "group-jobs": t("contextMenu.createJob"),
         "group-materialized-views": t("contextMenu.createMaterializedView"),
       };
       items.push({ label: labelByGroup[node.type] ?? t("contextMenu.createObject"), action: createGroupObjectTemplate, icon: Plus });

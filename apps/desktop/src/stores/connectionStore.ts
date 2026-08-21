@@ -5075,6 +5075,8 @@ export const useConnectionStore = defineStore("connection", () => {
         return "type";
       case "job":
         return "job";
+      case "scheduler":
+        return "scheduler";
       default:
         return "object-browser";
     }

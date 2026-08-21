@@ -411,7 +411,7 @@ export interface TableInfo {
   parent_name?: string | null;
 }
 
-export type DatabaseObjectType = "TABLE" | "VIEW" | "MATERIALIZED_VIEW" | "PROCEDURE" | "FUNCTION" | "TRIGGER" | "SEQUENCE" | "SYNONYM" | "PACKAGE" | "PACKAGE_BODY" | "TYPE" | "TYPE_BODY";
+export type DatabaseObjectType = "TABLE" | "VIEW" | "MATERIALIZED_VIEW" | "PROCEDURE" | "FUNCTION" | "TRIGGER" | "SEQUENCE" | "SYNONYM" | "PACKAGE" | "PACKAGE_BODY" | "TYPE" | "TYPE_BODY" | "JOB" | "SCHEDULER";
 
 export interface ObjectInfo {
   name: string;
@@ -433,7 +433,7 @@ export interface ObjectStatistics {
   total_bytes?: number | null;
 }
 
-export type ObjectSourceKind = "VIEW" | "MATERIALIZED_VIEW" | "PROCEDURE" | "FUNCTION" | "TRIGGER" | "SEQUENCE" | "SYNONYM" | "PACKAGE" | "PACKAGE_BODY" | "TYPE" | "TYPE_BODY" | "JOB";
+export type ObjectSourceKind = "VIEW" | "MATERIALIZED_VIEW" | "PROCEDURE" | "FUNCTION" | "TRIGGER" | "SEQUENCE" | "SYNONYM" | "PACKAGE" | "PACKAGE_BODY" | "TYPE" | "TYPE_BODY" | "JOB" | "SCHEDULER";
 
 export interface ObjectSource {
   name: string;
@@ -786,6 +786,7 @@ export type TreeNodeType =
   | "package"
   | "package-body"
   | "job"
+  | "scheduler"
   | "group-columns"
   | "group-indexes"
   | "group-fkeys"
@@ -804,6 +805,7 @@ export type TreeNodeType =
   | "group-packages"
   | "group-package-bodies"
   | "group-jobs"
+  | "group-schedulers"
   | "group-partitions"
   | "group-extensions"
   | "group-references"

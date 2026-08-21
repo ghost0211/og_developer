@@ -169,7 +169,7 @@ fn is_explicitly_quoted_identifier(name: &str) -> bool {
             || (name.starts_with('[') && name.ends_with(']')))
 }
 
-fn is_simple_lower_identifier(name: &str) -> bool {
+pub(crate) fn is_simple_lower_identifier(name: &str) -> bool {
     let mut chars = name.chars();
     let Some(first) = chars.next() else {
         return false;
@@ -178,7 +178,7 @@ fn is_simple_lower_identifier(name: &str) -> bool {
         && chars.all(|ch| ch == '_' || ch == '$' || ch.is_ascii_lowercase() || ch.is_ascii_digit())
 }
 
-fn is_postgres_reserved_identifier(name: &str) -> bool {
+pub(crate) fn is_postgres_reserved_identifier(name: &str) -> bool {
     matches!(
         name,
         "all"
@@ -282,6 +282,26 @@ fn is_postgres_reserved_identifier(name: &str) -> bool {
             | "where"
             | "window"
             | "with"
+            // openGauss-only reserved words (pg_get_keywords catcode 'R' on openGauss);
+            // quoting these on a PG server is harmless and keeps DDL safe on openGauss.
+            | "authid"
+            | "buckets"
+            | "excluded"
+            | "groupparent"
+            | "imcstored"
+            | "minus"
+            | "modify"
+            | "nocycle"
+            | "performance"
+            | "procedure"
+            | "reject"
+            | "rownum"
+            | "self"
+            | "share_memory"
+            | "shrink"
+            | "sysdate"
+            | "unimcstored"
+            | "verify"
     )
 }
 

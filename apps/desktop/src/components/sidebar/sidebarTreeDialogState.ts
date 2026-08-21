@@ -129,8 +129,14 @@ export const schemaCommentPreviewSql = ref("");
 export const showDeleteGroupConfirm = ref(false);
 export const showMoveToNewGroupDialog = ref(false);
 export const moveToNewGroupName = ref("");
+export const showCreateJobDialog = ref(false);
+export const createJobDialogMode = ref<"job" | "scheduler">("job");
+export const createJobDialogNode = ref<TreeNode | null>(null);
+export const createJobDialogIsEdit = ref(false);
+export const createJobDialogEditName = ref("");
 
 const openFlags = [
+  showCreateJobDialog,
   showDeleteConfirm,
   showDropTableConfirm,
   showDropTableChildObjectConfirm,
@@ -177,6 +183,10 @@ export function resetSidebarTreeDialogState() {
   redisDatabaseAliasInput.value = "";
   redisDatabaseAliasSaving.value = false;
   resetMongoCreateIndexForm();
+  createJobDialogNode.value = null;
+  createJobDialogMode.value = "job";
+  createJobDialogIsEdit.value = false;
+  createJobDialogEditName.value = "";
   sidebarTreeDialogOwner.value = null;
   sidebarDangerTarget.value = null;
   sidebarFormTarget.value = null;
