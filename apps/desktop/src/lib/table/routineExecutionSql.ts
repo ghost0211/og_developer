@@ -172,13 +172,29 @@ function qualifiedOpenGaussRoutineName(options: BuildRoutineExecutionSqlOptions)
   return qualified.map(quoteOpenGaussIdentifierWhenNeeded).join(".");
 }
 
+/** Variable name for a routine parameter: the parameter name itself
+ *  (quoted only when it would not round-trip bare), v_arg_N for unnamed args. */
+function routineVariableName(parameter: RoutineParameterValue): string {
+  const raw = (parameter.name || "").trim();
+  if (!raw) return `v_arg_${parameter.ordinal}`;
+  return quoteOpenGaussIdentifierWhenNeeded(raw);
+}
+
+/** Initializer clause for a DECLAREd variable: ` := value` when the user
+ *  entered a value, ` := NULL` when NULL was requested, empty otherwise. */
+function routineVariableInitializer(databaseType: DatabaseType | undefined, parameter: RoutineParameterValue): string {
+  if (parameter.useNull) return " := NULL";
+  if (parameter.value.trim() === "") return "";
+  return ` := ${routineParameterSqlValue(databaseType, parameter)}`;
+}
+
 /**
  * Builds the execution script shown in the graphical call dialog:
  * - function → SELECT * FROM schema.func(...) (grid shows the return value)
  * - procedure → PL/SQL anonymous block (DECLARE...BEGIN...END, PL/SQL
- *   Developer test-window style). IN values are inlined; OUT/INOUT use local
- *   variables followed by RAISE NOTICE with [DBX_OUT] tags so the client can
- *   parse and populate the output grid directly.
+ *   Developer test-window style): every passed parameter is declared as a
+ *   typed variable named after the parameter; OUT/INOUT values are printed
+ *   afterwards via RAISE NOTICE with [DBX_OUT] tags for client-side parsing.
  */
 export function buildOpenGaussRoutineExecutionSql(options: BuildRoutineExecutionSqlOptions & { parameters: RoutineParameterValue[]; isFunction?: boolean }): string {
   const routine = qualifiedOpenGaussRoutineName(options);
@@ -189,13 +205,15 @@ export function buildOpenGaussRoutineExecutionSql(options: BuildRoutineExecution
     return `SELECT * FROM ${routine}(${args.join(", ")});`;
   }
 
-  // PL/SQL Developer 测试窗口风格：所有参数都在 DECLARE 中定义为变量，
-  // BEGIN 中以变量调用；OUT/INOUT 执行后用 RAISE NOTICE 回显。
+  // PL/SQL Developer 测试窗口风格：所有参数都在 DECLARE 中定义为变量
+  // （变量名即参数名），BEGIN 中以变量调用；未输入值的 IN/INOUT 变量不带
+  // 初始化子句（即为 NULL），useDefault 的参数省略以让 DEFAULT 生效；
+  // OUT/INOUT 执行后用 RAISE NOTICE 回显。
   const declarations: string[] = [];
   const noticePrints: string[] = [];
   const args: string[] = [];
   for (const parameter of sorted) {
-    const variable = `v_arg_${parameter.ordinal}`;
+    const variable = routineVariableName(parameter);
     if (parameter.mode === "OUT") {
       declarations.push(`${variable} ${parameter.dataType || "text"};`);
       noticePrints.push(`RAISE NOTICE '[DBX_OUT] ${parameter.name}=%', ${variable};`);
@@ -203,14 +221,13 @@ export function buildOpenGaussRoutineExecutionSql(options: BuildRoutineExecution
       continue;
     }
     if (parameter.mode === "INOUT") {
-      declarations.push(`${variable} ${parameter.dataType || "text"} := ${routineParameterSqlValue("opengauss", parameter)};`);
+      declarations.push(`${variable} ${parameter.dataType || "text"}${routineVariableInitializer("opengauss", parameter)};`);
       noticePrints.push(`RAISE NOTICE '[DBX_OUT] ${parameter.name}=%', ${variable};`);
       args.push(variable);
       continue;
     }
-    // IN：useDefault 时省略该参数让 DEFAULT 生效，否则声明变量并赋输入值
     if (!shouldIncludeParameter(parameter)) continue;
-    declarations.push(`${variable} ${parameter.dataType || "text"} := ${routineParameterSqlValue("opengauss", parameter)};`);
+    declarations.push(`${variable} ${parameter.dataType || "text"}${routineVariableInitializer("opengauss", parameter)};`);
     args.push(variable);
   }
 

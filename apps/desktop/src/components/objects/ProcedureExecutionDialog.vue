@@ -63,6 +63,9 @@ const executionStats = ref<{ durationMs?: number; affectedRows?: number; error?:
 
 const manualSqlDirty = ref(false);
 let loadToken = 0;
+let editorInitSeq = 0;
+// 程序化写入编辑器（参数同步/重置）不算用户修改，否则会永久阻断后续同步
+let applyingProgrammaticEdit = false;
 
 // Splitpanes memory
 const splitpanesSize = ref(45);
@@ -182,6 +185,7 @@ async function refreshParameters() {
 }
 
 async function initEditor(text: string) {
+  const seq = ++editorInitSeq;
   if (!editorContainer.value) return;
   if (editorView.value) {
     editorView.value.destroy();
@@ -190,6 +194,10 @@ async function initEditor(text: string) {
 
   const settings = settingsStore.editorSettings;
   const themeExt = await loadEditorTheme(settings.theme, isDark.value ? "dark" : "light", undefined, themePalette.value);
+  // 主题加载是异步的：若期间发起了更新的 initEditor（例如参数加载完成后），
+  // 本次初始化必须放弃，否则旧文本会覆盖新文本。
+  if (seq !== editorInitSeq) return;
+  if (!editorContainer.value) return;
   const fontExt = editorFontTheme(EditorView, settings.fontSize, settings.fontFamily, { scrollable: true });
   const dialect = createDbxCodeMirrorSqlDialect(langSql, "postgres", props.databaseType || "opengauss");
 
@@ -203,7 +211,7 @@ async function initEditor(text: string) {
       themeExt,
       fontExt,
       EditorView.updateListener.of((update) => {
-        if (update.docChanged) {
+        if (update.docChanged && !applyingProgrammaticEdit) {
           manualSqlDirty.value = true;
         }
       }),
@@ -231,9 +239,14 @@ function updateEditorText(text: string) {
   }
   const current = editorView.value.state.doc.toString();
   if (current !== text) {
-    editorView.value.dispatch({
-      changes: { from: 0, to: current.length, insert: text },
-    });
+    applyingProgrammaticEdit = true;
+    try {
+      editorView.value.dispatch({
+        changes: { from: 0, to: current.length, insert: text },
+      });
+    } finally {
+      applyingProgrammaticEdit = false;
+    }
   }
 }
 
