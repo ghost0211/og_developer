@@ -175,10 +175,10 @@ function qualifiedOpenGaussRoutineName(options: BuildRoutineExecutionSqlOptions)
 /**
  * Builds the execution script shown in the graphical call dialog:
  * - function → SELECT * FROM schema.func(...) (grid shows the return value)
- * - procedure without OUT/INOUT → CALL schema.proc(...)
- * - procedure with OUT/INOUT → PL/SQL anonymous block using local variables,
- *   routine invocation, and RAISE NOTICE with [DBX_OUT] tags so the client can
- *   parse and populate the output grid directly (PL/SQL Developer style).
+ * - procedure → PL/SQL anonymous block (DECLARE...BEGIN...END, PL/SQL
+ *   Developer test-window style). IN values are inlined; OUT/INOUT use local
+ *   variables followed by RAISE NOTICE with [DBX_OUT] tags so the client can
+ *   parse and populate the output grid directly.
  */
 export function buildOpenGaussRoutineExecutionSql(options: BuildRoutineExecutionSqlOptions & { parameters: RoutineParameterValue[]; isFunction?: boolean }): string {
   const routine = qualifiedOpenGaussRoutineName(options);
@@ -187,12 +187,6 @@ export function buildOpenGaussRoutineExecutionSql(options: BuildRoutineExecution
   if (options.isFunction) {
     const args = sorted.filter(shouldIncludeParameter).map((parameter) => routineParameterSqlValue("opengauss", parameter));
     return `SELECT * FROM ${routine}(${args.join(", ")});`;
-  }
-
-  const hasOutOrInOut = sorted.some((p) => p.mode === "OUT" || p.mode === "INOUT");
-  if (!hasOutOrInOut) {
-    const args = sorted.map((parameter) => (shouldIncludeParameter(parameter) ? routineParameterSqlValue("opengauss", parameter) : "NULL"));
-    return `CALL ${routine}(${args.join(", ")});`;
   }
 
   // PL/SQL Developer style anonymous block with RAISE NOTICE output captures

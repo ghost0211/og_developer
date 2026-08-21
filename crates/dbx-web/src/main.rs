@@ -74,6 +74,23 @@ fn web_body_limit_bytes() -> usize {
     mb.saturating_mul(1024 * 1024)
 }
 
+/// Static-asset cache policy: hashed vite build assets are immutable forever,
+/// everything else (index.html and the SPA fallback) must revalidate so a
+/// redeploy is visible on the next plain refresh.
+async fn static_cache_headers(request: axum::extract::Request, next: middleware::Next) -> axum::response::Response {
+    let immutable = request.uri().path().contains("/assets/");
+    let mut response = next.run(request).await;
+    response.headers_mut().insert(
+        axum::http::header::CACHE_CONTROL,
+        if immutable {
+            axum::http::HeaderValue::from_static("public, max-age=31536000, immutable")
+        } else {
+            axum::http::HeaderValue::from_static("no-cache")
+        },
+    );
+    response
+}
+
 fn web_agent_dir(data_dir: &std::path::Path) -> std::path::PathBuf {
     web_agent_dir_from_env(data_dir, std::env::var("DBX_AGENT_DIR").ok())
 }
@@ -797,7 +814,13 @@ async fn main() {
         use tower_http::services::{ServeDir, ServeFile};
         let index_path = format!("{}/index.html", static_dir);
         let serve_dir = ServeDir::new(&static_dir).not_found_service(ServeFile::new(&index_path));
-        app = app.fallback_service(serve_dir);
+        // Cache policy: hashed build assets (dist/assets/*) are immutable, but
+        // index.html (and the SPA fallback) must always revalidate — otherwise
+        // browsers keep serving a stale app for hours after a redeploy
+        // (heuristic caching from Last-Modified), which looks like "the fix
+        // did not land".
+        let serve_router = Router::new().fallback_service(serve_dir).layer(middleware::from_fn(static_cache_headers));
+        app = app.fallback_service(serve_router);
     }
 
     if public_base_path != "/" {

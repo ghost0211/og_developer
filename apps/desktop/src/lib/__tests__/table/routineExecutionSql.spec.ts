@@ -202,14 +202,15 @@ describe("openGauss graphical routine invocation", () => {
 
   const param = (name: string, dataType: string, mode: "IN" | "OUT" | "INOUT", ordinal: number, value = "") => ({ name, dataType, mode, ordinal, value });
 
-  it("procedures with only IN inputs use CALL", () => {
+  it("procedures always run as a DECLARE...BEGIN...END anonymous block (PL/SQL Developer style)", () => {
     const sql = buildOpenGaussRoutineExecutionSql({
       databaseType: "opengauss",
       schema: "public",
       routineName: "dbg_demo",
       parameters: [param("x", "integer", "IN", 1, "1")],
     });
-    expect(sql).toBe("CALL public.dbg_demo(1);");
+    expect(sql).toBe("BEGIN\n  public.dbg_demo(1);\nEND;");
+    expect(sql).not.toContain("CALL ");
   });
 
   it("procedures with OUT/INOUT params generate a PL/SQL block with RAISE NOTICE output captures", () => {
