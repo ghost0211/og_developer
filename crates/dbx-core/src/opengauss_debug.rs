@@ -205,8 +205,9 @@ async fn attach_and_collect(
 // Target resolution
 // ---------------------------------------------------------------------------
 
-/// Resolves the pg_proc oid of the debug target. Standalone procedures and
-/// functions match on (schema, name, kind [, identity arguments]); qualified
+/// Resolves the pg_proc oid of the debug target, along with its language and
+/// return type for upfront validation. Standalone procedures and functions
+/// match on (schema, name, kind [, identity arguments]); qualified
 /// `package.member` names join gs_package via propackageid.
 fn opengauss_debug_resolve_oid_sql(schema: &str, name: &str, kind: &str, signature: Option<&str>) -> String {
     let prokind = if kind.eq_ignore_ascii_case("procedure") { "p" } else { "f" };
@@ -216,9 +217,10 @@ fn opengauss_debug_resolve_oid_sql(schema: &str, name: &str, kind: &str, signatu
         .unwrap_or_default();
     if let Some((package, member)) = name.split_once('.') {
         format!(
-            "SELECT p.oid FROM pg_catalog.pg_proc p \
+            "SELECT p.oid, l.lanname, pg_get_function_result(p.oid) FROM pg_catalog.pg_proc p \
              JOIN pg_catalog.gs_package pkg ON pkg.oid = p.propackageid \
              JOIN pg_catalog.pg_namespace n ON n.oid = pkg.pkgnamespace \
+             JOIN pg_catalog.pg_language l ON l.oid = p.prolang \
              WHERE n.nspname = {} AND pkg.pkgname = {} AND p.proname = {} AND p.prokind = '{}'{} \
              ORDER BY p.oid LIMIT 1",
             sql_string(schema),
@@ -229,8 +231,9 @@ fn opengauss_debug_resolve_oid_sql(schema: &str, name: &str, kind: &str, signatu
         )
     } else {
         format!(
-            "SELECT p.oid FROM pg_catalog.pg_proc p \
+            "SELECT p.oid, l.lanname, pg_get_function_result(p.oid) FROM pg_catalog.pg_proc p \
              JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace \
+             JOIN pg_catalog.pg_language l ON l.oid = p.prolang \
              WHERE n.nspname = {} AND p.proname = {} AND p.prokind = '{}'{} \
              ORDER BY p.oid LIMIT 1",
             sql_string(schema),
@@ -321,12 +324,24 @@ pub async fn opengauss_debug_start(
     let debugger_pool = connect_pinned_pool(state, connection_id, &endpoint_config).await?;
     let debugger = debugger_pool.get().await.map_err(|err| format!("Failed to open debugger session: {err}"))?;
 
-    // 2. Resolve the target oid on the (native) debuggee session.
+    // 2. Resolve the target oid on the (native) debuggee session, and reject
+    // targets the PL debugger cannot handle before any session is parked:
+    // dbe_pldebugger only supports plpgsql routines, and trigger functions
+    // cannot be invoked standalone at all.
     let oid = {
         let debuggee = debuggee_pool.get().await.map_err(|err| format!("Failed to open debuggee session: {err}"))?;
         let sql = opengauss_debug_resolve_oid_sql(schema, name, kind, signature);
         let rows = run_debug_query(&debuggee, &sql).await?;
         let row = rows.first().ok_or_else(|| format!("Debug target not found: {schema}.{name}"))?;
+        let language = row_string(row, 1).unwrap_or_default().to_lowercase();
+        if language != "plpgsql" {
+            let shown = if language.is_empty() { "unknown" } else { language.as_str() };
+            return Err(format!("PL 调试器仅支持调试 PL/pgSQL 语言的函数/存储过程；{schema}.{name} 是 {shown} 语言"));
+        }
+        let return_type = row_string(row, 2).unwrap_or_default().to_lowercase();
+        if return_type == "trigger" || return_type == "event_trigger" {
+            return Err(format!("触发器函数（RETURNS trigger）需要在触发上下文中运行，无法独立调试：{schema}.{name}"));
+        }
         row_i64(row, 0).ok_or_else(|| format!("Failed to read oid for {schema}.{name}"))?
     };
 
@@ -621,6 +636,14 @@ pub async fn opengauss_debug_call_result(state: &AppState, session_id: &str) -> 
 mod tests {
     use super::*;
     use crate::connection::PoolKind;
+
+    #[test]
+    fn resolve_oid_sql_fetches_language_and_return_type_for_validation() {
+        let sql = opengauss_debug_resolve_oid_sql("public", "dbg_demo", "procedure", None);
+        assert!(sql.contains("JOIN pg_catalog.pg_language l ON l.oid = p.prolang"));
+        assert!(sql.contains("l.lanname"));
+        assert!(sql.contains("pg_get_function_result(p.oid)"));
+    }
 
     #[test]
     fn resolve_oid_sql_matches_standalone_procedure() {
