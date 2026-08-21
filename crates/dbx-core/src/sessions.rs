@@ -89,6 +89,13 @@ pub async fn list_sessions(state: &AppState) -> Vec<SessionInfo> {
     out
 }
 
+/// 将 int8 会话 pid 收窄为 int4（原生 PostgreSQL 的 pg_terminate_backend 重载）。
+/// openGauss 的 pid 是 int8 线程号，超出 int4 范围时拒绝转换——
+/// 盲目 as i32 截断会把大 pid 映射到可能存在的其他小 pid，误杀正常会话。
+fn pid_to_int4(pid: i64) -> Result<i32, String> {
+    i32::try_from(pid).map_err(|_| format!("Failed to terminate session {pid}: pid out of int4 range"))
+}
+
 /// Terminates a backend session with `pg_terminate_backend` on the
 /// connection's own pool.
 pub async fn kill_session(state: &AppState, connection_id: &str, pid: i64) -> Result<(), String> {
@@ -116,8 +123,9 @@ pub async fn kill_session(state: &AppState, connection_id: &str, pid: i64) -> Re
         Ok(Some(terminated)) if terminated => Ok(()),
         Ok(Some(false)) => Err(format!("Failed to terminate session {pid}")),
         _ => {
+            let pid_i32 = pid_to_int4(pid)?;
             let terminated_i32 = client
-                .query_opt("SELECT pg_terminate_backend($1::int4)", &[&(pid as i32)])
+                .query_opt("SELECT pg_terminate_backend($1::int4)", &[&pid_i32])
                 .await
                 .map_err(|e| e.to_string())?
                 .and_then(|row| row.try_get::<_, bool>(0).ok())
@@ -128,5 +136,24 @@ pub async fn kill_session(state: &AppState, connection_id: &str, pid: i64) -> Re
                 Err(format!("Failed to terminate session {pid}"))
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::pid_to_int4;
+
+    #[test]
+    fn pid_to_int4_accepts_native_postgres_pids() {
+        assert_eq!(pid_to_int4(12345).unwrap(), 12345);
+        assert_eq!(pid_to_int4(i32::MAX as i64).unwrap(), i32::MAX);
+    }
+
+    #[test]
+    fn pid_to_int4_rejects_opengauss_int8_thread_ids() {
+        // openGauss 的 pid 是 int8 线程号，截断后可能命中其他会话——必须拒绝。
+        assert!(pid_to_int4(136_880_036_247_232).is_err());
+        assert!(pid_to_int4(i32::MAX as i64 + 1).is_err());
+        assert!(pid_to_int4(i64::MAX).is_err());
     }
 }

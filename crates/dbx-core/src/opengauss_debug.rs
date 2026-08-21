@@ -133,7 +133,10 @@ async fn take_session(state: &AppState, session_id: &str) -> Result<Arc<OpenGaus
 }
 
 fn pg_quote_literal(value: &str) -> String {
-    format!("'{}'", value.replace('\\', "\\\\").replace('\'', "''"))
+    // openGauss 默认 standard_conforming_strings=on（反斜杠按字面处理），
+    // 关闭时反斜杠是转义符。E'...' 在两种设置下语义一致：
+    // \\ 恒为一个反斜杠，'' 恒为一个单引号。
+    format!("E'{}'", value.replace('\\', "\\\\").replace('\'', "''"))
 }
 
 #[cfg(test)]
@@ -624,9 +627,9 @@ mod tests {
     #[test]
     fn resolve_oid_sql_matches_standalone_procedure() {
         let sql = opengauss_debug_resolve_oid_sql("public", "dbg_demo", "procedure", None);
-        assert!(sql.contains("p.proname = 'dbg_demo'"));
+        assert!(sql.contains("p.proname = E'dbg_demo'"));
         assert!(sql.contains("p.prokind = 'p'"));
-        assert!(sql.contains("n.nspname = 'public'"));
+        assert!(sql.contains("n.nspname = E'public'"));
         assert!(!sql.contains("gs_package"));
     }
 
@@ -635,9 +638,9 @@ mod tests {
         let sql =
             opengauss_debug_resolve_oid_sql("public", "emp_pkg.raise_salary", "procedure", Some("integer, numeric"));
         assert!(sql.contains("JOIN pg_catalog.gs_package pkg ON pkg.oid = p.propackageid"));
-        assert!(sql.contains("pkg.pkgname = 'emp_pkg'"));
-        assert!(sql.contains("p.proname = 'raise_salary'"));
-        assert!(sql.contains("pg_get_function_identity_arguments(p.oid) = 'integer, numeric'"));
+        assert!(sql.contains("pkg.pkgname = E'emp_pkg'"));
+        assert!(sql.contains("p.proname = E'raise_salary'"));
+        assert!(sql.contains("pg_get_function_identity_arguments(p.oid) = E'integer, numeric'"));
     }
 
     #[test]
@@ -648,7 +651,10 @@ mod tests {
 
     #[test]
     fn literal_quoting_escapes_quotes_and_backslashes() {
-        assert_eq!(pg_quote_literal("o'brien\\x"), "'o''brien\\\\x'");
+        // E'...' 引用在 standard_conforming_strings 两种设置下语义一致：
+        // \\ 恒为一个反斜杠，'' 恒为一个单引号。
+        assert_eq!(pg_quote_literal("o'brien\\x"), "E'o''brien\\\\x'");
+        assert_eq!(pg_quote_literal("plain"), "E'plain'");
         assert_eq!(pg_quote_ident("weird\"name"), "\"weird\"\"name\"");
     }
 
