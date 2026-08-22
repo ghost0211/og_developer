@@ -171,6 +171,11 @@ async function loadSource(options: { preserveDraft?: boolean } = {}) {
     logEvent("info", `[LOAD] 正在读取对象源码: ${props.objectType} ${targetLabel.value}`);
 
     if (isPackage.value) {
+      // Snapshot both drafts before assigning either source. The sync watcher
+      // runs immediately; without this snapshot, loading the spec first would
+      // persist the body's initial empty string and hide the real body source.
+      const storedPackageSpecDraft = preserveDraft ? programWindowState.value?.packageSpecDraft : undefined;
+      const storedPackageBodyDraft = preserveDraft ? programWindowState.value?.packageBodyDraft : undefined;
       // Load both Spec and Body for packages
       const [specRes, bodyRes] = await Promise.allSettled([
         loadObjectSourceWithRoutineFallback(api.getObjectSource, props.connectionId, props.database, schema, props.name, "PACKAGE", props.signature, props.relationName),
@@ -187,7 +192,7 @@ async function loadSource(options: { preserveDraft?: boolean } = {}) {
           source: specRes.value.source.source,
         });
         packageSpecSource.value = specEditable;
-        packageSpecDraft.value = preserveDraft ? (programWindowState.value?.packageSpecDraft ?? specEditable) : specEditable;
+        packageSpecDraft.value = storedPackageSpecDraft ?? specEditable;
       }
       if (bodyRes.status === "fulfilled") {
         const bodyEditable = await buildEditableObjectSource({
@@ -198,7 +203,7 @@ async function loadSource(options: { preserveDraft?: boolean } = {}) {
           source: bodyRes.value.source.source,
         });
         packageBodySource.value = bodyEditable;
-        packageBodyDraft.value = preserveDraft ? (programWindowState.value?.packageBodyDraft ?? bodyEditable) : bodyEditable;
+        packageBodyDraft.value = storedPackageBodyDraft ?? bodyEditable;
       }
       sourceEditable.value = true;
       resolvedObjectType.value = props.objectType;
