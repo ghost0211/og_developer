@@ -1,9 +1,11 @@
 import type { ConnectionConfig, DatabaseType, QueryResult } from "@/types/database";
 import { effectiveDatabaseTypeForConnection } from "@/lib/database/jdbcDialect";
-import { buildKillSql as buildMysqlKillSql, mapProcessRows as mapMysqlProcessRows, PROCESS_LIST_SQL as MYSQL_PROCESS_LIST_SQL, supportsProcessList as supportsMysqlProcessList } from "./mysqlProcessList";
+import { buildMysqlCancelSql, buildKillSql as buildMysqlKillSql, mapProcessRows as mapMysqlProcessRows, PROCESS_LIST_SQL as MYSQL_PROCESS_LIST_SQL, supportsProcessList as supportsMysqlProcessList } from "./mysqlProcessList";
 import {
+  buildKingbaseCancelSql,
   buildKingbaseKillSql,
   buildKingbasePgKillSql,
+  buildPgCancelSql,
   buildPgKillSql,
   isKingbaseOwnSessionCatalogCompatibilityError,
   isKingbaseProcessListCatalogCompatibilityError,
@@ -15,13 +17,21 @@ import {
   KINGBASE_PG_OWN_SESSION_SQL,
   KINGBASE_PG_PROCESS_LIST_SQL,
   KINGBASE_PROCESS_LIST_SQL,
+  mapPgBlockingLockRows,
+  mapPgLockRows,
   mapPgProcessRows,
+  OPENGAUSS_BLOCKING_LOCKS_SQL,
+  OPENGAUSS_LOCKS_SQL,
   OPENGAUSS_OWN_SESSION_SQL,
   OPENGAUSS_PROCESS_LIST_SQL,
   pgKillResultError,
+  PG_BLOCKING_LOCKS_SQL,
+  PG_LOCKS_SQL,
   PG_OWN_SESSION_SQL,
   PG_PROCESS_LIST_LEGACY_SQL,
   PG_PROCESS_LIST_SQL,
+  type BlockingLockRow,
+  type LockDetailRow,
 } from "./postgresProcessList";
 
 /**
@@ -69,6 +79,16 @@ export interface ProcessListDriver {
   mapRows(result: QueryResult | null | undefined): ProcessRow[];
   /** Build the validated statement that kills the given session id. */
   buildKillSql(id: number): string;
+  /** Build the statement that cancels the running query without killing the connection. */
+  buildCancelSql?(id: number): string;
+  /** SQL that queries active blocking locks chains. */
+  blockingLocksSql?: string;
+  /** Map raw blocking locks query result into typed rows. */
+  mapBlockingLocks?(result: QueryResult | null | undefined): BlockingLockRow[];
+  /** SQL that queries resource locks. */
+  locksSql?: string;
+  /** Map raw locks query result into typed rows. */
+  mapLocks?(result: QueryResult | null | undefined): LockDetailRow[];
   /** Build the compatibility statement used when the primary kill function is unavailable. */
   buildFallbackKillSql?(id: number): string;
   /** Restrict kill fallback attempts to known compatibility failures. */
@@ -111,6 +131,7 @@ const MYSQL_DRIVER: ProcessListDriver = {
   // Typed structs carry no index signature; they are plain string-keyed objects at runtime.
   mapRows: (result) => mapMysqlProcessRows(result) as unknown as ProcessRow[],
   buildKillSql: buildMysqlKillSql,
+  buildCancelSql: buildMysqlCancelSql,
 };
 
 const POSTGRES_DRIVER: ProcessListDriver = {
@@ -123,7 +144,12 @@ const POSTGRES_DRIVER: ProcessListDriver = {
   maxRows: 5000,
   mapRows: (result) => mapPgProcessRows(result) as unknown as ProcessRow[],
   buildKillSql: buildPgKillSql,
+  buildCancelSql: buildPgCancelSql,
   killResultError: pgKillResultError,
+  blockingLocksSql: PG_BLOCKING_LOCKS_SQL,
+  mapBlockingLocks: mapPgBlockingLockRows,
+  locksSql: PG_LOCKS_SQL,
+  mapLocks: mapPgLockRows,
 };
 
 const OPENGAUSS_DRIVER: ProcessListDriver = {
@@ -134,7 +160,12 @@ const OPENGAUSS_DRIVER: ProcessListDriver = {
   maxRows: 5000,
   mapRows: (result) => mapPgProcessRows(result) as unknown as ProcessRow[],
   buildKillSql: buildPgKillSql,
+  buildCancelSql: buildPgCancelSql,
   killResultError: pgKillResultError,
+  blockingLocksSql: OPENGAUSS_BLOCKING_LOCKS_SQL,
+  mapBlockingLocks: mapPgBlockingLockRows,
+  locksSql: OPENGAUSS_LOCKS_SQL,
+  mapLocks: mapPgLockRows,
 };
 
 const KINGBASE_DRIVER: ProcessListDriver = {
@@ -149,10 +180,15 @@ const KINGBASE_DRIVER: ProcessListDriver = {
   maxRows: 5000,
   mapRows: (result) => mapPgProcessRows(result) as unknown as ProcessRow[],
   buildKillSql: buildKingbaseKillSql,
+  buildCancelSql: buildKingbaseCancelSql,
   buildFallbackKillSql: buildKingbasePgKillSql,
   shouldUseFallbackKillSql: isKingbaseTerminateCatalogCompatibilityError,
   killResultError: kingbaseKillResultError,
   fallbackKillResultError: kingbasePgKillResultError,
+  blockingLocksSql: PG_BLOCKING_LOCKS_SQL,
+  mapBlockingLocks: mapPgBlockingLockRows,
+  locksSql: PG_LOCKS_SQL,
+  mapLocks: mapPgLockRows,
 };
 
 /** Resolve the process-list driver for a connection, or null if unsupported. */
@@ -187,7 +223,7 @@ export function resolveProcessListDriverForConnection(connection: ConnectionConf
     if (MYSQL_LOOKALIKE_JDBC.test(profile)) return null;
   }
   const dbType = effectiveDatabaseTypeForConnection(connection);
-  if (dbType === "gaussdb" && connection.driver_profile?.toLowerCase() === "opengauss") return OPENGAUSS_DRIVER;
+  if (dbType === "gaussdb" && /(?:^|-)opengauss(?:-jdbc)?$/i.test(connection.driver_profile ?? "")) return OPENGAUSS_DRIVER;
   return resolveProcessListDriver(dbType);
 }
 

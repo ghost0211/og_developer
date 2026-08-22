@@ -137,6 +137,16 @@ export function buildKillSql(id: number): string {
   return `KILL CONNECTION ${id}`;
 }
 
+/**
+ * Build the `KILL QUERY <id>` statement to cancel running query without closing the connection.
+ */
+export function buildMysqlCancelSql(id: number): string {
+  if (!Number.isInteger(id) || id < 0) {
+    throw new Error(`Invalid session id: ${id}`);
+  }
+  return `KILL QUERY ${id}`;
+}
+
 /** Clamp a user-entered refresh interval to a safe integer range of seconds. */
 export function clampInterval(seconds: number): number {
   if (!Number.isFinite(seconds)) return DEFAULT_REFRESH_SECONDS;

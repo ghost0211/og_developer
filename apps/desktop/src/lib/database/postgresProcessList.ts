@@ -75,11 +75,96 @@ ORDER BY time DESC NULLS LAST`;
 
 export const KINGBASE_PG_PROCESS_LIST_SQL = KINGBASE_PROCESS_LIST_SQL.replace("sys_catalog.sys_stat_activity", "pg_catalog.pg_stat_activity");
 
+/** Query for detecting active lock blocking chains */
+export const PG_BLOCKING_LOCKS_SQL = `SELECT
+       blocked_locks.pid AS blocked_pid,
+       blocked_activity.usename AS blocked_user,
+       blocked_activity.datname AS blocked_db,
+       blocked_activity.query AS blocked_query,
+       blocking_locks.pid AS blocking_pid,
+       blocking_activity.usename AS blocking_user,
+       blocking_activity.datname AS blocking_db,
+       blocking_activity.query AS blocking_query,
+       blocked_locks.locktype,
+       coalesce(c.relname, CAST(blocked_locks.relation AS text), '-') AS relation,
+       blocked_locks.mode AS requested_mode,
+       blocking_locks.mode AS granted_mode,
+       floor(extract(epoch FROM (now() - coalesce(blocked_activity.query_start, blocked_activity.xact_start, blocked_activity.backend_start))))::bigint AS wait_time
+FROM pg_catalog.pg_locks blocked_locks
+JOIN pg_catalog.pg_stat_activity blocked_activity ON blocked_activity.pid = blocked_locks.pid
+JOIN pg_catalog.pg_locks blocking_locks
+  ON blocking_locks.locktype = blocked_locks.locktype
+  AND blocking_locks.database IS NOT DISTINCT FROM blocked_locks.database
+  AND blocking_locks.relation IS NOT DISTINCT FROM blocked_locks.relation
+  AND blocking_locks.page IS NOT DISTINCT FROM blocked_locks.page
+  AND blocking_locks.tuple IS NOT DISTINCT FROM blocked_locks.tuple
+  AND blocking_locks.virtualxid IS NOT DISTINCT FROM blocked_locks.virtualxid
+  AND blocking_locks.transactionid IS NOT DISTINCT FROM blocked_locks.transactionid
+  AND blocking_locks.classid IS NOT DISTINCT FROM blocked_locks.classid
+  AND blocking_locks.objid IS NOT DISTINCT FROM blocked_locks.objid
+  AND blocking_locks.objsubid IS NOT DISTINCT FROM blocked_locks.objsubid
+  AND blocking_locks.pid != blocked_locks.pid
+JOIN pg_catalog.pg_stat_activity blocking_activity ON blocking_activity.pid = blocking_locks.pid
+LEFT JOIN pg_catalog.pg_class c ON c.oid = blocked_locks.relation
+WHERE NOT blocked_locks.granted
+  AND blocking_locks.granted
+ORDER BY wait_time DESC`;
+
+export const OPENGAUSS_BLOCKING_LOCKS_SQL = PG_BLOCKING_LOCKS_SQL;
+
+/** Query for detailed locks inspection */
+export const PG_LOCKS_SQL = `SELECT
+       l.pid,
+       a.usename AS "user",
+       a.datname AS db,
+       l.locktype,
+       coalesce(c.relname, CAST(l.relation AS text), '-') AS relation,
+       l.mode,
+       l.granted,
+       floor(extract(epoch FROM (now() - coalesce(a.query_start, a.xact_start, a.backend_start))))::bigint AS time,
+       a.query
+FROM pg_catalog.pg_locks l
+LEFT JOIN pg_catalog.pg_stat_activity a ON a.pid = l.pid
+LEFT JOIN pg_catalog.pg_class c ON c.oid = l.relation
+WHERE l.pid <> pg_backend_pid()
+ORDER BY l.granted ASC, time DESC NULLS LAST
+LIMIT 300`;
+
+export const OPENGAUSS_LOCKS_SQL = PG_LOCKS_SQL;
+
 /** Scalar query that returns the viewer's own backend pid. */
 export const PG_OWN_SESSION_SQL = "SELECT pg_backend_pid()";
 export const OPENGAUSS_OWN_SESSION_SQL = "SELECT pg_backend_pid()";
 export const KINGBASE_OWN_SESSION_SQL = "SELECT sys_backend_pid()";
 export const KINGBASE_PG_OWN_SESSION_SQL = "SELECT pg_backend_pid()";
+
+export interface BlockingLockRow {
+  blockedPid: number;
+  blockedUser: string;
+  blockedDb: string | null;
+  blockedQuery: string | null;
+  blockingPid: number;
+  blockingUser: string;
+  blockingDb: string | null;
+  blockingQuery: string | null;
+  lockType: string;
+  relation: string;
+  requestedMode: string;
+  grantedMode: string;
+  waitTime: number;
+}
+
+export interface LockDetailRow {
+  pid: number;
+  user: string;
+  db: string | null;
+  lockType: string;
+  relation: string;
+  mode: string;
+  granted: boolean;
+  time: number;
+  query: string | null;
+}
 
 export interface PgProcessRow {
   id: number;
@@ -148,6 +233,74 @@ export function mapPgProcessRows(result: QueryResult | null | undefined): PgProc
   }));
 }
 
+export function mapPgBlockingLockRows(result: QueryResult | null | undefined): BlockingLockRow[] {
+  if (!result || !Array.isArray(result.columns) || !Array.isArray(result.rows)) return [];
+  const columns = result.columns;
+  const bBlockedPid = columnIndex(columns, "blocked_pid");
+  const bBlockedUser = columnIndex(columns, "blocked_user");
+  const bBlockedDb = columnIndex(columns, "blocked_db");
+  const bBlockedQuery = columnIndex(columns, "blocked_query");
+  const bBlockingPid = columnIndex(columns, "blocking_pid");
+  const bBlockingUser = columnIndex(columns, "blocking_user");
+  const bBlockingDb = columnIndex(columns, "blocking_db");
+  const bBlockingQuery = columnIndex(columns, "blocking_query");
+  const bLockType = columnIndex(columns, "locktype");
+  const bRelation = columnIndex(columns, "relation");
+  const bReqMode = columnIndex(columns, "requested_mode");
+  const bGrantMode = columnIndex(columns, "granted_mode");
+  const bWaitTime = columnIndex(columns, "wait_time");
+
+  const cell = (row: (string | number | boolean | null)[], idx: number) => (idx >= 0 ? row[idx] : null);
+
+  return result.rows.map((row) => ({
+    blockedPid: asNumber(cell(row, bBlockedPid)),
+    blockedUser: asString(cell(row, bBlockedUser)),
+    blockedDb: asNullableString(cell(row, bBlockedDb)),
+    blockedQuery: asNullableString(cell(row, bBlockedQuery)),
+    blockingPid: asNumber(cell(row, bBlockingPid)),
+    blockingUser: asString(cell(row, bBlockingUser)),
+    blockingDb: asNullableString(cell(row, bBlockingDb)),
+    blockingQuery: asNullableString(cell(row, bBlockingQuery)),
+    lockType: asString(cell(row, bLockType)),
+    relation: asString(cell(row, bRelation)),
+    requestedMode: asString(cell(row, bReqMode)),
+    grantedMode: asString(cell(row, bGrantMode)),
+    waitTime: asNumber(cell(row, bWaitTime)),
+  }));
+}
+
+export function mapPgLockRows(result: QueryResult | null | undefined): LockDetailRow[] {
+  if (!result || !Array.isArray(result.columns) || !Array.isArray(result.rows)) return [];
+  const columns = result.columns;
+  const pidIdx = columnIndex(columns, "pid");
+  const userIdx = columnIndex(columns, "user");
+  const dbIdx = columnIndex(columns, "db");
+  const lockTypeIdx = columnIndex(columns, "locktype");
+  const relationIdx = columnIndex(columns, "relation");
+  const modeIdx = columnIndex(columns, "mode");
+  const grantedIdx = columnIndex(columns, "granted");
+  const timeIdx = columnIndex(columns, "time");
+  const queryIdx = columnIndex(columns, "query");
+
+  const cell = (row: (string | number | boolean | null)[], idx: number) => (idx >= 0 ? row[idx] : null);
+
+  return result.rows.map((row) => {
+    const rawGranted = cell(row, grantedIdx);
+    const granted = rawGranted === true || rawGranted === 1 || String(rawGranted).toLowerCase() === "t" || String(rawGranted).toLowerCase() === "true";
+    return {
+      pid: asNumber(cell(row, pidIdx)),
+      user: asString(cell(row, userIdx)),
+      db: asNullableString(cell(row, dbIdx)),
+      lockType: asString(cell(row, lockTypeIdx)),
+      relation: asString(cell(row, relationIdx)),
+      mode: asString(cell(row, modeIdx)),
+      granted,
+      time: asNumber(cell(row, timeIdx)),
+      query: asNullableString(cell(row, queryIdx)),
+    };
+  });
+}
+
 /**
  * Build a `SELECT pg_terminate_backend(<pid>)` statement. `pid` is validated as a
  * finite positive integer (never interpolated as free text) so there is no
@@ -164,14 +317,29 @@ export function buildPgKillSql(pid: number): string {
   return `SELECT pg_terminate_backend(${pid})`;
 }
 
+export function buildPgCancelSql(pid: number): string {
+  validateBackendPid(pid);
+  return `SELECT pg_cancel_backend(${pid})`;
+}
+
 export function buildKingbaseKillSql(pid: number): string {
   validateBackendPid(pid);
   return `SELECT sys_terminate_backend(${pid})`;
 }
 
+export function buildKingbaseCancelSql(pid: number): string {
+  validateBackendPid(pid);
+  return `SELECT sys_cancel_backend(${pid})`;
+}
+
 export function buildKingbasePgKillSql(pid: number): string {
   validateBackendPid(pid);
   return `SELECT pg_terminate_backend(${pid})`;
+}
+
+export function buildKingbasePgCancelSql(pid: number): string {
+  validateBackendPid(pid);
+  return `SELECT pg_cancel_backend(${pid})`;
 }
 
 /** Return an error when PostgreSQL declines to terminate the target backend. */

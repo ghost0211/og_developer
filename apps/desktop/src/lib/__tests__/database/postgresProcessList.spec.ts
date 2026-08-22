@@ -3,6 +3,7 @@ import type { QueryResult } from "@/types/database";
 import {
   buildKingbaseKillSql,
   buildKingbasePgKillSql,
+  buildPgCancelSql,
   buildPgKillSql,
   isKingbaseOwnSessionCatalogCompatibilityError,
   isKingbaseProcessListCatalogCompatibilityError,
@@ -12,6 +13,8 @@ import {
   KINGBASE_PG_OWN_SESSION_SQL,
   KINGBASE_PG_PROCESS_LIST_SQL,
   KINGBASE_PROCESS_LIST_SQL,
+  mapPgBlockingLockRows,
+  mapPgLockRows,
   mapPgProcessRows,
   OPENGAUSS_OWN_SESSION_SQL,
   OPENGAUSS_PROCESS_LIST_SQL,
@@ -61,6 +64,10 @@ describe("buildPgKillSql", () => {
     expect(buildPgKillSql(4211)).toBe("SELECT pg_terminate_backend(4211)");
   });
 
+  it("builds pg_cancel_backend for cancel query", () => {
+    expect(buildPgCancelSql(4211)).toBe("SELECT pg_cancel_backend(4211)");
+  });
+
   it("rejects non-integer, zero, or negative pids", () => {
     expect(() => buildPgKillSql(1.5)).toThrow();
     expect(() => buildPgKillSql(0)).toThrow();
@@ -72,6 +79,49 @@ describe("buildPgKillSql", () => {
     expect(buildKingbaseKillSql(4211)).toBe("SELECT sys_terminate_backend(4211)");
     expect(() => buildKingbaseKillSql(0)).toThrow();
     expect(() => buildKingbaseKillSql(1.5)).toThrow();
+  });
+});
+
+describe("mapPgBlockingLockRows and mapPgLockRows", () => {
+  it("maps blocking lock query results into structured chain rows", () => {
+    const res = result(
+      ["blocked_pid", "blocked_user", "blocked_db", "blocked_query", "blocking_pid", "blocking_user", "blocking_db", "blocking_query", "locktype", "relation", "requested_mode", "granted_mode", "wait_time"],
+      [[101, "u_blocked", "db1", "UPDATE t SET v=1", 102, "u_blocking", "db1", "UPDATE t SET v=2", "relation", "orders", "ExclusiveLock", "ExclusiveLock", 45]],
+    );
+    const rows = mapPgBlockingLockRows(res);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toEqual({
+      blockedPid: 101,
+      blockedUser: "u_blocked",
+      blockedDb: "db1",
+      blockedQuery: "UPDATE t SET v=1",
+      blockingPid: 102,
+      blockingUser: "u_blocking",
+      blockingDb: "db1",
+      blockingQuery: "UPDATE t SET v=2",
+      lockType: "relation",
+      relation: "orders",
+      requestedMode: "ExclusiveLock",
+      grantedMode: "ExclusiveLock",
+      waitTime: 45,
+    });
+  });
+
+  it("maps detailed resource lock query results", () => {
+    const res = result(["pid", "user", "db", "locktype", "relation", "mode", "granted", "time", "query"], [[102, "u_blocking", "db1", "relation", "orders", "RowExclusiveLock", true, 60, "SELECT 1"]]);
+    const rows = mapPgLockRows(res);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toEqual({
+      pid: 102,
+      user: "u_blocking",
+      db: "db1",
+      lockType: "relation",
+      relation: "orders",
+      mode: "RowExclusiveLock",
+      granted: true,
+      time: 60,
+      query: "SELECT 1",
+    });
   });
 });
 
@@ -171,6 +221,7 @@ describe("connectionSupportsProcessList", () => {
     expect(connectionSupportsProcessList(conn({ db_type: "postgres" }))).toBe(true);
     expect(connectionSupportsProcessList(conn({ db_type: "opengauss" }))).toBe(true);
     expect(connectionSupportsProcessList(conn({ db_type: "gaussdb", driver_profile: "opengauss" }))).toBe(true);
+    expect(connectionSupportsProcessList(conn({ db_type: "gaussdb", driver_profile: "opengauss-jdbc" }))).toBe(true);
     expect(connectionSupportsProcessList(conn({ db_type: "gaussdb", driver_profile: "gaussdb" }))).toBe(false);
     expect(connectionSupportsProcessList(conn({ db_type: "kingbase" }))).toBe(true);
     expect(connectionSupportsProcessList(conn({ db_type: "sqlite" }))).toBe(false);
