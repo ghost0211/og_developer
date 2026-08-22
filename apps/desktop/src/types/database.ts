@@ -1081,6 +1081,8 @@ export interface QueryTab {
     draftSource?: string;
     packageSpecDraft?: string;
     packageBodyDraft?: string;
+    packageSpecDraftInitialized?: boolean;
+    packageBodyDraftInitialized?: boolean;
   };
   mqTenant?: string;
   mqInitialTab?: "topics";

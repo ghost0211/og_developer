@@ -68,6 +68,7 @@ const packageSpecSource = ref("");
 const packageSpecDraft = ref("");
 const packageBodySource = ref("");
 const packageBodyDraft = ref("");
+const packageSourcesLoaded = ref(false);
 
 // Bottom Splitpanes & Compilation Panel
 const showBottomPanel = ref(false);
@@ -146,6 +147,10 @@ function syncProgramWindowState() {
   if (isPackage.value) {
     state.packageSpecDraft = packageSpecDraft.value;
     state.packageBodyDraft = packageBodyDraft.value;
+    if (packageSourcesLoaded.value) {
+      state.packageSpecDraftInitialized = true;
+      state.packageBodyDraftInitialized = true;
+    }
   } else {
     state.draftSource = draftSource.value;
   }
@@ -157,6 +162,7 @@ watch([draftSource, packageSpecDraft, packageBodyDraft], syncProgramWindowState,
 // --- Load Source ---
 async function loadSource(options: { preserveDraft?: boolean } = {}) {
   const preserveDraft = options.preserveDraft !== false;
+  packageSourcesLoaded.value = false;
   const serial = ++loadSerial;
   loading.value = true;
   loadError.value = "";
@@ -174,8 +180,11 @@ async function loadSource(options: { preserveDraft?: boolean } = {}) {
       // Snapshot both drafts before assigning either source. The sync watcher
       // runs immediately; without this snapshot, loading the spec first would
       // persist the body's initial empty string and hide the real body source.
-      const storedPackageSpecDraft = preserveDraft ? programWindowState.value?.packageSpecDraft : undefined;
-      const storedPackageBodyDraft = preserveDraft ? programWindowState.value?.packageBodyDraft : undefined;
+      const storedPackageState = programWindowState.value;
+      const storedPackageSpecDraft = preserveDraft ? storedPackageState?.packageSpecDraft : undefined;
+      const storedPackageBodyDraft = preserveDraft ? storedPackageState?.packageBodyDraft : undefined;
+      const storedPackageSpecDraftInitialized = storedPackageState?.packageSpecDraftInitialized === true;
+      const storedPackageBodyDraftInitialized = storedPackageState?.packageBodyDraftInitialized === true;
       // Load both Spec and Body for packages
       const [specRes, bodyRes] = await Promise.allSettled([
         loadObjectSourceWithRoutineFallback(api.getObjectSource, props.connectionId, props.database, schema, props.name, "PACKAGE", props.signature, props.relationName),
@@ -192,7 +201,7 @@ async function loadSource(options: { preserveDraft?: boolean } = {}) {
           source: specRes.value.source.source,
         });
         packageSpecSource.value = specEditable;
-        packageSpecDraft.value = storedPackageSpecDraft ?? specEditable;
+        packageSpecDraft.value = storedPackageSpecDraft === "" && !storedPackageSpecDraftInitialized && specEditable.trim() ? specEditable : (storedPackageSpecDraft ?? specEditable);
       }
       if (bodyRes.status === "fulfilled") {
         const bodyEditable = await buildEditableObjectSource({
@@ -203,10 +212,12 @@ async function loadSource(options: { preserveDraft?: boolean } = {}) {
           source: bodyRes.value.source.source,
         });
         packageBodySource.value = bodyEditable;
-        packageBodyDraft.value = storedPackageBodyDraft ?? bodyEditable;
+        packageBodyDraft.value = storedPackageBodyDraft === "" && !storedPackageBodyDraftInitialized && bodyEditable.trim() ? bodyEditable : (storedPackageBodyDraft ?? bodyEditable);
       }
       sourceEditable.value = true;
       resolvedObjectType.value = props.objectType;
+      packageSourcesLoaded.value = true;
+      syncProgramWindowState();
     } else {
       const { source: result, objectType: resolvedType } = await loadObjectSourceWithRoutineFallback(api.getObjectSource, props.connectionId, props.database, schema, props.name, props.objectType, props.signature, props.relationName);
       if (serial !== loadSerial) return;
