@@ -609,6 +609,9 @@ test("openProgramWindow opens a program-window tab and reuses existing object so
   assert.equal(tab.title, "emp_pkg (package)");
   assert.equal(tab.programWindow?.name, "emp_pkg");
   assert.equal(tab.programWindow?.objectType, "PACKAGE");
+  tab.programWindow!.dirty = true;
+  assert.equal(store.isTabDirty(tab), true);
+  tab.programWindow!.dirty = false;
 
   // Reusing existing tab
   const reusedId = store.openProgramWindow({

@@ -31,9 +31,11 @@ const queryStore = useQueryStore();
 const connectionStore = useConnectionStore();
 
 const props = defineProps<{
+  tabId?: string;
   connectionId: string;
   database: string;
   databaseType?: DatabaseType;
+  catalog?: string;
   schema?: string;
   name: string;
   objectType: ObjectSourceKind;
@@ -86,6 +88,10 @@ const compileLogs = ref<{ timestamp: string; level: "info" | "success" | "error"
 let loadSerial = 0;
 
 // Database Dialects
+const programWindowState = computed(() => {
+  if (!props.tabId) return undefined;
+  return queryStore.tabs.find((tab) => tab.id === props.tabId)?.programWindow;
+});
 const resolvedDatabaseType = computed(() => props.databaseType ?? (props.connectionId ? effectiveDatabaseTypeForConnection(connectionStore.getConfig(props.connectionId)) : undefined));
 const dialect = computed(() => codeMirrorSqlDialect(resolvedDatabaseType.value));
 const formatDialect = computed<SqlFormatDialect>(() => sqlFormatDialectForDbType(resolvedDatabaseType.value));
@@ -134,8 +140,23 @@ function logEvent(level: "info" | "success" | "error", text: string) {
   compileLogs.value.push({ timestamp, level, text });
 }
 
+function syncProgramWindowState() {
+  const state = programWindowState.value;
+  if (!state) return;
+  if (isPackage.value) {
+    state.packageSpecDraft = packageSpecDraft.value;
+    state.packageBodyDraft = packageBodyDraft.value;
+  } else {
+    state.draftSource = draftSource.value;
+  }
+  state.dirty = isDirty.value;
+}
+
+watch([draftSource, packageSpecDraft, packageBodyDraft], syncProgramWindowState, { flush: "sync" });
+
 // --- Load Source ---
-async function loadSource() {
+async function loadSource(options: { preserveDraft?: boolean } = {}) {
+  const preserveDraft = options.preserveDraft !== false;
   const serial = ++loadSerial;
   loading.value = true;
   loadError.value = "";
@@ -166,7 +187,7 @@ async function loadSource() {
           source: specRes.value.source.source,
         });
         packageSpecSource.value = specEditable;
-        packageSpecDraft.value = specEditable;
+        packageSpecDraft.value = preserveDraft ? (programWindowState.value?.packageSpecDraft ?? specEditable) : specEditable;
       }
       if (bodyRes.status === "fulfilled") {
         const bodyEditable = await buildEditableObjectSource({
@@ -177,7 +198,7 @@ async function loadSource() {
           source: bodyRes.value.source.source,
         });
         packageBodySource.value = bodyEditable;
-        packageBodyDraft.value = bodyEditable;
+        packageBodyDraft.value = preserveDraft ? (programWindowState.value?.packageBodyDraft ?? bodyEditable) : bodyEditable;
       }
       sourceEditable.value = true;
       resolvedObjectType.value = props.objectType;
@@ -198,7 +219,7 @@ async function loadSource() {
       resolvedObjectType.value = resolvedType;
       sourceEditable.value = editableAllowed;
       originalSource.value = editable;
-      draftSource.value = editable;
+      draftSource.value = preserveDraft ? (programWindowState.value?.draftSource ?? editable) : editable;
     }
 
     logEvent("info", `[LOAD] 源码加载完成`);
@@ -288,6 +309,7 @@ async function compileAndSave() {
     } else {
       originalSource.value = draftSource.value;
     }
+    syncProgramWindowState();
 
     emit("saved");
   } catch (err: any) {
@@ -343,6 +365,7 @@ function revertDraft() {
   } else {
     draftSource.value = originalSource.value;
   }
+  syncProgramWindowState();
   compileErrors.value = [];
   toast("已还原为数据库源码", 1200);
 }
@@ -356,6 +379,7 @@ function openTestWindow() {
     routineName: props.name,
     routineKind: props.objectType === "FUNCTION" ? "function" : "procedure",
     signature: props.signature,
+    catalog: props.catalog,
   });
 }
 
@@ -367,13 +391,14 @@ function openDebugWindow() {
     routineName: props.name,
     routineKind: props.objectType === "FUNCTION" ? "function" : "procedure",
     signature: props.signature,
+    catalog: props.catalog,
   });
 }
 
 function openInSqlEditor() {
   const code = currentActiveDraft.value;
   if (!code) return;
-  const tabId = queryStore.createTab(props.connectionId, props.database, `${props.name} (Source)`, "query", props.schema);
+  const tabId = queryStore.createTab(props.connectionId, props.database, `${props.name} (Source)`, "query", props.schema, undefined, props.catalog);
   queryStore.updateSql(tabId, code);
 }
 
@@ -423,7 +448,7 @@ const isRoutine = computed(() => props.objectType === "PROCEDURE" || props.objec
 
 // Watch props reload
 watch(
-  () => [props.connectionId, props.database, props.schema, props.name, props.objectType] as const,
+  () => [props.connectionId, props.database, props.catalog, props.schema, props.name, props.objectType] as const,
   () => {
     void loadSource();
   },
@@ -489,7 +514,7 @@ watch(
         </Button>
 
         <!-- Refresh Source -->
-        <Button variant="ghost" size="sm" class="h-7 gap-1 px-2 text-muted-foreground hover:text-foreground" :disabled="loading" :title="'从数据库重新拉取最新源码'" @click="loadSource">
+        <Button variant="ghost" size="sm" class="h-7 gap-1 px-2 text-muted-foreground hover:text-foreground" :disabled="loading" :title="'从数据库重新拉取最新源码'" @click="loadSource({ preserveDraft: false })">
           <RefreshCw class="h-3.5 w-3.5" :class="{ 'animate-spin': loading }" />
           <span>刷新</span>
         </Button>

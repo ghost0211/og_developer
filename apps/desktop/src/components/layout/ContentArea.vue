@@ -2033,9 +2033,11 @@ defineExpose({ focusSearch, refreshData, refreshQueryEditorCompletionCache, hand
       <div class="min-h-0 flex-1">
         <ProgramWindowPanel
           :key="activeTab.id"
+          :tab-id="activeTab.id"
           :connection-id="activeTab.connectionId"
           :database="activeTab.database"
           :database-type="activeEffectiveDatabaseType"
+          :catalog="activeTab.catalog"
           :schema="activeTab.programWindow.schema"
           :name="activeTab.programWindow.name"
           :object-type="activeTab.programWindow.objectType"
@@ -2051,6 +2053,7 @@ defineExpose({ focusSearch, refreshData, refreshQueryEditorCompletionCache, hand
       <div v-if="activeTab.mode === 'routine-debug' && activeTab.routineDebug" :key="activeTab.id" class="min-h-0 flex-1">
         <RoutineDebugPanel
           :tab-id="activeTab.id"
+          :auto-start="!activeTab.routineDebug.restored"
           :connection-id="activeTab.connectionId"
           :database="activeTab.database"
           :database-type="activeEffectiveDatabaseType"

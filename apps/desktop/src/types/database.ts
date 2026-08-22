@@ -1067,6 +1067,8 @@ export interface QueryTab {
     routineKind?: "procedure" | "function";
     signature?: string;
     callSql: string;
+    /** Restored debug tabs wait for an explicit restart to avoid executing routines on launch. */
+    restored?: boolean;
   };
   /** Program window (PL/SQL Developer style procedure/function/package/view source editor & compiler). */
   programWindow?: {
@@ -1075,6 +1077,10 @@ export interface QueryTab {
     objectType: ObjectSourceKind;
     signature?: string;
     relationName?: string;
+    dirty?: boolean;
+    draftSource?: string;
+    packageSpecDraft?: string;
+    packageBodyDraft?: string;
   };
   mqTenant?: string;
   mqInitialTab?: "topics";

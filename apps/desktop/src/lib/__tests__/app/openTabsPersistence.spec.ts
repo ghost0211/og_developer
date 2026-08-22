@@ -57,4 +57,42 @@ describe("openTabsPersistence originalSql round-trip", () => {
     expect(restored.database).toBe("dbx_catalog_completion");
     expect(restored.catalog).toBe("dbx_mysql_catalog");
   });
+
+  it("restores Program Window metadata and unsaved drafts", () => {
+    const [restored] = roundTrip([
+      queryTab({
+        mode: "program-window",
+        programWindow: {
+          schema: "hr_app",
+          name: "calc_salary",
+          objectType: "FUNCTION",
+          dirty: true,
+          draftSource: "CREATE FUNCTION calc_salary() ...",
+        },
+      }),
+    ]);
+
+    expect(restored.mode).toBe("program-window");
+    expect(restored.programWindow?.name).toBe("calc_salary");
+    expect(restored.programWindow?.dirty).toBe(true);
+    expect(restored.programWindow?.draftSource).toContain("CREATE FUNCTION");
+  });
+
+  it("restores debugger metadata without auto-starting a routine", () => {
+    const [restored] = roundTrip([
+      queryTab({
+        mode: "routine-debug",
+        routineDebug: {
+          schema: "hr_app",
+          routineName: "calc_salary",
+          routineKind: "function",
+          callSql: "SELECT calc_salary(1)",
+        },
+      }),
+    ]);
+
+    expect(restored.mode).toBe("routine-debug");
+    expect(restored.routineDebug?.routineName).toBe("calc_salary");
+    expect(restored.routineDebug?.restored).toBe(true);
+  });
 });

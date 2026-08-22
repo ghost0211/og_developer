@@ -209,6 +209,10 @@ const pendingAppCloseAction = ref<AppCloseAction | null>(null);
 const pendingCloseActionChoice = ref(false);
 
 const activeTab = computed(() => queryStore.tabs.find((t) => t.id === queryStore.activeTabId));
+// Debug sessions must not be evicted by the normal four-tab ContentArea cache:
+// eviction unmounts the panel, stops the parked routine, and a later remount
+// would execute it again. While a debugger tab exists, retain every open tab.
+const contentAreaKeepAliveMax = computed(() => (queryStore.tabs.some((tab) => tab.mode === "routine-debug") ? Math.max(4, queryStore.tabs.length + 1) : 4));
 
 const activeConnection = computed(() => {
   const tab = activeTab.value;
@@ -2419,7 +2423,7 @@ onUnmounted(() => {
                   @set-default-database="setActiveDatabaseAsDefault"
                   @clear-default-database="clearActiveDefaultDatabase"
                 />
-                <KeepAlive :max="4">
+                <KeepAlive :max="contentAreaKeepAliveMax">
                   <ContentArea
                     ref="contentAreaRef"
                     :key="activeTab.id"

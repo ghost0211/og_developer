@@ -46,6 +46,9 @@ export interface SavedOpenTab {
   structureTableName?: string;
   objectBrowser?: QueryTab["objectBrowser"];
   objectSource?: QueryTab["objectSource"];
+  routineTest?: QueryTab["routineTest"];
+  routineDebug?: QueryTab["routineDebug"];
+  programWindow?: QueryTab["programWindow"];
   tableMeta?: QueryTab["tableMeta"];
   mongoEditTarget?: QueryTab["mongoEditTarget"];
   resultEvicted?: boolean;
@@ -119,6 +122,9 @@ export function serializeOpenTabs(tabs: QueryTab[]): SavedOpenTab[] {
     ...(tab.structureTableName !== undefined ? { structureTableName: tab.structureTableName } : {}),
     objectBrowser: tab.objectBrowser,
     objectSource: tab.objectSource,
+    routineTest: tab.routineTest,
+    ...(tab.routineDebug ? { routineDebug: { ...tab.routineDebug, restored: undefined } } : {}),
+    programWindow: tab.programWindow,
     tableMeta: tab.tableMeta,
     ...(tab.mongoEditTarget !== undefined ? { mongoEditTarget: tab.mongoEditTarget } : {}),
     ...(tab.mode !== "data" && tab.resultEvicted ? { resultEvicted: true } : {}),
@@ -189,6 +195,7 @@ function restoreOpenTabsArray(parsed: unknown, rawActiveTabId: string | null, op
         resultRuns,
         activeResultRunId: resultRuns?.some((run) => run.id === tab.activeResultRunId) ? tab.activeResultRunId : resultRuns?.[0]?.id,
         resultAutoSave: mode === "query" && tab.resultAutoSave ? true : undefined,
+        routineDebug: tab.routineDebug ? { ...tab.routineDebug, restored: true } : undefined,
       };
     });
     const activeTabId = rawActiveTabId || null;

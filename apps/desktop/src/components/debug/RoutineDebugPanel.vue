@@ -29,6 +29,7 @@ const connectionStore = useConnectionStore();
 
 const props = defineProps<{
   tabId?: string;
+  autoStart?: boolean;
   connectionId: string;
   database: string;
   databaseType?: DatabaseType;
@@ -692,7 +693,12 @@ watch(debugTabExists, (exists) => {
 
 onMounted(() => {
   attachKeyboardShortcuts();
-  void startSession();
+  if (props.autoStart === false) {
+    phase.value = "stopped";
+    logEvent("info", "[DEBUG] 已恢复调试标签页，请点击“重新调试”启动会话");
+  } else {
+    void startSession();
+  }
 });
 
 onActivated(attachKeyboardShortcuts);

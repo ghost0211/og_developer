@@ -1966,6 +1966,7 @@ export const useQueryStore = defineStore("query", () => {
       // Legacy persisted structure drafts predate the dirty flag; treat them as dirty until the editor rehydrates them.
       return !!tab.structureDraft && tab.structureDraft.dirty !== false;
     }
+    if (tab.mode === "program-window") return !!tab.programWindow?.dirty;
     if (tab.mode !== "query") return false;
     if (!tab.externalSqlPath && !tab.sql.trim()) return false;
     const original = tab.originalSql;
@@ -2034,6 +2035,15 @@ export const useQueryStore = defineStore("query", () => {
     if (!tab) return false;
     if (tab.mode === "structure") {
       tab.structureDraft = undefined;
+      return true;
+    }
+    if (tab.mode === "program-window") {
+      if (tab.programWindow) {
+        tab.programWindow.dirty = false;
+        tab.programWindow.draftSource = undefined;
+        tab.programWindow.packageSpecDraft = undefined;
+        tab.programWindow.packageBodyDraft = undefined;
+      }
       return true;
     }
     if (tab.mode !== "query") return false;
@@ -2132,7 +2142,7 @@ export const useQueryStore = defineStore("query", () => {
   }
 
   function shouldConfirmTabClose(tab: QueryTab): boolean {
-    if (tab.mode === "structure") return isTabDirty(tab);
+    if (tab.mode === "structure" || tab.mode === "program-window") return isTabDirty(tab);
     return shouldConfirmUnsavedSqlClose.value && isTabDirty(tab);
   }
 
