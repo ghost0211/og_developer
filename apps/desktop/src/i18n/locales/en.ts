@@ -2363,6 +2363,7 @@ export default {
     dropTableSuccess: 'Table "{name}" dropped',
     editView: "Edit View",
     viewSource: "View Source",
+    openProgramWindow: "Open in Program Window",
     changeOpenMode: "Change open mode",
     viewDdl: "View DDL",
     viewDdlLoading: "Loading DDL...",

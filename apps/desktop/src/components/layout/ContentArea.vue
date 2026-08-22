@@ -69,6 +69,8 @@ const MySqlDashboard = defineAsyncComponent(() => import("@/components/admin/MyS
 const PostgresDashboard = defineAsyncComponent(() => import("@/components/admin/PostgresDashboard.vue"));
 const DamengJobAdmin = defineAsyncComponent(() => import("@/components/admin/DamengJobAdmin.vue"));
 const RoutineTestPanel = defineAsyncComponent(() => import("@/components/objects/RoutineTestPanel.vue"));
+const RoutineDebugPanel = defineAsyncComponent(() => import("@/components/debug/RoutineDebugPanel.vue"));
+const ProgramWindowPanel = defineAsyncComponent(() => import("@/components/objects/ProgramWindowPanel.vue"));
 const ExplainPlanViewer = defineAsyncComponent(() => import("@/components/explain/ExplainPlanViewer.vue"));
 const QueryChart = defineAsyncComponent(() => import("@/components/chart/QueryChart.vue"));
 import { useQueryStore } from "@/stores/queryStore";
@@ -2022,6 +2024,40 @@ defineExpose({ focusSearch, refreshData, refreshQueryEditorCompletionCache, hand
           :routine-kind="activeTab.routineTest.routineKind"
           :signature="activeTab.routineTest.signature"
           @debug="emit('debugProcedure', $event)"
+        />
+      </div>
+    </template>
+
+    <!-- Routine Debug mode: graphical procedure/function debugger window (PL/SQL Developer style) -->
+    <template v-else-if="activeTab.mode === 'routine-debug' && activeTab.routineDebug">
+      <div class="min-h-0 flex-1">
+        <RoutineDebugPanel
+          :key="activeTab.id"
+          :connection-id="activeTab.connectionId"
+          :database="activeTab.database"
+          :database-type="activeEffectiveDatabaseType"
+          :schema="activeTab.routineDebug.schema"
+          :routine-name="activeTab.routineDebug.routineName"
+          :routine-kind="activeTab.routineDebug.routineKind"
+          :signature="activeTab.routineDebug.signature"
+          :call-sql="activeTab.routineDebug.callSql"
+        />
+      </div>
+    </template>
+
+    <!-- Program Window mode: graphical procedure/function/package/view source editor & compiler (PL/SQL Developer style) -->
+    <template v-else-if="activeTab.mode === 'program-window' && activeTab.programWindow">
+      <div class="min-h-0 flex-1">
+        <ProgramWindowPanel
+          :key="activeTab.id"
+          :connection-id="activeTab.connectionId"
+          :database="activeTab.database"
+          :database-type="activeEffectiveDatabaseType"
+          :schema="activeTab.programWindow.schema"
+          :name="activeTab.programWindow.name"
+          :object-type="activeTab.programWindow.objectType"
+          :signature="activeTab.programWindow.signature"
+          :relation-name="activeTab.programWindow.relationName"
         />
       </div>
     </template>

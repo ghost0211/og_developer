@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { Clipboard, Loader2, PencilLine, RefreshCw } from "@lucide/vue";
+import { Clipboard, ExternalLink, Loader2, PencilLine, RefreshCw } from "@lucide/vue";
 import { useToast } from "@/composables/useToast";
 import { useConnectionStore } from "@/stores/connectionStore";
+import { useQueryStore } from "@/stores/queryStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { copyToClipboard } from "@/lib/common/clipboard";
 import { formatSqlForDisplay, type SqlFormatDialect } from "@/lib/sql/sqlFormatter";
@@ -44,6 +45,7 @@ const emit = defineEmits<{
 const { t } = useI18n();
 const { toast } = useToast();
 const connectionStore = useConnectionStore();
+const queryStore = useQueryStore();
 const settingsStore = useSettingsStore();
 
 const content = ref("");
@@ -183,6 +185,19 @@ async function saveSource() {
 function closeDialog() {
   emit("update:open", false);
 }
+
+function openInProgramWindow() {
+  closeDialog();
+  queryStore.openProgramWindow({
+    connectionId: props.connectionId,
+    database: props.database,
+    schema: props.schema,
+    name: props.name,
+    objectType: props.objectType,
+    signature: props.signature,
+    relationName: props.relationName,
+  });
+}
 </script>
 
 <template>
@@ -239,6 +254,10 @@ function closeDialog() {
       />
 
       <DialogFooter>
+        <Button variant="outline" @click="openInProgramWindow">
+          <ExternalLink class="h-4 w-4" />
+          <span>在程序窗口中打开</span>
+        </Button>
         <Button variant="outline" @click="closeDialog">{{ t("common.close") }}</Button>
         <Button v-if="!editing" variant="outline" :disabled="!content" @click="copySource">
           <Clipboard class="h-4 w-4" />

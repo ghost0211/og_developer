@@ -7,6 +7,7 @@ import {
   ArrowRightLeft,
   ArrowUp,
   Braces,
+  Bug,
   CheckSquare,
   Clipboard,
   Code2,
@@ -1195,6 +1196,32 @@ function openProcedureExecution(row: ObjectBrowserRow) {
     schema,
     routineName: row.name,
     routineKind: row.type === "FUNCTION" ? "function" : "procedure",
+    catalog: props.catalog,
+  });
+}
+
+function openProcedureDebug(row: ObjectBrowserRow) {
+  if (row.type !== "PROCEDURE" && row.type !== "FUNCTION") return;
+  const schema = row.schema || selectedSchema.value;
+  queryStore.openRoutineDebug({
+    connectionId: props.connection.id,
+    database: props.database,
+    schema,
+    routineName: row.name,
+    routineKind: row.type === "FUNCTION" ? "function" : "procedure",
+    catalog: props.catalog,
+  });
+}
+
+function openProgramWindow(row: ObjectBrowserRow) {
+  const schema = row.schema || selectedSchema.value;
+  queryStore.openProgramWindow({
+    connectionId: props.connection.id,
+    database: props.database,
+    schema,
+    name: row.name,
+    objectType: row.type as ObjectSourceKind,
+    signature: row.signature ?? undefined,
     catalog: props.catalog,
   });
 }
@@ -2687,8 +2714,8 @@ function getTableMenuItems(item: ObjectBrowserRow): ContextMenuItem[] {
 function getViewMenuItems(item: ObjectBrowserRow): ContextMenuItem[] {
   return [
     { label: t("contextMenu.viewData"), action: () => openViewData(item), icon: Table2 },
-    { label: t("contextMenu.editView"), action: () => openSource(item), icon: PencilLine },
-    { label: t("contextMenu.viewSource"), action: () => openSource(item), icon: Code2 },
+    { label: t("contextMenu.editView"), action: () => openProgramWindow(item), icon: PencilLine },
+    { label: t("contextMenu.viewSource"), action: () => openProgramWindow(item), icon: Code2 },
     {
       label: t("contextMenu.viewDdl"),
       action: () => openTableInfo(item, "ddl"),
@@ -2714,9 +2741,12 @@ function getViewMenuItems(item: ObjectBrowserRow): ContextMenuItem[] {
 }
 
 function getProcFuncMenuItems(item: ObjectBrowserRow): ContextMenuItem[] {
+  const dbType = effectiveDatabaseTypeForConnection(props.connection);
+  const isOpenGauss = dbType === "opengauss" || dbType === "gaussdb";
   return [
-    ...(item.type === "PROCEDURE" ? [{ label: t("contextMenu.executeProcedure"), action: () => openProcedureExecution(item), icon: Play }] : []),
-    { label: t("contextMenu.viewSource"), action: () => openSource(item), icon: Code2 },
+    ...(item.type === "PROCEDURE" || item.type === "FUNCTION" ? [{ label: t("contextMenu.executeProcedure"), action: () => openProcedureExecution(item), icon: Play }] : []),
+    ...(isOpenGauss && (item.type === "PROCEDURE" || item.type === "FUNCTION") ? [{ label: t("contextMenu.debugProcedure"), action: () => openProcedureDebug(item), icon: Bug }] : []),
+    { label: t("contextMenu.viewSource"), action: () => openProgramWindow(item), icon: Code2 },
     ...(canRename(item) ? [{ label: t("contextMenu.renameObject"), action: () => requestRename(item), icon: Pencil }] : []),
     { label: "", separator: true },
     {
@@ -2732,7 +2762,7 @@ function getProcFuncMenuItems(item: ObjectBrowserRow): ContextMenuItem[] {
 
 function getPackageMenuItems(item: ObjectBrowserRow): ContextMenuItem[] {
   return [
-    { label: t("contextMenu.viewSource"), action: () => openSource(item), icon: Code2 },
+    { label: t("contextMenu.viewSource"), action: () => openProgramWindow(item), icon: Code2 },
     { label: "", separator: true },
     { label: t("contextMenu.copyName"), action: () => copyName(item), icon: Copy },
   ];

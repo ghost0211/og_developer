@@ -163,6 +163,15 @@ export function tabTooltipLines(tab: QueryTab, t: Translate): { label: string; v
   if (tab.mode === "objects" && tab.objectBrowser?.schema) {
     lines.push({ label: t("tabs.tooltipSchema"), value: tab.objectBrowser.schema });
   }
+  if (tab.mode === "routine-test" && tab.routineTest?.routineName) {
+    lines.push({ label: t("contextMenu.parameterName"), value: tab.routineTest.routineName });
+  }
+  if (tab.mode === "routine-debug" && tab.routineDebug?.routineName) {
+    lines.push({ label: t("contextMenu.parameterName"), value: tab.routineDebug.routineName });
+  }
+  if (tab.mode === "program-window" && tab.programWindow?.name) {
+    lines.push({ label: t("contextMenu.parameterName"), value: tab.programWindow.name });
+  }
   return lines;
 }
 
@@ -419,5 +428,7 @@ export function tabModeLabel(tab: QueryTab, t: Translate): string {
   if (tab.mode === "objects") return t("tabs.objects");
   if (tab.mode === "users") return t("tabs.users");
   if (tab.mode === "routine-test") return t("contextMenu.executeProcedure");
+  if (tab.mode === "routine-debug") return t("contextMenu.debugProcedure");
+  if (tab.mode === "program-window") return t("contextMenu.viewSource");
   return tab.mode;
 }

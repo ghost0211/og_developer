@@ -79,6 +79,8 @@ test("reference group children render from listObjectReferences", async () => {
   tableNode.children = [refNode];
   // @ts-expect-error store internals
   store.configs = new Map([["conn", { id: "conn", name: "conn", db_type: "opengauss", host: "h", port: 1, username: "u", password: "" }]]);
+  // @ts-expect-error store internals
+  store.connectedIds = new Set(["conn"]);
   apiMock.listObjectReferences.mockResolvedValue([{ schema: "public", name: "mv_emp", objectType: "materialized_view", detail: "view definition" }]);
   apiMock.listDatabases.mockResolvedValue([]);
   apiMock.listSchemas.mockResolvedValue([]);

@@ -1447,22 +1447,27 @@ async function executeSidebarProcedureSql(sql: string) {
 function debugSidebarProcedureSql(sql: string) {
   const target = sidebarProcedureTarget.value;
   if (!target?.connectionId || !target.database || !sql) return;
-  const debugTarget = {
+  queryStore.openRoutineDebug({
     connectionId: target.connectionId,
     database: target.database,
     schema: target.schema,
-    kind: target.type === "function" ? "function" : "procedure",
+    routineKind: target.type === "function" ? "function" : "procedure",
     routineName: target.parentName ? `${target.parentName}.${target.objectName || target.label}` : target.objectName || target.label,
     signature: target.signature,
     callSql: sql,
-  };
-  sidebarDebugTarget.value = debugTarget;
-  sidebarDebugOpen.value = true;
+  });
 }
 
 function triggerDebug(debugTarget: { connectionId: string; database: string; schema?: string; kind: string; routineName: string; signature?: string; callSql: string }) {
-  sidebarDebugTarget.value = debugTarget;
-  sidebarDebugOpen.value = true;
+  queryStore.openRoutineDebug({
+    connectionId: debugTarget.connectionId,
+    database: debugTarget.database,
+    schema: debugTarget.schema,
+    routineKind: debugTarget.kind === "function" ? "function" : "procedure",
+    routineName: debugTarget.routineName,
+    signature: debugTarget.signature,
+    callSql: debugTarget.callSql,
+  });
 }
 
 async function refreshSidebarActionTarget() {

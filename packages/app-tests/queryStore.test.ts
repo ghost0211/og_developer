@@ -548,6 +548,70 @@ test("object source tabs can force distinct clean identities for overloaded rout
   assert.equal(store.isTabDirty(store.tabs.find((tab) => tab.id === secondId)!), false);
 });
 
+test("openRoutineDebug opens a routine-debug tab and reuses existing debug tabs", () => {
+  setActivePinia(createPinia());
+  const store = useQueryStore();
+  const tabId = store.openRoutineDebug({
+    connectionId: "conn-1",
+    database: "og_db",
+    schema: "public",
+    routineName: "calc_salary",
+    routineKind: "function",
+    callSql: "SELECT calc_salary(100);",
+  });
+
+  const tab = store.tabs.find((t) => t.id === tabId);
+  assert.ok(tab);
+  assert.equal(tab.mode, "routine-debug");
+  assert.equal(tab.title, "Debug - calc_salary");
+  assert.equal(tab.routineDebug?.routineName, "calc_salary");
+  assert.equal(tab.routineDebug?.callSql, "SELECT calc_salary(100);");
+
+  // Opening again with new SQL reuses the tab and updates callSql
+  const reusedId = store.openRoutineDebug({
+    connectionId: "conn-1",
+    database: "og_db",
+    schema: "public",
+    routineName: "calc_salary",
+    routineKind: "function",
+    callSql: "SELECT calc_salary(200);",
+  });
+
+  assert.equal(reusedId, tabId);
+  assert.equal(tab.routineDebug?.callSql, "SELECT calc_salary(200);");
+  assert.equal(store.activeTabId, tabId);
+});
+
+test("openProgramWindow opens a program-window tab and reuses existing object source tabs", () => {
+  setActivePinia(createPinia());
+  const store = useQueryStore();
+  const tabId = store.openProgramWindow({
+    connectionId: "conn-1",
+    database: "og_db",
+    schema: "public",
+    name: "emp_pkg",
+    objectType: "PACKAGE",
+  });
+
+  const tab = store.tabs.find((t) => t.id === tabId);
+  assert.ok(tab);
+  assert.equal(tab.mode, "program-window");
+  assert.equal(tab.title, "emp_pkg (package)");
+  assert.equal(tab.programWindow?.name, "emp_pkg");
+  assert.equal(tab.programWindow?.objectType, "PACKAGE");
+
+  // Reusing existing tab
+  const reusedId = store.openProgramWindow({
+    connectionId: "conn-1",
+    database: "og_db",
+    schema: "public",
+    name: "emp_pkg",
+    objectType: "PACKAGE",
+  });
+  assert.equal(reusedId, tabId);
+  assert.equal(store.activeTabId, tabId);
+});
+
 test("close all tabs pauses on unsaved query tabs", () => {
   setActivePinia(createPinia());
   const store = useQueryStore();

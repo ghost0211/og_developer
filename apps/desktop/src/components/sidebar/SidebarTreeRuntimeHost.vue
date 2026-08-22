@@ -52,6 +52,7 @@ import {
   SquarePen,
   ListX,
   Info,
+  Bug,
   X,
   Settings2,
 } from "@lucide/vue";
@@ -1769,10 +1770,53 @@ function openObjectSourceDialog(initialEditing: boolean) {
     });
 }
 
+function openProgramWindow() {
+  const node = activeNode.value;
+  if (!node.connectionId || !node.database) return;
+  const objectType = objectSourceKindForTreeNode(node.type);
+  if (!objectType) return;
+
+  const connectionId = node.connectionId;
+  const database = node.database;
+  const name = node.parentName ? `${node.parentName}.${node.objectName || node.label}` : node.objectName || node.label;
+  void connectionStore
+    .ensureConnected(connectionId)
+    .then(() => {
+      connectionStore.activeConnectionId = connectionId;
+      queryStore.openProgramWindow({
+        connectionId,
+        database,
+        schema: node.schema,
+        name,
+        objectType,
+        signature: node.signature,
+        catalog: node.catalog,
+      });
+    })
+    .catch((error: any) => {
+      toast(error?.message || String(error), 5000);
+    });
+}
+
 function openProcedureExecution() {
   const node = activeNode.value;
   if ((node.type !== "procedure" && node.type !== "function") || !node.connectionId || !node.database) return;
   emit("open-procedure", node);
+}
+
+function openProcedureDebug() {
+  const node = activeNode.value;
+  if ((node.type !== "procedure" && node.type !== "function") || !node.connectionId || !node.database) return;
+  const routineName = node.parentName ? `${node.parentName}.${node.objectName || node.label}` : node.objectName || node.label;
+  queryStore.openRoutineDebug({
+    connectionId: node.connectionId,
+    database: node.database,
+    schema: node.schema,
+    routineName,
+    routineKind: node.type === "function" ? "function" : "procedure",
+    signature: node.signature,
+    catalog: node.catalog,
+  });
 }
 
 function requestDropObject() {
@@ -4521,6 +4565,7 @@ function buildObjectSidebarMenu(context: SidebarMenuFactoryContext): boolean {
     if (node.type === "view" || node.type === "materialized_view") {
       items.push({ label: t("contextMenu.editView"), action: () => openObjectSourceDialog(true), icon: Pencil });
       items.push({ label: t("contextMenu.viewSource"), action: () => openObjectSourceDialog(false), icon: Code2 });
+      items.push({ label: t("contextMenu.openProgramWindow"), action: openProgramWindow, icon: FileCode });
       items.push({
         label: t("contextMenu.viewDdl"),
         action: openDdl,
@@ -4680,7 +4725,13 @@ function buildObjectSidebarMenu(context: SidebarMenuFactoryContext): boolean {
   if (node.type === "procedure" || node.type === "function") {
     // ogdeveloper: graphical invocation for both procedures and functions.
     items.push({ label: t("contextMenu.executeProcedure"), action: openProcedureExecution, icon: Play });
+    const config = node.connectionId ? connectionStore.getConfig(node.connectionId) : undefined;
+    const dbType = config ? effectiveDatabaseTypeForConnection(config) : undefined;
+    if (dbType === "opengauss" || dbType === "gaussdb") {
+      items.push({ label: t("contextMenu.debugProcedure"), action: openProcedureDebug, icon: Bug });
+    }
     items.push({ label: t("contextMenu.viewSource"), action: () => openObjectSourceDialog(false), icon: Code2 });
+    items.push({ label: t("contextMenu.openProgramWindow"), action: openProgramWindow, icon: FileCode });
     if (canRenameObject.value) {
       items.push({
         label: t("contextMenu.renameObject"),
@@ -4734,6 +4785,7 @@ function buildObjectSidebarMenu(context: SidebarMenuFactoryContext): boolean {
 
   if (node.type === "package" || node.type === "package-body") {
     items.push({ label: t("contextMenu.viewSource"), action: () => openObjectSourceDialog(false), icon: Code2 });
+    items.push({ label: t("contextMenu.openProgramWindow"), action: openProgramWindow, icon: FileCode });
     items.push({ label: t("contextMenu.copyName"), action: copyName, icon: Copy, shortcut: shortcutCopyName.value });
     items.push({ label: t("contextMenu.changeOpenMode"), action: () => emit("open-settings", "navigation"), icon: Settings2 });
     items.push({ label: "", separator: true });

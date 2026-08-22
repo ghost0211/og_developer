@@ -2455,11 +2455,11 @@ onUnmounted(() => {
                     @debug-procedure="
                       (sql) => {
                         if (activeTab?.routineTest) {
-                          appSidebarRef?.triggerDebug({
+                          queryStore.openRoutineDebug({
                             connectionId: activeTab.connectionId,
                             database: activeTab.database,
                             schema: activeTab.routineTest.schema,
-                            kind: activeTab.routineTest.routineKind || 'procedure',
+                            routineKind: activeTab.routineTest.routineKind || 'procedure',
                             routineName: activeTab.routineTest.routineName,
                             signature: activeTab.routineTest.signature,
                             callSql: sql,

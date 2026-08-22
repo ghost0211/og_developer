@@ -13,6 +13,7 @@ import "splitpanes/dist/splitpanes.css";
 import { useToast } from "@/composables/useToast";
 import { useTheme } from "@/composables/useTheme";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { useQueryStore } from "@/stores/queryStore";
 import { copyToClipboard } from "@/lib/common/clipboard";
 import { editorFontTheme, loadEditorTheme } from "@/lib/editor/editorThemes";
 import { createDbxCodeMirrorSqlDialect } from "@/lib/editor/codemirrorSqlDialect";
@@ -29,6 +30,7 @@ const { t } = useI18n();
 const { toast } = useToast();
 const { isDark, themePalette } = useTheme();
 const settingsStore = useSettingsStore();
+const queryStore = useQueryStore();
 
 const open = defineModel<boolean>("open", { default: false });
 
@@ -362,6 +364,15 @@ function startDebugging() {
   const sql = (isOpenGaussRoutine.value ? openGaussDebugCallSql.value : getEditorText()).trim();
   if (!sql) return;
   open.value = false;
+  queryStore.openRoutineDebug({
+    connectionId: props.connectionId,
+    database: props.database,
+    schema: props.schema,
+    routineName: props.routineName,
+    routineKind: props.routineKind,
+    signature: props.signature,
+    callSql: sql,
+  });
   emit("debug", sql);
 }
 

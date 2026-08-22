@@ -2,7 +2,7 @@ import { defineStore } from "pinia";
 import { uuid } from "@/lib/common/utils";
 import { computed, markRaw, onScopeDispose, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import type { BatchSqlExecution, ConnectionConfig, DatabaseType, IndexInfo, ObjectBrowserViewport, QueryResult, QueryTab, TableInfoTab, TableStructureEditorTarget } from "@/types/database";
+import type { BatchSqlExecution, ConnectionConfig, DatabaseType, IndexInfo, ObjectBrowserViewport, ObjectSourceKind, QueryResult, QueryTab, TableInfoTab, TableStructureEditorTarget } from "@/types/database";
 import { orderPinnedFirst } from "@/lib/app/pinnedItems";
 import { canCancelQueryExecution } from "@/lib/sql/queryExecutionState";
 import { buildExplainSql, parseExplainResult, parseDamengExplainText, parseOracleExplainText, sqlServerExplainResult, type BuildExplainSqlResult } from "@/lib/diagram/explainPlan";
@@ -1497,6 +1497,93 @@ export const useQueryStore = defineStore("query", () => {
         routineName,
         routineKind,
         signature,
+      },
+    };
+    tabs.value.push(tab);
+    activeTabId.value = id;
+    return id;
+  }
+
+  function openRoutineDebug(options: { connectionId: string; database: string; schema?: string; routineName: string; routineKind?: "procedure" | "function"; signature?: string; callSql?: string; catalog?: string }) {
+    const { connectionId, database, schema, routineName, routineKind, signature, callSql, catalog } = options;
+    const title = `Debug - ${routineName}`;
+    const existing = tabs.value.find(
+      (tab) => tab.mode === "routine-debug" && tab.connectionId === connectionId && tab.database === database && (tab.routineDebug?.schema || "") === (schema || "") && tab.routineDebug?.routineName === routineName && (tab.routineDebug?.signature || "") === (signature || ""),
+    );
+    if (existing) {
+      if (callSql && existing.routineDebug) {
+        existing.routineDebug.callSql = callSql;
+      }
+      switchTab(existing.id);
+      return existing.id;
+    }
+
+    const id = uuid();
+    const tab: QueryTab = {
+      id,
+      title,
+      customTitle: true,
+      connectionId,
+      database,
+      schema,
+      catalog,
+      sql: "",
+      isExecuting: false,
+      isCancelling: false,
+      isExplaining: false,
+      mode: "routine-debug",
+      routineDebug: {
+        schema,
+        routineName,
+        routineKind,
+        signature,
+        callSql: callSql || "",
+      },
+    };
+    tabs.value.push(tab);
+    activeTabId.value = id;
+    return id;
+  }
+
+  function openProgramWindow(options: { connectionId: string; database: string; schema?: string; name: string; objectType: ObjectSourceKind; signature?: string; relationName?: string; catalog?: string }) {
+    const { connectionId, database, schema, name, objectType, signature, relationName, catalog } = options;
+    const kindLabel = objectType.toLowerCase().replace(/_/g, " ");
+    const title = `${name} (${kindLabel})`;
+    const existing = tabs.value.find(
+      (tab) =>
+        tab.mode === "program-window" &&
+        tab.connectionId === connectionId &&
+        tab.database === database &&
+        (tab.programWindow?.schema || "") === (schema || "") &&
+        tab.programWindow?.name === name &&
+        tab.programWindow?.objectType === objectType &&
+        (tab.programWindow?.signature || "") === (signature || ""),
+    );
+    if (existing) {
+      switchTab(existing.id);
+      return existing.id;
+    }
+
+    const id = uuid();
+    const tab: QueryTab = {
+      id,
+      title,
+      customTitle: true,
+      connectionId,
+      database,
+      schema,
+      catalog,
+      sql: "",
+      isExecuting: false,
+      isCancelling: false,
+      isExplaining: false,
+      mode: "program-window",
+      programWindow: {
+        schema,
+        name,
+        objectType,
+        signature,
+        relationName,
       },
     };
     tabs.value.push(tab);
@@ -5427,6 +5514,8 @@ export const useQueryStore = defineStore("query", () => {
     renameTab,
     openObjectBrowser,
     openRoutineTest,
+    openRoutineDebug,
+    openProgramWindow,
     openMongoGridFs,
     openMongoBucket,
     openUserAdmin,

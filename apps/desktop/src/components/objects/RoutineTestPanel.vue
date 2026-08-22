@@ -369,6 +369,15 @@ function openInSqlEditor() {
 function startDebugging() {
   const sql = (isOpenGaussRoutine.value ? openGaussDebugCallSql.value : getEditorText()).trim();
   if (!sql) return;
+  queryStore.openRoutineDebug({
+    connectionId: props.connectionId,
+    database: props.database,
+    schema: props.schema,
+    routineName: props.routineName,
+    routineKind: props.routineKind,
+    signature: props.signature,
+    callSql: sql,
+  });
   emit("debug", sql);
 }
 

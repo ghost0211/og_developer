@@ -71,6 +71,14 @@ test("query-tab object source opens clean isolated tabs and honors backend edita
   assert.doesNotMatch(openObjectSourceBody, /queryStore\.updateSql/);
 });
 
+test("source object context menus expose the Program Window entry", () => {
+  const runtimeHost = readFileSync("apps/desktop/src/components/sidebar/SidebarTreeRuntimeHost.vue", "utf8");
+
+  assert.match(runtimeHost, /function openProgramWindow\(/);
+  assert.match(runtimeHost, /contextMenu\.openProgramWindow/);
+  assert.match(runtimeHost, /queryStore\.openProgramWindow\(/);
+});
+
 test("table copy menu uses the shared single and multi-selection clipboard path", () => {
   const runtimeHost = readFileSync("apps/desktop/src/components/sidebar/SidebarTreeRuntimeHost.vue", "utf8");
   const copyNameBody = functionBody(runtimeHost, "copyName");

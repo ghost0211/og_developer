@@ -1048,7 +1048,9 @@ export interface QueryTab {
     | "processlist"
     | "mysql-dashboard"
     | "postgres-dashboard"
-    | "routine-test";
+    | "routine-test"
+    | "routine-debug"
+    | "program-window";
   /** Ephemeral navigation intent; it is consumed by HBaseBrowser and is not persisted. */
   hbaseCreateTableOnOpen?: boolean;
   /** Routine test window (PL/SQL Developer style graphical call page). */
@@ -1057,6 +1059,22 @@ export interface QueryTab {
     routineName: string;
     routineKind?: "procedure" | "function";
     signature?: string;
+  };
+  /** Routine debug window (PL/SQL Developer style graphical debugger page). */
+  routineDebug?: {
+    schema?: string;
+    routineName: string;
+    routineKind?: "procedure" | "function";
+    signature?: string;
+    callSql: string;
+  };
+  /** Program window (PL/SQL Developer style procedure/function/package/view source editor & compiler). */
+  programWindow?: {
+    schema?: string;
+    name: string;
+    objectType: ObjectSourceKind;
+    signature?: string;
+    relationName?: string;
   };
   mqTenant?: string;
   mqInitialTab?: "topics";

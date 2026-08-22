@@ -2365,6 +2365,7 @@ export default withEnglishFallback({
     dropTableSuccess: "表「{name}」已删除",
     editView: "编辑视图",
     viewSource: "查看源码",
+    openProgramWindow: "在程序窗口中打开",
     changeOpenMode: "修改打开方式",
     viewDdl: "查看 DDL",
     viewDdlLoading: "正在读取 DDL...",
