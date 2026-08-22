@@ -256,7 +256,7 @@ function openInProgramWindow() {
       <DialogFooter>
         <Button variant="outline" @click="openInProgramWindow">
           <ExternalLink class="h-4 w-4" />
-          <span>在程序窗口中打开</span>
+          <span>{{ t("contextMenu.openProgramWindow", "在程序窗口中打开") }}</span>
         </Button>
         <Button variant="outline" @click="closeDialog">{{ t("common.close") }}</Button>
         <Button v-if="!editing" variant="outline" :disabled="!content" @click="copySource">

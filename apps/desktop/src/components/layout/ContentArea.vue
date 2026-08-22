@@ -2047,24 +2047,22 @@ defineExpose({ focusSearch, refreshData, refreshQueryEditorCompletionCache, hand
       </div>
     </template>
 
-    <!-- Keep each debugger panel mounted while switching tabs so a parked
-         debugger session is not stopped and its routine is not executed again. -->
-    <KeepAlive>
-      <div v-if="activeTab.mode === 'routine-debug' && activeTab.routineDebug" :key="activeTab.id" class="min-h-0 flex-1">
-        <RoutineDebugPanel
-          :tab-id="activeTab.id"
-          :auto-start="!activeTab.routineDebug.restored"
-          :connection-id="activeTab.connectionId"
-          :database="activeTab.database"
-          :database-type="activeEffectiveDatabaseType"
-          :schema="activeTab.routineDebug.schema"
-          :routine-name="activeTab.routineDebug.routineName"
-          :routine-kind="activeTab.routineDebug.routineKind"
-          :signature="activeTab.routineDebug.signature"
-          :call-sql="activeTab.routineDebug.callSql"
-        />
-      </div>
-    </KeepAlive>
+    <!-- App.vue keeps each ContentArea tab alive while a debugger exists, so
+         switching tabs does not stop the parked routine or execute it again. -->
+    <div v-if="activeTab.mode === 'routine-debug' && activeTab.routineDebug" class="min-h-0 flex-1">
+      <RoutineDebugPanel
+        :tab-id="activeTab.id"
+        :auto-start="!activeTab.routineDebug.restored"
+        :connection-id="activeTab.connectionId"
+        :database="activeTab.database"
+        :database-type="activeEffectiveDatabaseType"
+        :schema="activeTab.routineDebug.schema"
+        :routine-name="activeTab.routineDebug.routineName"
+        :routine-kind="activeTab.routineDebug.routineKind"
+        :signature="activeTab.routineDebug.signature"
+        :call-sql="activeTab.routineDebug.callSql"
+      />
+    </div>
   </div>
 </template>
 
