@@ -1209,6 +1209,7 @@ function openProcedureDebug(row: ObjectBrowserRow) {
     schema,
     routineName: row.name,
     routineKind: row.type === "FUNCTION" ? "function" : "procedure",
+    signature: row.signature ?? undefined,
     catalog: props.catalog,
   });
 }

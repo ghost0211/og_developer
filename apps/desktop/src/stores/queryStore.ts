@@ -1471,7 +1471,14 @@ export const useQueryStore = defineStore("query", () => {
     const { connectionId, database, schema, routineName, routineKind, signature, catalog } = options;
     const title = `Test - ${routineName}`;
     const existing = tabs.value.find(
-      (tab) => tab.mode === "routine-test" && tab.connectionId === connectionId && tab.database === database && (tab.routineTest?.schema || "") === (schema || "") && tab.routineTest?.routineName === routineName && (tab.routineTest?.signature || "") === (signature || ""),
+      (tab) =>
+        tab.mode === "routine-test" &&
+        tab.connectionId === connectionId &&
+        tab.database === database &&
+        (tab.catalog || "") === (catalog || "") &&
+        (tab.routineTest?.schema || "") === (schema || "") &&
+        tab.routineTest?.routineName === routineName &&
+        (tab.routineTest?.signature || "") === (signature || ""),
     );
     if (existing) {
       switchTab(existing.id);
@@ -1508,7 +1515,14 @@ export const useQueryStore = defineStore("query", () => {
     const { connectionId, database, schema, routineName, routineKind, signature, callSql, catalog } = options;
     const title = `Debug - ${routineName}`;
     const existing = tabs.value.find(
-      (tab) => tab.mode === "routine-debug" && tab.connectionId === connectionId && tab.database === database && (tab.routineDebug?.schema || "") === (schema || "") && tab.routineDebug?.routineName === routineName && (tab.routineDebug?.signature || "") === (signature || ""),
+      (tab) =>
+        tab.mode === "routine-debug" &&
+        tab.connectionId === connectionId &&
+        tab.database === database &&
+        (tab.catalog || "") === (catalog || "") &&
+        (tab.routineDebug?.schema || "") === (schema || "") &&
+        tab.routineDebug?.routineName === routineName &&
+        (tab.routineDebug?.signature || "") === (signature || ""),
     );
     if (existing) {
       if (callSql && existing.routineDebug) {
@@ -1554,10 +1568,12 @@ export const useQueryStore = defineStore("query", () => {
         tab.mode === "program-window" &&
         tab.connectionId === connectionId &&
         tab.database === database &&
+        (tab.catalog || "") === (catalog || "") &&
         (tab.programWindow?.schema || "") === (schema || "") &&
         tab.programWindow?.name === name &&
         tab.programWindow?.objectType === objectType &&
-        (tab.programWindow?.signature || "") === (signature || ""),
+        (tab.programWindow?.signature || "") === (signature || "") &&
+        (tab.programWindow?.relationName || "") === (relationName || ""),
     );
     if (existing) {
       switchTab(existing.id);

@@ -2028,23 +2028,6 @@ defineExpose({ focusSearch, refreshData, refreshQueryEditorCompletionCache, hand
       </div>
     </template>
 
-    <!-- Routine Debug mode: graphical procedure/function debugger window (PL/SQL Developer style) -->
-    <template v-else-if="activeTab.mode === 'routine-debug' && activeTab.routineDebug">
-      <div class="min-h-0 flex-1">
-        <RoutineDebugPanel
-          :key="activeTab.id"
-          :connection-id="activeTab.connectionId"
-          :database="activeTab.database"
-          :database-type="activeEffectiveDatabaseType"
-          :schema="activeTab.routineDebug.schema"
-          :routine-name="activeTab.routineDebug.routineName"
-          :routine-kind="activeTab.routineDebug.routineKind"
-          :signature="activeTab.routineDebug.signature"
-          :call-sql="activeTab.routineDebug.callSql"
-        />
-      </div>
-    </template>
-
     <!-- Program Window mode: graphical procedure/function/package/view source editor & compiler (PL/SQL Developer style) -->
     <template v-else-if="activeTab.mode === 'program-window' && activeTab.programWindow">
       <div class="min-h-0 flex-1">
@@ -2061,6 +2044,24 @@ defineExpose({ focusSearch, refreshData, refreshQueryEditorCompletionCache, hand
         />
       </div>
     </template>
+
+    <!-- Keep each debugger panel mounted while switching tabs so a parked
+         debugger session is not stopped and its routine is not executed again. -->
+    <KeepAlive>
+      <div v-if="activeTab.mode === 'routine-debug' && activeTab.routineDebug" :key="activeTab.id" class="min-h-0 flex-1">
+        <RoutineDebugPanel
+          :tab-id="activeTab.id"
+          :connection-id="activeTab.connectionId"
+          :database="activeTab.database"
+          :database-type="activeEffectiveDatabaseType"
+          :schema="activeTab.routineDebug.schema"
+          :routine-name="activeTab.routineDebug.routineName"
+          :routine-kind="activeTab.routineDebug.routineKind"
+          :signature="activeTab.routineDebug.signature"
+          :call-sql="activeTab.routineDebug.callSql"
+        />
+      </div>
+    </KeepAlive>
   </div>
 </template>
 

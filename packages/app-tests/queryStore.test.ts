@@ -567,6 +567,16 @@ test("openRoutineDebug opens a routine-debug tab and reuses existing debug tabs"
   assert.equal(tab.routineDebug?.routineName, "calc_salary");
   assert.equal(tab.routineDebug?.callSql, "SELECT calc_salary(100);");
 
+  const otherCatalogDebugId = store.openRoutineDebug({
+    connectionId: "conn-1",
+    database: "og_db",
+    schema: "public",
+    routineName: "calc_salary",
+    routineKind: "function",
+    catalog: "other_catalog",
+  });
+  assert.notEqual(otherCatalogDebugId, tabId);
+
   // Opening again with new SQL reuses the tab and updates callSql
   const reusedId = store.openRoutineDebug({
     connectionId: "conn-1",
@@ -610,6 +620,26 @@ test("openProgramWindow opens a program-window tab and reuses existing object so
   });
   assert.equal(reusedId, tabId);
   assert.equal(store.activeTabId, tabId);
+
+  const otherCatalogId = store.openProgramWindow({
+    connectionId: "conn-1",
+    database: "og_db",
+    schema: "public",
+    name: "emp_pkg",
+    objectType: "PACKAGE",
+    catalog: "other_catalog",
+  });
+  assert.notEqual(otherCatalogId, tabId);
+
+  const otherRelationId = store.openProgramWindow({
+    connectionId: "conn-1",
+    database: "og_db",
+    schema: "public",
+    name: "audit_trigger",
+    objectType: "TRIGGER",
+    relationName: "other_table",
+  });
+  assert.notEqual(otherRelationId, tabId);
 });
 
 test("close all tabs pauses on unsaved query tabs", () => {

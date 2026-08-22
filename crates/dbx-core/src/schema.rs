@@ -7141,14 +7141,31 @@ fn postgres_object_source_sql_inner(
             let signature_filter = signature
                 .map(|value| format!(" AND pg_get_function_identity_arguments(p.oid) = {}", sql_string(value)))
                 .unwrap_or_default();
+            let (from_clause, routine_filter) = if unwrap_opengauss_record {
+                if let Some((package, member)) = name.split_once('.') {
+                    (
+                        "FROM pg_proc p JOIN pg_catalog.gs_package pkg ON pkg.oid = p.propackageid JOIN pg_catalog.pg_namespace n ON n.oid = pkg.pkgnamespace".to_string(),
+                        format!(
+                            "n.nspname = {} AND pkg.pkgname = {} AND p.proname = {}",
+                            sql_string(schema),
+                            sql_string(package),
+                            sql_string(member)
+                        ),
+                    )
+                } else {
+                    (
+                        "FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace".to_string(),
+                        format!("n.nspname = {} AND p.proname = {}", sql_string(schema), sql_string(name)),
+                    )
+                }
+            } else {
+                (
+                    "FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace".to_string(),
+                    format!("n.nspname = {} AND p.proname = {}", sql_string(schema), sql_string(name)),
+                )
+            };
             format!(
-                "SELECT {source_expression} \
-                 FROM pg_proc p \
-                 JOIN pg_namespace n ON n.oid = p.pronamespace \
-                 WHERE n.nspname = {} AND p.proname = {} AND p.prokind = '{}'{} \
-                 ORDER BY p.oid LIMIT 1",
-                sql_string(schema),
-                sql_string(name),
+                "SELECT {source_expression} {from_clause} WHERE {routine_filter} AND p.prokind = '{}'{} ORDER BY p.oid LIMIT 1",
                 prokind,
                 signature_filter
             )
@@ -8242,6 +8259,13 @@ mod object_source_tests {
             ),
             "SELECT (pg_get_functiondef(p.oid)).definition FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.proname = 'refresh_cache' AND p.prokind = 'p' AND pg_get_function_identity_arguments(p.oid) = 'integer' ORDER BY p.oid LIMIT 1"
         );
+
+        let package_member_sql =
+            opengauss_object_source_sql("hr", "emp_pkg.get_headcount", &ObjectSourceKind::Function, Some("integer"));
+        assert!(package_member_sql.contains("JOIN pg_catalog.gs_package pkg ON pkg.oid = p.propackageid"));
+        assert!(package_member_sql.contains("pkg.pkgname = 'emp_pkg'"));
+        assert!(package_member_sql.contains("p.proname = 'get_headcount'"));
+        assert!(!package_member_sql.contains("p.proname = 'emp_pkg.get_headcount'"));
 
         assert_eq!(
             postgres_function_object_source_sql_without_prokind("public", "recalc_score", true),

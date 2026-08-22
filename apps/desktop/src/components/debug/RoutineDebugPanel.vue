@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
+import { computed, nextTick, onActivated, onDeactivated, onMounted, onUnmounted, ref, watch } from "vue";
 import { AlertCircle, Bug, CheckCircle2, CircleDot, Copy, CornerDownRight, CornerUpLeft, ExternalLink, Loader2, Play, RefreshCw, RotateCcw, Search, Square, StepForward, TerminalSquare, Trash2, X } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
 import { Splitpanes, Pane } from "splitpanes";
@@ -28,6 +28,7 @@ const queryStore = useQueryStore();
 const connectionStore = useConnectionStore();
 
 const props = defineProps<{
+  tabId?: string;
   connectionId: string;
   database: string;
   databaseType?: DatabaseType;
@@ -77,6 +78,7 @@ const splitpanesSize = ref(54);
 let sessionToken = 0;
 
 const resolvedDatabaseType = computed(() => props.databaseType ?? (props.connectionId ? effectiveDatabaseTypeForConnection(connectionStore.getConfig(props.connectionId)) : undefined));
+const debugTabExists = computed(() => !props.tabId || queryStore.tabs.some((tab) => tab.id === props.tabId));
 
 const targetLabel = computed(() => {
   const prefix = props.schema ? `${props.schema}.` : "";
@@ -173,7 +175,10 @@ async function startSession() {
       signature: props.signature,
       callSql: callSqlToUse,
     });
-    if (currentToken !== sessionToken) return;
+    if (currentToken !== sessionToken || !debugTabExists.value) {
+      await api.opengaussDebugStop(started.sessionId).catch(() => undefined);
+      return;
+    }
 
     sessionId.value = started.sessionId;
     position.value = started.position;
@@ -369,6 +374,14 @@ async function stopSession() {
   if (id) {
     await api.opengaussDebugStop(id).catch(() => undefined);
   }
+}
+
+function attachKeyboardShortcuts() {
+  window.addEventListener("keydown", handleKeydown);
+}
+
+function detachKeyboardShortcuts() {
+  window.removeEventListener("keydown", handleKeydown);
 }
 
 async function restartSession() {
@@ -670,13 +683,24 @@ function handleKeydown(event: KeyboardEvent) {
   }
 }
 
+watch(debugTabExists, (exists) => {
+  if (!exists) {
+    sessionToken++;
+    void stopSession();
+  }
+});
+
 onMounted(() => {
-  window.addEventListener("keydown", handleKeydown);
+  attachKeyboardShortcuts();
   void startSession();
 });
 
+onActivated(attachKeyboardShortcuts);
+onDeactivated(detachKeyboardShortcuts);
+
 onUnmounted(() => {
-  window.removeEventListener("keydown", handleKeydown);
+  sessionToken++;
+  detachKeyboardShortcuts();
   if (sessionId.value) {
     void api.opengaussDebugStop(sessionId.value).catch(() => undefined);
   }
