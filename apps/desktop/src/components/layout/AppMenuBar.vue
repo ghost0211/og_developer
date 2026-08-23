@@ -36,7 +36,6 @@ import {
   RotateCcw,
   Scissors,
   Search,
-  Settings,
   ShieldCheck,
   Sparkles,
   SunMoon,
@@ -430,19 +429,10 @@ const shortcutClass = "ml-auto pl-5 text-[10px] font-mono text-muted-foreground/
       </DropdownMenuContent>
     </DropdownMenu>
 
-    <!-- 8. 设置 (Settings) -->
-    <DropdownMenu>
-      <DropdownMenuTrigger as-child>
-        <button type="button" :class="menuTriggerClass" role="menuitem">{{ t("menus.settings") }}</button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" class="w-56">
-        <DropdownMenuItem :class="menuItemClass" @select="emit('open-settings')">
-          <Settings :class="menuIconClass" />
-          <span>{{ t("settings.title") }}</span>
-          <span :class="shortcutClass">{{ shortcutLabel("openSettings") }}</span>
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <!-- 8. 设置 (Settings) - 直接点击打开设置对话框 -->
+    <button type="button" :class="menuTriggerClass" role="menuitem" :title="t('settings.title')" @click="emit('open-settings')">
+      {{ t("menus.settings") }}
+    </button>
 
     <!-- 9. 帮助 (Help) -->
     <DropdownMenu>

@@ -155,6 +155,13 @@ const showQueryEditorObjectSourceDialog = ref(false);
 const settingsReturnSurface = ref<"query" | "welcome">("welcome");
 const showQuickOpen = ref(false);
 const projectStore = useProjectStore();
+watch(
+  [() => projectStore.activeProject.value?.connectionId, () => connectionStore.connections.map((connection) => connection.id).join(",")],
+  ([connectionId]) => {
+    if (connectionId && connectionStore.getConfig(connectionId)) connectionStore.activeConnectionId = connectionId;
+  },
+  { immediate: true },
+);
 const projectDialog = ref<{ open: boolean; mode: "create" | "open" }>({ open: false, mode: "create" });
 const menuSearchDialog = ref<{ open: boolean; mode: MenuSearchMode }>({ open: false, mode: "files" });
 const sessionsDialogOpen = ref(false);
@@ -1647,14 +1654,11 @@ function onMenuSelectProject(projectId: string) {
   toast(t("menus.projectActivated"), 2000);
 }
 
-async function onCreateProject(name: string, path: string, connectionId?: string) {
-  try {
-    await api.ensureDirectory(`${path.replace(/[\\/]+$/, "")}/sql`);
-  } catch (e: any) {
-    toast(e?.message || String(e), 5000);
-    return;
-  }
-  projectStore.addProject(name, path, connectionId);
+function onCreateProject(name: string, path: string, connectionId?: string, details?: { description?: string }) {
+  projectStore.addProject(name, path, {
+    connectionId,
+    description: details?.description,
+  });
   if (connectionId) connectionStore.activeConnectionId = connectionId;
   toast(t("menus.projectActivated"), 2000);
 }

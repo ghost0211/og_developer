@@ -24,7 +24,7 @@ describe("AppMenuBar", () => {
   });
 
   it("routes settings through the standalone settings action", () => {
-    expect(menuSource).toContain("@select=\"emit('open-settings')\"");
+    expect(menuSource).toContain("@click=\"emit('open-settings')\"");
     expect(menuSource).not.toContain("settings-page");
   });
 
