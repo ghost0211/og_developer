@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { Activity, AlertTriangle, ArrowDown, ArrowUp, Ban, CheckCircle2, Clock, Copy, ExternalLink, Layers, Loader2, Lock, Play, RefreshCcw, Search, ShieldAlert, Trash2, X } from "@lucide/vue";
+import { Activity, AlertTriangle, ArrowDown, ArrowUp, Ban, CheckCircle2, Clock, Copy, ExternalLink, Info, Layers, Loader2, Lock, Play, RefreshCcw, Search, ShieldAlert, Trash2, X } from "@lucide/vue";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { useConnectionStore } from "@/stores/connectionStore";
 import { useQueryStore } from "@/stores/queryStore";
 import { useToast } from "@/composables/useToast";
+import { copyToClipboard } from "@/lib/common/clipboard";
 import type { ConnectionConfig } from "@/types/database";
 import * as api from "@/lib/backend/api";
 import { executeWithProductionSqlGuard } from "@/lib/database/productionExecutionGuard";
@@ -71,6 +72,32 @@ const previewText = ref<string | null>(null);
 
 // Supports blocking/locks tab
 const supportsLocks = computed(() => !!driver.value?.blockingLocksSql || !!driver.value?.locksSql);
+
+// Privilege and visibility detection for openGauss / PostgreSQL
+const currentDbUser = computed(() => props.connection.username?.trim() || "CURRENT_USER");
+const isPostgresOrOpenGauss = computed(() => {
+  const t = props.connection.db_type;
+  return t === "opengauss" || t === "gaussdb" || t === "postgres" || t === "kingbase";
+});
+
+const isOnlyOwnSession = computed(() => {
+  if (rows.value.length === 0) return false;
+  const otherRows = rows.value.filter((r) => !isOwnSession(r));
+  return otherRows.length === 0;
+});
+
+const grantCommand = computed(() => {
+  const user = currentDbUser.value;
+  if (props.connection.db_type === "opengauss" || props.connection.db_type === "gaussdb") {
+    return `GRANT monadmin TO ${user};`;
+  }
+  return `GRANT pg_read_all_stats TO ${user};`;
+});
+
+async function copyGrantCommand() {
+  await copyToClipboard(grantCommand.value);
+  toast(`已复制授权 SQL: ${grantCommand.value}`, 2000);
+}
 
 // Formatted duration helper
 function formatDuration(seconds: number | string | null | undefined): string {
@@ -270,7 +297,7 @@ function openPreview(value: string | number | null) {
 async function copyPreview() {
   if (previewText.value === null) return;
   try {
-    await navigator.clipboard.writeText(previewText.value);
+    await copyToClipboard(previewText.value);
     toast(t("processList.copied", "已复制"), 1500);
   } catch (error: any) {
     toast(error?.message || String(error), 3000);
@@ -493,6 +520,20 @@ onBeforeUnmount(stopTimer);
     <div v-if="loadError" class="border-b bg-destructive/10 px-3 py-1.5 text-xs text-destructive flex items-center justify-between">
       <span>{{ loadError }}</span>
       <Button variant="ghost" size="sm" class="h-5 w-5 p-0" @click="loadError = ''"><X class="h-3 w-3" /></Button>
+    </div>
+
+    <!-- Privilege Notice Banner (When ordinary user only sees own session) -->
+    <div v-if="isPostgresOrOpenGauss && isOnlyOwnSession && !loading" class="flex items-center justify-between border-b bg-amber-500/10 border-amber-500/20 px-3 py-1.5 text-xs text-amber-800 dark:text-amber-300">
+      <div class="flex items-center gap-2">
+        <Info class="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+        <span>
+          当前用户 <strong>{{ currentDbUser }}</strong> 仅能查看自身会话。openGauss 安全策略要求 <strong>monadmin</strong>（监控管理员）或 <strong>sysadmin</strong> 角色方可查看全库所有用户的进程与 SQL。
+        </span>
+      </div>
+      <Button variant="outline" size="sm" class="h-6 gap-1 px-2 text-[11px] border-amber-500/40 hover:bg-amber-500/20 shrink-0" @click="copyGrantCommand">
+        <Copy class="h-3 w-3" />
+        <span>复制授权 SQL ({{ props.connection.db_type === "opengauss" || props.connection.db_type === "gaussdb" ? "GRANT monadmin" : "GRANT pg_read_all_stats" }})</span>
+      </Button>
     </div>
 
     <!-- Main Content Area: Tab 1 - Sessions -->
@@ -888,7 +929,10 @@ onBeforeUnmount(stopTimer);
         <DialogHeader>
           <DialogTitle>{{ t("processList.previewTitle", "SQL 语句") }}</DialogTitle>
         </DialogHeader>
-        <pre class="max-h-[60vh] overflow-auto whitespace-pre-wrap break-words rounded-md border bg-muted/30 p-3 font-mono text-xs">{{ previewText }}</pre>
+        <pre class="max-h-[60vh] overflow-auto whitespace-pre-wrap break-words rounded-md border bg-muted/30 p-3 font-mono text-xs leading-relaxed">{{ previewText }}</pre>
+        <div class="text-[11px] text-muted-foreground/80 bg-muted/40 p-2 rounded border border-border/50">
+          💡 <strong>说明</strong>：在 openGauss / PostgreSQL 中，活动会话的 SQL 记录长度受服务端参数 <code>track_activity_query_size</code> 控制。若语句较长被服务端截断，管理员可通过 <code>ALTER SYSTEM SET track_activity_query_size = 4096;</code>（重启生效）增大记录长度。
+        </div>
         <DialogFooter>
           <Button variant="outline" class="gap-1.5" @click="copyPreview">
             <Copy class="h-3.5 w-3.5" />

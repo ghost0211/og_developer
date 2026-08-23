@@ -6,7 +6,36 @@ import { canReloadUnavailableDataTab } from "@/lib/table/tableDataRefresh";
 import { isQueryExecutionErrorResult } from "@/lib/query/queryResultError";
 import type { CSSProperties } from "vue";
 import { useI18n } from "vue-i18n";
-import { Check, Columns3Cog, EyeOff, Loader2, Search, TableProperties, ChevronDown, ChevronUp, Inbox, RefreshCcw, Wrench, Toolbox, Database, Download, Upload, X, Pin, Rows3, SquareDashed, Minus, Plus, ShieldAlert, AlignLeft, AlignRight, PanelsTopLeft } from "@lucide/vue";
+import {
+  Check,
+  Columns2,
+  Columns3Cog,
+  EyeOff,
+  LayoutGrid,
+  Loader2,
+  Rows2,
+  Search,
+  TableProperties,
+  ChevronDown,
+  ChevronUp,
+  Inbox,
+  RefreshCcw,
+  Wrench,
+  Toolbox,
+  Database,
+  Download,
+  Upload,
+  X,
+  Pin,
+  Rows3,
+  SquareDashed,
+  Minus,
+  Plus,
+  ShieldAlert,
+  AlignLeft,
+  AlignRight,
+  PanelsTopLeft,
+} from "@lucide/vue";
 import { Splitpanes, Pane } from "splitpanes";
 import "splitpanes/dist/splitpanes.css";
 import { Button } from "@/components/ui/button";
@@ -75,7 +104,7 @@ const ExplainPlanViewer = defineAsyncComponent(() => import("@/components/explai
 const QueryChart = defineAsyncComponent(() => import("@/components/chart/QueryChart.vue"));
 import { useQueryStore } from "@/stores/queryStore";
 import { useConnectionStore } from "@/stores/connectionStore";
-import { TABLE_FONT_SIZE_MAX, TABLE_FONT_SIZE_MIN, useSettingsStore, type DataGridSearchMode, type ResultRunDisplayMode } from "@/stores/settingsStore";
+import { TABLE_FONT_SIZE_MAX, TABLE_FONT_SIZE_MIN, useSettingsStore, type DataGridSearchMode, type MultiResultSplitMode, type ResultRunDisplayMode } from "@/stores/settingsStore";
 import { useToast } from "@/composables/useToast";
 import { isTauriRuntime } from "@/lib/backend/tauriRuntime";
 import { canCancelQueryExecution, queryExecutionLabelKey } from "@/lib/sql/queryExecutionState";
@@ -272,6 +301,10 @@ function setResultRunDisplayMode(value: ResultRunDisplayMode) {
   settingsStore.updateEditorSettings({ resultRunDisplayMode: value });
 }
 
+function setMultiResultSplitMode(value: MultiResultSplitMode) {
+  settingsStore.updateEditorSettings({ multiResultSplitMode: value });
+}
+
 function setColumnWidthDensity(value: "compact" | "standard" | "comfortable") {
   settingsStore.updateEditorSettings({ columnWidthDensity: value });
 }
@@ -363,6 +396,7 @@ const hasQueryOutput = computed(
 );
 const visibleResultItems = computed(() => tabularResultItems(props.activeTab.results ?? (props.activeTab.result ? [props.activeTab.result] : undefined)));
 const tabularResults = computed(() => tabularResultItems(props.activeTab.results));
+const multiResultSplitMode = computed(() => settingsStore.editorSettings.multiResultSplitMode);
 const allResultExportSheets = computed(() =>
   tabularResults.value.map((item) => ({
     sheetName: item.label || t("tabs.resultN", { n: item.n }),
@@ -1111,6 +1145,54 @@ defineExpose({ focusSearch, refreshData, refreshQueryEditorCompletionCache, hand
                     </Button>
                   </LightTooltip>
                 </div>
+
+                <!-- Multi-result layout switcher (When multiple result sets exist) -->
+                <div v-if="visibleResultItems.length > 1" class="flex items-center gap-0.5 bg-muted/60 p-0.5 rounded border border-border/40 shrink-0 ml-1 select-none">
+                  <LightTooltip :text="'单标签视图'" :delay="150" :close-delay="0" nowrap>
+                    <button
+                      type="button"
+                      class="h-5 px-1.5 rounded text-[10px] font-medium transition-colors flex items-center gap-1"
+                      :class="multiResultSplitMode === 'tabs' ? 'bg-background text-foreground font-semibold shadow-sm' : 'text-muted-foreground hover:text-foreground'"
+                      @click="setMultiResultSplitMode('tabs')"
+                    >
+                      <PanelsTopLeft class="h-3 w-3" />
+                      <span>标签</span>
+                    </button>
+                  </LightTooltip>
+                  <LightTooltip :text="'上下横向分屏'" :delay="150" :close-delay="0" nowrap>
+                    <button
+                      type="button"
+                      class="h-5 px-1.5 rounded text-[10px] font-medium transition-colors flex items-center gap-1"
+                      :class="multiResultSplitMode === 'horizontal' ? 'bg-background text-foreground font-semibold shadow-sm' : 'text-muted-foreground hover:text-foreground'"
+                      @click="setMultiResultSplitMode('horizontal')"
+                    >
+                      <Rows2 class="h-3 w-3" />
+                      <span>上下分屏</span>
+                    </button>
+                  </LightTooltip>
+                  <LightTooltip :text="'左右纵向分屏'" :delay="150" :close-delay="0" nowrap>
+                    <button
+                      type="button"
+                      class="h-5 px-1.5 rounded text-[10px] font-medium transition-colors flex items-center gap-1"
+                      :class="multiResultSplitMode === 'vertical' ? 'bg-background text-foreground font-semibold shadow-sm' : 'text-muted-foreground hover:text-foreground'"
+                      @click="setMultiResultSplitMode('vertical')"
+                    >
+                      <Columns2 class="h-3 w-3" />
+                      <span>左右分屏</span>
+                    </button>
+                  </LightTooltip>
+                  <LightTooltip :text="'网格平铺'" :delay="150" :close-delay="0" nowrap>
+                    <button
+                      type="button"
+                      class="h-5 px-1.5 rounded text-[10px] font-medium transition-colors flex items-center gap-1"
+                      :class="multiResultSplitMode === 'grid' ? 'bg-background text-foreground font-semibold shadow-sm' : 'text-muted-foreground hover:text-foreground'"
+                      @click="setMultiResultSplitMode('grid')"
+                    >
+                      <LayoutGrid class="h-3 w-3" />
+                      <span>网格</span>
+                    </button>
+                  </LightTooltip>
+                </div>
               </template>
               <div class="ml-auto flex shrink-0 items-center gap-1">
                 <Popover v-if="activeOutputView === 'result' && activeTab.result && hasTabularResult && !activeElasticsearchJsonResponse" v-model:open="dataGridViewOptionsOpen">
@@ -1440,6 +1522,74 @@ defineExpose({ focusSearch, refreshData, refreshQueryEditorCompletionCache, hand
             <template v-else>
               <ElasticsearchJsonResponsePanel v-if="activeElasticsearchJsonResponse" class="flex-1 min-h-0" :status="activeElasticsearchJsonResponse.status" :body="activeElasticsearchJsonResponse.body" />
               <ElasticsearchJsonResponsePanel v-else-if="showElasticsearchRawJson && activeElasticsearchRawBody" class="flex-1 min-h-0" :status="200" :body="activeElasticsearchRawBody" can-show-table @show-table="showElasticsearchRawJson = false" />
+
+              <!-- Multi-Result Split: Horizontal Layout -->
+              <Splitpanes v-else-if="multiResultSplitMode === 'horizontal' && visibleResultItems.length > 1 && hasTabularResult" horizontal class="flex-1 min-h-0 w-full">
+                <Pane v-for="item in visibleResultItems" :key="`${activeTab.id}:res:h:${item.index}`" :min-size="15" class="flex flex-col min-h-0 bg-background border-b last:border-b-0">
+                  <div class="flex items-center justify-between border-b bg-muted/30 px-2.5 py-1 text-xs select-none shrink-0 font-medium">
+                    <span class="font-mono text-[11px]">{{ item.displayLabel || item.label || t("tabs.resultN", { n: item.n }) }} ({{ item.result.rows?.length ?? 0 }} 行)</span>
+                    <span v-if="item.result.execution_time_ms" class="text-[10px] text-muted-foreground font-mono">{{ item.result.execution_time_ms }}ms</span>
+                  </div>
+                  <DataGrid
+                    :key="`${activeTab.id}:grid:h:${item.index}`"
+                    class="flex-1 min-h-0"
+                    :result="item.result"
+                    :sql="item.result.sourceStatement || activeResultSql"
+                    context="results"
+                    :connection-id="activeTab.connectionId"
+                    :database="activeTab.database"
+                    :schema="activeTab.schema"
+                    :database-type="activeEffectiveDatabaseType"
+                    :on-execute-sql="async (sql: string) => emit('executeSql', sql)"
+                  />
+                </Pane>
+              </Splitpanes>
+
+              <!-- Multi-Result Split: Vertical Layout -->
+              <Splitpanes v-else-if="multiResultSplitMode === 'vertical' && visibleResultItems.length > 1 && hasTabularResult" class="flex-1 min-h-0 w-full">
+                <Pane v-for="item in visibleResultItems" :key="`${activeTab.id}:res:v:${item.index}`" :min-size="15" class="flex flex-col min-h-0 bg-background border-r last:border-r-0">
+                  <div class="flex items-center justify-between border-b bg-muted/30 px-2.5 py-1 text-xs select-none shrink-0 font-medium">
+                    <span class="font-mono text-[11px] truncate" :title="item.displayLabel || item.label || t('tabs.resultN', { n: item.n })">{{ item.displayLabel || item.label || t("tabs.resultN", { n: item.n }) }} ({{ item.result.rows?.length ?? 0 }} 行)</span>
+                    <span v-if="item.result.execution_time_ms" class="text-[10px] text-muted-foreground font-mono ml-2">{{ item.result.execution_time_ms }}ms</span>
+                  </div>
+                  <DataGrid
+                    :key="`${activeTab.id}:grid:v:${item.index}`"
+                    class="flex-1 min-h-0"
+                    :result="item.result"
+                    :sql="item.result.sourceStatement || activeResultSql"
+                    context="results"
+                    :connection-id="activeTab.connectionId"
+                    :database="activeTab.database"
+                    :schema="activeTab.schema"
+                    :database-type="activeEffectiveDatabaseType"
+                    :on-execute-sql="async (sql: string) => emit('executeSql', sql)"
+                  />
+                </Pane>
+              </Splitpanes>
+
+              <!-- Multi-Result Split: 2x2 Grid Layout -->
+              <div v-else-if="multiResultSplitMode === 'grid' && visibleResultItems.length > 1 && hasTabularResult" class="grid grid-cols-2 grid-rows-2 flex-1 min-h-0 w-full gap-1 overflow-y-auto p-1 bg-muted/20">
+                <div v-for="item in visibleResultItems" :key="`${activeTab.id}:res:g:${item.index}`" class="flex flex-col min-h-0 bg-background border rounded overflow-hidden shadow-sm">
+                  <div class="flex items-center justify-between border-b bg-muted/30 px-2.5 py-1 text-xs select-none shrink-0 font-medium">
+                    <span class="font-mono text-[11px] truncate" :title="item.displayLabel || item.label || t('tabs.resultN', { n: item.n })">{{ item.displayLabel || item.label || t("tabs.resultN", { n: item.n }) }} ({{ item.result.rows?.length ?? 0 }} 行)</span>
+                    <span v-if="item.result.execution_time_ms" class="text-[10px] text-muted-foreground font-mono ml-2">{{ item.result.execution_time_ms }}ms</span>
+                  </div>
+                  <DataGrid
+                    :key="`${activeTab.id}:grid:g:${item.index}`"
+                    class="flex-1 min-h-0"
+                    :result="item.result"
+                    :sql="item.result.sourceStatement || activeResultSql"
+                    context="results"
+                    :connection-id="activeTab.connectionId"
+                    :database="activeTab.database"
+                    :schema="activeTab.schema"
+                    :database-type="activeEffectiveDatabaseType"
+                    :on-execute-sql="async (sql: string) => emit('executeSql', sql)"
+                  />
+                </div>
+              </div>
+
+              <!-- Standard Single Tab DataGrid View -->
               <DataGrid
                 v-else-if="activeTab.result && hasTabularResult"
                 ref="dataGridRef"

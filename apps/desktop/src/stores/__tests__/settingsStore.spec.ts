@@ -164,6 +164,14 @@ describe("normalizeEditorSettings", () => {
     expect(normalizeEditorSettings({ resultRunDisplayMode: "invalid" as any }).resultRunDisplayMode).toBe("tabs");
   });
 
+  it("normalizes and preserves the multi-result split mode", () => {
+    expect(normalizeEditorSettings({}).multiResultSplitMode).toBe("tabs");
+    expect(normalizeEditorSettings({ multiResultSplitMode: "horizontal" }).multiResultSplitMode).toBe("horizontal");
+    expect(normalizeEditorSettings({ multiResultSplitMode: "vertical" }).multiResultSplitMode).toBe("vertical");
+    expect(normalizeEditorSettings({ multiResultSplitMode: "grid" }).multiResultSplitMode).toBe("grid");
+    expect(normalizeEditorSettings({ multiResultSplitMode: "invalid" as any }).multiResultSplitMode).toBe("tabs");
+  });
+
   it("defaults persistent data grid view options off and preserves enabled values", () => {
     const defaults = normalizeEditorSettings({});
     expect(defaults.dataGridMultiRowTranspose).toBe(false);
@@ -386,6 +394,19 @@ describe("settingsStore sidebar connection sort persistence", () => {
 
     expect(store.editorSettings.resultRunDisplayMode).toBe("list");
     expect(saveEditorSettings).toHaveBeenCalledWith(expect.objectContaining({ resultRunDisplayMode: "list" }));
+    expect(isProxy(saveEditorSettings.mock.calls[0][0])).toBe(false);
+  });
+
+  it("persists the selected multi-result split mode", async () => {
+    const saveEditorSettings = vi.fn().mockResolvedValue(undefined);
+    vi.doMock("@/lib/backend/api", () => ({ saveEditorSettings }));
+
+    const { useSettingsStore } = await import("@/stores/settingsStore");
+    const store = useSettingsStore();
+    store.updateEditorSettings({ multiResultSplitMode: "vertical" });
+
+    expect(store.editorSettings.multiResultSplitMode).toBe("vertical");
+    expect(saveEditorSettings).toHaveBeenCalledWith(expect.objectContaining({ multiResultSplitMode: "vertical" }));
     expect(isProxy(saveEditorSettings.mock.calls[0][0])).toBe(false);
   });
 });

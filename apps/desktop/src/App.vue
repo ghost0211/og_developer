@@ -2345,7 +2345,16 @@ onUnmounted(() => {
           @search-files="openMenuSearch('files')"
           @search-metadata="openMenuSearch('metadata')"
           @search-objects="openMenuSearch('objects')"
-          @open-sessions="sessionsDialogOpen = true"
+          @open-sessions="
+            () => {
+              const targetId = connectionStore.activeConnectionId || [...connectionStore.connectedIds][0] || activeTab?.connectionId || connectionStore.connections[0]?.id;
+              if (targetId) {
+                queryStore.openProcessList(targetId);
+              } else {
+                sessionsDialogOpen = true;
+              }
+            }
+          "
           @open-transfer="dialogs.showTransferDialog.value = true"
           @open-sql-file="dialogs.showSqlFileDialog.value = true"
           @open-schema-diff="dialogs.showSchemaDiffDialog.value = true"

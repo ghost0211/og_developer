@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { RefreshCw, XCircle } from "@lucide/vue";
+import { ExternalLink, RefreshCw, XCircle } from "@lucide/vue";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/composables/useToast";
+import { useConnectionStore } from "@/stores/connectionStore";
+import { useQueryStore } from "@/stores/queryStore";
 import * as api from "@/lib/backend/api";
 
 const props = defineProps<{
@@ -18,6 +20,16 @@ const emit = defineEmits<{
 
 const { t } = useI18n();
 const { toast } = useToast();
+const connectionStore = useConnectionStore();
+const queryStore = useQueryStore();
+
+function openProcessListTab(connectionId?: string) {
+  const targetId = connectionId || connectionStore.activeConnectionId || connectionStore.connections[0]?.id;
+  if (targetId) {
+    queryStore.openProcessList(targetId);
+    dialogOpen.value = false;
+  }
+}
 
 const dialogOpen = computed({
   get: () => props.open,
@@ -102,6 +114,11 @@ onUnmounted(() => {
             <SelectItem :value="60">60s</SelectItem>
           </SelectContent>
         </Select>
+
+        <Button variant="outline" size="sm" class="ml-auto text-xs" @click="openProcessListTab()">
+          <ExternalLink class="mr-1 h-3.5 w-3.5" />
+          <span>在标签页中打开完整监控</span>
+        </Button>
       </div>
 
       <div class="max-h-[420px] overflow-auto rounded-md border">

@@ -38,6 +38,15 @@ vi.mock("@lucide/vue", async () => {
     Pencil: icon,
     Plus: icon,
     Trash2: icon,
+    FileText: icon,
+    FileCode: icon,
+    FolderTree: icon,
+    Binary: icon,
+    Download: icon,
+    ImageIcon: icon,
+    KeyRound: icon,
+    MapPin: icon,
+    WrapText: icon,
   };
 });
 

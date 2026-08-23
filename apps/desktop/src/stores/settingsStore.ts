@@ -356,6 +356,8 @@ const DATA_GRID_SEARCH_MODES = ["filter", "highlight"] as const;
 export type DataGridSearchMode = (typeof DATA_GRID_SEARCH_MODES)[number];
 const RESULT_RUN_DISPLAY_MODES = ["tabs", "list"] as const;
 export type ResultRunDisplayMode = (typeof RESULT_RUN_DISPLAY_MODES)[number];
+const MULTI_RESULT_SPLIT_MODES = ["tabs", "horizontal", "vertical", "grid"] as const;
+export type MultiResultSplitMode = (typeof MULTI_RESULT_SPLIT_MODES)[number];
 export const TABLE_FONT_SIZE_MIN = 8;
 export const TABLE_FONT_SIZE_MAX = 16;
 export const TABLE_FONT_SIZE_DEFAULT = 13;
@@ -478,6 +480,7 @@ export interface EditorSettings {
   dataGridCopyExtractor: DataGridCopyPreference;
   dataGridExtractorOptions: DataGridExtractorOptions;
   resultRunDisplayMode: ResultRunDisplayMode;
+  multiResultSplitMode: MultiResultSplitMode;
   dataGridAutoTransposeSingleRow: boolean;
   dataGridMultiRowTranspose: boolean;
   dataGridHideNullColumns: boolean;
@@ -640,6 +643,7 @@ export const DEFAULT_EDITOR_SETTINGS: EditorSettings = {
   dataGridCopyExtractor: "smart",
   dataGridExtractorOptions: normalizeDataGridExtractorOptions(DEFAULT_DATA_GRID_EXTRACTOR_OPTIONS),
   resultRunDisplayMode: "tabs",
+  multiResultSplitMode: "tabs",
   dataGridAutoTransposeSingleRow: false,
   dataGridMultiRowTranspose: false,
   dataGridHideNullColumns: false,
@@ -740,6 +744,10 @@ function normalizeDataGridSearchMode(value: unknown): DataGridSearchMode {
 
 function normalizeResultRunDisplayMode(value: unknown): ResultRunDisplayMode {
   return RESULT_RUN_DISPLAY_MODES.includes(value as ResultRunDisplayMode) ? (value as ResultRunDisplayMode) : DEFAULT_EDITOR_SETTINGS.resultRunDisplayMode;
+}
+
+function normalizeMultiResultSplitMode(value: unknown): MultiResultSplitMode {
+  return MULTI_RESULT_SPLIT_MODES.includes(value as MultiResultSplitMode) ? (value as MultiResultSplitMode) : DEFAULT_EDITOR_SETTINGS.multiResultSplitMode;
 }
 
 function normalizeTableFontSize(value: unknown): number {
@@ -941,6 +949,7 @@ export function normalizeEditorSettings(settings: Partial<EditorSettings>, exist
     dataGridCopyExtractor: normalizeDataGridCopyPreference(settings.dataGridCopyExtractor),
     dataGridExtractorOptions: normalizeDataGridExtractorOptions(settings.dataGridExtractorOptions),
     resultRunDisplayMode: normalizeResultRunDisplayMode(settings.resultRunDisplayMode),
+    multiResultSplitMode: normalizeMultiResultSplitMode(settings.multiResultSplitMode),
     dataGridAutoTransposeSingleRow: settings.dataGridAutoTransposeSingleRow === true,
     dataGridMultiRowTranspose: settings.dataGridMultiRowTranspose === true,
     dataGridHideNullColumns: settings.dataGridHideNullColumns === true,
@@ -1405,6 +1414,7 @@ export const useSettingsStore = defineStore("settings", () => {
     if (partial.dataGridCopyExtractor !== undefined) editorSettings.value.dataGridCopyExtractor = normalizeDataGridCopyPreference(partial.dataGridCopyExtractor);
     if (partial.dataGridExtractorOptions !== undefined) editorSettings.value.dataGridExtractorOptions = normalizeDataGridExtractorOptions(partial.dataGridExtractorOptions);
     if (partial.resultRunDisplayMode !== undefined) editorSettings.value.resultRunDisplayMode = normalizeResultRunDisplayMode(partial.resultRunDisplayMode);
+    if (partial.multiResultSplitMode !== undefined) editorSettings.value.multiResultSplitMode = normalizeMultiResultSplitMode(partial.multiResultSplitMode);
     if (partial.dataGridAutoTransposeSingleRow !== undefined) editorSettings.value.dataGridAutoTransposeSingleRow = partial.dataGridAutoTransposeSingleRow === true;
     if (partial.dataGridMultiRowTranspose !== undefined) editorSettings.value.dataGridMultiRowTranspose = partial.dataGridMultiRowTranspose === true;
     if (partial.dataGridHideNullColumns !== undefined) editorSettings.value.dataGridHideNullColumns = partial.dataGridHideNullColumns === true;
