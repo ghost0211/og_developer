@@ -249,7 +249,7 @@ watch(
   <Dialog v-model:open="dialogOpen">
     <DialogContent class="sm:max-w-[780px] h-[82vh] max-h-[86vh] flex flex-col p-0 gap-0 overflow-hidden border bg-background text-foreground shadow-2xl">
       <!-- Top Dialog Header -->
-      <DialogHeader class="px-4 py-2.5 border-b bg-muted/30 flex flex-row items-center justify-between space-y-0 shrink-0 select-none">
+      <DialogHeader class="px-4 py-2.5 pr-12 border-b bg-muted/30 flex flex-row items-center justify-between space-y-0 shrink-0 select-none">
         <DialogTitle class="flex items-center gap-2 text-sm font-semibold">
           <FolderOpen class="h-4 w-4 text-primary" />
           <span>{{ t("projectHub.title") }}</span>
