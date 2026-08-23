@@ -127,6 +127,7 @@ export default withEnglishFallback({
     title: "项目工作区管理",
     projectCount: "共 {count} 个项目",
     newProject: "新建项目",
+    alreadyCreating: "当前已经处于新建项目状态",
     searchPlaceholder: "搜索项目...",
     noProjects: "暂无项目",
     current: "当前",

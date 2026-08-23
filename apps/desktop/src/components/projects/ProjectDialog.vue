@@ -344,7 +344,7 @@ watch(
         <!-- Left Column: Projects List -->
         <div class="w-64 border-r bg-muted/15 flex flex-col min-h-0 shrink-0">
           <div class="p-2 border-b bg-muted/20 flex items-center justify-between gap-1 shrink-0 select-none">
-            <Button size="sm" class="h-7 w-full gap-1 text-xs" @click="startCreateMode">
+            <Button size="sm" class="h-7 w-full gap-1 text-xs" :disabled="viewMode === 'create'" :title="viewMode === 'create' ? t('projectHub.alreadyCreating') : undefined" @click="startCreateMode">
               <Plus class="h-3.5 w-3.5" />
               <span>{{ t("projectHub.newProject") }}</span>
             </Button>

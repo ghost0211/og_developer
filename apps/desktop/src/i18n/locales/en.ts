@@ -124,6 +124,7 @@ export default {
     title: "Project Hub",
     projectCount: "{count} projects",
     newProject: "New Project",
+    alreadyCreating: "You are already creating a project",
     searchPlaceholder: "Search projects...",
     noProjects: "No projects",
     current: "Current",
