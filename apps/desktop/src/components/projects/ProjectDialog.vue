@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { Check, ExternalLink, FolderOpen, Plus, Search, Trash2 } from "@lucide/vue";
+import { Check, ChevronUp, ExternalLink, FolderOpen, Plus, RefreshCw, Search, Trash2 } from "@lucide/vue";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -56,6 +56,19 @@ const editPath = ref("");
 const editDescription = ref("");
 const editConnectionId = ref<string | undefined>(undefined);
 
+// Web directory picker state. Tauri uses the native picker; web uses the server-side directory API.
+const webDirectoryPickerTarget = ref<"create" | "edit" | null>(null);
+const webDirectoryEntries = ref<string[]>([]);
+const webDirectoryLoading = ref(false);
+const webDirectoryError = ref("");
+const webDirectoryPath = computed({
+  get: () => (webDirectoryPickerTarget.value === "edit" ? editPath.value : createPath.value),
+  set: (value: string) => {
+    if (webDirectoryPickerTarget.value === "edit") editPath.value = value;
+    else createPath.value = value;
+  },
+});
+
 // Filtered projects
 const filteredProjects = computed(() => {
   const q = searchProjectQuery.value.trim().toLowerCase();
@@ -94,11 +107,78 @@ function selectProject(proj: SqlProject) {
 
 function startCreateMode() {
   viewMode.value = "create";
+  selectedProjectId.value = null;
+  webDirectoryPickerTarget.value = null;
+  webDirectoryError.value = "";
   createName.value = "";
   createPath.value = projectStore.defaultSearchRoot() ?? "";
   createDescription.value = "";
   createConnectionId.value = connectionStore.activeConnectionId || undefined;
   createInitFolders.value = true;
+}
+
+function parentDirectory(value: string): string {
+  const normalized = normalizeProjectPath(value);
+  if (!normalized || normalized === "/") return "/";
+  const index = Math.max(normalized.lastIndexOf("/"), normalized.lastIndexOf("\\"));
+  if (index < 0) return "/";
+  if (index === 0) return "/";
+  if (index === 2 && /^[A-Za-z]:[\\/]/.test(normalized)) return normalized.slice(0, 3);
+  return normalized.slice(0, index) || "/";
+}
+
+function directoryName(value: string): string {
+  const normalized = normalizeProjectPath(value);
+  return normalized.split(/[\\/]/).filter(Boolean).pop() || normalized || "/";
+}
+
+async function refreshWebDirectoryPicker() {
+  if (!webDirectoryPickerTarget.value) return;
+  const path = normalizeProjectPath(webDirectoryPath.value) || "/";
+  webDirectoryLoading.value = true;
+  webDirectoryError.value = "";
+  try {
+    webDirectoryEntries.value = await api.listDirectories(path);
+  } catch (error: any) {
+    webDirectoryEntries.value = [];
+    webDirectoryError.value = error?.message || String(error);
+  } finally {
+    webDirectoryLoading.value = false;
+  }
+}
+
+async function openWebDirectoryPicker(target: "create" | "edit") {
+  if (webDirectoryPickerTarget.value === target) {
+    webDirectoryPickerTarget.value = null;
+    webDirectoryError.value = "";
+    return;
+  }
+  webDirectoryPickerTarget.value = target;
+  webDirectoryError.value = "";
+  await refreshWebDirectoryPicker();
+}
+
+function openCreateDirectoryPicker() {
+  if (isDesktop) void pickCreateDirectory();
+  else void openWebDirectoryPicker("create");
+}
+
+function openEditDirectoryPicker() {
+  if (isDesktop) void pickEditDirectory();
+  else void openWebDirectoryPicker("edit");
+}
+
+async function navigateWebDirectory(path: string) {
+  webDirectoryPath.value = normalizeProjectPath(path);
+  await refreshWebDirectoryPicker();
+}
+
+function useWebDirectory() {
+  const path = normalizeProjectPath(webDirectoryPath.value) || "/";
+  webDirectoryPath.value = path;
+  if (webDirectoryPickerTarget.value === "create" && !createName.value.trim()) createName.value = directoryName(path);
+  webDirectoryPickerTarget.value = null;
+  webDirectoryError.value = "";
 }
 
 // Desktop Directory Pickers
@@ -331,10 +411,28 @@ watch(
               <Label class="text-xs font-semibold">{{ t("projectHub.pathRequired") }}</Label>
               <div class="flex items-center gap-2">
                 <Input v-model="createPath" :placeholder="t('projectHub.pathPlaceholder')" class="h-8 text-xs font-mono flex-1" />
-                <Button v-if="isDesktop" type="button" variant="outline" size="sm" class="h-8 gap-1 px-2.5 text-xs shrink-0" @click="pickCreateDirectory">
+                <Button type="button" variant="outline" size="sm" class="h-8 gap-1 px-2.5 text-xs shrink-0" @click="openCreateDirectoryPicker">
                   <FolderOpen class="h-3.5 w-3.5" />
                   <span>{{ t("projectHub.browse") }}</span>
                 </Button>
+              </div>
+              <div v-if="!isDesktop && webDirectoryPickerTarget === 'create'" class="space-y-2 rounded-md border bg-muted/20 p-2">
+                <div class="flex items-center gap-1.5">
+                  <span class="min-w-0 flex-1 truncate font-mono text-[10px] text-muted-foreground" :title="webDirectoryPath || '/'">{{ webDirectoryPath || "/" }}</span>
+                  <Button type="button" variant="outline" size="sm" class="h-7 shrink-0 px-2 text-[10px]" @click="navigateWebDirectory(parentDirectory(webDirectoryPath))"> <ChevronUp class="mr-1 h-3 w-3" />{{ t("projectHub.parentDirectory") }} </Button>
+                  <Button type="button" variant="outline" size="icon-sm" class="h-7 w-7 shrink-0" :disabled="webDirectoryLoading" :title="t('projectHub.refreshDirectories')" @click="refreshWebDirectoryPicker">
+                    <RefreshCw class="h-3 w-3" :class="{ 'animate-spin': webDirectoryLoading }" />
+                  </Button>
+                  <Button type="button" size="sm" class="h-7 shrink-0 px-2 text-[10px]" @click="useWebDirectory">{{ t("projectHub.useDirectory") }}</Button>
+                </div>
+                <p v-if="webDirectoryError" class="text-[10px] text-destructive">{{ t("projectHub.directoryListFailed", { message: webDirectoryError }) }}</p>
+                <p v-else-if="webDirectoryLoading" class="text-[10px] text-muted-foreground">{{ t("projectHub.loadingDirectories") }}</p>
+                <div v-else-if="webDirectoryEntries.length" class="flex max-h-28 flex-wrap gap-1 overflow-y-auto">
+                  <button v-for="entry in webDirectoryEntries" :key="entry" type="button" class="max-w-full truncate rounded-sm border bg-background px-2 py-1 text-left text-[10px] hover:bg-muted" :title="entry" @click="navigateWebDirectory(entry)">
+                    {{ directoryName(entry) }}
+                  </button>
+                </div>
+                <p v-else class="text-[10px] text-muted-foreground">{{ t("projectHub.noSubdirectories") }}</p>
               </div>
             </div>
 
@@ -406,7 +504,7 @@ watch(
               <Label class="text-xs font-semibold">{{ t("projectHub.projectPath") }}</Label>
               <div class="flex items-center gap-2">
                 <Input v-model="editPath" class="h-8 text-xs font-mono flex-1" />
-                <Button v-if="isDesktop" type="button" variant="outline" size="sm" class="h-8 gap-1 px-2 text-xs shrink-0" @click="pickEditDirectory">
+                <Button type="button" variant="outline" size="sm" class="h-8 gap-1 px-2 text-xs shrink-0" @click="openEditDirectoryPicker">
                   <FolderOpen class="h-3.5 w-3.5" />
                   <span>{{ t("projectHub.changeDirectory") }}</span>
                 </Button>
@@ -414,6 +512,24 @@ watch(
                   <ExternalLink class="h-3.5 w-3.5" />
                   <span>{{ t("projectHub.openDirectory") }}</span>
                 </Button>
+              </div>
+              <div v-if="!isDesktop && webDirectoryPickerTarget === 'edit'" class="space-y-2 rounded-md border bg-muted/20 p-2">
+                <div class="flex items-center gap-1.5">
+                  <span class="min-w-0 flex-1 truncate font-mono text-[10px] text-muted-foreground" :title="webDirectoryPath || '/'">{{ webDirectoryPath || "/" }}</span>
+                  <Button type="button" variant="outline" size="sm" class="h-7 shrink-0 px-2 text-[10px]" @click="navigateWebDirectory(parentDirectory(webDirectoryPath))"> <ChevronUp class="mr-1 h-3 w-3" />{{ t("projectHub.parentDirectory") }} </Button>
+                  <Button type="button" variant="outline" size="icon-sm" class="h-7 w-7 shrink-0" :disabled="webDirectoryLoading" :title="t('projectHub.refreshDirectories')" @click="refreshWebDirectoryPicker">
+                    <RefreshCw class="h-3 w-3" :class="{ 'animate-spin': webDirectoryLoading }" />
+                  </Button>
+                  <Button type="button" size="sm" class="h-7 shrink-0 px-2 text-[10px]" @click="useWebDirectory">{{ t("projectHub.useDirectory") }}</Button>
+                </div>
+                <p v-if="webDirectoryError" class="text-[10px] text-destructive">{{ t("projectHub.directoryListFailed", { message: webDirectoryError }) }}</p>
+                <p v-else-if="webDirectoryLoading" class="text-[10px] text-muted-foreground">{{ t("projectHub.loadingDirectories") }}</p>
+                <div v-else-if="webDirectoryEntries.length" class="flex max-h-28 flex-wrap gap-1 overflow-y-auto">
+                  <button v-for="entry in webDirectoryEntries" :key="entry" type="button" class="max-w-full truncate rounded-sm border bg-background px-2 py-1 text-left text-[10px] hover:bg-muted" :title="entry" @click="navigateWebDirectory(entry)">
+                    {{ directoryName(entry) }}
+                  </button>
+                </div>
+                <p v-else class="text-[10px] text-muted-foreground">{{ t("projectHub.noSubdirectories") }}</p>
               </div>
             </div>
 
