@@ -5,7 +5,7 @@ const menuSource = readFileSync(new URL("../AppMenuBar.vue", import.meta.url), "
 
 describe("AppMenuBar", () => {
   it("exposes the requested top-level application menus", () => {
-    for (const key of ["file", "project", "edit", "search", "tools", "settings", "help"]) {
+    for (const key of ["file", "project", "edit", "runTransaction", "view", "search", "tools", "settings", "help"]) {
       expect(menuSource).toContain(`t("menus.${key}")`);
     }
   });
@@ -16,14 +16,22 @@ describe("AppMenuBar", () => {
     }
   });
 
-  it("has no update-check or driver-store entries", () => {
+  it("does not expose placeholder routine targets or driver-store entries", () => {
     expect(menuSource).not.toContain("check-updates");
     expect(menuSource).not.toContain("open-driver-store");
+    expect(menuSource).not.toContain("test_routine");
+    expect(menuSource).not.toContain("debug_routine");
   });
 
   it("routes settings through the standalone settings action", () => {
     expect(menuSource).toContain("@select=\"emit('open-settings')\"");
     expect(menuSource).not.toContain("settings-page");
+  });
+
+  it("exposes the safe run and transaction actions", () => {
+    for (const event of ["execute-sql", "execute-current-statement", "explain-sql", "commit-transaction", "rollback-transaction", "toggle-auto-commit", "toggle-fullscreen"]) {
+      expect(menuSource).toContain(`@select="emit('${event}'`);
+    }
   });
 
   it("keeps the moved utilities in the Tools menu", () => {

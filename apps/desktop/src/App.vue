@@ -31,7 +31,7 @@ import { useTauriEvents } from "@/composables/useTauriEvents";
 import { useCloseActionPrompt, type AppCloseAction, type AppCloseRequestOptions } from "@/composables/useCloseActionPrompt";
 import { useVisibilityChange } from "@/composables/useVisibilityChange";
 import { useScheduledDatabaseBackups } from "@/composables/useScheduledDatabaseBackups";
-import { shouldDrawDesktopWindowFrame } from "@/composables/useWindowControls";
+import { shouldDrawDesktopWindowFrame, useWindowControls } from "@/composables/useWindowControls";
 import { createOpenTabsRestorationBarrier, initializeDesktopOpenTabs, type OpenTabsRestorationBarrier } from "@/lib/app/openTabsStartup";
 import { useSaveSqlFolderSelection } from "@/composables/useSaveSqlFolderSelection";
 import "@/i18n";
@@ -51,6 +51,7 @@ import { resolveExecutableSql, resolveExecutableSqlWithBackend, type SqlExecutio
 import { uuid } from "@/lib/common/utils";
 import { isMacOS, isWindows } from "@/lib/backend/platform";
 import { isTauriRuntime } from "@/lib/backend/tauriRuntime";
+import { downloadDebugLogs } from "@/lib/backend/debugLog";
 import { openQueryResultArchiveFile } from "@/lib/query/queryResultArchiveFile";
 import { rememberExternalSqlFileTarget, resolveExternalSqlFileTarget } from "@/lib/sql/externalSqlFileTarget";
 import { externalSqlFileOpenErrorMessage, readBrowserSqlFile, sqlFileTitleFromPath } from "@/lib/sql/sqlFileOpen";
@@ -136,6 +137,7 @@ const { isDark, themeMode, applyTheme, setThemeMode } = useTheme();
 const { setupFileDrop } = useFileDrop();
 
 const isDesktop = isTauriRuntime();
+const { toggleFullscreen } = useWindowControls();
 const drawDesktopWindowFrame = shouldDrawDesktopWindowFrame(isMacOS(), isDesktop, isWindows());
 const needsAuth = ref(!isDesktop);
 const authenticated = ref(isDesktop);
@@ -306,6 +308,11 @@ function requestActiveEditorExecute() {
 function requestActiveEditorExecuteInNewResultTab() {
   if (contentAreaRef.value?.requestQueryEditorExecuteInNewResultTab?.()) return;
   void tryExecuteInNewResultTab();
+}
+
+function requestActiveEditorExecuteCurrent() {
+  if (contentAreaRef.value?.requestQueryEditorExecuteCurrent?.()) return;
+  void tryExecute();
 }
 
 const dialogs = useDialogSources();
@@ -872,6 +879,15 @@ async function handleSaveTab(tabId: string) {
   pendingSaveAndCloseTabId.value = tabId;
   pendingPrevActiveTabId.value = prevActive;
   showSaveSqlDialog.value = true;
+}
+
+function openDocs() {
+  const url = "https://docs.opengauss.org";
+  if (isTauriRuntime()) {
+    import("@tauri-apps/plugin-shell").then(({ open }) => open(url));
+  } else {
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
 }
 
 function openSaveSqlAsDialog() {
@@ -2311,9 +2327,12 @@ onUnmounted(() => {
           :has-sql-file-connections="hasSqlFileConnections"
           :has-active-tab="!!activeTab"
           :has-active-query="activeTab?.mode === 'query'"
+          :has-active-transaction="!!activeTab?.txnSessionId"
           :can-save-sql="!!activeTab && activeTab.mode === 'query' && canSaveSqlTab(activeTab)"
           :projects="projectStore.projects.value"
           :active-project-id="projectStore.activeProjectId.value"
+          :auto-commit="activeTab?.autoCommit ?? true"
+          :sidebar-open="sidebarOpen"
           @new-connection="showConnectionDialog = true"
           @new-query="newQuery"
           @open-editor-sql-file="openSqlFile"
@@ -2321,6 +2340,7 @@ onUnmounted(() => {
           @save-sql-as="openSaveSqlAsDialog()"
           @import-result-archive="importResultArchive"
           @close-active-tab="closeActiveTab"
+          @close-other-tabs="closeOtherTabs"
           @import-config="dialogs.onImportClick()"
           @export-config="dialogs.onExportClick()"
           @create-project="onMenuCreateProject"
@@ -2335,13 +2355,20 @@ onUnmounted(() => {
           @replace="dispatchEditorMenuAction('replace')"
           @format-sql="formatActiveSql"
           @compress-sql="compressActiveSql"
-          @close-other-tabs="closeOtherTabs"
-          @set-theme-mode="setThemeMode"
+          @execute-sql="requestActiveEditorExecute"
+          @execute-current-statement="requestActiveEditorExecuteCurrent"
+          @explain-sql="() => tryExplain()"
+          @commit-transaction="() => activeTab && queryStore.commitTransaction(activeTab.id)"
+          @rollback-transaction="() => activeTab && queryStore.rollbackTransaction(activeTab.id)"
+          @toggle-auto-commit="() => activeTab && queryStore.setAutoCommit(activeTab.id, !(activeTab.autoCommit ?? true))"
+          @toggle-sidebar="setSidebarOpen(!sidebarOpen)"
+          @toggle-fullscreen="toggleFullscreen"
           @toggle-ai="toggleRightSidebarPanel('ai')"
           @toggle-history="toggleRightSidebarPanel('history')"
           @toggle-sql-library="toggleRightSidebarPanel('sqlLibrary')"
           @toggle-sql-file-panel="toggleRightSidebarPanel('sqlFile')"
-          @open-settings="openSettings('appearance')"
+          @open-settings="(tab?: string) => openSettings(tab ?? 'appearance')"
+          @set-theme-mode="setThemeMode"
           @search-files="openMenuSearch('files')"
           @search-metadata="openMenuSearch('metadata')"
           @search-objects="openMenuSearch('objects')"
@@ -2359,6 +2386,10 @@ onUnmounted(() => {
           @open-sql-file="dialogs.showSqlFileDialog.value = true"
           @open-schema-diff="dialogs.showSchemaDiffDialog.value = true"
           @open-data-compare="dialogs.showDataCompareDialog.value = true"
+          @open-scheduled-backups="openSettings('backups')"
+          @open-shortcuts="openSettings('shortcuts')"
+          @open-docs="openDocs"
+          @export-debug-logs="downloadDebugLogs"
           @open-about="openAbout"
         />
 

@@ -23,9 +23,12 @@ const props = defineProps<{
   hasSqlFileConnections: boolean;
   hasActiveTab: boolean;
   hasActiveQuery: boolean;
+  hasActiveTransaction?: boolean;
   canSaveSql: boolean;
   projects: SqlProject[];
   activeProjectId?: string;
+  autoCommit?: boolean;
+  sidebarOpen?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -50,13 +53,21 @@ const emit = defineEmits<{
   replace: [];
   "format-sql": [];
   "compress-sql": [];
+  "execute-sql": [];
+  "execute-current-statement": [];
+  "explain-sql": [];
+  "commit-transaction": [];
+  "rollback-transaction": [];
+  "toggle-auto-commit": [];
+  "toggle-sidebar": [];
+  "toggle-fullscreen": [];
   "close-other-tabs": [];
   "set-theme-mode": [mode: AppThemeMode];
   "toggle-ai": [];
   "toggle-history": [];
   "toggle-sql-library": [];
   "toggle-sql-file-panel": [];
-  "open-settings": [];
+  "open-settings": [initialTab?: string];
   "search-files": [];
   "search-metadata": [];
   "search-objects": [];
@@ -65,6 +76,10 @@ const emit = defineEmits<{
   "open-sql-file": [];
   "open-schema-diff": [];
   "open-data-compare": [];
+  "open-scheduled-backups": [];
+  "open-shortcuts": [];
+  "open-docs": [];
+  "export-debug-logs": [];
   "open-about": [];
 }>();
 
@@ -203,11 +218,16 @@ const toolbarStyle = computed(() => {
         :has-connections="hasConnections"
         :has-active-tab="hasActiveTab"
         :has-active-query="hasActiveQuery"
+        :has-active-transaction="hasActiveTransaction"
         :can-save-sql="canSaveSql"
         :has-sql-file-connections="hasSqlFileConnections"
         :theme-mode="themeMode"
         :projects="projects"
         :active-project-id="activeProjectId"
+        :auto-commit="autoCommit"
+        :is-mac="isMac"
+        :sidebar-open="sidebarOpen"
+        :is-fullscreen="isFullscreen"
         @new-connection="emit('new-connection')"
         @new-query="emit('new-query')"
         @open-editor-sql-file="emit('open-editor-sql-file')"
@@ -215,6 +235,7 @@ const toolbarStyle = computed(() => {
         @save-sql-as="emit('save-sql-as')"
         @import-result-archive="emit('import-result-archive')"
         @close-active-tab="emit('close-active-tab')"
+        @close-other-tabs="emit('close-other-tabs')"
         @import-config="emit('import-config')"
         @export-config="emit('export-config')"
         @create-project="emit('create-project')"
@@ -229,12 +250,19 @@ const toolbarStyle = computed(() => {
         @replace="emit('replace')"
         @format-sql="emit('format-sql')"
         @compress-sql="emit('compress-sql')"
-        @close-other-tabs="emit('close-other-tabs')"
+        @execute-sql="emit('execute-sql')"
+        @execute-current-statement="emit('execute-current-statement')"
+        @explain-sql="emit('explain-sql')"
+        @commit-transaction="emit('commit-transaction')"
+        @rollback-transaction="emit('rollback-transaction')"
+        @toggle-auto-commit="emit('toggle-auto-commit')"
+        @toggle-sidebar="emit('toggle-sidebar')"
         @toggle-ai="emit('toggle-ai')"
         @toggle-history="emit('toggle-history')"
         @toggle-sql-library="emit('toggle-sql-library')"
         @toggle-sql-file-panel="emit('toggle-sql-file-panel')"
-        @open-settings="emit('open-settings')"
+        @toggle-fullscreen="emit('toggle-fullscreen')"
+        @open-settings="emit('open-settings', $event)"
         @set-theme-mode="emit('set-theme-mode', $event)"
         @search-files="emit('search-files')"
         @search-metadata="emit('search-metadata')"
@@ -244,6 +272,10 @@ const toolbarStyle = computed(() => {
         @open-sql-file="emit('open-sql-file')"
         @open-schema-diff="emit('open-schema-diff')"
         @open-data-compare="emit('open-data-compare')"
+        @open-scheduled-backups="emit('open-scheduled-backups')"
+        @open-shortcuts="emit('open-shortcuts')"
+        @open-docs="emit('open-docs')"
+        @export-debug-logs="emit('export-debug-logs')"
         @open-about="emit('open-about')"
       />
     </span>

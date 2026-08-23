@@ -652,6 +652,7 @@ interface RequestExecuteOptions {
   ignoreSelection?: boolean;
   bypassPicker?: boolean;
   openInNewResultTab?: boolean;
+  executeMode?: "all" | "current";
 }
 
 function emitExecutionRequest(source: SqlExecutionOverride, openInNewResultTab = false) {
@@ -673,6 +674,10 @@ function requestExecuteInNewResultTab() {
   return requestExecute({ bypassPicker: true, openInNewResultTab: true });
 }
 
+function requestExecuteCurrent() {
+  return requestExecute({ bypassPicker: true, ignoreSelection: true, executeMode: "current" });
+}
+
 function requestExecuteFromView(currentView: EditorViewType, cursorPos: number, options: RequestExecuteOptions = {}) {
   const selection = currentView.state.selection.main;
   if (!options.ignoreSelection && !selection.empty) {
@@ -680,19 +685,23 @@ function requestExecuteFromView(currentView: EditorViewType, cursorPos: number, 
     emitExecutionRequest(sqlExecutionSnapshotFromView(currentView), options.openInNewResultTab);
     return true;
   }
-  if (!supportsExecutionTargetPicker(props.databaseType)) {
-    emitExecutionRequest(sqlExecutionSnapshotFromView(currentView), options.openInNewResultTab);
-    return true;
-  }
-  // No selection → resolve the execution target, optionally via the picker.
+  // Resolve the execution target from the document so callers can explicitly
+  // request the current statement even when the editor still has a selection.
   const doc = currentView.state.doc.toString();
   const parameterOptions = sqlStatementParameterOptions();
   const candidates = buildExecutionCandidates(doc, cursorPos, props.databaseType, parameterOptions);
   if (candidates.length === 0) return true;
+  if (!supportsExecutionTargetPicker(props.databaseType)) {
+    const candidate = executionCandidateForMode(candidates, options.executeMode ?? settingsStore.editorSettings.executeMode);
+    if (!candidate) return true;
+    emitExecutionRequest(sqlExecutionSnapshotForRange(currentView, candidate), options.openInNewResultTab);
+    return true;
+  }
+  // No selection → resolve the execution target, optionally via the picker.
   // The execution shortcut keeps executing the configured target (cursor/all) directly:
   // it stays keyboard-driven and never pops the picker, which is reserved for click entry points.
   if (options.bypassPicker || !settingsStore.editorSettings.showExecutionTargetPicker || !hasMultipleExecutionTargets(doc, props.databaseType, parameterOptions)) {
-    const candidate = executionCandidateForMode(candidates, settingsStore.editorSettings.executeMode);
+    const candidate = executionCandidateForMode(candidates, options.executeMode ?? settingsStore.editorSettings.executeMode);
     if (!candidate) return true;
     emitExecutionRequest(sqlExecutionSnapshotForRange(currentView, candidate), options.openInNewResultTab);
     return true;
@@ -5200,6 +5209,7 @@ defineExpose({
   openReplace,
   scrollCursorIntoView,
   requestExecute,
+  requestExecuteCurrent,
   requestExecuteInNewResultTab,
   pasteClipboardAsSqlInCondition,
   focusStatementRange,

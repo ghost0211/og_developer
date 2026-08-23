@@ -70,13 +70,39 @@ export function useWindowControls() {
     setTimeout(updateWindowState, 50);
   }
 
+  async function toggleFullscreen() {
+    if (!isDesktop) {
+      try {
+        if (document.fullscreenElement) await document.exitFullscreen();
+        else await document.documentElement.requestFullscreen();
+      } catch {
+        // Browsers can reject fullscreen requests when they are not initiated
+        // by a user gesture; the menu remains usable after that rejection.
+      }
+      return;
+    }
+
+    const { getCurrentWindow } = await import("@tauri-apps/api/window");
+    const currentWindow = getCurrentWindow();
+    await currentWindow.setFullscreen(!(await currentWindow.isFullscreen()));
+    await updateWindowState();
+  }
+
   async function close() {
     if (!isDesktop) return;
     await api.requestAppClose();
   }
 
+  function onBrowserFullscreenChange() {
+    isFullscreen.value = Boolean(document.fullscreenElement);
+  }
+
   onMounted(async () => {
-    if (!isDesktop) return;
+    if (!isDesktop) {
+      onBrowserFullscreenChange();
+      document.addEventListener("fullscreenchange", onBrowserFullscreenChange);
+      return;
+    }
     await updateWindowState();
     const { getCurrentWindow } = await import("@tauri-apps/api/window");
     const unlistenFn = await getCurrentWindow().onResized(() => {
@@ -87,6 +113,7 @@ export function useWindowControls() {
 
   onUnmounted(() => {
     unlisten?.();
+    if (!isDesktop) document.removeEventListener("fullscreenchange", onBrowserFullscreenChange);
   });
 
   return {
@@ -97,6 +124,7 @@ export function useWindowControls() {
     isFullscreen,
     minimize,
     toggleMaximize,
+    toggleFullscreen,
     close,
   };
 }

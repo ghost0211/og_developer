@@ -947,6 +947,10 @@ function requestQueryEditorExecute() {
   return queryEditorRef.value?.requestExecute();
 }
 
+function requestQueryEditorExecuteCurrent() {
+  return queryEditorRef.value?.requestExecuteCurrent();
+}
+
 function requestQueryEditorExecuteInNewResultTab() {
   return queryEditorRef.value?.requestExecuteInNewResultTab();
 }
@@ -983,7 +987,7 @@ async function executeRedisCommand(command: string): Promise<boolean> {
   return (await redisKeyBrowserRef.value?.executeCommand?.(command)) ?? false;
 }
 
-defineExpose({ focusSearch, refreshData, refreshQueryEditorCompletionCache, handleModRTarget, requestQueryEditorExecute, requestQueryEditorExecuteInNewResultTab, pasteClipboardAsSqlInCondition, applyTableStructureChanges, insertRedisCommand, executeRedisCommand });
+defineExpose({ focusSearch, refreshData, refreshQueryEditorCompletionCache, handleModRTarget, requestQueryEditorExecute, requestQueryEditorExecuteCurrent, requestQueryEditorExecuteInNewResultTab, pasteClipboardAsSqlInCondition, applyTableStructureChanges, insertRedisCommand, executeRedisCommand });
 </script>
 
 <template>
