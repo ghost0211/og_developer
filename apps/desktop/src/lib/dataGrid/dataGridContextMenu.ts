@@ -80,9 +80,9 @@ export function createDataGridColumnContextMenuItems(options: {
   frozenColumnCount?: number;
   contextVisibleColIdx?: number;
   hasColumnSelection?: boolean;
-  labels: Record<"copyName" | "copyNames" | "details" | "copyAlterSql" | "databaseAscending" | "databaseDescending" | "localAscending" | "localDescending" | "clearSort" | "freezeToColumn" | "freezeSelectedColumns" | "unfreezeColumns", string>;
-  icons: Pick<DataGridContextMenuIcons, "copy" | "columnDetails" | "database" | "ascending" | "descending" | "clearSort">;
-  actions: { copyName: () => void; copyNames: () => void; details: () => void; copyAlterSql: () => void; sort: (direction: "asc" | "desc" | null, mode: "database" | "local") => void; freezeToColumn: () => void; freezeSelectedColumns: () => void; unfreezeColumns: () => void };
+  labels: Record<"copyName" | "copyNames" | "details" | "stats" | "copyAlterSql" | "databaseAscending" | "databaseDescending" | "localAscending" | "localDescending" | "clearSort" | "freezeToColumn" | "freezeSelectedColumns" | "unfreezeColumns", string>;
+  icons: Pick<DataGridContextMenuIcons, "copy" | "columnDetails" | "database" | "ascending" | "descending" | "clearSort"> & { columnStats?: Component };
+  actions: { copyName: () => void; copyNames: () => void; details: () => void; stats?: () => void; copyAlterSql: () => void; sort: (direction: "asc" | "desc" | null, mode: "database" | "local") => void; freezeToColumn: () => void; freezeSelectedColumns: () => void; unfreezeColumns: () => void };
   filterSubmenu: DataGridContextMenuItem;
 }): DataGridContextMenuItem[] {
   const items: DataGridContextMenuItem[] = [];
@@ -90,6 +90,7 @@ export function createDataGridColumnContextMenuItems(options: {
     items.push({ label: options.labels.copyName, action: options.actions.copyName, icon: options.icons.copy });
     items.push({ label: options.labels.copyNames, action: options.actions.copyNames, icon: options.icons.copy });
     items.push({ label: options.labels.details, action: options.actions.details, icon: options.icons.columnDetails });
+    if (options.actions.stats && options.icons.columnStats) items.push({ label: options.labels.stats, action: options.actions.stats, icon: options.icons.columnStats });
     if (options.canCopyAlterSql) items.push({ label: options.labels.copyAlterSql, action: options.actions.copyAlterSql, icon: options.icons.copy });
   }
   if (!options.contextColumn && !options.headerColumn) return items;

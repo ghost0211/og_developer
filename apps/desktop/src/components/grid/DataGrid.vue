@@ -5,6 +5,7 @@ import {
   ArrowUp,
   ArrowDown,
   ArrowUpDown,
+  BarChart3,
   ArrowUpRight,
   Upload,
   Trash2,
@@ -44,6 +45,7 @@ import {
   WandSparkles,
 } from "@lucide/vue";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
@@ -95,6 +97,7 @@ import {
   usesSyntheticRowIdKey,
 } from "@/lib/table/tableEditing";
 import { buildDataGridColumnDistinctValuesSql, buildDataGridContextFilterCondition, buildDataGridCountSql, buildHiveTablePropertiesSql, type DataGridContextFilterMode } from "@/lib/dataGrid/dataGridSql";
+import { computeDataGridColumnStats, type DataGridColumnStats } from "@/lib/dataGrid/columnStats";
 import {
   buildVisibleTransposeRows,
   averageTransposeRecordWidth,
@@ -5777,6 +5780,22 @@ function openActiveColumnDetailDialog() {
   openColumnDetailDialog(detail.colIndex);
 }
 
+const columnStatsOpen = ref(false);
+const columnStatsTarget = ref<DataGridColumnStats | null>(null);
+
+function computeAndOpenColumnStats(colIndex: number) {
+  const columnName = props.result.columns[colIndex];
+  if (!columnName) return;
+
+  columnStatsTarget.value = computeDataGridColumnStats({
+    name: columnName,
+    type: props.result.column_types?.[colIndex],
+    columnIndex: colIndex,
+    rows: props.result.rows,
+  });
+  columnStatsOpen.value = true;
+}
+
 function openRowDetailDialog(rowId: number) {
   rowDetailDialogRowId.value = rowId;
   rowDetailDialogOpen.value = true;
@@ -8163,6 +8182,7 @@ defineExpose({
   useTransaction,
   transactionActive,
   isSaving,
+  computeAndOpenColumnStats,
   onToolbarRefresh,
   onToolbarCommit,
   onToolbarRollback,
@@ -8377,6 +8397,7 @@ const gridContextMenuItems = computed<ContextMenuItem[]>(() => {
         copyName: selectedColumnNamesForCopy.value.length > 1 ? t("grid.copyColumnNamesSelected", { count: selectedColumnNamesForCopy.value.length }) : t("grid.copyColumnName"),
         copyNames: t("grid.copyColumnNames"),
         details: t("grid.openColumnDetailsDialog"),
+        stats: t("grid.openColumnStatsDialog"),
         copyAlterSql: t("grid.copyAlterColumnSql"),
         databaseAscending: t("grid.sortDatabaseAscending"),
         databaseDescending: t("grid.sortDatabaseDescending"),
@@ -8387,11 +8408,15 @@ const gridContextMenuItems = computed<ContextMenuItem[]>(() => {
         freezeSelectedColumns: t("grid.freezeSelectedColumns"),
         unfreezeColumns: t("grid.unfreezeColumns"),
       },
-      icons: { copy: Copy, columnDetails: TableProperties, database: Database, ascending: ArrowUp, descending: ArrowDown, clearSort: Eraser },
+      icons: { copy: Copy, columnDetails: TableProperties, columnStats: BarChart3, database: Database, ascending: ArrowUp, descending: ArrowDown, clearSort: Eraser },
       actions: {
         copyName: copyHeaderColumnOrSelected,
         copyNames: openCopyAllColumnNamesDialog,
         details: openContextColumnDetailDialog,
+        stats: () => {
+          const columnIndex = contextHeaderColumnIndex.value;
+          if (columnIndex !== null) computeAndOpenColumnStats(columnIndex);
+        },
         copyAlterSql: copyAlterColumnSql,
         sort: applyContextSort,
         freezeToColumn: () => {
@@ -10060,6 +10085,91 @@ const gridContextMenuItems = computed<ContextMenuItem[]>(() => {
 
     <DataGridExtractorDialog v-model:open="extractorConfigOpen" :preference="selectedCopyPreference" :options="settingsStore.editorSettings.dataGridExtractorOptions" :items="copyPreferenceMenuItems" :preview="previewWithPreference" @save="saveExtractorConfiguration" />
     <DataGridCopyColumnNamesDialog v-if="copyColumnNamesDialogMounted" v-model:open="copyColumnNamesDialogOpen" :column-names="copyColumnNamesDialogColumns" :database-type="resolvedDatabaseType" :column-comments="columnCommentMap" @copy="copyText" />
+
+    <!-- Column Statistics Dialog -->
+    <Dialog v-model:open="columnStatsOpen">
+      <DialogContent v-if="columnStatsTarget" class="sm:max-w-[560px] max-h-[85vh] flex flex-col p-0 gap-0 overflow-hidden">
+        <DialogHeader class="px-4 py-2.5 border-b bg-muted/30 flex flex-row items-center justify-between space-y-0 select-none">
+          <DialogTitle class="flex items-center gap-2 text-sm font-semibold">
+            <BarChart3 class="h-4 w-4 text-primary" />
+            <span>{{ t("grid.columnStatsTitle", { column: columnStatsTarget.name }) }}</span>
+            <Badge v-if="columnStatsTarget.type" variant="outline" class="font-mono text-xs">{{ columnStatsTarget.type }}</Badge>
+          </DialogTitle>
+        </DialogHeader>
+
+        <div class="p-4 space-y-4 overflow-y-auto text-xs">
+          <div class="text-muted-foreground">{{ t("grid.columnStatsScope", { count: columnStatsTarget.total }) }}</div>
+
+          <!-- Key Metrics Grid -->
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 select-none">
+            <div class="p-2 rounded border bg-muted/20 text-center">
+              <div class="text-muted-foreground text-[11px]">{{ t("grid.columnStatsTotalRows") }}</div>
+              <div class="font-bold text-sm font-mono mt-0.5">{{ columnStatsTarget.total }}</div>
+            </div>
+            <div class="p-2 rounded border bg-muted/20 text-center">
+              <div class="text-muted-foreground text-[11px]">{{ t("grid.columnStatsNonNull") }}</div>
+              <div class="font-bold text-sm font-mono mt-0.5 text-emerald-600 dark:text-emerald-400">{{ columnStatsTarget.nonNull }}</div>
+            </div>
+            <div class="p-2 rounded border bg-muted/20 text-center">
+              <div class="text-muted-foreground text-[11px]">{{ t("grid.columnStatsNull") }}</div>
+              <div class="font-bold text-sm font-mono mt-0.5" :class="columnStatsTarget.nullCount > 0 ? 'text-amber-500 font-bold' : ''">{{ columnStatsTarget.nullCount }}</div>
+            </div>
+            <div class="p-2 rounded border bg-muted/20 text-center">
+              <div class="text-muted-foreground text-[11px]">{{ t("grid.columnStatsDistinct") }}</div>
+              <div class="font-bold text-sm font-mono mt-0.5 text-primary">{{ columnStatsTarget.distinctCount }}</div>
+            </div>
+          </div>
+
+          <!-- Numeric Summary (if numeric) -->
+          <div v-if="columnStatsTarget.isNumeric" class="space-y-2">
+            <div class="text-xs font-semibold text-muted-foreground select-none">{{ t("grid.columnStatsNumericSummary") }}</div>
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 p-2.5 rounded border bg-muted/10 font-mono text-xs">
+              <div>
+                <span class="text-muted-foreground text-[10px] block font-sans">{{ t("grid.columnStatsMin") }}</span>
+                <span class="font-semibold">{{ columnStatsTarget.min ?? "-" }}</span>
+              </div>
+              <div>
+                <span class="text-muted-foreground text-[10px] block font-sans">{{ t("grid.columnStatsMax") }}</span>
+                <span class="font-semibold">{{ columnStatsTarget.max ?? "-" }}</span>
+              </div>
+              <div>
+                <span class="text-muted-foreground text-[10px] block font-sans">{{ t("grid.columnStatsAvg") }}</span>
+                <span class="font-semibold">{{ columnStatsTarget.avg ?? "-" }}</span>
+              </div>
+              <div>
+                <span class="text-muted-foreground text-[10px] block font-sans">{{ t("grid.columnStatsSum") }}</span>
+                <span class="font-semibold">{{ columnStatsTarget.sum ?? "-" }}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Top Frequent Values -->
+          <div class="space-y-2">
+            <div class="text-xs font-semibold text-muted-foreground select-none">{{ t("grid.columnStatsTopValues") }}</div>
+            <div v-if="columnStatsTarget.topValues.length === 0" class="text-muted-foreground/60 italic py-2 text-center">
+              {{ t("grid.columnStatsNoValues") }}
+            </div>
+            <div v-else class="space-y-2 font-mono">
+              <div v-for="(tv, idx) in columnStatsTarget.topValues" :key="idx" class="space-y-1">
+                <div class="flex items-center justify-between text-[11px]">
+                  <span class="truncate max-w-[280px] font-medium" :title="tv.value">{{ tv.value || t("grid.columnStatsEmptyString") }}</span>
+                  <span class="text-muted-foreground">{{ t("grid.columnStatsValueCount", { count: tv.count, percent: tv.percent }) }}</span>
+                </div>
+                <div class="h-1.5 w-full bg-muted rounded-full overflow-hidden">
+                  <div class="h-full bg-primary rounded-full transition-all" :style="{ width: `${tv.percent}%` }" />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <DialogFooter class="px-4 py-2 border-t bg-muted/20 flex justify-end">
+          <Button variant="outline" size="sm" class="h-7 text-xs" @click="columnStatsOpen = false">
+            {{ t("grid.columnStatsClose") }}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
 
     <Dialog v-model:open="generateIncrementDialogOpen">
       <DialogContent class="sm:max-w-[380px]">

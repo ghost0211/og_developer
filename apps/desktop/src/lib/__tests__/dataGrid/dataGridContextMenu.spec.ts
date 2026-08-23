@@ -45,12 +45,13 @@ describe("dataGridContextMenu", () => {
       canFilter: true,
       hasSort: true,
       sortMode: "database",
-      labels: { copyName: "copy name", copyNames: "copy names", details: "details", copyAlterSql: "alter", databaseAscending: "db asc", databaseDescending: "db desc", localAscending: "local asc", localDescending: "local desc", clearSort: "clear sort" },
-      icons: { copy: icon, columnDetails: icon, database: icon, ascending: icon, descending: icon, clearSort: icon },
-      actions: { copyName: action, copyNames: action, details: action, copyAlterSql: action, sort: action },
+      labels: { copyName: "copy name", copyNames: "copy names", details: "details", stats: "stats", copyAlterSql: "alter", databaseAscending: "db asc", databaseDescending: "db desc", localAscending: "local asc", localDescending: "local desc", clearSort: "clear sort" },
+      icons: { copy: icon, columnDetails: icon, columnStats: icon, database: icon, ascending: icon, descending: icon, clearSort: icon },
+      actions: { copyName: action, copyNames: action, details: action, stats: action, copyAlterSql: action, sort: action },
       filterSubmenu: filter,
     });
     expect(columnItems.map((item) => item.label)).toContain("filter");
+    expect(columnItems.map((item) => item.label)).toContain("stats");
 
     const cellItems = createDataGridCellContextMenuItems({
       hasCell: true,
