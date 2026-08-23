@@ -9,8 +9,9 @@ describe("ProjectDialog layout", () => {
     expect(headerClass.split(/\s+/)).toContain("pr-12");
   });
 
-  it("makes the new-project action explicit when the create form is already active", () => {
-    expect(projectDialogSource).toContain(":disabled=\"viewMode === 'create'\"");
-    expect(projectDialogSource).toContain("projectHub.alreadyCreating");
+  it("explains the difference between opening and submitting the create form", () => {
+    expect(projectDialogSource).toContain('viewMode === "create" ? t("projectHub.resetCreateForm") : t("projectHub.newProject")');
+    expect(projectDialogSource).toContain("projectHub.createActionHint");
+    expect(projectDialogSource).toContain("projectHub.leftPanelHint");
   });
 });
