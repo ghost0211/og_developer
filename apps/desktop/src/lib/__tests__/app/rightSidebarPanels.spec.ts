@@ -29,13 +29,13 @@ describe("right sidebar panel entry points", () => {
     expect(functionSource("openAiPanel", "analyzeHistoryWithAi")).toContain('openToolPanel("ai")');
   });
 
-  it("persists every open tool plus the active dock view", () => {
+  it("persists the single active right-side tool", () => {
     expect(appSource).toContain('ai: "dbx-ai-panel-open"');
     expect(appSource).toContain('history: "dbx-history-panel-open"');
     expect(appSource).toContain('sqlLibrary: "dbx-sql-library-open"');
     expect(appSource).toContain('sqlFile: "dbx-sql-file-panel-open"');
     expect(appSource).toContain('safeLocalStorageSet("dbx-active-tool-panel"');
-    expect(appSource).toContain('safeLocalStorageSet("dbx-tool-panel-order"');
+    expect(appSource).not.toContain('safeLocalStorageSet("dbx-tool-panel-order"');
   });
 
   it("routes history and AI panel actions through the menu and activity bar without duplicating toolbar buttons", () => {
