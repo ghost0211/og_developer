@@ -2486,7 +2486,7 @@ onUnmounted(() => {
             @cycle-theme="cycleThemeMode"
           />
 
-          <div :class="isClassicLayout ? 'app-layout-classic flex-1 flex min-h-0' : 'app-panel-gutter flex-1 flex min-h-0 gap-1 p-1'">
+          <div class="flex-1 min-w-0 flex min-h-0 overflow-hidden" :class="isClassicLayout ? 'app-layout-classic' : 'app-panel-gutter gap-1 p-1'">
             <AppSidebar
               v-show="sidebarOpen"
               ref="appSidebarRef"
