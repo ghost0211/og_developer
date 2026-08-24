@@ -409,6 +409,7 @@ export const useConnectionStore = defineStore("connection", () => {
     connectionId: string;
     database: string;
     schema?: string;
+    keyword?: string;
   } | null>(null);
   const databaseExportSource = ref<{
     connectionId: string;

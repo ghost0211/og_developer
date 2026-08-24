@@ -1729,6 +1729,7 @@ export interface MetadataSearchHit {
   schema: string;
   object_type: string;
   name: string;
+  signature?: string | null;
 }
 
 export interface DefinitionSearchHit {
@@ -1738,6 +1739,7 @@ export interface DefinitionSearchHit {
   schema: string;
   object_type: string;
   name: string;
+  signature?: string | null;
   snippet: string;
 }
 

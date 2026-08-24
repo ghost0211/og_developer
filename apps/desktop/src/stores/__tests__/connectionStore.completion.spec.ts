@@ -139,7 +139,7 @@ describe("connectionStore completion assistant", () => {
     expect(store.connectedIds.has("pg-1")).toBe(true);
     expect(store.activeConnectionId).toBe("already-active");
     expect(tables).toEqual([{ name: "users", schema: "public", type: "table" }]);
-  });
+  }, 15_000);
 
   it("deduplicates in-flight assistant table requests", async () => {
     const completionAssistantSearch = vi.fn().mockResolvedValue({

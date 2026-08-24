@@ -19,6 +19,7 @@ const props = defineProps<{
   prefillConnectionId: string;
   prefillDatabase: string;
   prefillSchema?: string;
+  prefillKeyword?: string;
 }>();
 
 const emit = defineEmits<{
@@ -83,7 +84,7 @@ watch(
   dialogOpen,
   (open) => {
     if (open) {
-      resetSearchState();
+      resetSearchState(true);
     } else {
       stopSearch();
     }
@@ -91,7 +92,15 @@ watch(
   { immediate: true },
 );
 
-function resetSearchState() {
+watch(
+  () => props.prefillKeyword,
+  (value) => {
+    if (dialogOpen.value) keyword.value = value ?? "";
+  },
+);
+
+function resetSearchState(resetKeyword = false) {
+  if (resetKeyword) keyword.value = props.prefillKeyword ?? "";
   running.value = false;
   cancelled.value = false;
   loadingTables.value = false;

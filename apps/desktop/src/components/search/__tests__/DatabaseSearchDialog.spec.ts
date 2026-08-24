@@ -18,4 +18,11 @@ describe("DatabaseSearchDialog layout", () => {
   it("preserves the footer close action", () => {
     expect(dialogSource).toContain('@click="dialogOpen = false"');
   });
+
+  it("prefills a keyword handed off from the search center without resetting manual edits on submit", () => {
+    expect(dialogSource).toContain("prefillKeyword?: string");
+    expect(dialogSource).toContain('if (resetKeyword) keyword.value = props.prefillKeyword ?? ""');
+    expect(dialogSource).toContain("resetSearchState(true)");
+    expect(dialogSource).toContain("resetSearchState();");
+  });
 });

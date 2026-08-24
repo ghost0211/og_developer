@@ -231,6 +231,18 @@ export function isQuickOpenShortcut(event: ShortcutLikeEvent, shortcuts?: Partia
   return matchesShortcut(event, actionShortcut("quickOpen", shortcuts));
 }
 
+export function isSearchObjectSourceShortcut(event: ShortcutLikeEvent, shortcuts?: Partial<ShortcutSettings>): boolean {
+  return matchesShortcut(event, actionShortcut("searchObjectSource", shortcuts));
+}
+
+export function isSearchMetadataShortcut(event: ShortcutLikeEvent, shortcuts?: Partial<ShortcutSettings>): boolean {
+  return matchesShortcut(event, actionShortcut("searchMetadata", shortcuts));
+}
+
+export function isSearchTableDataShortcut(event: ShortcutLikeEvent, shortcuts?: Partial<ShortcutSettings>): boolean {
+  return matchesShortcut(event, actionShortcut("searchTableData", shortcuts));
+}
+
 export function isSwitchToPreviousTabShortcut(event: ShortcutLikeEvent, shortcuts?: Partial<ShortcutSettings>): boolean {
   return matchesShortcut(event, actionShortcut("switchToPreviousTab", shortcuts));
 }

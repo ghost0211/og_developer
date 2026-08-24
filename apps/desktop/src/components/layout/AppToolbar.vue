@@ -71,6 +71,8 @@ const emit = defineEmits<{
   "search-files": [];
   "search-metadata": [];
   "search-objects": [];
+  "quick-open": [];
+  "search-table-data": [];
   "open-sessions": [];
   "open-transfer": [];
   "open-sql-file": [];
@@ -267,6 +269,8 @@ const toolbarStyle = computed(() => {
         @search-files="emit('search-files')"
         @search-metadata="emit('search-metadata')"
         @search-objects="emit('search-objects')"
+        @quick-open="emit('quick-open')"
+        @search-table-data="emit('search-table-data')"
         @open-sessions="emit('open-sessions')"
         @open-transfer="emit('open-transfer')"
         @open-sql-file="emit('open-sql-file')"

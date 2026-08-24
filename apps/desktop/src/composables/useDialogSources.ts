@@ -59,6 +59,7 @@ const lineagePrefillColumn = ref("");
 const databaseSearchPrefillConnectionId = ref("");
 const databaseSearchPrefillDatabase = ref("");
 const databaseSearchPrefillSchema = ref("");
+const databaseSearchPrefillKeyword = ref("");
 const databaseExportPrefillConnectionId = ref("");
 const databaseExportPrefillDatabase = ref("");
 const databaseExportPrefillSchema = ref("");
@@ -223,6 +224,7 @@ export function useDialogSources() {
           databaseSearchPrefillConnectionId.value = v.connectionId;
           databaseSearchPrefillDatabase.value = v.database;
           databaseSearchPrefillSchema.value = v.schema ?? "";
+          databaseSearchPrefillKeyword.value = v.keyword ?? "";
           showDatabaseSearchDialog.value = true;
           connectionStore.databaseSearchSource = null;
         }
@@ -370,6 +372,7 @@ export function useDialogSources() {
     databaseSearchPrefillConnectionId,
     databaseSearchPrefillDatabase,
     databaseSearchPrefillSchema,
+    databaseSearchPrefillKeyword,
     databaseExportPrefillConnectionId,
     databaseExportPrefillDatabase,
     databaseExportPrefillSchema,

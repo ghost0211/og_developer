@@ -71,6 +71,9 @@ import {
   isQuickOpenShortcut,
   isResetZoomShortcut,
   isRefreshDataShortcut,
+  isSearchMetadataShortcut,
+  isSearchObjectSourceShortcut,
+  isSearchTableDataShortcut,
   isSaveShortcut,
   isSendSelectionToAiShortcut,
   isSwitchToNextTabShortcut,
@@ -1667,6 +1670,23 @@ function openMenuSearch(mode: MenuSearchMode) {
   menuSearchDialog.value = { open: true, mode };
 }
 
+function openDatabaseSearch(keyword = "") {
+  const tab = activeTab.value;
+  const connectionId = tab?.connectionId || connectionStore.activeConnectionId || [...connectionStore.connectedIds][0] || connectionStore.connections[0]?.id || "";
+  const connection = connectionStore.getConfig(connectionId);
+  const database = tab?.connectionId === connectionId && tab.database ? tab.database : connection ? resolveDefaultDatabase(connection, []) : "";
+  if (!connectionId || !database) {
+    toast(t("searchCenter.targetRequired"), 3500);
+    return;
+  }
+  connectionStore.databaseSearchSource = {
+    connectionId,
+    database,
+    schema: tab?.connectionId === connectionId ? tab.schema : undefined,
+    keyword: keyword.trim() || undefined,
+  };
+}
+
 type EditorMenuAction = "undo" | "redo" | "cut" | "copy" | "paste" | "find" | "replace";
 
 function dispatchEditorMenuAction(action: EditorMenuAction) {
@@ -1680,26 +1700,40 @@ function openFileFromMenuSearch(path: string) {
 
 const OBJECT_SOURCE_KINDS = new Set(["VIEW", "MATERIALIZED_VIEW", "PROCEDURE", "FUNCTION", "TRIGGER", "SEQUENCE", "SYNONYM", "PACKAGE", "PACKAGE_BODY", "TYPE", "TYPE_BODY", "JOB"]);
 
-function openObjectFromMenuSearch(hit: { connectionId: string; database: string; schema: string; objectType: string; name: string }) {
-  if (hit.objectType === "TABLE") {
-    // 表没有"源码"，打开 DDL 视图。
+function openObjectFromMenuSearch(hit: { connectionId: string; database: string; schema: string; objectType: string; name: string; signature?: string }) {
+  const objectType = hit.objectType.toUpperCase();
+  if (objectType === "TABLE" || objectType === "COLUMN") {
+    const tableName = objectType === "COLUMN" ? hit.name.slice(0, hit.name.lastIndexOf(".")) : hit.name;
+    if (!tableName) return;
     queryEditorDdlTarget.value = {
       connectionId: hit.connectionId,
       database: hit.database,
       schema: hit.schema || undefined,
-      tableName: hit.name,
+      tableName,
       objectType: "TABLE" as ObjectSourceKind,
     };
     showQueryEditorDdlDialog.value = true;
     return;
   }
-  const kind = OBJECT_SOURCE_KINDS.has(hit.objectType) ? hit.objectType : "VIEW";
+  const kind = OBJECT_SOURCE_KINDS.has(objectType) ? objectType : "VIEW";
+  if (["VIEW", "MATERIALIZED_VIEW", "PROCEDURE", "FUNCTION", "PACKAGE", "PACKAGE_BODY", "TRIGGER"].includes(kind)) {
+    queryStore.openProgramWindow({
+      connectionId: hit.connectionId,
+      database: hit.database,
+      schema: hit.schema || undefined,
+      name: hit.name,
+      objectType: kind as ObjectSourceKind,
+      signature: hit.signature,
+    });
+    return;
+  }
   queryEditorObjectSourceTarget.value = {
     connectionId: hit.connectionId,
     database: hit.database,
     schema: hit.schema || undefined,
     name: hit.name,
     objectType: kind as ObjectSourceKind,
+    signature: hit.signature,
     initialEditing: false,
   };
   showQueryEditorObjectSourceDialog.value = true;
@@ -2028,6 +2062,24 @@ function handleKeydown(e: KeyboardEvent) {
     e.preventDefault();
     e.stopPropagation();
     showQuickOpen.value = true;
+    return;
+  }
+  if (connectionStore.connections.length > 0 && isSearchObjectSourceShortcut(e, shortcuts)) {
+    e.preventDefault();
+    e.stopPropagation();
+    openMenuSearch("objects");
+    return;
+  }
+  if (connectionStore.connections.length > 0 && isSearchMetadataShortcut(e, shortcuts)) {
+    e.preventDefault();
+    e.stopPropagation();
+    openMenuSearch("metadata");
+    return;
+  }
+  if (connectionStore.connections.length > 0 && isSearchTableDataShortcut(e, shortcuts)) {
+    e.preventDefault();
+    e.stopPropagation();
+    openDatabaseSearch();
     return;
   }
   if (isFocusSearchShortcut(e, shortcuts)) {
@@ -2376,6 +2428,8 @@ onUnmounted(() => {
           @search-files="openMenuSearch('files')"
           @search-metadata="openMenuSearch('metadata')"
           @search-objects="openMenuSearch('objects')"
+          @quick-open="showQuickOpen = true"
+          @search-table-data="openDatabaseSearch()"
           @open-sessions="
             () => {
               const targetId = connectionStore.activeConnectionId || [...connectionStore.connectedIds][0] || activeTab?.connectionId || connectionStore.connections[0]?.id;
@@ -2666,7 +2720,7 @@ onUnmounted(() => {
         <QuickOpenDialog :open="showQuickOpen" @update:open="showQuickOpen = $event" @select="handleQuickOpenSelect" />
         <ProjectDialog :open="projectDialog.open" :mode="projectDialog.mode" @update:open="projectDialog.open = $event" @create="onCreateProject" @select="onMenuSelectProject" />
         <SessionsDialog :open="sessionsDialogOpen" @update:open="sessionsDialogOpen = $event" />
-        <MenuSearchDialog :open="menuSearchDialog.open" :mode="menuSearchDialog.mode" @update:open="menuSearchDialog.open = $event" @open-file="openFileFromMenuSearch" @open-object="openObjectFromMenuSearch" />
+        <MenuSearchDialog :open="menuSearchDialog.open" :mode="menuSearchDialog.mode" @update:open="menuSearchDialog.open = $event" @open-file="openFileFromMenuSearch" @open-object="openObjectFromMenuSearch" @open-data-search="openDatabaseSearch" />
       </div>
       <Teleport to="body">
         <Transition name="toast">

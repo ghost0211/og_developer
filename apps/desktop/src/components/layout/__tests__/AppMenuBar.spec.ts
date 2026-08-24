@@ -11,7 +11,7 @@ describe("AppMenuBar", () => {
   });
 
   it("exposes editor and search actions", () => {
-    for (const event of ["undo", "redo", "cut", "copy", "paste", "find", "replace", "format-sql", "compress-sql", "search-files", "search-metadata", "search-objects", "create-project", "open-project", "select-project"]) {
+    for (const event of ["undo", "redo", "cut", "copy", "paste", "find", "replace", "format-sql", "compress-sql", "search-files", "search-metadata", "search-objects", "search-table-data", "quick-open", "create-project", "open-project", "select-project"]) {
       expect(menuSource).toContain(`@select="emit('${event}'`);
     }
   });
@@ -32,6 +32,14 @@ describe("AppMenuBar", () => {
     for (const event of ["execute-sql", "execute-current-statement", "explain-sql", "commit-transaction", "rollback-transaction", "toggle-auto-commit", "toggle-fullscreen"]) {
       expect(menuSource).toContain(`@select="emit('${event}'`);
     }
+  });
+
+  it("uses registered shortcuts and localized labels for search actions", () => {
+    for (const action of ["quickOpen", "searchObjectSource", "searchMetadata", "searchTableData"]) {
+      expect(menuSource).toContain(`shortcutLabel("${action}")`);
+    }
+    expect(menuSource).toContain('t("searchCenter.menuTableData")');
+    expect(menuSource).not.toContain("Ctrl+Shift+F");
   });
 
   it("keeps the moved utilities in the Tools menu", () => {

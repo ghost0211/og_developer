@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { eventToModifierOnlyShortcut, eventToShortcut, isExecuteSqlInNewResultTabShortcut, matchesModifierOnlyShortcut, matchesShortcut } from "@/lib/editor/keyboardShortcuts";
+import { eventToModifierOnlyShortcut, eventToShortcut, isExecuteSqlInNewResultTabShortcut, isSearchMetadataShortcut, isSearchObjectSourceShortcut, isSearchTableDataShortcut, matchesModifierOnlyShortcut, matchesShortcut } from "@/lib/editor/keyboardShortcuts";
 import { formatShortcutDisplay, isMacShortcutPlatform } from "@/lib/editor/shortcutDisplay";
 
 describe("keyboard shortcut matching", () => {
@@ -76,6 +76,12 @@ describe("keyboard shortcut matching", () => {
     expect(isExecuteSqlInNewResultTabShortcut({ ...platformModEvent, shiftKey: true }, { executeSqlInNewResultTab: "Mod+\\" })).toBe(false);
     expect(isExecuteSqlInNewResultTabShortcut({ key: "\\", ctrlKey: true }, { executeSqlInNewResultTab: "Mod+\\" })).toBe(!isMac);
     expect(isExecuteSqlInNewResultTabShortcut({ key: "\\", metaKey: true }, { executeSqlInNewResultTab: "Mod+\\" })).toBe(true);
+  });
+
+  it("matches the registered search-center shortcuts", () => {
+    expect(isSearchObjectSourceShortcut({ key: "g", ctrlKey: true, shiftKey: true })).toBe(true);
+    expect(isSearchMetadataShortcut({ key: "o", ctrlKey: true, shiftKey: true })).toBe(true);
+    expect(isSearchTableDataShortcut({ key: "s", ctrlKey: true, altKey: true })).toBe(true);
   });
 
   it("matches legacy plus-key shortcuts saved with plus as a separator", () => {

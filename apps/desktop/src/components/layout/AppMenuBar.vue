@@ -42,6 +42,7 @@ import {
   TableProperties,
   Undo2,
   X,
+  Zap,
 } from "@lucide/vue";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuPortal, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import type { AppThemeMode } from "@/lib/app/appTheme";
@@ -110,6 +111,8 @@ const emit = defineEmits<{
   "open-schema-diff": [];
   "open-data-compare": [];
   "open-scheduled-backups": [];
+  "quick-open": [];
+  "search-table-data": [];
   "open-settings": [];
   "set-theme-mode": [mode: AppThemeMode];
   "open-shortcuts": [];
@@ -371,18 +374,32 @@ const shortcutClass = "ml-auto pl-5 text-[10px] font-mono text-muted-foreground/
       <DropdownMenuTrigger as-child>
         <button type="button" :class="menuTriggerClass" role="menuitem">{{ t("menus.search") }}</button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" class="w-56">
-        <DropdownMenuItem :class="menuItemClass" @select="emit('search-files')">
-          <FolderSearch :class="menuIconClass" />
-          <span>{{ t("menus.searchFiles") }}</span>
+      <DropdownMenuContent align="start" class="w-64">
+        <DropdownMenuItem :class="menuItemClass" @select="emit('quick-open')">
+          <Zap :class="menuIconClass" class="text-amber-500" />
+          <span>{{ t("menus.quickOpen") }}</span>
+          <span :class="shortcutClass">{{ shortcutLabel("quickOpen") }}</span>
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem :disabled="!hasConnections" :class="menuItemClass" @select="emit('search-objects')">
+          <FileCode :class="menuIconClass" class="text-blue-500" />
+          <span>{{ t("searchCenter.menuSource") }}</span>
+          <span :class="shortcutClass">{{ shortcutLabel("searchObjectSource") }}</span>
         </DropdownMenuItem>
         <DropdownMenuItem :disabled="!hasConnections" :class="menuItemClass" @select="emit('search-metadata')">
           <TableProperties :class="menuIconClass" />
           <span>{{ t("menus.searchMetadata") }}</span>
+          <span :class="shortcutClass">{{ shortcutLabel("searchMetadata") }}</span>
         </DropdownMenuItem>
-        <DropdownMenuItem :disabled="!hasConnections" :class="menuItemClass" @select="emit('search-objects')">
-          <FileCode :class="menuIconClass" />
-          <span>{{ t("menus.searchObjects") }}</span>
+        <DropdownMenuItem :disabled="!hasConnections" :class="menuItemClass" @select="emit('search-table-data')">
+          <Search :class="menuIconClass" class="text-emerald-500" />
+          <span>{{ t("searchCenter.menuTableData") }}</span>
+          <span :class="shortcutClass">{{ shortcutLabel("searchTableData") }}</span>
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem :class="menuItemClass" @select="emit('search-files')">
+          <FolderSearch :class="menuIconClass" />
+          <span>{{ t("menus.searchFiles") }}</span>
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

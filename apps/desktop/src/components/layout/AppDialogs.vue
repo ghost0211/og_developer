@@ -236,6 +236,7 @@ watch(
     :prefill-connection-id="dialogs.databaseSearchPrefillConnectionId.value"
     :prefill-database="dialogs.databaseSearchPrefillDatabase.value"
     :prefill-schema="dialogs.databaseSearchPrefillSchema.value"
+    :prefill-keyword="dialogs.databaseSearchPrefillKeyword.value"
     @open-target="emit('openDatabaseSearchTarget', $event)"
   />
   <DatabaseExportDialog

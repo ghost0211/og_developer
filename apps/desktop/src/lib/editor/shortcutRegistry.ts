@@ -32,6 +32,9 @@ export type ShortcutActionId =
   | "closeOtherTabs"
   | "focusSearch"
   | "quickOpen"
+  | "searchObjectSource"
+  | "searchMetadata"
+  | "searchTableData"
   | "switchToPreviousTab"
   | "switchToNextTab"
   | "switchToTab1"
@@ -271,6 +274,24 @@ export const SHORTCUT_DEFINITIONS: ShortcutDefinition[] = [
     labelKey: "settings.shortcutQuickOpen",
     scope: "global",
     defaultShortcut: "Mod+P",
+  },
+  {
+    id: "searchObjectSource",
+    labelKey: "settings.shortcutSearchObjectSource",
+    scope: "global",
+    defaultShortcut: "Shift+Mod+G",
+  },
+  {
+    id: "searchMetadata",
+    labelKey: "settings.shortcutSearchMetadata",
+    scope: "global",
+    defaultShortcut: "Shift+Mod+O",
+  },
+  {
+    id: "searchTableData",
+    labelKey: "settings.shortcutSearchTableData",
+    scope: "global",
+    defaultShortcut: "Alt+Mod+S",
   },
   {
     id: "switchToPreviousTab",
