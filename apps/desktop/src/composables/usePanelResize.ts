@@ -31,10 +31,10 @@ export function usePanelResize() {
   }
 
   const startSidebarResize = startPanelResize(sidebarWidth, "dbx-sidebar-width", "right");
-  const startAiPanelResize = startPanelResize(aiPanelWidth, "dbx-ai-panel-width", "left");
-  const startHistoryResize = startPanelResize(historyWidth, "dbx-history-width", "left");
-  const startSqlLibraryResize = startPanelResize(sqlLibraryWidth, "dbx-sql-library-width", "left");
-  const startSqlFilePanelResize = startPanelResize(sqlFilePanelWidth, "dbx-sql-file-panel-width", "left");
+  const startAiPanelResize = startPanelResize(aiPanelWidth, "dbx-ai-panel-width", "right");
+  const startHistoryResize = startPanelResize(historyWidth, "dbx-history-width", "right");
+  const startSqlLibraryResize = startPanelResize(sqlLibraryWidth, "dbx-sql-library-width", "right");
+  const startSqlFilePanelResize = startPanelResize(sqlFilePanelWidth, "dbx-sql-file-panel-width", "right");
 
   return {
     sidebarWidth,

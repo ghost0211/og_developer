@@ -5287,8 +5287,6 @@ export default withEnglishFallback({
     fontSize: "字号",
     toolbarTitle: "活动栏与面板",
     toolbarHiddenHint: "可控制查询历史、AI 助手和主题按钮是否显示在活动栏中。",
-    exclusiveRightSidebarPanels: "右侧边栏一次仅显示一个面板",
-    exclusiveRightSidebarPanelsDescription: "打开一个右侧面板时关闭其他面板。关闭此选项可同时显示多个面板。",
     uiScale: "界面缩放",
     uiScaleDescription: "按比例缩放整个桌面端界面，适合高清屏；修改后立即生效，并在下次启动时恢复。",
     theme: "主题",

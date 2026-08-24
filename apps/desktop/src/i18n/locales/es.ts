@@ -4777,8 +4777,6 @@ export default withEnglishFallback({
     fontSize: "Tamaño de fuente",
     toolbarTitle: "Barra de herramientas",
     toolbarHiddenHint: "Algunos botones ocultos o desbordados aparecerán en el menú «Más».",
-    exclusiveRightSidebarPanels: "Mostrar un panel lateral derecho a la vez",
-    exclusiveRightSidebarPanelsDescription: "Al abrir un panel lateral derecho se cierran los demás. Desactívalo para permitir varios paneles.",
     uiScale: "Escala de interfaz",
     uiScaleDescription: "Escala toda la interfaz de escritorio para pantallas de alta densidad. Los cambios se aplican al instante y se restauran al volver a abrir.",
     theme: "Tema",
