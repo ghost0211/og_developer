@@ -13,6 +13,17 @@ describe("AppActivityBar", () => {
     expect(appSource).not.toContain("activeActivityPanel === 'connections'");
   });
 
+  it("uses one left dock so selecting a tool automatically replaces the connections view", () => {
+    expect(appSource).toContain("const activeToolPanel = ref<ToolPanelId | null>");
+    expect(appSource).toContain('v-show="sidebarOpen && activeToolPanel === null"');
+    expect(appSource).toContain("v-show=\"activeToolPanel === 'sqlFile'\"");
+    expect(appSource).toContain("v-show=\"activeToolPanel === 'sqlLibrary'\"");
+    expect(appSource).toContain("v-show=\"activeToolPanel === 'history'\"");
+    expect(appSource).toContain("v-show=\"activeToolPanel === 'ai'\"");
+    expect(appSource).toMatch(/function setSidebarOpen\(open: boolean\)[\s\S]*if \(open && activeToolPanel\.value !== null\)/);
+    expect(appSource.indexOf("v-show=\"activeToolPanel === 'sqlFile'\"")).toBeLessThan(appSource.indexOf("<div :class=\"isClassicLayout ? 'flex-1 min-w-0 overflow-hidden'"));
+  });
+
   it("localizes and labels all activity buttons", () => {
     expect(activityBarSource).toContain("useI18n");
     for (const key of ["connections", "projectFiles", "sqlLibrary", "history", "ai", "settings", "theme"]) {

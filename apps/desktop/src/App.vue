@@ -15,7 +15,8 @@ import { useConnectionStore } from "@/stores/connectionStore";
 import { useProjectStore } from "@/stores/projectStore";
 import type { MenuSearchMode } from "@/components/search/MenuSearchDialog.vue";
 import { useQueryStore } from "@/stores/queryStore";
-import { enforceRightSidebarPanelExclusivity, RIGHT_SIDEBAR_PANEL_IDS, transitionRightSidebarPanels, useSettingsStore, type RightSidebarPanelId, type RightSidebarPanelState } from "@/stores/settingsStore";
+import { useSettingsStore } from "@/stores/settingsStore";
+import { createToolPanelSession, setToolPanelOpen as setToolPanelSessionOpen, toggleToolPanelSession, TOOL_PANEL_IDS, type ToolPanelId, type ToolPanelState } from "@/lib/app/toolPanelState";
 import { useSavedSqlStore } from "@/stores/savedSqlStore";
 import { usePromptTemplateStore } from "@/stores/promptTemplateStore";
 import { useToast } from "@/composables/useToast";
@@ -168,23 +169,35 @@ watch(
 const projectDialog = ref<{ open: boolean; mode: "create" | "open" }>({ open: false, mode: "create" });
 const menuSearchDialog = ref<{ open: boolean; mode: MenuSearchMode }>({ open: false, mode: "files" });
 const sessionsDialogOpen = ref(false);
-const showHistory = ref(false);
+const showHistory = ref(safeLocalStorageGet("dbx-history-panel-open") === "true");
 const showAiPanel = ref(safeLocalStorageGet("dbx-ai-panel-open") === "true");
 const showSqlLibraryPanel = ref(safeLocalStorageGet("dbx-sql-library-open") === "true");
 const showSqlFilePanel = ref(safeLocalStorageGet("dbx-sql-file-panel-open") === "true");
-const rightSidebarPanelRefs: Record<RightSidebarPanelId, typeof showAiPanel> = {
+const toolPanelRefs: Record<ToolPanelId, typeof showAiPanel> = {
   ai: showAiPanel,
   history: showHistory,
   sqlLibrary: showSqlLibraryPanel,
   sqlFile: showSqlFilePanel,
 };
-const rightSidebarPanelStorageKeys: Partial<Record<RightSidebarPanelId, string>> = {
+const toolPanelStorageKeys: Record<ToolPanelId, string> = {
   ai: "dbx-ai-panel-open",
+  history: "dbx-history-panel-open",
   sqlLibrary: "dbx-sql-library-open",
   sqlFile: "dbx-sql-file-panel-open",
 };
-let lastOpenedRightSidebarPanel = RIGHT_SIDEBAR_PANEL_IDS.find((panelId) => rightSidebarPanelRefs[panelId].value);
 const sidebarOpen = ref(safeLocalStorageGet("dbx-sidebar-open") !== "false");
+const storedActiveToolPanel = safeLocalStorageGet("dbx-active-tool-panel");
+const storedToolPanelOrder = (() => {
+  try {
+    const parsed = JSON.parse(safeLocalStorageGet("dbx-tool-panel-order") || "[]");
+    return Array.isArray(parsed) ? parsed.filter((value): value is string => typeof value === "string") : [];
+  } catch {
+    return [];
+  }
+})();
+const initialToolPanelSession = createToolPanelSession(Object.fromEntries(TOOL_PANEL_IDS.map((panelId) => [panelId, toolPanelRefs[panelId].value])) as ToolPanelState, storedActiveToolPanel, storedToolPanelOrder, !sidebarOpen.value);
+const activeToolPanel = ref<ToolPanelId | null>(initialToolPanelSession.active);
+let toolPanelActivationOrder = initialToolPanelSession.activationOrder;
 const aiPanelReady = ref(false);
 const { sidebarWidth, aiPanelWidth, historyWidth, sqlLibraryWidth, sqlFilePanelWidth, startSidebarResize, startAiPanelResize, startHistoryResize, startSqlLibraryResize, startSqlFilePanelResize } = usePanelResize();
 const aiAssistantRef = ref<AiAssistantHandle | null>(null);
@@ -549,50 +562,43 @@ watch(
   { immediate: true },
 );
 
-watch(
-  [() => settingsStore.isEditorSettingsLoaded, () => settingsStore.editorSettings.toolbarItems.exclusiveRightSidebarPanels],
-  ([loaded, exclusive]) => {
-    if (!loaded || !exclusive) return;
-    // Compatibility: old persisted panel flags may contain multiple open panels.
-    applyRightSidebarPanelState(enforceRightSidebarPanelExclusivity(currentRightSidebarPanelState(), lastOpenedRightSidebarPanel));
-  },
-  { immediate: true },
-);
-
-function currentRightSidebarPanelState(): RightSidebarPanelState {
-  return Object.fromEntries(RIGHT_SIDEBAR_PANEL_IDS.map((panelId) => [panelId, rightSidebarPanelRefs[panelId].value])) as RightSidebarPanelState;
+function currentToolPanelState(): ToolPanelState {
+  return Object.fromEntries(TOOL_PANEL_IDS.map((panelId) => [panelId, toolPanelRefs[panelId].value])) as ToolPanelState;
 }
 
-function applyRightSidebarPanelState(next: RightSidebarPanelState) {
-  for (const panelId of RIGHT_SIDEBAR_PANEL_IDS) {
-    const panelRef = rightSidebarPanelRefs[panelId];
-    if (panelRef.value === next[panelId]) continue;
-    panelRef.value = next[panelId];
-    const storageKey = rightSidebarPanelStorageKeys[panelId];
-    if (storageKey) safeLocalStorageSet(storageKey, String(next[panelId]));
+function currentToolPanelSession() {
+  return { open: currentToolPanelState(), active: activeToolPanel.value, activationOrder: toolPanelActivationOrder };
+}
+
+function applyToolPanelSession(session: ReturnType<typeof createToolPanelSession>) {
+  for (const panelId of TOOL_PANEL_IDS) {
+    const panelRef = toolPanelRefs[panelId];
+    if (panelRef.value === session.open[panelId]) continue;
+    panelRef.value = session.open[panelId];
+    safeLocalStorageSet(toolPanelStorageKeys[panelId], String(session.open[panelId]));
   }
+  activeToolPanel.value = session.active;
+  toolPanelActivationOrder = session.activationOrder;
+  safeLocalStorageSet("dbx-active-tool-panel", session.active ?? "");
+  safeLocalStorageSet("dbx-tool-panel-order", JSON.stringify(session.activationOrder));
 }
 
-function setRightSidebarPanelOpen(panelId: RightSidebarPanelId, open: boolean) {
-  const exclusive = settingsStore.isEditorSettingsLoaded && settingsStore.editorSettings.toolbarItems.exclusiveRightSidebarPanels;
-  applyRightSidebarPanelState(transitionRightSidebarPanels(currentRightSidebarPanelState(), panelId, open, exclusive));
-  if (open) {
-    lastOpenedRightSidebarPanel = panelId;
-  } else if (lastOpenedRightSidebarPanel === panelId) {
-    lastOpenedRightSidebarPanel = RIGHT_SIDEBAR_PANEL_IDS.find((candidate) => rightSidebarPanelRefs[candidate].value);
-  }
+function setToolPanelOpen(panelId: ToolPanelId, open: boolean) {
+  if (open) setSidebarOpen(false);
+  applyToolPanelSession(setToolPanelSessionOpen(currentToolPanelSession(), panelId, open));
 }
 
-function toggleRightSidebarPanel(panelId: RightSidebarPanelId) {
-  setRightSidebarPanelOpen(panelId, !rightSidebarPanelRefs[panelId].value);
+function toggleToolPanel(panelId: ToolPanelId) {
+  setSidebarOpen(false);
+  applyToolPanelSession(toggleToolPanelSession(currentToolPanelSession(), panelId));
 }
 
-function openRightSidebarPanel(panelId: RightSidebarPanelId) {
-  setRightSidebarPanelOpen(panelId, true);
+function openToolPanel(panelId: ToolPanelId) {
+  setToolPanelOpen(panelId, true);
 }
 
-function closeRightSidebarPanel(panelId: RightSidebarPanelId) {
-  setRightSidebarPanelOpen(panelId, false);
+function closeToolPanel(panelId: ToolPanelId) {
+  setToolPanelOpen(panelId, false);
 }
 
 function invokeWhenAiReady(invoke: (handle: AiAssistantHandle) => void) {
@@ -611,17 +617,17 @@ function invokeWhenAiReady(invoke: (handle: AiAssistantHandle) => void) {
 }
 
 function fixWithAi(errorMessage: string) {
-  openRightSidebarPanel("ai");
+  openToolPanel("ai");
   invokeWhenAiReady((handle) => handle.triggerAction("fix", errorMessage));
 }
 
 function sendSelectionToAi(sql: string) {
-  openRightSidebarPanel("ai");
+  openToolPanel("ai");
   invokeWhenAiReady((handle) => handle.setPrompt(sql));
 }
 
 function openAiPanel() {
-  openRightSidebarPanel("ai");
+  openToolPanel("ai");
 }
 
 function analyzeHistoryWithAi(entry: HistoryEntry) {
@@ -909,7 +915,7 @@ function cycleThemeMode() {
 
 const activeActivityPanels = computed<ActivityPanelId[]>(() => {
   const panels: ActivityPanelId[] = [];
-  if (sidebarOpen.value) panels.push("connections");
+  if (sidebarOpen.value && activeToolPanel.value === null) panels.push("connections");
   if (showSqlFilePanel.value) panels.push("files");
   if (showSqlLibraryPanel.value) panels.push("library");
   if (showHistory.value) panels.push("history");
@@ -919,15 +925,18 @@ const activeActivityPanels = computed<ActivityPanelId[]>(() => {
 
 function handleActivityPanelToggle(panelId: ActivityPanelId) {
   if (panelId === "connections") {
-    setSidebarOpen(!sidebarOpen.value);
+    const connectionsAreActive = sidebarOpen.value && activeToolPanel.value === null;
+    activeToolPanel.value = null;
+    safeLocalStorageSet("dbx-active-tool-panel", "");
+    setSidebarOpen(!connectionsAreActive);
   } else if (panelId === "files") {
-    toggleRightSidebarPanel("sqlFile");
+    toggleToolPanel("sqlFile");
   } else if (panelId === "library") {
-    toggleRightSidebarPanel("sqlLibrary");
+    toggleToolPanel("sqlLibrary");
   } else if (panelId === "history") {
-    toggleRightSidebarPanel("history");
+    toggleToolPanel("history");
   } else if (panelId === "ai") {
-    toggleRightSidebarPanel("ai");
+    toggleToolPanel("ai");
   }
 }
 
@@ -1768,6 +1777,10 @@ function openObjectFromMenuSearch(hit: { connectionId: string; database: string;
 function setSidebarOpen(open: boolean) {
   sidebarOpen.value = open;
   safeLocalStorageSet("dbx-sidebar-open", open ? "true" : "false");
+  if (open && activeToolPanel.value !== null) {
+    activeToolPanel.value = null;
+    safeLocalStorageSet("dbx-active-tool-panel", "");
+  }
 }
 
 function ensureQueryTab(): string {
@@ -2442,10 +2455,10 @@ onUnmounted(() => {
           @toggle-auto-commit="() => activeTab && queryStore.setAutoCommit(activeTab.id, !(activeTab.autoCommit ?? true))"
           @toggle-sidebar="setSidebarOpen(!sidebarOpen)"
           @toggle-fullscreen="toggleFullscreen"
-          @toggle-ai="toggleRightSidebarPanel('ai')"
-          @toggle-history="toggleRightSidebarPanel('history')"
-          @toggle-sql-library="toggleRightSidebarPanel('sqlLibrary')"
-          @toggle-sql-file-panel="toggleRightSidebarPanel('sqlFile')"
+          @toggle-ai="toggleToolPanel('ai')"
+          @toggle-history="toggleToolPanel('history')"
+          @toggle-sql-library="toggleToolPanel('sqlLibrary')"
+          @toggle-sql-file-panel="toggleToolPanel('sqlFile')"
           @open-settings="(tab?: string) => openSettings(tab ?? 'appearance')"
           @set-theme-mode="setThemeMode"
           @search-files="openMenuSearch('files')"
@@ -2490,7 +2503,7 @@ onUnmounted(() => {
 
           <div :class="isClassicLayout ? 'app-layout-classic flex-1 flex min-h-0' : 'app-panel-gutter flex-1 flex min-h-0 gap-1 p-1'">
             <AppSidebar
-              v-show="sidebarOpen"
+              v-show="sidebarOpen && activeToolPanel === null"
               ref="appSidebarRef"
               :sidebar-width="sidebarWidth"
               :classic-layout="isClassicLayout"
@@ -2501,6 +2514,48 @@ onUnmounted(() => {
               @collapse="setSidebarOpen(false)"
               @open-settings="(initialTab) => openSettings(initialTab ?? 'appearance')"
             />
+
+            <div v-if="showSqlFilePanel" v-show="activeToolPanel === 'sqlFile'" :class="isClassicLayout ? 'h-full shrink-0 relative bg-background' : 'h-full shrink-0 relative rounded-md border border-border/80 bg-background'" :style="{ width: sqlFilePanelWidth + 'px' }">
+              <div class="panel-resize-handle panel-resize-handle--right" @mousedown="startSqlFilePanelResize" />
+              <div class="h-full min-h-0 overflow-hidden rounded-[inherit]">
+                <SqlFilePanel @close="closeToolPanel('sqlFile')" />
+              </div>
+            </div>
+
+            <div v-if="showSqlLibraryPanel" v-show="activeToolPanel === 'sqlLibrary'" :class="isClassicLayout ? 'h-full shrink-0 relative bg-background' : 'h-full shrink-0 relative rounded-md border border-border/80 bg-background'" :style="{ width: sqlLibraryWidth + 'px' }">
+              <div class="panel-resize-handle panel-resize-handle--right" @mousedown="startSqlLibraryResize" />
+              <div class="h-full min-h-0 overflow-hidden rounded-[inherit]">
+                <SqlLibraryPanel @close="closeToolPanel('sqlLibrary')" />
+              </div>
+            </div>
+
+            <div v-if="showHistory" v-show="activeToolPanel === 'history'" :class="isClassicLayout ? 'h-full shrink-0 relative bg-background' : 'h-full shrink-0 relative rounded-md border border-border/80 bg-background'" :style="{ width: historyWidth + 'px' }">
+              <div class="panel-resize-handle panel-resize-handle--right" @mousedown="startHistoryResize" />
+              <div class="h-full min-h-0 overflow-hidden rounded-[inherit]">
+                <QueryHistory :current-connection-id="activeTab?.connectionId" :current-database="activeTab?.database" @restore="restoreHistorySql" @analyze-ai="analyzeHistoryWithAi" @close="closeToolPanel('history')" />
+              </div>
+            </div>
+
+            <div v-if="showAiPanel" v-show="activeToolPanel === 'ai'" :class="isClassicLayout ? 'h-full shrink-0 relative bg-background' : 'h-full shrink-0 relative rounded-md border border-border/80 bg-background'" :style="{ width: aiPanelWidth + 'px' }">
+              <div class="panel-resize-handle panel-resize-handle--right" @mousedown="startAiPanelResize" />
+              <div class="h-full min-h-0 overflow-hidden rounded-[inherit]">
+                <AiAssistant
+                  v-if="aiPanelReady"
+                  ref="aiAssistantRef"
+                  :tab="activeTab"
+                  :connection="activeConnection"
+                  @replace-sql="onAiReplaceSql"
+                  @execute-sql="onAiExecuteSql"
+                  @temp-run-sql="onAiTempRunSql"
+                  @request-auto-execute-sql="onAiRequestAutoExecuteSql"
+                  @insert-redis-command="(command: string) => routeAiRedisCommand(command, false)"
+                  @execute-redis-command="(command: string) => routeAiRedisCommand(command, true)"
+                  @open-explain-plan="onAiOpenExplainPlan"
+                  @close="closeToolPanel('ai')"
+                />
+              </div>
+            </div>
+
             <div :class="isClassicLayout ? 'flex-1 min-w-0 overflow-hidden' : 'flex-1 min-w-0 overflow-hidden rounded-md border border-border/80 bg-background'">
               <div class="h-full flex flex-col min-w-0">
                 <AppTabBar
@@ -2650,51 +2705,10 @@ onUnmounted(() => {
                   @open-saved-sql="openSavedSqlFromWelcome"
                   @new-connection="showConnectionDialog = true"
                   @new-query="newQuery"
-                  @show-history="openRightSidebarPanel('history')"
+                  @show-history="openToolPanel('history')"
                   @import-config="dialogs.onImportClick"
                   @open-about="openAbout"
                 />
-              </div>
-            </div>
-
-            <div v-if="showAiPanel" :class="isClassicLayout ? 'h-full shrink-0 relative z-30 isolate bg-background' : 'h-full shrink-0 relative z-30 isolate rounded-md border border-border/80 bg-background'" :style="{ width: aiPanelWidth + 'px' }">
-              <div class="panel-resize-handle panel-resize-handle--left" @mousedown="startAiPanelResize" />
-              <div class="h-full min-h-0 overflow-hidden rounded-[inherit]">
-                <AiAssistant
-                  v-if="aiPanelReady"
-                  ref="aiAssistantRef"
-                  :tab="activeTab"
-                  :connection="activeConnection"
-                  @replace-sql="onAiReplaceSql"
-                  @execute-sql="onAiExecuteSql"
-                  @temp-run-sql="onAiTempRunSql"
-                  @request-auto-execute-sql="onAiRequestAutoExecuteSql"
-                  @insert-redis-command="(command: string) => routeAiRedisCommand(command, false)"
-                  @execute-redis-command="(command: string) => routeAiRedisCommand(command, true)"
-                  @open-explain-plan="onAiOpenExplainPlan"
-                  @close="closeRightSidebarPanel('ai')"
-                />
-              </div>
-            </div>
-
-            <div v-if="showHistory" :class="isClassicLayout ? 'h-full shrink-0 relative z-30 isolate bg-background' : 'h-full shrink-0 relative z-30 isolate rounded-md border border-border/80 bg-background'" :style="{ width: historyWidth + 'px' }">
-              <div class="panel-resize-handle panel-resize-handle--left" @mousedown="startHistoryResize" />
-              <div class="h-full min-h-0 overflow-hidden rounded-[inherit]">
-                <QueryHistory :current-connection-id="activeTab?.connectionId" :current-database="activeTab?.database" @restore="restoreHistorySql" @analyze-ai="analyzeHistoryWithAi" @close="closeRightSidebarPanel('history')" />
-              </div>
-            </div>
-
-            <div v-if="showSqlLibraryPanel" :class="isClassicLayout ? 'h-full shrink-0 relative z-30 isolate bg-background' : 'h-full shrink-0 relative z-30 isolate rounded-md border border-border/80 bg-background'" :style="{ width: sqlLibraryWidth + 'px' }">
-              <div class="panel-resize-handle panel-resize-handle--left" @mousedown="startSqlLibraryResize" />
-              <div class="h-full min-h-0 overflow-hidden rounded-[inherit]">
-                <SqlLibraryPanel @close="closeRightSidebarPanel('sqlLibrary')" />
-              </div>
-            </div>
-
-            <div v-if="showSqlFilePanel" :class="isClassicLayout ? 'h-full shrink-0 relative z-30 isolate bg-background' : 'h-full shrink-0 relative z-30 isolate rounded-md border border-border/80 bg-background'" :style="{ width: sqlFilePanelWidth + 'px' }">
-              <div class="panel-resize-handle panel-resize-handle--left" @mousedown="startSqlFilePanelResize" />
-              <div class="h-full min-h-0 overflow-hidden rounded-[inherit]">
-                <SqlFilePanel @close="closeRightSidebarPanel('sqlFile')" />
               </div>
             </div>
           </div>

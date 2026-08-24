@@ -4777,8 +4777,6 @@ export default withEnglishFallback({
     fontSize: "Dimensione Carattere",
     toolbarTitle: "Barra degli strumenti",
     toolbarHiddenHint: "Alcuni pulsanti nascosti o in eccesso appariranno nel menu «Altro».",
-    exclusiveRightSidebarPanels: "Mostra un pannello laterale destro alla volta",
-    exclusiveRightSidebarPanelsDescription: "L'apertura di un pannello laterale destro chiude gli altri. Disattiva per consentire più pannelli.",
     uiScale: "Scala UI",
     uiScaleDescription: "Scala l'intera interfaccia utente desktop per display ad alta densità (High-DPI). Le modifiche si applicano immediatamente e vengono ripristinate al prossimo avvio.",
     theme: "Tema",
