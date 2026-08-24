@@ -1,24 +1,16 @@
 <script setup lang="ts">
 import { computed, ref, onMounted, onBeforeUnmount, watch } from "vue";
-import { useI18n } from "vue-i18n";
 import { invoke } from "@tauri-apps/api/core";
-import { Moon, Sun, SunMoon, History, Bot } from "@lucide/vue";
-import { Button } from "@/components/ui/button";
 import AppMenuBar from "@/components/layout/AppMenuBar.vue";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import WindowControls from "@/components/layout/WindowControls.vue";
 import ExportProgressPopover from "@/components/export/ExportProgressPopover.vue";
 import { MAC_TRAFFIC_LIGHT_X, macTrafficLightInsetPaddingForScale, shouldReserveMacTrafficLightInset, useWindowControls } from "@/composables/useWindowControls";
-import { useToast } from "@/composables/useToast";
 import { useSettingsStore } from "@/stores/settingsStore";
-import { isSystemAppThemeMode, type AppThemeMode } from "@/lib/app/appTheme";
+import type { AppThemeMode } from "@/lib/app/appTheme";
 import type { SqlProject } from "@/stores/projectStore";
 
 const props = defineProps<{
-  isDark: boolean;
   themeMode: AppThemeMode;
-  showAiPanel: boolean;
-  showHistory: boolean;
   hasConnections: boolean;
   hasSqlFileConnections: boolean;
   hasActiveTab: boolean;
@@ -85,34 +77,8 @@ const emit = defineEmits<{
   "open-about": [];
 }>();
 
-const { t } = useI18n();
-const { toast } = useToast();
 const settingsStore = useSettingsStore();
-const toolbarItems = computed(() => settingsStore.editorSettings.toolbarItems);
 const { isMac, isDesktop, showControls, isMaximized, isFullscreen, minimize, toggleMaximize, close } = useWindowControls();
-const themeTriggerIcon = computed(() => {
-  if (isSystemAppThemeMode(props.themeMode)) return SunMoon;
-  return props.isDark ? Moon : Sun;
-});
-
-const themeCycle: AppThemeMode[] = ["light", "dark", "system"];
-
-function nextThemeMode(mode: AppThemeMode): AppThemeMode {
-  const index = themeCycle.indexOf(mode);
-  return themeCycle[(index + 1) % themeCycle.length] ?? themeCycle[0];
-}
-
-function themeModeLabel(mode: AppThemeMode): string {
-  if (mode === "light") return t("toolbar.themeLight");
-  if (mode === "dark") return t("toolbar.themeDark");
-  return t("toolbar.themeSystem");
-}
-
-function cycleThemeMode() {
-  const next = nextThemeMode(props.themeMode);
-  emit("set-theme-mode", next);
-  toast(`${t("toolbar.theme")}: ${themeModeLabel(next)}`, 1600);
-}
 
 function onToolbarDblClick(e: MouseEvent) {
   if (isDesktop) return;
@@ -288,33 +254,6 @@ const toolbarStyle = computed(() => {
 
     <div class="flex shrink-0 items-center gap-1">
       <ExportProgressPopover />
-
-      <Tooltip v-if="toolbarItems.history">
-        <TooltipTrigger as-child>
-          <Button variant="ghost" size="icon" class="h-8 w-8 shrink-0" :class="{ 'bg-accent': showHistory }" @click="emit('toggle-history')">
-            <History class="h-4 w-4" />
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>{{ t("history.title") }}</TooltipContent>
-      </Tooltip>
-
-      <Tooltip v-if="toolbarItems.ai">
-        <TooltipTrigger as-child>
-          <Button variant="ghost" size="icon" class="h-8 w-8 shrink-0" :class="{ 'bg-accent': showAiPanel }" @click="emit('toggle-ai')">
-            <Bot class="h-4 w-4" />
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>AI</TooltipContent>
-      </Tooltip>
-
-      <Tooltip v-if="toolbarItems.theme">
-        <TooltipTrigger as-child>
-          <Button variant="ghost" size="icon" class="h-8 w-8 shrink-0" :aria-label="t('toolbar.theme')" @click="cycleThemeMode">
-            <component :is="themeTriggerIcon" class="h-4 w-4" />
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>{{ t("toolbar.theme") }}</TooltipContent>
-      </Tooltip>
     </div>
 
     <WindowControls v-if="showControls" :is-maximized="isMaximized" @minimize="minimize" @toggle-maximize="toggleMaximize" @close="close" />

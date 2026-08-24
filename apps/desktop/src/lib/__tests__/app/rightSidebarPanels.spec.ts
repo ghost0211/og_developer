@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 const appSource = readFileSync(new URL("../../../App.vue", import.meta.url), "utf8");
 const toolbarSource = readFileSync(new URL("../../../components/layout/AppToolbar.vue", import.meta.url), "utf8");
+const activityBarSource = readFileSync(new URL("../../../components/layout/AppActivityBar.vue", import.meta.url), "utf8");
 
 function functionSource(name: string, nextName: string): string {
   const start = appSource.indexOf(`function ${name}`);
@@ -37,16 +38,13 @@ describe("right sidebar panel entry points", () => {
     expect(appSource).toContain("enforceRightSidebarPanelExclusivity(currentRightSidebarPanelState(), lastOpenedRightSidebarPanel)");
   });
 
-  it("keeps history and AI as toolbar panel entry points while routing SQL panels through menus", () => {
-    for (const [setting, event] of [
-      ["history", "toggle-history"],
-      ["ai", "toggle-ai"],
-    ]) {
-      expect(toolbarSource).toContain(`<Tooltip v-if="toolbarItems.${setting}">`);
-      expect(toolbarSource).toContain(`@click="emit('${event}')"`);
-    }
+  it("routes history and AI panel actions through the menu and activity bar without duplicating toolbar buttons", () => {
+    expect(appSource).toContain("@toggle-ai=\"toggleRightSidebarPanel('ai')\"");
+    expect(appSource).toContain("@toggle-history=\"toggleRightSidebarPanel('history')\"");
     expect(toolbarSource).not.toContain('<Tooltip v-if="toolbarItems.sqlLibrary">');
     expect(toolbarSource).not.toContain('<Tooltip v-if="toolbarItems.sqlFileTree">');
+    expect(activityBarSource).toContain("handlePanelClick('history')");
+    expect(activityBarSource).toContain("handlePanelClick('ai')");
     expect(appSource).not.toMatch(/watch\([\s\S]{0,180}toolbarItems\.(ai|history|sqlLibrary|sqlFileTree)[\s\S]{0,180}closeRightSidebarPanel/);
   });
 });

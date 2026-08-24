@@ -10,15 +10,15 @@ describe("AppToolbar actions", () => {
     expect(toolbarSource).not.toContain("<LightDropdown");
   });
 
-  it("keeps only history, AI, and theme among the persistent right-side panel icons", () => {
+  it("keeps the right-side toolbar clean with export progress and window controls", () => {
     expect(toolbarSource).not.toContain("<BookMarked");
     expect(toolbarSource).not.toContain("<FolderTree");
     expect(toolbarSource).not.toContain("<Settings");
     expect(toolbarSource).not.toContain("agentDriverUpdateCount");
-    expect(toolbarSource).not.toContain('<Tooltip v-if="toolbarItems.sqlLibrary">');
-    expect(toolbarSource).not.toContain('<Tooltip v-if="toolbarItems.sqlFileTree">');
-    expect(toolbarSource).toContain('<Tooltip v-if="toolbarItems.history">');
-    expect(toolbarSource).toContain('<Tooltip v-if="toolbarItems.ai">');
-    expect(toolbarSource).toContain('<Tooltip v-if="toolbarItems.theme">');
+    expect(toolbarSource).toContain("<ExportProgressPopover");
+    expect(toolbarSource).toContain("<WindowControls");
+    expect(toolbarSource).not.toContain("showAiPanel:");
+    expect(toolbarSource).not.toContain("showHistory:");
+    expect(toolbarSource).not.toContain("isDark:");
   });
 });
