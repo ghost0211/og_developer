@@ -4838,6 +4838,8 @@ export default withEnglishFallback({
     fontSize: "フォントサイズ",
     toolbarTitle: "ツールバー",
     toolbarHiddenHint: "非表示または幅が足りない一部のボタンは、「もっと見る」ドロップダウン内に表示されます。",
+    exclusiveRightSidebarPanels: "右サイドバーのパネルを一度に1つだけ表示",
+    exclusiveRightSidebarPanelsDescription: "右サイドバーのパネルを開くと他のパネルを閉じます。複数表示するには無効にします。",
     uiScale: "UIスケール",
     uiScaleDescription: "高DPIディスプレイ向けにデスクトップUI全体をスケーリングします。変更は即座に適用され、次回起動時に復元されます。",
     theme: "テーマ",

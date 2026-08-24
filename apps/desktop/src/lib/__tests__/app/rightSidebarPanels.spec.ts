@@ -13,10 +13,10 @@ function functionSource(name: string, nextName: string): string {
 
 describe("right sidebar panel entry points", () => {
   it("routes toolbar and close actions through the centralized controller", () => {
-    expect(appSource).toContain("@toggle-ai=\"toggleToolPanel('ai')\"");
-    expect(appSource).toContain("@toggle-history=\"toggleToolPanel('history')\"");
-    expect(appSource).toContain("@toggle-sql-library=\"toggleToolPanel('sqlLibrary')\"");
-    expect(appSource).toContain("@toggle-sql-file-panel=\"toggleToolPanel('sqlFile')\"");
+    expect(appSource).toContain("@toggle-ai=\"toggleRightSidebarPanel('ai')\"");
+    expect(appSource).toContain("@toggle-history=\"toggleRightSidebarPanel('history')\"");
+    expect(appSource).toContain("@toggle-sql-library=\"toggleRightSidebarPanel('sqlLibrary')\"");
+    expect(appSource).toContain("@toggle-sql-file-panel=\"toggleRightSidebarPanel('sqlFile')\"");
     expect(appSource).toContain("@close=\"closeRightSidebarPanel('history')\"");
     expect(appSource).toContain("@close=\"closeRightSidebarPanel('sqlLibrary')\"");
     expect(appSource).toContain("@close=\"closeRightSidebarPanel('sqlFile')\"");
@@ -29,18 +29,18 @@ describe("right sidebar panel entry points", () => {
     expect(functionSource("openAiPanel", "analyzeHistoryWithAi")).toContain('openRightSidebarPanel("ai")');
   });
 
-  it("persists every open tool entry and restores the active tool panel", () => {
+  it("keeps existing persisted panel keys and synchronizes exclusivity after settings load", () => {
     expect(appSource).toContain('ai: "dbx-ai-panel-open"');
-    expect(appSource).toContain('history: "dbx-history-panel-open"');
     expect(appSource).toContain('sqlLibrary: "dbx-sql-library-open"');
     expect(appSource).toContain('sqlFile: "dbx-sql-file-panel-open"');
-    expect(appSource).toContain('safeLocalStorageGet("dbx-active-tool-panel")');
-    expect(appSource).toContain('safeLocalStorageSet("dbx-active-tool-panel"');
+    expect(appSource).not.toContain('history: "dbx-');
+    expect(appSource).toContain("settingsStore.isEditorSettingsLoaded");
+    expect(appSource).toContain("enforceRightSidebarPanelExclusivity(currentRightSidebarPanelState(), lastOpenedRightSidebarPanel)");
   });
 
   it("routes history and AI panel actions through the menu and activity bar without duplicating toolbar buttons", () => {
-    expect(appSource).toContain("@toggle-ai=\"toggleToolPanel('ai')\"");
-    expect(appSource).toContain("@toggle-history=\"toggleToolPanel('history')\"");
+    expect(appSource).toContain("@toggle-ai=\"toggleRightSidebarPanel('ai')\"");
+    expect(appSource).toContain("@toggle-history=\"toggleRightSidebarPanel('history')\"");
     expect(toolbarSource).not.toContain('<Tooltip v-if="toolbarItems.sqlLibrary">');
     expect(toolbarSource).not.toContain('<Tooltip v-if="toolbarItems.sqlFileTree">');
     expect(activityBarSource).toContain("handlePanelClick('history')");

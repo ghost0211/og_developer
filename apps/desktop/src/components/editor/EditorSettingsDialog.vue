@@ -3547,6 +3547,15 @@ onUnmounted(() => {
                     <p>{{ t("settings.toolbarHiddenHint") }}</p>
                   </HelpTooltip>
                 </div>
+                <div class="flex items-center justify-between gap-4 rounded-md border border-border/60 p-3">
+                  <div class="space-y-1">
+                    <Label for="exclusive-right-sidebar-panels" class="text-sm cursor-pointer">{{ t("settings.exclusiveRightSidebarPanels") }}</Label>
+                    <p class="text-xs text-muted-foreground">
+                      {{ t("settings.exclusiveRightSidebarPanelsDescription") }}
+                    </p>
+                  </div>
+                  <Switch id="exclusive-right-sidebar-panels" v-model="editToolbarItems.exclusiveRightSidebarPanels" />
+                </div>
                 <div class="grid grid-cols-3 gap-2 mt-2">
                   <div v-for="item in toolbarVisibilityItems" :key="item.key" class="flex items-center gap-2">
                     <Switch :id="`toolbar-${item.key}`" :model-value="(editToolbarItems as any)[item.key]" @update:model-value="(v: boolean) => ((editToolbarItems as any)[item.key] = v)" />

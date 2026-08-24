@@ -4544,6 +4544,8 @@ export default withEnglishFallback({
     fontSize: "글꼴 크기",
     toolbarTitle: "도구 모음",
     toolbarHiddenHint: '숨겨지거나 넘친 일부 버튼은 "더보기" 드롭다운에 나타납니다.',
+    exclusiveRightSidebarPanels: "오른쪽 사이드바 패널 한 번에 하나만 표시",
+    exclusiveRightSidebarPanelsDescription: "오른쪽 사이드바 패널을 열면 다른 패널을 닫습니다. 여러 패널을 허용하려면 비활성화하세요.",
     uiScale: "UI 배율",
     uiScaleDescription: "고해상도 디스플레이를 위해 전체 데스크톱 UI를 확장합니다. 변경 사항은 즉시 적용되며 다음 실행 시 복원됩니다.",
     theme: "테마",

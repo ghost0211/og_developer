@@ -4779,6 +4779,8 @@ export default withEnglishFallback({
     fontSize: "Tamanho da fonte",
     toolbarTitle: "Barra de ferramentas",
     toolbarHiddenHint: "Alguns botões ocultos ou excedentes aparecerão no menu «Mais».",
+    exclusiveRightSidebarPanels: "Mostrar um painel lateral direito por vez",
+    exclusiveRightSidebarPanelsDescription: "Abrir um painel lateral direito fecha os demais. Desative para permitir vários painéis.",
     uiScale: "Escala da UI",
     uiScaleDescription: "Dimensione toda a UI do desktop para telas de alta resolução (high-DPI). As alterações são aplicadas imediatamente e restauradas na próxima inicialização.",
     theme: "Tema",

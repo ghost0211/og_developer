@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { EXECUTE_MODE_CURRENT_DEFAULT_VERSION, normalizeAiConfig, normalizeDesktopSettings, normalizeEditorSettings } from "@/stores/settingsStore";
+import { enforceRightSidebarPanelExclusivity, EXECUTE_MODE_CURRENT_DEFAULT_VERSION, normalizeAiConfig, normalizeDesktopSettings, normalizeEditorSettings, transitionRightSidebarPanels, type RightSidebarPanelState } from "@/stores/settingsStore";
 import { createPinia, setActivePinia } from "pinia";
 import { isProxy } from "vue";
 import type { AiConfigItem } from "@/types/ai";
@@ -209,7 +209,41 @@ describe("normalizeEditorSettings", () => {
     expect(settings.toolbarItems.history).toBe(false);
     expect(settings.toolbarItems).not.toHaveProperty("sqlFileTree");
     expect(settings.toolbarItems).not.toHaveProperty("sqlLibrary");
-    expect(settings.toolbarItems).not.toHaveProperty("exclusiveRightSidebarPanels");
+    expect(settings.toolbarItems.exclusiveRightSidebarPanels).toBe(true);
+  });
+
+  it("preserves disabled right sidebar panel exclusivity", () => {
+    expect(
+      normalizeEditorSettings({
+        toolbarItems: {
+          exclusiveRightSidebarPanels: false,
+        } as any,
+      }).toolbarItems.exclusiveRightSidebarPanels,
+    ).toBe(false);
+  });
+});
+
+describe("right sidebar panel transitions", () => {
+  const state = (overrides: Partial<RightSidebarPanelState> = {}): RightSidebarPanelState => ({
+    ai: false,
+    history: false,
+    sqlLibrary: false,
+    sqlFile: false,
+    ...overrides,
+  });
+
+  it("allows multiple panels when exclusivity is disabled", () => {
+    expect(transitionRightSidebarPanels(state({ ai: true }), "history", true, false)).toEqual(state({ ai: true, history: true }));
+  });
+
+  it("switches panels and allows the active panel to toggle closed", () => {
+    const switched = transitionRightSidebarPanels(state({ ai: true }), "sqlLibrary", true, true);
+    expect(switched).toEqual(state({ sqlLibrary: true }));
+    expect(transitionRightSidebarPanels(switched, "sqlLibrary", false, true)).toEqual(state());
+  });
+
+  it("collapses synchronized multi-panel state to the preferred open panel", () => {
+    expect(enforceRightSidebarPanelExclusivity(state({ ai: true, history: true, sqlFile: true }), "history")).toEqual(state({ history: true }));
   });
 });
 
