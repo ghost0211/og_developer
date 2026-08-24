@@ -36,5 +36,9 @@ describe("defaultDatabase selectable values", () => {
   it("matches PostgreSQL backend defaults when the configured database is empty", () => {
     expect(resolveDefaultDatabase({ db_type: "postgres", database: "" }, [])).toBe("postgres");
     expect(resolveDefaultDatabase({ db_type: "postgres", driver_profile: "cockroachdb", database: " " }, [])).toBe("defaultdb");
+    expect(resolveDefaultDatabase({ db_type: "opengauss", database: "" }, [])).toBe("postgres");
+    expect(resolveDefaultDatabase({ db_type: "gaussdb", database: undefined }, [])).toBe("postgres");
+    expect(resolveDefaultDatabase({ db_type: "kwdb", database: undefined }, [])).toBe("defaultdb");
+    expect(resolveDefaultDatabase({ db_type: "highgo", database: undefined }, [])).toBe("highgo");
   });
 });

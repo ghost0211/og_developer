@@ -329,6 +329,7 @@ export const pendingOpenDbFiles = forward("pendingOpenDbFiles");
 export const pendingOpenConnectionLinks = forward("pendingOpenConnectionLinks");
 export const readExternalSqlFile = forward("readExternalSqlFile");
 export const searchFiles = forward("searchFiles");
+export const listDatabaseSearchScopeTargets = forward("listDatabaseSearchScopeTargets");
 export const searchMetadata = forward("searchMetadata");
 export const searchObjectDefinitions = forward("searchObjectDefinitions");
 export const listDirectories = forward("listDirectories");

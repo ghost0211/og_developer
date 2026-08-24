@@ -595,12 +595,16 @@ export async function searchFiles(root: string, query: string, limit = 200): Pro
   return invoke("search_files", { root, query, limit });
 }
 
-export async function searchMetadata(query: string, limit = 200): Promise<Awaited<ReturnType<typeof import("./http").searchMetadata>>[number][]> {
-  return invoke("search_metadata", { query, limit });
+export async function listDatabaseSearchScopeTargets(): Promise<import("./http").DatabaseSearchScopeTarget[]> {
+  return invokeBackend("list_database_search_scope_targets");
 }
 
-export async function searchObjectDefinitions(query: string, limit = 100): Promise<Awaited<ReturnType<typeof import("./http").searchObjectDefinitions>>[number][]> {
-  return invoke("search_object_definitions", { query, limit });
+export async function searchMetadata(query: string, limit = 200, targets?: import("./http").DatabaseSearchScopeTarget[]): Promise<Awaited<ReturnType<typeof import("./http").searchMetadata>>[number][]> {
+  return invokeBackend("search_metadata", { query, limit, targets });
+}
+
+export async function searchObjectDefinitions(query: string, limit = 100, targets?: import("./http").DatabaseSearchScopeTarget[]): Promise<Awaited<ReturnType<typeof import("./http").searchObjectDefinitions>>[number][]> {
+  return invokeBackend("search_object_definitions", { query, limit, targets });
 }
 
 export async function listSessions(): Promise<Awaited<ReturnType<typeof import("./http").listSessions>>[number][]> {

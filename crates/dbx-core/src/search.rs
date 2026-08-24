@@ -36,6 +36,14 @@ pub struct FileSearchHit {
     pub size: u64,
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DatabaseSearchScopeTarget {
+    pub connection_id: String,
+    #[serde(default)]
+    pub database: String,
+}
+
 const SEARCH_CONNECTION_TIMEOUT: Duration = Duration::from_secs(10);
 
 fn supports_postgres_search(config: &ConnectionConfig) -> bool {
@@ -249,6 +257,7 @@ async fn search_native_postgres(
     connection_id: &str,
     database: &str,
     limit: usize,
+    query_limit: usize,
 ) {
     let client = match crate::db::postgres::checkout_postgres_client(pool, None, SEARCH_CONNECTION_TIMEOUT).await {
         Ok(client) => client,
@@ -259,9 +268,9 @@ async fn search_native_postgres(
     };
     let pattern = format!("%{}%", escape_like_pattern(query));
     let sql = if definitions {
-        pg_definition_search_sql("$1", supports_package_search(config), limit)
+        pg_definition_search_sql("$1", supports_package_search(config), query_limit)
     } else {
-        pg_metadata_search_sql("$1", supports_package_search(config), limit)
+        pg_metadata_search_sql("$1", supports_package_search(config), query_limit)
     };
     let rows = match client.query(&sql, &[&pattern]).await {
         Ok(rows) => rows,
@@ -307,18 +316,19 @@ async fn search_external_postgres(
     connection_id: &str,
     database: &str,
     limit: usize,
+    query_limit: usize,
 ) {
     let pattern = sql_string(&format!("%{}%", escape_like_pattern(query)));
     let sql = if definitions {
-        pg_definition_search_sql(&pattern, supports_package_search(config), limit)
+        pg_definition_search_sql(&pattern, supports_package_search(config), query_limit)
     } else {
-        pg_metadata_search_sql(&pattern, supports_package_search(config), limit)
+        pg_metadata_search_sql(&pattern, supports_package_search(config), query_limit)
     };
     let params = serde_json::json!({
         "connection": config,
         "database": database,
         "sql": sql,
-        "maxRows": limit.clamp(1, 500),
+        "maxRows": query_limit.clamp(1, 500),
     });
     let result = match session
         .invoke_with_timeout::<crate::db::QueryResult>("executeQuery", params, Some(SEARCH_CONNECTION_TIMEOUT))
@@ -346,18 +356,78 @@ fn database_from_pool_key(pool_key: &str, connection_id: &str) -> Option<String>
     base.split(':').next().filter(|database| !database.is_empty()).map(str::to_string)
 }
 
+/// Lists the exact connection/database pools currently available to global search.
+pub async fn list_database_search_scope_targets(state: &AppState) -> Vec<DatabaseSearchScopeTarget> {
+    let configs = state.configs.read().await;
+    let connections = state.connections.read().await;
+    let mut targets = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for (pool_key, pool) in connections.iter() {
+        let Some(saved_config) = config_for_pool_key(pool_key, &configs) else { continue };
+        let connection_id = configs
+            .iter()
+            .filter(|(id, _)| {
+                pool_key.strip_prefix(id.as_str()).is_some_and(|rest| rest.is_empty() || rest.starts_with(':'))
+            })
+            .max_by_key(|(id, _)| id.len())
+            .map(|(id, _)| id.as_str())
+            .unwrap_or(pool_key.as_str());
+        let database = match pool {
+            PoolKind::ExternalDriver { config, .. } => database_from_pool_key(pool_key, connection_id)
+                .or_else(|| config.effective_database().map(str::to_string))
+                .or_else(|| saved_config.effective_database().map(str::to_string))
+                .unwrap_or_default(),
+            _ => database_from_pool_key(pool_key, connection_id)
+                .or_else(|| saved_config.effective_database().map(str::to_string))
+                .unwrap_or_default(),
+        };
+        if seen.insert((connection_id.to_string(), database.clone())) {
+            targets.push(DatabaseSearchScopeTarget { connection_id: connection_id.to_string(), database });
+        }
+    }
+    targets.sort_by(|a, b| a.connection_id.cmp(&b.connection_id).then_with(|| a.database.cmp(&b.database)));
+    targets
+}
+
+fn connection_is_selected(targets: Option<&[DatabaseSearchScopeTarget]>, connection_id: &str, database: &str) -> bool {
+    targets.map_or(true, |targets| {
+        targets.iter().any(|target| {
+            target.connection_id == connection_id && (target.database.is_empty() || target.database == database)
+        })
+    })
+}
+
 async fn search_connected_postgres(
     state: &AppState,
     query: &str,
     limit: usize,
     definitions: bool,
+    targets: Option<&[DatabaseSearchScopeTarget]>,
 ) -> (Vec<MetadataSearchHit>, Vec<DefinitionSearchHit>) {
     let mut metadata_hits = Vec::new();
     let mut definition_hits = Vec::new();
+    if let Some(targets) = targets {
+        for target in targets.iter().filter(|target| !target.database.is_empty()) {
+            if let Err(error) = state.get_or_create_pool(&target.connection_id, Some(&target.database)).await {
+                log::warn!(
+                    "[search] could not open selected target {} / {}: {error}",
+                    target.connection_id,
+                    target.database
+                );
+            }
+        }
+    }
     let configs = state.configs.read().await;
     let connections = state.connections.read().await;
+    let target_count = targets
+        .map(<[DatabaseSearchScopeTarget]>::len)
+        .unwrap_or_else(|| configs.values().filter(|config| supports_postgres_search(config)).count())
+        .max(1);
+    let query_limit = (limit + target_count - 1) / target_count;
     let mut searched = std::collections::HashSet::new();
-    for (pool_key, pool) in connections.iter() {
+    let mut pool_entries = connections.iter().collect::<Vec<_>>();
+    pool_entries.sort_by(|(left, _), (right, _)| left.cmp(right));
+    for (pool_key, pool) in pool_entries {
         if metadata_hits.len() >= limit || definition_hits.len() >= limit {
             break;
         }
@@ -374,16 +444,23 @@ async fn search_connected_postgres(
             .map(|(id, _)| id.as_str())
             .unwrap_or(pool_key.as_str());
         let (database, search_config) = match pool {
-            PoolKind::ExternalDriver { config, .. } => {
-                (config.database.clone().or_else(|| saved_config.database.clone()).unwrap_or_default(), config.as_ref())
-            }
+            PoolKind::ExternalDriver { config, .. } => (
+                database_from_pool_key(pool_key, connection_id)
+                    .or_else(|| config.effective_database().map(str::to_string))
+                    .or_else(|| saved_config.effective_database().map(str::to_string))
+                    .unwrap_or_default(),
+                config.as_ref(),
+            ),
             _ => (
                 database_from_pool_key(pool_key, connection_id)
-                    .or_else(|| saved_config.database.clone())
+                    .or_else(|| saved_config.effective_database().map(str::to_string))
                     .unwrap_or_default(),
                 saved_config,
             ),
         };
+        if !connection_is_selected(targets, connection_id, &database) {
+            continue;
+        }
         if !searched.insert((connection_id.to_string(), database.clone())) {
             continue;
         }
@@ -399,6 +476,7 @@ async fn search_connected_postgres(
                     connection_id,
                     &database,
                     limit,
+                    query_limit,
                 )
                 .await;
             }
@@ -413,6 +491,7 @@ async fn search_connected_postgres(
                     connection_id,
                     &database,
                     limit,
+                    query_limit,
                 )
                 .await;
             }
@@ -425,21 +504,41 @@ async fn search_connected_postgres(
 /// Searches object and column names across connected PostgreSQL-family pools,
 /// including JDBC/external-driver openGauss profiles.
 pub async fn search_metadata(state: &AppState, query: &str, limit: usize) -> Vec<MetadataSearchHit> {
+    search_metadata_for_targets(state, query, limit, None).await
+}
+
+/// Searches object names only in the explicitly selected connection/database targets.
+pub async fn search_metadata_for_targets(
+    state: &AppState,
+    query: &str,
+    limit: usize,
+    targets: Option<&[DatabaseSearchScopeTarget]>,
+) -> Vec<MetadataSearchHit> {
     let query = query.trim();
-    if query.is_empty() {
+    if query.is_empty() || targets.is_some_and(|targets| targets.is_empty()) {
         return Vec::new();
     }
-    search_connected_postgres(state, query, limit.clamp(1, 500), false).await.0
+    search_connected_postgres(state, query, limit.clamp(1, 500), false, targets).await.0
 }
 
 /// Searches routine, package, and view source across connected PostgreSQL-family pools,
 /// including JDBC/external-driver openGauss profiles.
 pub async fn search_object_definitions(state: &AppState, query: &str, limit: usize) -> Vec<DefinitionSearchHit> {
+    search_object_definitions_for_targets(state, query, limit, None).await
+}
+
+/// Searches source text only in the explicitly selected connection/database targets.
+pub async fn search_object_definitions_for_targets(
+    state: &AppState,
+    query: &str,
+    limit: usize,
+    targets: Option<&[DatabaseSearchScopeTarget]>,
+) -> Vec<DefinitionSearchHit> {
     let query = query.trim();
-    if query.is_empty() {
+    if query.is_empty() || targets.is_some_and(|targets| targets.is_empty()) {
         return Vec::new();
     }
-    search_connected_postgres(state, query, limit.clamp(1, 500), true).await.1
+    search_connected_postgres(state, query, limit.clamp(1, 500), true, targets).await.1
 }
 
 /// Walks `root` (bounded depth and entry count) and returns files whose name
@@ -573,6 +672,19 @@ mod tests {
         assert!(snippet.starts_with('…'));
         assert!(snippet.ends_with('…'));
         assert!(snippet.chars().count() <= 602);
+    }
+
+    #[test]
+    fn filters_search_to_explicit_connection_and_database_targets() {
+        let selected = vec![
+            DatabaseSearchScopeTarget { connection_id: "profile-a".to_string(), database: "sales".to_string() },
+            DatabaseSearchScopeTarget { connection_id: "profile-b".to_string(), database: String::new() },
+        ];
+        assert!(connection_is_selected(Some(&selected), "profile-a", "sales"));
+        assert!(!connection_is_selected(Some(&selected), "profile-a", "hr"));
+        assert!(connection_is_selected(Some(&selected), "profile-b", "any_database"));
+        assert!(!connection_is_selected(Some(&selected), "profile-c", "sales"));
+        assert!(connection_is_selected(None, "profile-c", "sales"));
     }
 
     #[test]

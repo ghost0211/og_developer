@@ -1296,6 +1296,7 @@ pub fn run() {
             commands::app_settings::get_driver_store_path,
             commands::app_settings::load_pinned_tree_node_ids,
             commands::search::search_files,
+            commands::search::list_database_search_scope_targets,
             commands::sessions::list_sessions,
             commands::sessions::kill_session,
             commands::search::search_metadata,

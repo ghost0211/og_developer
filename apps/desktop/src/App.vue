@@ -1670,20 +1670,15 @@ function openMenuSearch(mode: MenuSearchMode) {
   menuSearchDialog.value = { open: true, mode };
 }
 
-function openDatabaseSearch(keyword = "") {
-  const tab = activeTab.value;
-  const connectionId = tab?.connectionId || connectionStore.activeConnectionId || [...connectionStore.connectedIds][0] || connectionStore.connections[0]?.id || "";
-  const connection = connectionStore.getConfig(connectionId);
-  const database = tab?.connectionId === connectionId && tab.database ? tab.database : connection ? resolveDefaultDatabase(connection, []) : "";
-  if (!connectionId || !database) {
+function openDatabaseSearch(target: { keyword: string; connectionId: string; database: string }) {
+  if (!target.connectionId || !target.database) {
     toast(t("searchCenter.targetRequired"), 3500);
     return;
   }
   connectionStore.databaseSearchSource = {
-    connectionId,
-    database,
-    schema: tab?.connectionId === connectionId ? tab.schema : undefined,
-    keyword: keyword.trim() || undefined,
+    connectionId: target.connectionId,
+    database: target.database,
+    keyword: target.keyword.trim() || undefined,
   };
 }
 
@@ -2079,7 +2074,7 @@ function handleKeydown(e: KeyboardEvent) {
   if (connectionStore.connections.length > 0 && isSearchTableDataShortcut(e, shortcuts)) {
     e.preventDefault();
     e.stopPropagation();
-    openDatabaseSearch();
+    openMenuSearch("data");
     return;
   }
   if (isFocusSearchShortcut(e, shortcuts)) {
@@ -2429,7 +2424,7 @@ onUnmounted(() => {
           @search-metadata="openMenuSearch('metadata')"
           @search-objects="openMenuSearch('objects')"
           @quick-open="showQuickOpen = true"
-          @search-table-data="openDatabaseSearch()"
+          @search-table-data="openMenuSearch('data')"
           @open-sessions="
             () => {
               const targetId = connectionStore.activeConnectionId || [...connectionStore.connectedIds][0] || activeTab?.connectionId || connectionStore.connections[0]?.id;
@@ -2720,7 +2715,16 @@ onUnmounted(() => {
         <QuickOpenDialog :open="showQuickOpen" @update:open="showQuickOpen = $event" @select="handleQuickOpenSelect" />
         <ProjectDialog :open="projectDialog.open" :mode="projectDialog.mode" @update:open="projectDialog.open = $event" @create="onCreateProject" @select="onMenuSelectProject" />
         <SessionsDialog :open="sessionsDialogOpen" @update:open="sessionsDialogOpen = $event" />
-        <MenuSearchDialog :open="menuSearchDialog.open" :mode="menuSearchDialog.mode" @update:open="menuSearchDialog.open = $event" @open-file="openFileFromMenuSearch" @open-object="openObjectFromMenuSearch" @open-data-search="openDatabaseSearch" />
+        <MenuSearchDialog
+          :open="menuSearchDialog.open"
+          :mode="menuSearchDialog.mode"
+          :preferred-connection-id="activeTab?.connectionId || connectionStore.activeConnectionId || undefined"
+          :preferred-database="activeTab?.database || undefined"
+          @update:open="menuSearchDialog.open = $event"
+          @open-file="openFileFromMenuSearch"
+          @open-object="openObjectFromMenuSearch"
+          @open-data-search="openDatabaseSearch"
+        />
       </div>
       <Teleport to="body">
         <Transition name="toast">

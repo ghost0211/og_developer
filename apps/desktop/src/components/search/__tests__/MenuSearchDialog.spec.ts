@@ -9,9 +9,17 @@ describe("MenuSearchDialog", () => {
     expect(dialogSource).toContain("requestId === searchRequestId");
   });
 
-  it("hands the table-data keyword to the database scanner", () => {
-    expect(dialogSource).toContain('emit("open-data-search", keyword)');
+  it("hands the explicitly selected table-data profile to the database scanner", () => {
+    expect(dialogSource).toContain('emit("open-data-search", { keyword, connectionId: connection.id, database })');
     expect(dialogSource).toContain('activeMode.value === "data"');
+  });
+
+  it("sends only explicitly selected profiles to metadata and source search", () => {
+    expect(dialogSource).toContain("selectedTargetKeys");
+    expect(dialogSource).toContain("api.searchMetadata(needle, 500, searchableTargets)");
+    expect(dialogSource).toContain("api.searchObjectDefinitions(needle, 300, searchableTargets)");
+    expect(dialogSource).toContain("selectAllConnections");
+    expect(dialogSource).toContain("listDatabaseSearchScopeTargets");
   });
 
   it("uses filtered result sets for counts, rendering, and keyboard selection", () => {

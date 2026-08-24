@@ -1747,12 +1747,21 @@ export async function searchFiles(root: string, query: string, limit = 200): Pro
   return get(`/api/search/files?${qs({ root, query, limit })}`);
 }
 
-export async function searchMetadata(query: string, limit = 200): Promise<MetadataSearchHit[]> {
-  return post("/api/search/metadata", { query, limit });
+export interface DatabaseSearchScopeTarget {
+  connectionId: string;
+  database: string;
 }
 
-export async function searchObjectDefinitions(query: string, limit = 100): Promise<DefinitionSearchHit[]> {
-  return post("/api/search/object-definitions", { query, limit });
+export async function listDatabaseSearchScopeTargets(): Promise<DatabaseSearchScopeTarget[]> {
+  return get("/api/search/database-targets");
+}
+
+export async function searchMetadata(query: string, limit = 200, targets?: DatabaseSearchScopeTarget[]): Promise<MetadataSearchHit[]> {
+  return post("/api/search/metadata", { query, limit, targets });
+}
+
+export async function searchObjectDefinitions(query: string, limit = 100, targets?: DatabaseSearchScopeTarget[]): Promise<DefinitionSearchHit[]> {
+  return post("/api/search/object-definitions", { query, limit, targets });
 }
 
 export interface SessionInfo {

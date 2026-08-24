@@ -22,12 +22,20 @@ pub async fn search_files(
 }
 
 #[tauri::command]
+pub async fn list_database_search_scope_targets(
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<dbx_core::search::DatabaseSearchScopeTarget>, String> {
+    Ok(dbx_core::search::list_database_search_scope_targets(&state).await)
+}
+
+#[tauri::command]
 pub async fn search_metadata(
     state: State<'_, Arc<AppState>>,
     query: String,
     limit: Option<usize>,
+    targets: Option<Vec<dbx_core::search::DatabaseSearchScopeTarget>>,
 ) -> Result<Vec<dbx_core::search::MetadataSearchHit>, String> {
-    Ok(dbx_core::search::search_metadata(&state, &query, limit.unwrap_or(200)).await)
+    Ok(dbx_core::search::search_metadata_for_targets(&state, &query, limit.unwrap_or(200), targets.as_deref()).await)
 }
 
 #[tauri::command]
@@ -35,8 +43,15 @@ pub async fn search_object_definitions(
     state: State<'_, Arc<AppState>>,
     query: String,
     limit: Option<usize>,
+    targets: Option<Vec<dbx_core::search::DatabaseSearchScopeTarget>>,
 ) -> Result<Vec<dbx_core::search::DefinitionSearchHit>, String> {
-    Ok(dbx_core::search::search_object_definitions(&state, &query, limit.unwrap_or(100)).await)
+    Ok(dbx_core::search::search_object_definitions_for_targets(
+        &state,
+        &query,
+        limit.unwrap_or(100),
+        targets.as_deref(),
+    )
+    .await)
 }
 
 #[tauri::command]

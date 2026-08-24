@@ -10,6 +10,9 @@ export function resolveDefaultDatabase(connection: Pick<ConnectionConfig, "datab
   if (connection.db_type === "sqlite") return normalizeSqliteNamespace(connection.database || options[0], connection);
   if (connection.database?.trim()) return connection.database;
   if (connection.db_type === "postgres") return connection.driver_profile === "cockroachdb" ? "defaultdb" : "postgres";
+  if (connection.db_type === "opengauss" || connection.db_type === "gaussdb" || connection.db_type === "vastbase") return "postgres";
+  if (connection.db_type === "kwdb") return "defaultdb";
+  if (connection.db_type === "highgo") return "highgo";
   return options[0] || "";
 }
 

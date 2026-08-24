@@ -1,29 +1,39 @@
 <script setup lang="ts">
 import { computed, nextTick, onUnmounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { ChevronRight, Database, FileCode, FolderOpen, FolderSearch, Loader2, Search, TableProperties, X } from "@lucide/vue";
+import { ChevronDown, ChevronRight, Database, FileCode, FolderOpen, FolderSearch, Loader2, Search, TableProperties, X } from "@lucide/vue";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import * as api from "@/lib/backend/api";
-import { highlightMenuSearchText, menuSearchTextMatches } from "@/lib/search/menuSearchMatching";
-import { useProjectStore } from "@/stores/projectStore";
 import { isTauriRuntime } from "@/lib/backend/tauriRuntime";
+import { resolveDefaultDatabase } from "@/lib/database/defaultDatabase";
+import { supportsDatabaseSearch } from "@/lib/database/databaseFeatureSupport";
+import { highlightMenuSearchText, menuSearchTextMatches } from "@/lib/search/menuSearchMatching";
+import { useConnectionStore } from "@/stores/connectionStore";
+import { useProjectStore } from "@/stores/projectStore";
+import { useQueryStore } from "@/stores/queryStore";
+import type { ConnectionConfig, DatabaseType, TreeNode } from "@/types/database";
 
 export type MenuSearchMode = "files" | "metadata" | "objects" | "data";
 type MetadataTypeFilter = "ALL" | "TABLE" | "VIEW" | "ROUTINE" | "PACKAGE" | "COLUMN";
 type SearchObjectTarget = { connectionId: string; database: string; schema: string; objectType: string; name: string; signature?: string };
+type DataSearchTarget = { keyword: string; connectionId: string; database: string };
+type SearchScopeTarget = { key: string; connection: ConnectionConfig; database: string };
 
-const props = defineProps<{ open: boolean; mode: MenuSearchMode }>();
+const props = defineProps<{ open: boolean; mode: MenuSearchMode; preferredConnectionId?: string; preferredDatabase?: string }>();
 const emit = defineEmits<{
   "update:open": [value: boolean];
   "open-file": [path: string];
   "open-object": [hit: SearchObjectTarget];
-  "open-data-search": [keyword: string];
+  "open-data-search": [target: DataSearchTarget];
 }>();
 
 const { t } = useI18n();
+const connectionStore = useConnectionStore();
 const projectStore = useProjectStore();
+const queryStore = useQueryStore();
 const isDesktop = isTauriRuntime();
 const dialogOpen = computed({ get: () => props.open, set: (value) => emit("update:open", value) });
 const activeMode = ref<MenuSearchMode>(props.mode);
@@ -34,6 +44,8 @@ const error = ref("");
 const caseSensitive = ref(false);
 const wholeWord = ref(false);
 const metadataTypeFilter = ref<MetadataTypeFilter>("ALL");
+const selectedTargetKeys = ref<string[]>([]);
+const runtimeSearchTargets = ref<Awaited<ReturnType<typeof api.listDatabaseSearchScopeTargets>>>([]);
 const fileHits = ref<Awaited<ReturnType<typeof api.searchFiles>>>([]);
 const metadataHits = ref<Awaited<ReturnType<typeof api.searchMetadata>>>([]);
 const objectHits = ref<Awaited<ReturnType<typeof api.searchObjectDefinitions>>>([]);
@@ -42,7 +54,55 @@ const searchInputRef = ref<HTMLInputElement | null>(null);
 const resultsRef = ref<HTMLElement | null>(null);
 let debounceTimer: ReturnType<typeof setTimeout> | undefined;
 let searchRequestId = 0;
+let scopeRequestId = 0;
+let selectionRevision = 0;
 
+const POSTGRES_SEARCH_TYPES = new Set<DatabaseType>(["postgres", "opengauss", "gaussdb", "kwdb", "questdb", "highgo", "vastbase"]);
+
+function connectionDatabase(connection: ConnectionConfig): string {
+  return resolveDefaultDatabase(connection, []);
+}
+
+function searchTargetKey(connectionId: string, database: string): string {
+  return `${connectionId}\u0000${database}`;
+}
+
+function collectTreeDatabases(nodes: TreeNode[], connectionId: string, databases: Set<string>) {
+  for (const node of nodes) {
+    if (node.connectionId === connectionId && node.type === "database" && node.database) databases.add(node.database);
+    if (node.children?.length) collectTreeDatabases(node.children, connectionId, databases);
+  }
+}
+
+const scopeTargets = computed<SearchScopeTarget[]>(() => {
+  const targets: SearchScopeTarget[] = [];
+  for (const connection of connectionStore.connections) {
+    if (activeMode.value === "data" ? !supportsDatabaseSearch(connection.db_type) : !POSTGRES_SEARCH_TYPES.has(connection.db_type)) continue;
+    const databases = new Set<string>();
+    for (const target of runtimeSearchTargets.value) {
+      if (target.connectionId === connection.id && target.database) databases.add(target.database);
+    }
+    collectTreeDatabases(connectionStore.treeNodes, connection.id, databases);
+    const configuredDatabase = connectionDatabase(connection);
+    if (configuredDatabase) databases.add(configuredDatabase);
+    for (const tab of queryStore.tabs) {
+      if (tab.connectionId === connection.id && tab.database) databases.add(tab.database);
+    }
+    if (props.preferredConnectionId === connection.id && props.preferredDatabase) databases.add(props.preferredDatabase);
+    if (databases.size === 0 && activeMode.value !== "data") databases.add("");
+    for (const database of databases) {
+      targets.push({ key: searchTargetKey(connection.id, database), connection, database });
+    }
+  }
+  return targets;
+});
+const selectedScopeTargets = computed(() => scopeTargets.value.filter((target) => selectedTargetKeys.value.includes(target.key)));
+const selectedScopeSummary = computed(() => {
+  if (selectedScopeTargets.value.length === 0) return t("searchCenter.selectConnections");
+  if (selectedScopeTargets.value.length > 1) return t("searchCenter.selectedConnections", { count: selectedScopeTargets.value.length });
+  const target = selectedScopeTargets.value[0]!;
+  return `${target.connection.name} · ${target.database || t("searchCenter.allConnectedDatabases")} · ${target.connection.username || "—"}`;
+});
 const matchOptions = computed(() => ({ caseSensitive: caseSensitive.value, wholeWord: wholeWord.value }));
 const filteredFileHits = computed(() => fileHits.value.filter((hit) => menuSearchTextMatches(`${hit.relative}\n${hit.path}`, query.value, matchOptions.value)));
 const filteredObjectHits = computed(() => objectHits.value.filter((hit) => menuSearchTextMatches(`${hit.schema}.${hit.name}\n${hit.snippet}`, query.value, matchOptions.value)));
@@ -63,7 +123,7 @@ const totalHitsCount = computed(() => {
   if (activeMode.value === "objects") return filteredObjectHits.value.length;
   return 0;
 });
-const canSubmit = computed(() => Boolean(query.value.trim()) && !searching.value && (activeMode.value !== "files" || Boolean(root.value)));
+const canSubmit = computed(() => Boolean(query.value.trim()) && !searching.value && (activeMode.value === "files" ? Boolean(root.value) : selectedTargetKeys.value.length > 0));
 
 function clearDebounce() {
   if (debounceTimer) clearTimeout(debounceTimer);
@@ -77,10 +137,53 @@ function resetResults() {
   selectedIndex.value = -1;
 }
 
+function resetConnectionSelection() {
+  const preferredKey = props.preferredConnectionId ? searchTargetKey(props.preferredConnectionId, props.preferredDatabase || "") : "";
+  const activeConnectionTarget = scopeTargets.value.find((target) => target.connection.id === connectionStore.activeConnectionId);
+  const target = scopeTargets.value.find((candidate) => candidate.key === preferredKey) || activeConnectionTarget || scopeTargets.value[0];
+  selectedTargetKeys.value = target ? [target.key] : [];
+}
+
+function toggleConnection(targetKey: string) {
+  selectionRevision += 1;
+  if (activeMode.value === "data") {
+    selectedTargetKeys.value = [targetKey];
+    return;
+  }
+  const selected = new Set(selectedTargetKeys.value);
+  if (selected.has(targetKey)) selected.delete(targetKey);
+  else selected.add(targetKey);
+  selectedTargetKeys.value = [...selected];
+}
+
+function selectAllConnections() {
+  selectionRevision += 1;
+  selectedTargetKeys.value = scopeTargets.value.map((target) => target.key);
+}
+
+function clearConnectionSelection() {
+  selectionRevision += 1;
+  selectedTargetKeys.value = [];
+}
+
+async function refreshRuntimeSearchTargets() {
+  const requestId = ++scopeRequestId;
+  const initialSelectionRevision = selectionRevision;
+  try {
+    const targets = await api.listDatabaseSearchScopeTargets();
+    if (!props.open || requestId !== scopeRequestId) return;
+    runtimeSearchTargets.value = targets;
+    if (initialSelectionRevision === selectionRevision) resetConnectionSelection();
+  } catch {
+    if (props.open && requestId === scopeRequestId) runtimeSearchTargets.value = [];
+  }
+}
+
 watch(
   () => props.open,
   (open) => {
     searchRequestId += 1;
+    scopeRequestId += 1;
     clearDebounce();
     if (!open) return;
     activeMode.value = props.mode;
@@ -91,7 +194,9 @@ watch(
     wholeWord.value = false;
     metadataTypeFilter.value = "ALL";
     searching.value = false;
+    resetConnectionSelection();
     resetResults();
+    void refreshRuntimeSearchTargets();
     void nextTick(() => searchInputRef.value?.focus());
   },
   { immediate: true },
@@ -104,7 +209,25 @@ watch(
   },
 );
 
-watch([query, activeMode, root], () => {
+watch(activeMode, (mode, previousMode) => {
+  if (!props.open || mode === previousMode) return;
+  const sharesMultiTargetScope = (mode === "objects" || mode === "metadata") && (previousMode === "objects" || previousMode === "metadata");
+  if (sharesMultiTargetScope) {
+    const availableKeys = new Set(scopeTargets.value.map((target) => target.key));
+    selectedTargetKeys.value = selectedTargetKeys.value.filter((key) => availableKeys.has(key));
+    if (selectedTargetKeys.value.length === 0) resetConnectionSelection();
+  } else {
+    resetConnectionSelection();
+  }
+  resetResults();
+});
+
+watch(
+  () => selectedTargetKeys.value.join("\u0001"),
+  () => resetResults(),
+);
+
+watch([query, activeMode, root, () => selectedTargetKeys.value.join("\u0001")], () => {
   selectedIndex.value = -1;
   clearDebounce();
   if (!props.open || activeMode.value === "data" || !query.value.trim()) {
@@ -121,6 +244,7 @@ watch([caseSensitive, wholeWord, metadataTypeFilter], () => {
 
 onUnmounted(() => {
   searchRequestId += 1;
+  scopeRequestId += 1;
   clearDebounce();
 });
 
@@ -139,9 +263,15 @@ async function runSearch() {
   const needle = query.value.trim();
   const mode = activeMode.value;
   const searchRoot = root.value;
+  const searchTargets = selectedScopeTargets.value.map((target) => ({ connectionId: target.connection.id, database: target.database }));
+  const targetKeys = [...selectedTargetKeys.value];
   if (!needle || mode === "data") return;
   if (mode === "files" && !searchRoot) {
     error.value = t("searchCenter.projectRequired");
+    return;
+  }
+  if (mode !== "files" && searchTargets.length === 0) {
+    error.value = t("searchCenter.connectionRequired");
     return;
   }
 
@@ -153,12 +283,26 @@ async function runSearch() {
     if (mode === "files") {
       const hits = await api.searchFiles(searchRoot, needle, 500);
       if (requestId === searchRequestId && mode === activeMode.value && needle === query.value.trim()) fileHits.value = hits;
-    } else if (mode === "metadata") {
-      const hits = await api.searchMetadata(needle, 500);
-      if (requestId === searchRequestId && mode === activeMode.value && needle === query.value.trim()) metadataHits.value = hits;
     } else {
-      const hits = await api.searchObjectDefinitions(needle, 300);
-      if (requestId === searchRequestId && mode === activeMode.value && needle === query.value.trim()) objectHits.value = hits;
+      const connectionIds = [...new Set(searchTargets.map((target) => target.connectionId))];
+      const connectionResults = await Promise.allSettled(connectionIds.map((connectionId) => connectionStore.ensureConnected(connectionId, { activate: false })));
+      const searchableConnectionIds = new Set(connectionIds.filter((_, index) => connectionResults[index]?.status === "fulfilled"));
+      const searchableTargets = searchTargets.filter((target) => searchableConnectionIds.has(target.connectionId));
+      if (searchableTargets.length === 0) {
+        const firstFailure = connectionResults.find((result) => result.status === "rejected");
+        throw firstFailure?.status === "rejected" ? firstFailure.reason : new Error(t("searchCenter.connectionRequired"));
+      }
+      if (searchableConnectionIds.size < connectionIds.length) {
+        error.value = t("searchCenter.partialConnectionFailure", { count: connectionIds.length - searchableConnectionIds.size });
+      }
+      const selectionIsCurrent = () => targetKeys.join("\u0001") === selectedTargetKeys.value.join("\u0001");
+      if (mode === "metadata") {
+        const hits = await api.searchMetadata(needle, 500, searchableTargets);
+        if (requestId === searchRequestId && mode === activeMode.value && needle === query.value.trim() && selectionIsCurrent()) metadataHits.value = hits;
+      } else {
+        const hits = await api.searchObjectDefinitions(needle, 300, searchableTargets);
+        if (requestId === searchRequestId && mode === activeMode.value && needle === query.value.trim() && selectionIsCurrent()) objectHits.value = hits;
+      }
     }
   } catch (cause: any) {
     if (requestId === searchRequestId) error.value = cause?.message || String(cause);
@@ -213,8 +357,14 @@ function openDefinition(hit: Awaited<ReturnType<typeof api.searchObjectDefinitio
 
 function triggerDataSearch() {
   const keyword = query.value.trim();
-  if (!keyword) return;
-  emit("open-data-search", keyword);
+  const target = selectedScopeTargets.value[0];
+  if (!keyword || !target || !target.database) {
+    error.value = t("searchCenter.connectionRequired");
+    return;
+  }
+  const connection = target.connection;
+  const database = target.database;
+  emit("open-data-search", { keyword, connectionId: connection.id, database });
   dialogOpen.value = false;
 }
 
@@ -297,6 +447,37 @@ const metadataFilterChips = computed<Array<{ key: MetadataTypeFilter; label: str
           </button>
         </div>
 
+        <div v-if="activeMode !== 'files'" class="flex items-center gap-2 text-xs">
+          <span class="shrink-0 text-muted-foreground">{{ t("searchCenter.connectionScope") }}</span>
+          <DropdownMenu>
+            <DropdownMenuTrigger as-child>
+              <Button variant="outline" size="sm" class="h-7 min-w-0 flex-1 justify-between gap-2 px-2 font-normal">
+                <span class="min-w-0 truncate font-mono text-[11px]">{{ selectedScopeSummary }}</span>
+                <ChevronDown class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" class="w-[480px] max-w-[calc(100vw-3rem)]">
+              <div class="flex items-center justify-between px-2 py-1.5 text-[11px] text-muted-foreground">
+                <span>{{ activeMode === "data" ? t("searchCenter.singleConnectionHint") : t("searchCenter.multipleConnectionHint") }}</span>
+                <div v-if="activeMode !== 'data'" class="flex items-center gap-1">
+                  <button type="button" class="rounded px-1.5 py-0.5 hover:bg-muted hover:text-foreground" @click.stop="selectAllConnections">{{ t("searchCenter.selectAll") }}</button>
+                  <span>·</span>
+                  <button type="button" class="rounded px-1.5 py-0.5 hover:bg-muted hover:text-foreground" @click.stop="clearConnectionSelection">{{ t("searchCenter.clearSelection") }}</button>
+                </div>
+              </div>
+              <DropdownMenuSeparator />
+              <DropdownMenuCheckboxItem v-for="target in scopeTargets" :key="target.key" :model-value="selectedTargetKeys.includes(target.key)" class="gap-2" @select.prevent @click="toggleConnection(target.key)">
+                <Database class="h-3.5 w-3.5 shrink-0 text-primary" />
+                <div class="min-w-0 flex-1">
+                  <div class="truncate text-xs font-medium">{{ target.connection.name }} · {{ target.database || t("searchCenter.allConnectedDatabases") }}</div>
+                  <div class="truncate font-mono text-[10px] text-muted-foreground">{{ target.connection.username || "—" }}@{{ target.connection.host || "—" }}</div>
+                </div>
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuItem v-if="scopeTargets.length === 0" disabled>{{ t("searchCenter.noSearchableConnections") }}</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+
         <div class="flex items-center gap-2">
           <div class="relative flex-1">
             <Search class="pointer-events-none absolute left-2.5 top-2 h-4 w-4 text-muted-foreground" />
@@ -318,10 +499,6 @@ const metadataFilterChips = computed<Array<{ key: MetadataTypeFilter; label: str
             </Button>
           </div>
         </div>
-
-        <p v-if="activeMode === 'objects' || activeMode === 'metadata'" class="text-[10px] text-muted-foreground">
-          {{ t("searchCenter.connectedScopeHint") }}
-        </p>
 
         <div v-if="activeMode === 'files'" class="flex items-center gap-2 text-xs">
           <span class="shrink-0 text-muted-foreground">{{ t("searchCenter.searchDirectory") }}</span>

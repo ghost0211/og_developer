@@ -15,9 +15,11 @@ pub struct FileSearchQuery {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TextSearchRequest {
     pub query: String,
     pub limit: Option<usize>,
+    pub targets: Option<Vec<dbx_core::search::DatabaseSearchScopeTarget>>,
 }
 
 #[derive(Deserialize)]
@@ -41,18 +43,40 @@ pub async fn search_files(
     Ok(Json(hits.map_err(AppError::from)?))
 }
 
+pub async fn list_database_targets(
+    State(state): State<Arc<WebState>>,
+) -> Result<Json<Vec<dbx_core::search::DatabaseSearchScopeTarget>>, AppError> {
+    Ok(Json(dbx_core::search::list_database_search_scope_targets(&state.app).await))
+}
+
 pub async fn search_metadata(
     State(state): State<Arc<WebState>>,
     Json(req): Json<TextSearchRequest>,
 ) -> Result<Json<Vec<dbx_core::search::MetadataSearchHit>>, AppError> {
-    Ok(Json(dbx_core::search::search_metadata(&state.app, &req.query, req.limit.unwrap_or(200)).await))
+    Ok(Json(
+        dbx_core::search::search_metadata_for_targets(
+            &state.app,
+            &req.query,
+            req.limit.unwrap_or(200),
+            req.targets.as_deref(),
+        )
+        .await,
+    ))
 }
 
 pub async fn search_object_definitions(
     State(state): State<Arc<WebState>>,
     Json(req): Json<TextSearchRequest>,
 ) -> Result<Json<Vec<dbx_core::search::DefinitionSearchHit>>, AppError> {
-    Ok(Json(dbx_core::search::search_object_definitions(&state.app, &req.query, req.limit.unwrap_or(100)).await))
+    Ok(Json(
+        dbx_core::search::search_object_definitions_for_targets(
+            &state.app,
+            &req.query,
+            req.limit.unwrap_or(100),
+            req.targets.as_deref(),
+        )
+        .await,
+    ))
 }
 
 pub async fn list_dir(
