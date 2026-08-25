@@ -66,6 +66,8 @@ const emit = defineEmits<{
   "quick-open": [];
   "search-table-data": [];
   "open-sessions": [];
+  "open-table-import": [];
+  "open-database-export": [];
   "open-transfer": [];
   "open-sql-file": [];
   "open-schema-diff": [];
@@ -238,6 +240,8 @@ const toolbarStyle = computed(() => {
         @quick-open="emit('quick-open')"
         @search-table-data="emit('search-table-data')"
         @open-sessions="emit('open-sessions')"
+        @open-table-import="emit('open-table-import')"
+        @open-database-export="emit('open-database-export')"
         @open-transfer="emit('open-transfer')"
         @open-sql-file="emit('open-sql-file')"
         @open-schema-diff="emit('open-schema-diff')"

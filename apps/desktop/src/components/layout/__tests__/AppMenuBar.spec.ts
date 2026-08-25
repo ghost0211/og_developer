@@ -43,7 +43,7 @@ describe("AppMenuBar", () => {
   });
 
   it("keeps the moved utilities in the Tools menu", () => {
-    for (const event of ["open-transfer", "open-sql-file", "open-schema-diff", "open-data-compare", "toggle-sql-library", "toggle-sql-file-panel"]) {
+    for (const event of ["open-table-import", "open-database-export", "open-transfer", "open-sql-file", "open-schema-diff", "open-data-compare", "toggle-sql-library", "toggle-sql-file-panel"]) {
       expect(menuSource).toContain(`@select="emit('${event}')"`);
     }
   });

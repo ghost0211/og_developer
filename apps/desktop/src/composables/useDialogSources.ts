@@ -80,6 +80,22 @@ function clearTransferPrefill() {
   transferPrefillTargetSchema.value = "";
 }
 
+function clearTableImportPrefill() {
+  tableImportPrefillConnectionId.value = "";
+  tableImportPrefillDatabase.value = "";
+  tableImportPrefillSchema.value = "";
+  tableImportPrefillTable.value = "";
+}
+
+function clearDatabaseExportPrefill() {
+  databaseExportPrefillConnectionId.value = "";
+  databaseExportPrefillDatabase.value = "";
+  databaseExportPrefillSchema.value = "";
+  databaseExportPrefillTable.value = "";
+  databaseExportPrefillTables.value = [];
+  databaseExportAllDatabases.value = false;
+}
+
 export function useDialogSources() {
   const { t } = useI18n();
   const connectionStore = useConnectionStore();
@@ -188,6 +204,10 @@ export function useDialogSources() {
       },
     );
 
+    watch(showTableImportDialog, (open) => {
+      if (!open) clearTableImportPrefill();
+    });
+
     watch(
       () => connectionStore.tableDataGenerateSource,
       (v) => {
@@ -246,6 +266,10 @@ export function useDialogSources() {
         }
       },
     );
+
+    watch(showDatabaseExportDialog, (open) => {
+      if (!open) clearDatabaseExportPrefill();
+    });
   } // end watchersRegistered
 
   // Config export/import helpers

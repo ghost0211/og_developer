@@ -41,6 +41,7 @@ import {
   SunMoon,
   TableProperties,
   Undo2,
+  Upload,
   X,
   Zap,
 } from "@lucide/vue";
@@ -106,6 +107,8 @@ const emit = defineEmits<{
   "search-metadata": [];
   "search-objects": [];
   "open-sessions": [];
+  "open-table-import": [];
+  "open-database-export": [];
   "open-transfer": [];
   "open-sql-file": [];
   "open-schema-diff": [];
@@ -413,6 +416,14 @@ const shortcutClass = "ml-auto pl-5 text-[10px] font-mono text-muted-foreground/
         <DropdownMenuItem :disabled="!hasConnections" :class="menuItemClass" @select="emit('open-sessions')">
           <Activity :class="menuIconClass" class="text-primary" />
           <span>{{ t("processList.title") }}</span>
+        </DropdownMenuItem>
+        <DropdownMenuItem :disabled="!hasConnections" :class="menuItemClass" @select="emit('open-table-import')">
+          <Download :class="menuIconClass" />
+          <span>{{ t("contextMenu.importData") }}...</span>
+        </DropdownMenuItem>
+        <DropdownMenuItem :disabled="!hasConnections" :class="menuItemClass" @select="emit('open-database-export')">
+          <Upload :class="menuIconClass" />
+          <span>{{ t("contextMenu.exportDatabase") }}...</span>
         </DropdownMenuItem>
         <DropdownMenuItem :disabled="!hasConnections" :class="menuItemClass" @select="emit('open-transfer')">
           <ArrowLeftRight :class="menuIconClass" />

@@ -93,6 +93,10 @@ describe("supportsTableImport", () => {
   it("enables OceanBase Oracle table import", () => {
     expect(supportsTableImport("oceanbase-oracle")).toBe(true);
   });
+
+  it("enables openGauss table import", () => {
+    expect(supportsTableImport("opengauss")).toBe(true);
+  });
 });
 
 describe("database property editing", () => {

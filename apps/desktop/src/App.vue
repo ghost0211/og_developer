@@ -338,6 +338,39 @@ function requestActiveEditorExecuteCurrent() {
 
 const dialogs = useDialogSources();
 const { getDatabaseOptions } = useDatabaseOptions();
+
+async function openTableImportFromMenu() {
+  const tab = activeTab.value;
+  const connectionId = tab?.connectionId || connectionStore.activeConnectionId || connectionStore.connections[0]?.id;
+  if (!connectionId) return;
+  const connection = connectionStore.getConfig(connectionId);
+  if (!connection) return;
+
+  try {
+    const databaseOptions = tab?.database ? [] : await getDatabaseOptions(connectionId);
+    const database = (tab?.database || resolveDefaultDatabase(connection, databaseOptions)).trim();
+    if (!database) {
+      toast(t("editor.selectDatabaseRequired"), 2500);
+      return;
+    }
+
+    await connectionStore.ensureConnected(connectionId);
+    let schema = tab?.schema?.trim() || "";
+    if (!schema && isSchemaAware(effectiveDatabaseTypeForConnection(connection))) {
+      const schemas = await api.listSchemas(connectionId, database);
+      schema = schemas.includes("public") ? "public" : schemas[0] || "";
+    }
+
+    connectionStore.tableImportSource = {
+      connectionId,
+      database,
+      schema: schema || undefined,
+    };
+  } catch (error: any) {
+    toast(error?.message || String(error), 4000);
+  }
+}
+
 const { openLineageTarget, openDatabaseSearchTarget, openDiagramTarget, openObjectBrowserTableTarget, onStructureEditorSaved, openTableTarget } = useNavigationTargets(dialogs);
 const { onExecuteSql, onReloadData, onPaginate, onSort } = useDataGridActions(activeTab);
 const { setupTauriListeners, cleanupTauriListeners } = useTauriEvents({
@@ -2458,6 +2491,8 @@ onUnmounted(() => {
               }
             }
           "
+          @open-table-import="void openTableImportFromMenu()"
+          @open-database-export="dialogs.showDatabaseExportDialog.value = true"
           @open-transfer="dialogs.showTransferDialog.value = true"
           @open-sql-file="dialogs.showSqlFileDialog.value = true"
           @open-schema-diff="dialogs.showSchemaDiffDialog.value = true"
