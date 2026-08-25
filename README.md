@@ -4,151 +4,152 @@
 
 # og developer
 
-**openGauss 专用数据库开发工具 —— 桌面端（Tauri）+ Web。**
+**专门为 openGauss 打造的现代化数据库开发工具 —— 桌面端（Tauri）+ Web 端**
 
-基于 [dbx](https://github.com/t8y2/dbx) 的深度定制版，只专注 openGauss 一种
-数据库，把方言细节与 PL/SQL 开发体验做透。
+基于 [dbx](https://github.com/t8y2/dbx)（Apache-2.0）深度定制，裁剪通用入口，专注于 openGauss 一种数据库，把方言细节与 PL/SQL 开发体验做深做透。
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Based on](https://img.shields.io/badge/based%20on-dbx-2b7bd9)](https://github.com/t8y2/dbx)
+[![openGauss](https://img.shields.io/badge/openGauss-6.0%20%7C%207.0-red.svg)](https://opengauss.org/)
 
 </div>
 
 ---
 
-## 为什么有 og developer
+## 💡 为什么有 og developer？
 
-dbx 支持 70+ 种数据库；og developer 反其道而行——入口裁剪到**只保留
-openGauss**，把全部精力投入到：
+通用数据库客户端（如 DBeaver、Navicat 或原版 dbx）虽然连接类型繁多，但面对 openGauss 时往往存在水土不服：
+- 默认连接受限于 SHA-256 密码加密协议；
+- PL/SQL 脚本切分容易把包体内部的分号切碎；
+- 缺少对 Package（包头/包体）、同义词、作业（Job）的原生层级支持；
+- 缺乏对 `dbe_pldebugger` 图形化调试与 `DBMS_OUTPUT` 输出流的完整支持；
+- 过程与包体内部的引用依赖关系难以分析。
 
-- **openGauss 方言深度**：PL/SQL 感知的语句切分、A 兼容模式类型、
-  包/同义词目录（`gs_package` / `pg_synonym` / `gs_source`）、源码重建、
-  `sql_compatibility`（A/B/C/PG/M）模式感知。
-- **PL/SQL 开发体验**：基于 `dbe_pldebugger` 的图形调试器、DBMS_OUTPUT /
-  `RAISE NOTICE` 捕获、编译错误行定位、包内子程序层级与无效对象标记。
-- **零门槛连接**：默认内嵌官方 openGauss JDBC 驱动
-  （`org.opengauss.Driver`），根治 SHA-256 认证问题；同时保留原生 wire 协议。
+**og developer 反其道而行** —— 将连接类型白名单裁剪为仅保留 openGauss，全力解决上述痛点，对标 PL/SQL Developer 与 Oracle SQL Developer 的开发体验，做最懂 openGauss 的专用开发工具。
 
-上游 dbx 代码尽量原样保留：连接类型白名单是唯一的入口裁剪——放宽白名单即可
-恢复其它数据库。
+---
 
-## 特性
+## ✨ 核心杀手锏特性
 
-### openGauss 深度定制
+### 1. 🔌 零门槛极速连接与双通道支持
+- **内嵌官方 JDBC 驱动**：默认内嵌 `org.opengauss.Driver`，开箱即用，原生支持 openGauss 默认的 SHA-256 身份认证机制与兼容参数。
+- **双通道架构**：同时提供原生 Wire 协议连接（vendored `tokio-postgres`），精准捕获 `RAISE NOTICE` / `INFO` 消息流。
 
-- **连接**：内嵌官方 JDBC 驱动（自动就位，支持 `jdbc:opengauss://`），另有
-  原生 wire 协议并捕获 RAISE NOTICE（vendored `tokio-postgres` fork）。
-- **PL/SQL 切分器**：openGauss 复用 GaussDB 方言 profile——PL/SQL 块、
-  `/` 行终止符、dollar-quoted 例程体，`CREATE PACKAGE BODY` 等不再被 `;` 切碎。
-- **对象树**：`PACKAGE` / `PACKAGE_BODY` / `SYNONYM` / `TYPE` / `JOB` 节点、
-  包内子程序层级、无效对象（编译失败）标记、幽灵源码、分组计数、全部展开、
-  另存为、表/视图/物化视图/包创建模板。
-- **源码查看**：优先 `gs_source` 原始 CREATE 全文，`gs_package` 兜底；
-  包/同义词 DDL 重建为可执行形式，可编辑后回存执行（编译回环）。
-- **执行反馈**：DBMS_OUTPUT 与 `RAISE NOTICE` 消息经 JDBC/原生双路捕获，
-  显示在结果视图；编译错误把 `LINE n` 映射回编辑器行。
-- **A 兼容模式类型**：`NUMBER`、`VARCHAR2`、`NVARCHAR2`、`RAW`、`BLOB`、
-  `BINARY_INTEGER`/`PLS_INTEGER`、`BINARY_FLOAT`、`BINARY_DOUBLE`、`JSONB`、
-  `INTERVAL`。
-- **图形化 PL/SQL 调试器**：编辑器内断点、变量表、调用栈、单步/继续/跳出，
-  基于 `dbe_pldebugger` 双会话模型（已在 openGauss-lite 7.0.0-RC3 真机
-  全流程验证）。
-- **兼容模式感知**：连接后探测 `sql_compatibility`，驱动树节点显隐、编辑器
-  方言与信息面板（A/PG 规则已真机验证）。
+### 2. ⚡ PL/SQL 程序窗口 (Program Window)
+- **专为过程/函数/包打造的 IDE 窗口**：
+  - **包头/包体双标签独立维护**：支持 Package 规范（Specification）与包体（Body）一键无缝切换编辑。
+  - **编译并保存**：一键执行编译，实时反馈毫秒级编译耗时与状态。
+  - **编译错误行精准映射**：自动解析 openGauss 报错中的 `LINE n`，与编辑器代码行精准联动并在报错列表中点击跳转。
+  - **源码差异比对 (Diff)**：保存前一键与数据库现有源码进行逐行改动比对。
+  - **代码美化与格式化**：内置针对 openGauss / Oracle 方言的 SQL 美化器。
 
-### 继承自 dbx 的通用能力
+### 3. 🐞 图形化 PL/SQL 调试器 (Debugger)
+- **底层基于 openGauss 原生 `dbe_pldebugger` 双会话模型**（已在 openGauss 7.0 真机全流程验证）：
+  - **断点管理**：在编辑器行号槽点击添加、删除和启用/禁用断点。
+  - **单步控制**：单步步入（Step Into）、单步跳过（Step Over）、跳出（Step Out）、继续运行（Continue）与终止（Abort）。
+  - **变量监视与修改**：实时查看局部变量表（`info_locals`），支持查看与运行时修改变量值（`set_var`）。
+  - **调用栈回溯**：直观展示多层子程序调用的 Backtrace 栈帧；执行结束或停止后保留最后一次有效快照。
 
-- SQL 编辑器基础：补全、多语句执行、批量执行进度、结果网格与导出。
-- Schema 浏览器、表结构编辑、扩展管理、数据传输等通用数据库工具能力。
+### 4. 🕸️ 双向对象引用与依赖分析 (Dependencies & Lineage)
+- **全方位打通存储过程、函数、包规范、包体的依赖追踪**：
+  - **引用方 (References / Depends On)**：基于静态 PL/SQL 词法抽取与 Catalog 符号消歧，精确识别过程/包体引用的表、视图、例程、包、序列与类型。
+  - **被引用方 (Referenced By / Used By)**：结合 `pg_depend` 与全库 PL 源码快速扫描，一键找出所有调用/依赖当前表、视图或函数的外部过程与包体。
+  - **双入口呈现**：侧边栏对象树（展开 `引用` / `被引用` 子节点）与程序窗口（底部 `依赖关系` 专属面板）。
 
-### og developer 新增的通用能力
+### 5. 🎯 例程图形化执行与测试 (Routine Test Panel)
+- **参数智能推导**：自动提取存储过程与函数的入参、出参（OUT / INOUT）与默认值。
+- **OUT 参数结果集回显**：存储过程返回的 OUT 字段自动转为网格与结构化结果展示。
+- **DBMS_OUTPUT 捕获**：执行后自动拉取 `gms_output.get_lines`，呈现服务器端打印日志。
 
-以下能力并非继承自 dbx，而是本仓库新增的：
+### 6. 🌳 完备的对象树与元数据体系
+- **完整对象体系**：支持 表、视图、物化视图、存储过程、函数、包（Package & Package Body）、同义词（Synonym）、定时作业（Job）、自定义类型（Type）、序列（Sequence）。
+- **包内子程序层级展示**：通过 `pg_proc.propackageid → gs_package` 关联，包节点展开即可直观查看下挂的所有函数与过程。
+- **无效对象与幽灵源码支持**：
+  - 标记编译失败对象（`dbe_pldeveloper.gs_source.status = 'f'` 红点告警，对标 Oracle INVALID 状态）。
+  - 编译失败的对象即便在 `pg_proc` 中无实体，也能在树中呈现并查看保存在 `gs_source` 中的原始 CREATE 源码。
 
-- **SQL 书签**：行号槽 🔖 位置书签、右键添加/删除/跳转（F2 / Shift-F2）。
-- **菜单栏与编辑器命令**：项目/搜索/编辑/工具菜单，撤销/重做/剪切/复制/
-  粘贴/查找/查找并替换，SQL 另存为。
-- **三模式搜索**：文件（项目目录内）、元数据（对象名）、数据库对象（定义文本）。
-- **workspace 项目管理**：创建/打开项目（命名工作目录），文件搜索以项目为
-  默认根。
-- **会话管理**：`pg_stat_activity` 会话列表、手动/定时刷新、终止会话。
-- **格式化示例预览**：SQL 格式化设置面板中的实时示例。
-- **输出视图**：DBMS_OUTPUT / `RAISE NOTICE` 行在结果区的“输出”页展示。
+### 7. 🛡️ 兼容模式与 Oracle 方言深度适配
+- **模式自适应**：连接后自动感知 `sql_compatibility`（A / B / C / PG / M），自动切换关键字提示、语法切分与信息面板。
+- **A 兼容模式类型全覆盖**：原生支持 `NUMBER`、`VARCHAR2`、`NVARCHAR2`、`RAW`、`BLOB`、`BINARY_INTEGER`/`PLS_INTEGER`、`BINARY_FLOAT`、`BINARY_DOUBLE`、`JSONB`、`INTERVAL` 等。
+- **PL/SQL 块切分器**：识别 GaussDB / Oracle 风格 PL/SQL 块、`/` 行终止符与 `$$` 包裹块，批量脚本执行绝不破坏内部结构。
 
-## 与上游的关系
+---
 
-本仓库是 [dbx](https://github.com/t8y2/dbx)（Copyright (c) dbx
-contributors）的**派生 fork**，基于 Apache License 2.0 分发。
+## 🛠️ 现代化开发与 IDE 生产力工具
 
-- 相对上游的全部修改见 [NOTICE](NOTICE)。
-- 完整保留 dbx 的 git 历史，保证署名可追溯。
-- 产品名为 "og developer"，不声称获得 dbx 项目的背书或与 dbx 存在隶属关系。
+- 📊 **会话与锁监控 (Session & Lock Monitor)**：实时查看 `pg_stat_activity` 活动会话列表、查询耗时、锁等待状态，支持一键终止会话。
+- 🔍 **全局三模搜索中心**：支持按对象名（元数据）、定义文本（DDL/源码全文）、项目工作区文件进行秒级定位。
+- 🔖 **SQL 编辑器增强**：行号槽书签（Bookmark 🔖）、F2 / Shift+F2 快速跳转、多结果集持久化视图、执行进度追踪。
+- 📈 **数据网格 (Data Grid)**：列头快速聚合统计（求和/平均值/极值/去重）、行内就地编辑、复杂 JSON / 空间几何图层预览、全格式导出（Excel/CSV/JSON/SQL）。
+- 📁 **工作区与项目管理 (Workspace Projects)**：支持本地目录项目工程化管理与批量 SQL 执行。
 
-### 分支
+---
 
-- `main` —— 产品主线：品牌化、入口裁剪与 openGauss 特性。
+## 🔀 与上游项目的关系
 
-上游以 `upstream` remote 跟踪，用于同步上游修复。
+本仓库是 [dbx](https://github.com/t8y2/dbx)（Copyright (c) dbx contributors）的**深度定制派生分支 (Fork)**，基于 Apache License 2.0 分发。
 
-## 快速开始
+- 详细修改清单与署名记录见 [NOTICE](NOTICE)。
+- 完整保留 dbx 原始 Git 提交历史，保证署名可追溯。
+- 产品名为 **og developer**，不声称获得 dbx 项目的官方背书。
+- 本仓库主分支为 `main`，上游变更通过 `upstream` 远程分支保持同步。
 
-### 环境要求
+---
 
-- Node.js 22（见 `.nvmrc`）与 pnpm 10
-- Rust（stable），用于 Tauri 后端
-- Linux：`webkit2gtk`、`fontconfig` 等 Tauri 系统库
-- Windows：见 [BUILD_WINDOWS.md](BUILD_WINDOWS.md)（必须 MSVC 工具链）
-- NixOS：见 [README-NIX.md](README-NIX.md)
+## 🚀 快速开始
+
+### 环境准备
+- **Node.js**：>= 22（推荐通过 `.nvmrc` 配置）与 **pnpm** >= 10
+- **Rust**：Stable 工具链（用于 Tauri 与 Rust Core）
+- **Linux 依赖**：`webkit2gtk`、`fontconfig` 等 Tauri 系统库
+- **Windows 依赖**：参见 [BUILD_WINDOWS.md](BUILD_WINDOWS.md)（需 MSVC 工具链）
+- **NixOS**：参见 [README-NIX.md](README-NIX.md)
 
 ### 安装与运行
 
 ```bash
-pnpm install          # 前端依赖
-pnpm dev              # 前端开发服务器（Vite）
-pnpm dev:tauri        # 桌面端（Tauri）
-```
+pnpm install          # 安装前端依赖
 
-Web 模式（前后端分开跑）：
+# 桌面端开发（Tauri）
+pnpm dev:tauri
 
-```bash
-pnpm dev:web          # Web 前端，端口 5173
-pnpm dev:backend      # Web 后端
+# Web 端开发（前端 5173 + 本地后端服务）
+pnpm dev:web          # 启动 Web 前端
+pnpm dev:backend      # 启动 Web 后端
 ```
 
 ### 构建与打包
 
 ```bash
-pnpm build            # 类型检查 + 前端构建
-pnpm tauri build      # 桌面安装包（.deb/.rpm/.msi/...）
+pnpm build            # 前端类型检查与构建
+pnpm tauri build      # 构建各平台桌面安装包（.deb / .rpm / .msi / .dmg 等）
 ```
 
 ### 测试
 
 ```bash
-npx vitest run        # 前端测试
+# 前端全量单元测试
+npx vitest run
+
+# Rust 后端核心库测试
 cargo test -p dbx-core --no-default-features \
-  --features duckdb-sidecar,mq-admin,sqlite-sqlcipher --lib   # Rust 测试
+  --features duckdb-sidecar,mq-admin,sqlite-sqlcipher --lib
 ```
 
-测试实例为本机 Docker 容器（`openGauss-lite` 7.0.0-RC3，端口 5432）；
-[Makefile](Makefile) 里另有 `db-*` 系列目标管理测试库。
+本地测试实例推荐使用 Docker 容器（`openGauss-lite` 7.0.0-RC3，默认端口 5432）。
 
-## 文档
+---
 
-- [OG_DEVELOPER.md](OG_DEVELOPER.md) —— 仓库布局、与原版的差异
-- [OPENGAUSS_FIXES.md](OPENGAUSS_FIXES.md) —— openGauss 修复集（切分器/
-  对象树/源码/类型），已在 7.0 真机验证
-- [OPENGAUSS_ROADMAP.md](OPENGAUSS_ROADMAP.md) —— 依据官方 6.0 手册与
-  7.0 真机实测的特性路线图
-- `docs/` —— 文档站点（`make docs` 本地预览）
+## 📖 相关文档
 
-## 贡献
+- [OG_DEVELOPER.md](OG_DEVELOPER.md) —— 仓库架构布局与演进说明
+- [OPENGAUSS_FIXES.md](OPENGAUSS_FIXES.md) —— openGauss 核心修复清单（切分器/对象树/源码/类型）
+- [OPENGAUSS_ROADMAP.md](OPENGAUSS_ROADMAP.md) —— 特性规划与实施路线图
+- [CONTRIBUTING.zh-CN.md](CONTRIBUTING.zh-CN.md) —— 贡献指南
 
-见 [CONTRIBUTING.zh-CN.md](CONTRIBUTING.zh-CN.md)（或
-[CONTRIBUTING.md](CONTRIBUTING.md)）。
+---
 
-## 许可证
+## 📄 开源许可证
 
-Apache License 2.0。本项目是 [dbx](https://github.com/t8y2/dbx)
-（Copyright (c) dbx contributors）的派生作品；见
-[LICENSE](LICENSE) 与 [NOTICE](NOTICE)。
+本项目基于 [Apache License 2.0](LICENSE) 开源发布。
+派生作品信息请参见 [NOTICE](NOTICE)。

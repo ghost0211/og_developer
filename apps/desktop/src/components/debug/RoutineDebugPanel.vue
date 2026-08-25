@@ -16,6 +16,7 @@ import { useConnectionStore } from "@/stores/connectionStore";
 import { copyToClipboard } from "@/lib/common/clipboard";
 import { loadRoutineParameters } from "@/lib/table/routineParameters";
 import { buildOpenGaussRoutineDebugCallSql } from "@/lib/table/routineExecutionSql";
+import { mergeDebugSnapshot } from "@/lib/debug/debugSnapshot";
 import { effectiveDatabaseTypeForConnection } from "@/lib/database/jdbcDialect";
 import * as api from "@/lib/backend/api";
 import type { DatabaseType } from "@/types/database";
@@ -89,6 +90,10 @@ const targetLabel = computed(() => {
 const currentLineno = computed(() => position.value?.lineno ?? null);
 const isBusy = computed(() => busy.value || phase.value === "starting");
 const breakpointLines = computed<Map<number, OpenGaussDebugBreakpoint>>(() => new Map(breakpoints.value.map((bp: OpenGaussDebugBreakpoint) => [bp.lineno, bp])));
+
+function isCurrentDebugSession(id: string): boolean {
+  return id === sessionId.value && phase.value !== "stopped";
+}
 
 const filteredLocals = computed<OpenGaussDebugLocal[]>(() => {
   const q = varSearchQuery.value.trim().toLowerCase();
@@ -204,24 +209,35 @@ async function startSession() {
   }
 }
 
-async function refreshState() {
-  if (!sessionId.value) return;
-  try {
-    const [nextLocals, nextBacktrace, nextBreakpoints] = await Promise.all([
-      api.opengaussDebugLocals(sessionId.value).catch(() => [] as OpenGaussDebugLocal[]),
-      api.opengaussDebugBacktrace(sessionId.value).catch(() => [] as OpenGaussDebugBacktraceFrame[]),
-      api.opengaussDebugBreakpoints(sessionId.value).catch(() => [] as OpenGaussDebugBreakpoint[]),
-    ]);
-    locals.value = nextLocals;
-    backtrace.value = nextBacktrace;
-    breakpoints.value = nextBreakpoints;
-  } catch (err: any) {
-    console.warn("[DBX][Debug] refresh state warning:", err);
+async function refreshState(requestedSessionId = sessionId.value) {
+  if (!requestedSessionId || requestedSessionId !== sessionId.value) return;
+
+  const [localsResult, backtraceResult, breakpointsResult] = await Promise.allSettled([api.opengaussDebugLocals(requestedSessionId), api.opengaussDebugBacktrace(requestedSessionId), api.opengaussDebugBreakpoints(requestedSessionId)]);
+
+  // A stop/restart may complete while these requests are in flight. Never let
+  // an old session write into the newly selected or already-stopped panel.
+  if (requestedSessionId !== sessionId.value) return;
+
+  if (localsResult.status === "fulfilled") {
+    locals.value = mergeDebugSnapshot(locals.value, localsResult.value, phase.value);
+  } else {
+    console.warn("[DBX][Debug] locals refresh warning:", localsResult.reason);
+  }
+  if (backtraceResult.status === "fulfilled") {
+    backtrace.value = mergeDebugSnapshot(backtrace.value, backtraceResult.value, phase.value);
+  } else {
+    console.warn("[DBX][Debug] backtrace refresh warning:", backtraceResult.reason);
+  }
+  if (breakpointsResult.status === "fulfilled") {
+    breakpoints.value = breakpointsResult.value;
+  } else {
+    console.warn("[DBX][Debug] breakpoints refresh warning:", breakpointsResult.reason);
   }
 }
 
 async function step(action: "next" | "step" | "finish" | "continue") {
-  if (!sessionId.value || busy.value || phase.value !== "running") return;
+  const activeSessionId = sessionId.value;
+  if (!activeSessionId || busy.value || phase.value !== "running") return;
   busy.value = true;
   errorMessage.value = "";
 
@@ -235,7 +251,8 @@ async function step(action: "next" | "step" | "finish" | "continue") {
   logEvent("step", `[ACTION] 执行 ${actionLabels[action] || action}`);
 
   try {
-    const next = await api.opengaussDebugStep(sessionId.value, action);
+    const next = await api.opengaussDebugStep(activeSessionId, action);
+    if (!isCurrentDebugSession(activeSessionId)) return;
     position.value = next;
 
     if (next.finished) {
@@ -244,7 +261,8 @@ async function step(action: "next" | "step" | "finish" | "continue") {
         executionDurationMs.value = Math.round(performance.now() - startTime);
       }
       logEvent("info", `[DEBUG] 调试执行已结束 (耗时 ${executionDurationMs.value ?? 0}ms)`);
-      await fetchCallResult();
+      await fetchCallResult(activeSessionId);
+      if (!isCurrentDebugSession(activeSessionId)) return;
       toast(t("plDebug.finished", "调试完成"), 2000);
     } else {
       if (next.lineno != null) {
@@ -252,10 +270,12 @@ async function step(action: "next" | "step" | "finish" | "continue") {
       }
     }
 
-    await refreshState();
+    await refreshState(activeSessionId);
+    if (!isCurrentDebugSession(activeSessionId)) return;
     await nextTick();
     scrollToActiveLine();
   } catch (error: any) {
+    if (!isCurrentDebugSession(activeSessionId)) return;
     const msg = error?.message || String(error);
     errorMessage.value = msg;
     logEvent("error", `[ERROR] 调试单步执行出错: ${msg}`);
@@ -265,15 +285,17 @@ async function step(action: "next" | "step" | "finish" | "continue") {
   }
 }
 
-async function fetchCallResult() {
-  if (!sessionId.value) return;
+async function fetchCallResult(requestedSessionId = sessionId.value) {
+  if (!requestedSessionId) return;
   try {
-    const res = await api.opengaussDebugCallResult(sessionId.value);
+    const res = await api.opengaussDebugCallResult(requestedSessionId);
+    if (!isCurrentDebugSession(requestedSessionId)) return;
     callResult.value = res;
     if (res) {
       logEvent("notice", `[RESULT] 返回结果: ${res}`);
     }
   } catch (error: any) {
+    if (!isCurrentDebugSession(requestedSessionId)) return;
     callResult.value = error?.message || String(error);
   }
 }

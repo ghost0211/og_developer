@@ -111,6 +111,8 @@ pub struct OpenGaussDebugSession {
     debugger: Object,
     call_task: Mutex<Option<JoinHandle<Result<String, String>>>>,
     finished: AtomicBool,
+    last_locals: Mutex<Vec<OpenGaussDebugLocal>>,
+    last_backtrace: Mutex<Vec<OpenGaussDebugBacktraceFrame>>,
 }
 
 impl OpenGaussDebugSession {
@@ -284,6 +286,19 @@ async fn run_debug_query(client: &Object, sql: &str) -> Result<Vec<tokio_postgre
         .map_err(|err| postgres::debug_error_to_string(&err))
 }
 
+/// A finished PL/SQL frame may disappear before the debugger can read its
+/// locals/backtrace. Keep the last valid snapshot only for that terminal case;
+/// an empty result while still paused is a real empty snapshot, and a live
+/// query error must remain visible to the caller.
+fn resolve_debug_snapshot<T>(result: Result<Vec<T>, String>, finished: bool) -> Result<Option<Vec<T>>, String> {
+    match result {
+        Ok(rows) if finished && rows.is_empty() => Ok(None),
+        Ok(rows) => Ok(Some(rows)),
+        Err(_error) if finished => Ok(None),
+        Err(error) => Err(error),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Session lifecycle
 // ---------------------------------------------------------------------------
@@ -412,6 +427,8 @@ pub async fn opengauss_debug_start(
         debugger,
         call_task: Mutex::new(Some(call_task)),
         finished: AtomicBool::new(position.finished),
+        last_locals: Mutex::new(Vec::new()),
+        last_backtrace: Mutex::new(Vec::new()),
     });
     let breakpoints = read_breakpoints(session.debugger()).await.unwrap_or_default();
     debug_sessions(state).write().await.insert(session_id.clone(), session);
@@ -439,6 +456,12 @@ async fn debug_step_like(session: &OpenGaussDebugSession, verb: &str) -> Result<
     if position.finished {
         session.finished.store(true, Ordering::SeqCst);
     }
+
+    // Capture independently of the UI refresh so the terminal response still
+    // has a server-side snapshot even when the caller does not immediately
+    // request locals/backtrace.
+    let _ = read_debug_locals(session).await;
+    let _ = read_debug_backtrace(session).await;
     Ok(position)
 }
 
@@ -462,10 +485,13 @@ pub async fn opengauss_debug_step(
 // Locals / variables
 // ---------------------------------------------------------------------------
 
-pub async fn opengauss_debug_locals(state: &AppState, session_id: &str) -> Result<Vec<OpenGaussDebugLocal>, String> {
-    let session = take_session(state, session_id).await?;
-    let rows = run_debug_query(session.debugger(), "select * from dbe_pldebugger.info_locals()").await?;
-    Ok(rows
+async fn read_debug_locals(session: &OpenGaussDebugSession) -> Result<Vec<OpenGaussDebugLocal>, String> {
+    let rows = run_debug_query(session.debugger(), "select * from dbe_pldebugger.info_locals()").await;
+    let cached = session.last_locals.lock().await.clone();
+    let Some(rows) = resolve_debug_snapshot(rows, session.finished.load(Ordering::SeqCst))? else {
+        return Ok(cached);
+    };
+    let locals: Vec<OpenGaussDebugLocal> = rows
         .iter()
         .map(|row| OpenGaussDebugLocal {
             varname: row_string(row, 0).unwrap_or_default(),
@@ -474,7 +500,14 @@ pub async fn opengauss_debug_locals(state: &AppState, session_id: &str) -> Resul
             package_name: row_string(row, 3).filter(|value| !value.is_empty()),
             isconst: row_bool(row, 4),
         })
-        .collect())
+        .collect();
+    *session.last_locals.lock().await = locals.clone();
+    Ok(locals)
+}
+
+pub async fn opengauss_debug_locals(state: &AppState, session_id: &str) -> Result<Vec<OpenGaussDebugLocal>, String> {
+    let session = take_session(state, session_id).await?;
+    read_debug_locals(&session).await
 }
 
 pub async fn opengauss_debug_set_var(
@@ -489,13 +522,13 @@ pub async fn opengauss_debug_set_var(
     Ok(rows.first().map(|row| row_bool(row, 0)).unwrap_or(false))
 }
 
-pub async fn opengauss_debug_backtrace(
-    state: &AppState,
-    session_id: &str,
-) -> Result<Vec<OpenGaussDebugBacktraceFrame>, String> {
-    let session = take_session(state, session_id).await?;
-    let rows = run_debug_query(session.debugger(), "select * from dbe_pldebugger.backtrace()").await?;
-    Ok(rows
+async fn read_debug_backtrace(session: &OpenGaussDebugSession) -> Result<Vec<OpenGaussDebugBacktraceFrame>, String> {
+    let rows = run_debug_query(session.debugger(), "select * from dbe_pldebugger.backtrace()").await;
+    let cached = session.last_backtrace.lock().await.clone();
+    let Some(rows) = resolve_debug_snapshot(rows, session.finished.load(Ordering::SeqCst))? else {
+        return Ok(cached);
+    };
+    let frames: Vec<OpenGaussDebugBacktraceFrame> = rows
         .iter()
         .map(|row| OpenGaussDebugBacktraceFrame {
             frameno: row_i64(row, 0).unwrap_or_default(),
@@ -504,7 +537,17 @@ pub async fn opengauss_debug_backtrace(
             query: row_string(row, 3).unwrap_or_default(),
             funcoid: row_i64(row, 4).unwrap_or_default(),
         })
-        .collect())
+        .collect();
+    *session.last_backtrace.lock().await = frames.clone();
+    Ok(frames)
+}
+
+pub async fn opengauss_debug_backtrace(
+    state: &AppState,
+    session_id: &str,
+) -> Result<Vec<OpenGaussDebugBacktraceFrame>, String> {
+    let session = take_session(state, session_id).await?;
+    read_debug_backtrace(&session).await
 }
 
 // ---------------------------------------------------------------------------
@@ -768,7 +811,7 @@ mod tests {
                 _ => panic!("expected postgres pool"),
             }
         };
-        let schema = "gaussdb";
+        let schema = "public";
         postgres::execute_query(&pool, "drop procedure if exists og_dbg_live").await.expect("drop fixture");
         postgres::execute_query(
             &pool,
@@ -825,15 +868,38 @@ mod tests {
         let position = opengauss_debug_step(&state, &start.session_id, "continue").await.expect("continue");
         assert!(position.finished, "continue reaches [EXECUTION FINISHED]");
 
+        // The debugger frame is gone after completion, but the last available
+        // locals/backtrace snapshot must still be readable.
+        let final_locals = opengauss_debug_locals(&state, &start.session_id).await.expect("locals after finish");
+        assert!(final_locals.iter().any(|local| local.varname == "y"));
+        let final_frames = opengauss_debug_backtrace(&state, &start.session_id).await.expect("backtrace after finish");
+        assert!(final_frames.iter().any(|frame| frame.funcname == "og_dbg_live"));
+
         // Background CALL completed without error.
         let call_result = opengauss_debug_call_result(&state, &start.session_id).await.expect("call result");
         assert!(call_result.is_some());
 
         // Cleanup.
         opengauss_debug_stop(&state, &start.session_id).await.expect("stop");
-        let _schema = "gaussdb";
-        postgres::execute_query(&pool, "drop procedure if exists og_dbg_live").await.expect("drop fixture");
+        postgres::execute_query(&pool, "drop procedure if exists public.og_dbg_live(integer)")
+            .await
+            .expect("drop fixture");
         drop(dir);
+    }
+
+    #[test]
+    fn finished_snapshot_falls_back_only_after_execution_ends() {
+        assert_eq!(resolve_debug_snapshot(Ok(Vec::<String>::new()), true), Ok(None));
+        assert_eq!(resolve_debug_snapshot(Err::<Vec<String>, _>("frame gone".to_string()), true), Ok(None));
+        assert_eq!(resolve_debug_snapshot(Ok(Vec::<String>::new()), false), Ok(Some(Vec::new())));
+        assert_eq!(
+            resolve_debug_snapshot(Err::<Vec<String>, _>("connection lost".to_string()), false),
+            Err("connection lost".to_string())
+        );
+        assert_eq!(
+            resolve_debug_snapshot(Ok(vec!["new value".to_string()]), true),
+            Ok(Some(vec!["new value".to_string()]))
+        );
     }
 
     #[test]
