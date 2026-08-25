@@ -138,14 +138,14 @@ import { canFormatCellDetailJson, cellDetailEditorText, compactJsonText, default
 import { buildDataGridCellDetail, buildDataGridColumnDetail, buildDataGridRowDetail, CELL_DETAIL_VALUE_PREVIEW_MAX_LENGTH, dataGridColumnDetailJson, dataGridColumnDetailTsv, dataGridRowDetailJson, dataGridRowDetailTsv, type DataGridCellDetail } from "@/lib/dataGrid/dataGridDetail";
 import { applyColumnFormatter, buildColumnFormatterKey, getSupportedTimeZoneOptions, normalizeColumnFormatter, resolveColumnFormatter, type ColumnFormatterConfig, type DateTimeFormatterUnit, DateTimePatterns } from "@/lib/dataGrid/columnFormatter";
 import { temporalCellEditorConfig, type TemporalCellEditorConfig } from "@/lib/dataGrid/dataGridTemporalEditor";
-import { BOOLEAN_CELL_EDITOR_VALUES, booleanCellEditorValue, isBooleanCellValue, isBooleanColumnType, parseBooleanCellEditorValue } from "@/lib/dataGrid/dataGridBooleanColumn";
+import { BOOLEAN_CELL_EDITOR_VALUES, booleanCellEditorValue, isBooleanCellValue, isBooleanColumnType, normalizeBooleanCellValue, parseBooleanCellEditorValue } from "@/lib/dataGrid/dataGridBooleanColumn";
 import { resolveDataGridColumnsByResultIndex } from "@/lib/dataGrid/dataGridColumnMetadata";
 import { isCancelSearchShortcut, isCopyCurrentRowShortcut, isDeleteCurrentRowShortcut, isFocusSearchShortcut, isModRShortcut, isSaveShortcut, isToggleTransposeShortcut } from "@/lib/editor/keyboardShortcuts";
 import { dataGridHeaderContentWidth, scrollbarGutterWidth } from "@/lib/dataGrid/dataGridScrollGutter";
 import { canFetchNextDataGridSegment, canGoNextDataGridPage, dataGridTotalRowCountLabelKey, dataGridTruncationHintKey, hasCompleteLocalDataGridResult, resolveDataGridPaginationTotal, type DataGridInexactTotalRowCountMode } from "@/lib/dataGrid/dataGridPagination";
 import { dataGridCountQueryOptions } from "@/lib/dataGrid/dataGridQueryOptions";
 import { dataGridBottomScrollTop, dataGridScrollPosition, isDataGridAtScrollBottom, isDataGridNearScrollBottom, isDataGridPrefixAppend, shouldCheckInfiniteScrollAfterScroll, type DataGridScrollPosition } from "@/lib/dataGrid/dataGridInfiniteScroll";
-import { CANVAS_DATA_GRID_ROW_HEIGHT, canvasDataGridActionOverlayWidth, canvasDataGridActionReservedWidth, dataGridSearchMatchKey, drawCanvasDataGrid, type CanvasDevicePixelSize } from "@/lib/dataGrid/canvasDataGridRenderer";
+import { CANVAS_DATA_GRID_ROW_HEIGHT, canvasDataGridActionOverlayWidth, canvasDataGridActionReservedWidth, dataGridSearchMatchKey, drawCanvasDataGrid, type CanvasCellVisualKind, type CanvasDevicePixelSize } from "@/lib/dataGrid/canvasDataGridRenderer";
 import { DATA_GRID_DARK_STRIPED_ROW_BG, DATA_GRID_LIGHT_STRIPED_ROW_BG, dataGridActiveRowBackground } from "@/lib/dataGrid/dataGridPaintTheme";
 import { createRowLowerTextCache } from "@/lib/dataGrid/dataGridRowLowerText";
 import { dataGridPreviewLabelKey, dataGridSaveActionMode, dataGridSaveToolbarState } from "@/lib/dataGrid/dataGridSaveUi";
@@ -3241,6 +3241,22 @@ function isBooleanGridCell(item: RowItem | undefined, columnIndex: number): bool
   return !!item && isBooleanGridColumn(columnIndex) && isBooleanCellValue(item.data[columnIndex]);
 }
 
+function booleanGridCellVisualValue(item: RowItem | undefined, columnIndex: number): boolean | undefined {
+  if (!item) return undefined;
+  const value = item.data[columnIndex];
+  if (value === null || (typeof value !== "boolean" && !isBooleanGridColumn(columnIndex))) return undefined;
+  const normalized = normalizeBooleanCellValue(value);
+  return normalized === null ? undefined : normalized;
+}
+
+function canvasCellVisualKind(value: CellValue, columnIndex: number, item: RowItem): CanvasCellVisualKind | undefined {
+  if (item.isDraft) return undefined;
+  if (value === null) return "null";
+  const normalized = booleanGridCellVisualValue(item, columnIndex);
+  if (normalized === undefined) return undefined;
+  return normalized ? "boolean-true" : "boolean-false";
+}
+
 function isBooleanGridColumnNullable(columnIndex: number): boolean {
   return tableColumnForGridColumn(columnIndex)?.is_nullable ?? true;
 }
@@ -3762,6 +3778,8 @@ const selection = useDataGridSelection({
 });
 
 const {
+  selectionAnchor,
+  selectionFocus,
   isSelectingAll,
   selectedRange,
   selectedCells,
@@ -3790,6 +3808,13 @@ const {
   handleDataCellMousedown,
   isRowSelected,
 } = selection;
+
+const crosshairCell = computed(() => {
+  if (showTranspose.value || !hasCellSelection.value || selectedCellCount.value !== 1 || hasColumnSelection.value || isSelectingAll.value) return null;
+  const focus = selectionFocus.value ?? selectionAnchor.value;
+  if (!focus || focus.rowIndex < 0 || focus.rowIndex >= displayRowCount.value || focus.colIndex < 0 || focus.colIndex >= visibleColumnCount.value) return null;
+  return { rowIndex: focus.rowIndex, visibleColIdx: focus.colIndex };
+});
 
 const multiRowCount = computed(() => {
   if (hasRowSelection.value) return selectedRowCount.value;
@@ -5316,11 +5341,13 @@ function drawCanvasGrid() {
     visibleColumnIndexes: visibleColumnIndexes.value,
     rowNumberWidth: rowNumberWidth.value,
     hoverCell: canvasHoverCell.value,
+    crosshairCell: crosshairCell.value,
     isScrolling: isScrolling.value,
     editingCell: editingCell.value,
     searchMatchKeys: searchMatchSet.value,
     currentSearchMatch: currentSearchMatch.value,
     formatCell: formatCellCached,
+    cellVisualKind: canvasCellVisualKind,
     draftCellPlaceholder: t("grid.quickEntryDraftPlaceholder"),
     isRowActive,
     rowCellsUseSelectionVisual,
@@ -5352,6 +5379,9 @@ watch(
     visibleColumnIndexes,
     selectedRange,
     selectedRowIds,
+    selectionFocus,
+    selectionAnchor,
+    crosshairCell,
     hasCellSelection,
     hasRowSelection,
     isSelectingAll,
@@ -8788,6 +8818,8 @@ const gridContextMenuItems = computed<ContextMenuItem[]>(() => {
                       class="relative flex shrink-0 items-center border-r border-border/70 px-2 py-0 truncate"
                       :class="{
                         'text-muted-foreground italic': cell.isNull,
+                        'data-grid-cell--null': cell.isNull,
+                        'data-grid-cell--boolean': !cell.isNull && booleanGridCellVisualValue(displayItems[cell.recordIndex], cell.valueIndex) !== undefined,
                         'cell-selected': transposeCellIsSelected(cell.recordIndex, cell.valueIndex) && !displayItems[cell.recordIndex]?.isDirtyCol[cell.valueIndex],
                         'cell-selected-dirty': transposeCellIsSelected(cell.recordIndex, cell.valueIndex) && displayItems[cell.recordIndex]?.isDirtyCol[cell.valueIndex],
                         'row-cell-selected': transposeRecordUsesSelectionVisual(cell.recordIndex) && !transposeCellIsSelected(cell.recordIndex, cell.valueIndex) && !displayItems[cell.recordIndex]?.isDirtyCol[cell.valueIndex],
@@ -8875,6 +8907,11 @@ const gridContextMenuItems = computed<ContextMenuItem[]>(() => {
                         <template v-if="draftCellPlaceholder(displayItems[cell.recordIndex], cell.valueIndex)">
                           <span class="text-muted-foreground/70 italic">{{ draftCellPlaceholder(displayItems[cell.recordIndex], cell.valueIndex) }}</span>
                         </template>
+                        <span v-else-if="cell.isNull" class="data-grid-null-pill">[NULL]</span>
+                        <span v-else-if="booleanGridCellVisualValue(displayItems[cell.recordIndex], cell.valueIndex) !== undefined" class="data-grid-boolean-value">
+                          <span class="data-grid-boolean-dot" :class="booleanGridCellVisualValue(displayItems[cell.recordIndex], cell.valueIndex) ? 'data-grid-boolean-dot--true' : 'data-grid-boolean-dot--false'" />
+                          {{ firstLineCellDisplayValue(cell.display) }}
+                        </span>
                         <template v-else>{{ firstLineCellDisplayValue(cell.display) }}</template>
                         <div v-if="cellDetailButtonVisible(cell.recordIndex, cell.valueIndex)" class="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1">
                           <LightDropdownMenu
@@ -8928,6 +8965,7 @@ const gridContextMenuItems = computed<ContextMenuItem[]>(() => {
                     :actual-column-index="col.actualColIdx"
                     :visible-column-index="col.visibleColIdx"
                     :selected="highlightedColumnIndex === col.actualColIdx || columnIsSelected(col.visibleColIdx)"
+                    :crosshair="crosshairCell?.visibleColIdx === col.visibleColIdx && !(currentSearchMatch?.kind === 'column' && currentSearchMatch.col === col.actualColIdx)"
                     :search-match="currentSearchMatch?.kind === 'column' && currentSearchMatch.col === col.actualColIdx"
                     :dark="isDark"
                     :frozen="col.visibleColIdx < frozenColumnCount"
@@ -9455,7 +9493,13 @@ const gridContextMenuItems = computed<ContextMenuItem[]>(() => {
                   >
                     <div
                       class="data-grid-row-number w-(--row-num-w) shrink-0 px-2 py-1 border-r text-center select-none cursor-default sticky left-0 z-10"
-                      :class="[rowNumberStatusClass(item), { 'data-grid-row-number--selected': isRowSelected(item.id) }]"
+                      :class="[
+                        rowNumberStatusClass(item),
+                        {
+                          'data-grid-row-number--selected': isRowSelected(item.id),
+                          'data-grid-row-number--crosshair': crosshairCell?.rowIndex === item.displayIndex && !isRowSelected(item.id),
+                        },
+                      ]"
                       @mousedown="onRowNumberMouseDown(item, $event)"
                       @dblclick.stop="toggleTranspose(item.displayIndex)"
                       @contextmenu="onRowContext(item.id, item.displayIndex)"
@@ -9473,11 +9517,21 @@ const gridContextMenuItems = computed<ContextMenuItem[]>(() => {
                         'data-grid-cell--frozen-separator': frozenColumnCount > 0 && col.visibleColIdx === frozenColumnCount - 1,
                         'text-right': columnAligns[col.visibleColIdx] === 'right',
                         'text-muted-foreground italic': isNull(item.data[col.actualColIdx]),
+                        'data-grid-cell--null': isNull(item.data[col.actualColIdx]),
+                        'data-grid-cell--boolean': !isNull(item.data[col.actualColIdx]) && booleanGridCellVisualValue(item, col.actualColIdx) !== undefined,
                         'bg-yellow-500/10 cell-dirty': item.isDirtyCol[col.actualColIdx],
                         'cell-selected': cellIsSelected(item.displayIndex, col.visibleColIdx) && !item.isDirtyCol[col.actualColIdx],
                         'cell-selected-dirty': cellIsSelected(item.displayIndex, col.visibleColIdx) && item.isDirtyCol[col.actualColIdx],
                         'row-cell-selected': rowCellsUseSelectionVisual(item.id) && !cellIsSelected(item.displayIndex, col.visibleColIdx) && !item.isDirtyCol[col.actualColIdx],
                         'row-cell-selected-dirty': rowCellsUseSelectionVisual(item.id) && !cellIsSelected(item.displayIndex, col.visibleColIdx) && item.isDirtyCol[col.actualColIdx],
+                        'data-grid-cell--crosshair':
+                          (crosshairCell?.rowIndex === item.displayIndex || crosshairCell?.visibleColIdx === col.visibleColIdx) &&
+                          !cellIsSelected(item.displayIndex, col.visibleColIdx) &&
+                          !rowCellsUseSelectionVisual(item.id) &&
+                          !item.isDirtyCol[col.actualColIdx] &&
+                          !cellIsSearchMatch(item.displayIndex, col.actualColIdx) &&
+                          !cellIsCurrentMatch(item.displayIndex, col.actualColIdx) &&
+                          !(hoveredDetailCell?.rowIndex === item.displayIndex && hoveredDetailCell?.col === col.actualColIdx),
                         'cell-search-match': cellIsSearchMatch(item.displayIndex, col.actualColIdx),
                         'cell-current-search-match': cellIsCurrentMatch(item.displayIndex, col.actualColIdx),
                         'bg-yellow-200/60 dark:bg-yellow-500/20': cellIsSearchMatch(item.displayIndex, col.actualColIdx),
@@ -9561,6 +9615,11 @@ const gridContextMenuItems = computed<ContextMenuItem[]>(() => {
                         <template v-if="draftCellPlaceholder(item, col.actualColIdx)">
                           <span class="text-muted-foreground/70 italic">{{ draftCellPlaceholder(item, col.actualColIdx) }}</span>
                         </template>
+                        <span v-else-if="isNull(item.data[col.actualColIdx])" class="data-grid-null-pill">[NULL]</span>
+                        <span v-else-if="booleanGridCellVisualValue(item, col.actualColIdx) !== undefined" class="data-grid-boolean-value">
+                          <span class="data-grid-boolean-dot" :class="booleanGridCellVisualValue(item, col.actualColIdx) ? 'data-grid-boolean-dot--true' : 'data-grid-boolean-dot--false'" />
+                          {{ firstLineCellDisplayValue(formatCellCached(item.data[col.actualColIdx], col.actualColIdx)) }}
+                        </span>
                         <template v-else>{{ firstLineCellDisplayValue(formatCellCached(item.data[col.actualColIdx], col.actualColIdx)) }}</template>
                         <div v-if="cellDetailButtonVisible(item.displayIndex, col.actualColIdx)" class="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1">
                           <LightDropdownMenu
@@ -10232,7 +10291,7 @@ const gridContextMenuItems = computed<ContextMenuItem[]>(() => {
 @reference "../../styles/globals.css";
 
 [data-grid-root] {
-  --data-grid-row-muted-bg: rgb(240, 240, 240);
+  --data-grid-row-muted-bg: rgb(248, 249, 250);
   --data-grid-row-new-bg: rgb(243, 243, 243);
   --data-grid-row-deleted-bg: rgb(255, 244, 244);
   --data-grid-cell-active-bg: rgb(244, 248, 255);
@@ -10242,6 +10301,13 @@ const gridContextMenuItems = computed<ContextMenuItem[]>(() => {
   --data-grid-cell-selected-dirty-bg: rgb(235, 224, 184);
   --data-grid-cell-selected-border: rgb(59, 130, 246);
   --data-grid-cell-hover-bg: rgb(245, 245, 245);
+  --data-grid-cell-crosshair-bg: rgba(59, 130, 246, 0.05);
+  --data-grid-cell-crosshair-opaque-bg: rgb(247, 248, 250);
+  --data-grid-row-number-crosshair-opaque-bg: rgb(247, 248, 250);
+  --data-grid-cell-null-bg: rgb(245, 246, 248);
+  --data-grid-cell-null-border: rgb(203, 207, 214);
+  --data-grid-cell-boolean-true: rgb(22, 163, 74);
+  --data-grid-cell-boolean-false: rgb(100, 116, 139);
   --data-grid-cell-search-bg: rgb(253, 245, 184);
   --data-grid-cell-current-search-bg: rgba(253, 224, 71, 0.52);
   --data-grid-cell-current-search-border: rgba(234, 179, 8, 0.82);
@@ -10264,7 +10330,7 @@ const gridContextMenuItems = computed<ContextMenuItem[]>(() => {
 
 [data-grid-root].data-grid--dark,
 :global(.dark) [data-grid-root] {
-  --data-grid-row-muted-bg: rgb(40, 40, 43);
+  --data-grid-row-muted-bg: rgb(24, 25, 29);
   --data-grid-row-new-bg: rgb(51, 51, 55);
   --data-grid-row-deleted-bg: rgb(55, 31, 32);
   --data-grid-cell-active-bg: rgb(25, 34, 46);
@@ -10274,6 +10340,13 @@ const gridContextMenuItems = computed<ContextMenuItem[]>(() => {
   --data-grid-cell-selected-dirty-bg: rgb(76, 66, 38);
   --data-grid-cell-selected-border: rgb(96, 165, 250);
   --data-grid-cell-hover-bg: rgb(46, 47, 51);
+  --data-grid-cell-crosshair-bg: rgba(59, 130, 246, 0.08);
+  --data-grid-cell-crosshair-opaque-bg: rgb(20, 22, 27);
+  --data-grid-row-number-crosshair-opaque-bg: rgb(36, 39, 47);
+  --data-grid-cell-null-bg: rgb(44, 45, 50);
+  --data-grid-cell-null-border: rgb(82, 83, 91);
+  --data-grid-cell-boolean-true: rgb(74, 222, 128);
+  --data-grid-cell-boolean-false: rgb(148, 163, 184);
   --data-grid-cell-search-bg: rgb(72, 57, 8);
   --data-grid-cell-current-search-bg: rgb(116, 87, 0);
   --data-grid-cell-current-search-border: rgb(239, 177, 0);
@@ -10297,7 +10370,7 @@ const gridContextMenuItems = computed<ContextMenuItem[]>(() => {
 
 @supports (background: color-mix(in oklab, white 50%, transparent)) {
   [data-grid-root] {
-    --data-grid-row-muted-bg: color-mix(in oklab, var(--muted) 99%, var(--foreground));
+    --data-grid-row-muted-bg: color-mix(in oklab, var(--muted) 75%, var(--background));
     --data-grid-row-new-bg: color-mix(in oklab, var(--primary) 5%, transparent);
     --data-grid-row-deleted-bg: color-mix(in oklab, var(--destructive) 5%, transparent);
     --data-grid-cell-dirty-bg: color-mix(in oklab, rgb(166 210 255) 85%, var(--background));
@@ -10310,6 +10383,10 @@ const gridContextMenuItems = computed<ContextMenuItem[]>(() => {
     --data-grid-row-number-edited-bg: color-mix(in oklab, rgb(245 158 11) 15%, var(--background));
     --data-grid-row-number-deleted-bg: color-mix(in oklab, var(--destructive) 15%, var(--background));
     --data-grid-row-number-selected-bg: color-mix(in oklab, rgb(59 130 246) 30%, var(--background));
+  }
+  [data-grid-root].data-grid--dark,
+  :global(.dark) [data-grid-root] {
+    --data-grid-row-muted-bg: color-mix(in oklab, var(--muted) 25%, var(--background));
   }
   [data-grid-root].data-grid--has-save-error {
     --data-grid-cell-dirty-bg: rgb(250, 212, 216) !important;
@@ -10377,6 +10454,58 @@ const gridContextMenuItems = computed<ContextMenuItem[]>(() => {
   background-color: var(--data-grid-cell-bg);
 }
 
+.data-grid-cell--crosshair {
+  background-color: var(--data-grid-cell-crosshair-opaque-bg) !important;
+  background-color: color-mix(in oklab, rgb(59 130 246) 5%, var(--data-grid-cell-bg, var(--background))) !important;
+}
+
+.data-grid-row-number--crosshair {
+  background-color: var(--data-grid-row-number-crosshair-opaque-bg) !important;
+  background-color: color-mix(in oklab, rgb(59 130 246) 5%, var(--data-grid-row-number-bg, var(--background))) !important;
+  box-shadow: inset 2px 0 0 color-mix(in oklab, var(--data-grid-cell-selected-border) 35%, transparent);
+}
+
+.data-grid-null-pill {
+  display: inline-flex;
+  align-items: center;
+  height: 1rem;
+  border: 1px solid var(--data-grid-cell-null-border);
+  border-radius: 999px;
+  background: var(--data-grid-cell-null-bg);
+  color: var(--muted-foreground);
+  padding: 0 0.35rem;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
+  font-size: 0.625rem;
+  font-style: italic;
+  line-height: 1;
+  vertical-align: middle;
+}
+
+.data-grid-boolean-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  vertical-align: middle;
+}
+
+.data-grid-boolean-dot {
+  width: 0.35rem;
+  height: 0.35rem;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  box-shadow: 0 0 0 1px color-mix(in oklab, currentColor 18%, transparent);
+}
+
+.data-grid-boolean-dot--true {
+  background-color: var(--data-grid-cell-boolean-true);
+  color: var(--data-grid-cell-boolean-true);
+}
+
+.data-grid-boolean-dot--false {
+  background-color: var(--data-grid-cell-boolean-false);
+  color: var(--data-grid-cell-boolean-false);
+}
+
 /* 冻结列：不透明背景遮挡滚动的非冻结列；状态 class 的 !important 会覆盖此项 */
 .data-grid-cell--frozen {
   background-color: var(--data-grid-cell-bg, rgb(255, 255, 255)) !important;
@@ -10385,6 +10514,11 @@ const gridContextMenuItems = computed<ContextMenuItem[]>(() => {
 /* 冻结列分隔线：与 Canvas 模式和列头一致（2px 深色右边框） */
 .data-grid-cell--frozen-separator {
   border-right: 2px solid rgb(100, 116, 139) !important;
+}
+
+.data-grid-cell--crosshair.data-grid-cell--frozen {
+  background-color: var(--data-grid-cell-crosshair-opaque-bg) !important;
+  background-color: color-mix(in oklab, rgb(59 130 246) 5%, var(--data-grid-cell-bg, var(--background))) !important;
 }
 
 .data-grid-row-number {

@@ -15,6 +15,11 @@ export interface DataGridPaintTheme {
   cellSelectedSingle: string;
   cellSelectedSingleBorder: string;
   cellHover: string;
+  cellCrosshair: string;
+  cellNullBackground: string;
+  cellNullBorder: string;
+  cellBooleanTrue: string;
+  cellBooleanFalse: string;
   cellSearch: string;
   cellCurrentSearch: string;
   cellCurrentSearchBorder: string;
@@ -37,8 +42,8 @@ export const DATA_GRID_DARK_SEARCH_COLORS = {
 } as const;
 export const DATA_GRID_LIGHT_ACTIVE_ROW_BG = "rgb(244, 248, 255)";
 export const DATA_GRID_DARK_ACTIVE_ROW_BG = "rgb(25, 34, 46)";
-export const DATA_GRID_LIGHT_STRIPED_ROW_BG = "rgb(240, 240, 240)";
-export const DATA_GRID_DARK_STRIPED_ROW_BG = "rgb(40, 40, 43)";
+export const DATA_GRID_LIGHT_STRIPED_ROW_BG = "rgb(248, 249, 250)";
+export const DATA_GRID_DARK_STRIPED_ROW_BG = "rgb(24, 25, 29)";
 export const DATA_GRID_DARK_ROW_NUMBER_BG = "rgb(35, 37, 42)";
 const DATA_GRID_DARK_ROW_NUMBER_NEW_BG = "rgb(33, 45, 40)";
 const DATA_GRID_DARK_ROW_NUMBER_EDITED_BG = "rgb(48, 41, 28)";
@@ -257,6 +262,11 @@ export function resolveDataGridPaintTheme(options: { getVar: (name: string) => s
   const cellSelectedBorder = isDark ? "rgb(96, 165, 250)" : "rgb(59, 130, 246)";
   const cellSelectedSingle = isDark ? "rgb(30, 64, 96)" : "rgb(191, 219, 254)";
   const cellHover = accent;
+  const cellCrosshair = isDark ? "rgba(59, 130, 246, 0.08)" : "rgba(59, 130, 246, 0.05)";
+  const cellNullBackground = isDark ? "rgb(44, 45, 50)" : "rgb(245, 246, 248)";
+  const cellNullBorder = isDark ? "rgb(82, 83, 91)" : "rgb(203, 207, 214)";
+  const cellBooleanTrue = isDark ? "rgb(74, 222, 128)" : "rgb(22, 163, 74)";
+  const cellBooleanFalse = isDark ? "rgb(148, 163, 184)" : "rgb(100, 116, 139)";
   const cellSearch = isDark ? DATA_GRID_DARK_SEARCH_COLORS.match : "rgb(253, 245, 184)";
   const cellCurrentSearch = isDark ? DATA_GRID_DARK_SEARCH_COLORS.current : "rgba(253, 224, 71, 0.52)";
   const cellCurrentSearchBorder = isDark ? DATA_GRID_DARK_SEARCH_COLORS.currentBorder : "rgba(234, 179, 8, 0.82)";
@@ -284,6 +294,11 @@ export function resolveDataGridPaintTheme(options: { getVar: (name: string) => s
     cellSelectedSingle: isDark ? cellSelectedSingle : paintToken(getVar, "--data-grid-cell-selected-single-bg", cellSelectedSingle),
     cellSelectedSingleBorder: isDark ? primary : paintToken(getVar, "--data-grid-cell-selected-single-border", primary),
     cellHover: isDark ? cellHover : paintToken(getVar, "--data-grid-cell-hover-bg", cellHover),
+    cellCrosshair: paintToken(getVar, "--data-grid-cell-crosshair-bg", cellCrosshair),
+    cellNullBackground: paintToken(getVar, "--data-grid-cell-null-bg", cellNullBackground),
+    cellNullBorder: paintToken(getVar, "--data-grid-cell-null-border", cellNullBorder),
+    cellBooleanTrue: paintToken(getVar, "--data-grid-cell-boolean-true", cellBooleanTrue),
+    cellBooleanFalse: paintToken(getVar, "--data-grid-cell-boolean-false", cellBooleanFalse),
     cellSearch: isDark ? cellSearch : paintToken(getVar, "--data-grid-cell-search-bg", cellSearch),
     cellCurrentSearch: isDark ? cellCurrentSearch : paintToken(getVar, "--data-grid-cell-current-search-bg", cellCurrentSearch),
     cellCurrentSearchBorder: isDark ? cellCurrentSearchBorder : paintToken(getVar, "--data-grid-cell-current-search-border", cellCurrentSearchBorder),

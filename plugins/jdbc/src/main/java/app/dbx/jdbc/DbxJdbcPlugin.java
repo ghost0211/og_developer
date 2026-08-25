@@ -41,6 +41,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.Properties;
 import java.util.ServiceLoader;
 import java.util.Set;
@@ -55,6 +57,9 @@ public final class DbxJdbcPlugin {
     private static final String JDBCX_EXTENSION_WHITELIST_PROPERTY = "jdbcx.extension.whitelist";
     private static final String JDBCX_HIGH_PRIVILEGE_EXTENSIONS_OPT_IN = "-Ddbx.jdbcx.allowHighPrivilegeExtensions=";
     private static final String JDBCX_SAFE_EXTENSION_WHITELIST = "help,var,version";
+    private static final String OPENGAUSS_VERSION_SQL = "SELECT version()";
+    private static final Pattern OPENGAUSS_VERSION_PATTERN = Pattern.compile("(?i)(?:openGauss|GaussDB)\\b[^0-9]*([0-9]+(?:\\.[0-9]+)+)");
+    private static final Pattern VERSION_ONLY_PATTERN = Pattern.compile("^[vV]?([0-9]+(?:\\.[0-9]+)+)(?:[-_].*)?$");
     private static final String[] DEFAULT_TABLE_TYPES = new String[] {
         "TABLE",
         "VIEW",
@@ -424,10 +429,56 @@ public final class DbxJdbcPlugin {
     private static ObjectNode databaseInfo(Connection connection) {
         try {
             DatabaseMetaData metadata = connection.getMetaData();
-            return metadata == null ? MAPPER.createObjectNode() : databaseInfo(metadata);
+            if (metadata == null) {
+                return MAPPER.createObjectNode();
+            }
+            ObjectNode info = databaseInfo(metadata);
+            enrichOpenGaussVersion(connection, info);
+            return info;
         } catch (SQLException | AbstractMethodError | UnsupportedOperationException ignored) {
             return MAPPER.createObjectNode();
         }
+    }
+
+    private static void enrichOpenGaussVersion(Connection connection, ObjectNode info) {
+        if (!"postgresql".equalsIgnoreCase(info.path("productName").asText())) {
+            return;
+        }
+        try (Statement statement = connection.createStatement()) {
+            if (statement == null) {
+                return;
+            }
+            try {
+                statement.setQueryTimeout(5);
+            } catch (SQLException | AbstractMethodError | UnsupportedOperationException ignored) {
+                // Older JDBC drivers may not implement statement timeouts.
+            }
+            try (ResultSet result = statement.executeQuery(OPENGAUSS_VERSION_SQL)) {
+                if (result == null || !result.next()) {
+                    return;
+                }
+                String banner = result.getString(1);
+                if (banner == null) {
+                    return;
+                }
+                String version = openGaussVersionFromBanner(banner);
+                if (version != null) {
+                    info.put("productName", "openGauss");
+                    info.put("productVersion", version);
+                }
+            }
+        } catch (SQLException | AbstractMethodError | UnsupportedOperationException ignored) {
+            // JDBC metadata remains a safe fallback when the probe is unavailable.
+        }
+    }
+
+    private static String openGaussVersionFromBanner(String banner) {
+        Matcher productMatcher = OPENGAUSS_VERSION_PATTERN.matcher(banner.trim());
+        if (productMatcher.find()) {
+            return productMatcher.group(1);
+        }
+        Matcher versionMatcher = VERSION_ONLY_PATTERN.matcher(banner.trim());
+        return versionMatcher.matches() ? versionMatcher.group(1) : null;
     }
 
     private static ObjectNode databaseInfo(DatabaseMetaData metadata) {

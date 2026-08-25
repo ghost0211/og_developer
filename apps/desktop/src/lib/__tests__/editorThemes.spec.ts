@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildSqlCompletionThemeRules, resolveEditorTheme } from "@/lib/editor/editorThemes";
+import { buildEditorChromeThemeRules, buildSqlCompletionThemeRules, resolveEditorTheme } from "@/lib/editor/editorThemes";
 import type { AppThemePalette } from "@/lib/app/appTheme";
 import type { EditorTheme } from "@/stores/settingsStore";
 
@@ -9,10 +9,13 @@ describe("resolveEditorTheme", () => {
     expect(resolveEditorTheme("app", "dark", "xcode")).toBe("xcode-dark");
     expect(resolveEditorTheme("app", "light", "cursor")).toBe("cursor-light");
     expect(resolveEditorTheme("app", "dark", "cursor")).toBe("cursor-dark");
+    expect(resolveEditorTheme("app", "dark", "pearl")).toBe("deep-space-dark");
+    expect(resolveEditorTheme("app", "light", "pearl")).toBe("vscode-light");
   });
 
   it("keeps explicit editor themes unchanged across application palettes", () => {
     const explicitThemes: Array<Exclude<EditorTheme, "app">> = [
+      "deep-space-dark",
       "one-dark",
       "vscode-dark",
       "vscode-light",
@@ -45,6 +48,18 @@ describe("resolveEditorTheme", () => {
 });
 
 describe("SQL completion theme", () => {
+  it("defines non-invasive bracket and BEGIN/END glow chrome", () => {
+    const rules = buildEditorChromeThemeRules();
+
+    expect(rules[".cm-matchingBracket"]).toMatchObject({
+      boxShadow: expect.stringContaining("inset 0 0 0 1px var(--dbx-editor-bracket-glow"),
+    });
+    expect(rules[".cm-sql-block-match"]).toMatchObject({
+      backgroundColor: "var(--dbx-editor-bracket-background, color-mix(in oklab, currentColor 12%, transparent))",
+      boxShadow: expect.stringContaining("inset 0 0 0 1px var(--dbx-editor-bracket-glow"),
+    });
+  });
+
   it("uses the configurable medium radius for the popup container", () => {
     const rules = buildSqlCompletionThemeRules();
 

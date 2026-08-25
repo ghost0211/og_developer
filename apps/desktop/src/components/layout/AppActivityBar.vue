@@ -140,6 +140,18 @@ function handlePanelClick(panelId: ActivityPanelId) {
 
 <style scoped>
 .app-activity-bar {
-  backdrop-filter: blur(12px);
+  background: var(--muted);
+  border-color: var(--border);
+  backdrop-filter: blur(12px) saturate(1.12);
+  -webkit-backdrop-filter: blur(12px) saturate(1.12);
+  box-shadow: inset -1px 0 0 var(--border);
+  box-shadow: inset -1px 0 0 color-mix(in oklab, var(--border) 62%, transparent);
+}
+
+@supports (background: color-mix(in oklab, white 50%, transparent)) {
+  .app-activity-bar {
+    background: color-mix(in oklab, var(--muted) 68%, transparent);
+    border-color: color-mix(in oklab, var(--border) 58%, transparent);
+  }
 }
 </style>

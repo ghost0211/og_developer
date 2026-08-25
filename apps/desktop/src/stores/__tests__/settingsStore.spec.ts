@@ -100,6 +100,7 @@ describe("normalizeEditorSettings", () => {
 
   it("preserves explicit editor themes from saved settings", () => {
     expect(normalizeEditorSettings({ theme: "xcode" }).theme).toBe("xcode");
+    expect(normalizeEditorSettings({ theme: "deep-space-dark" }).theme).toBe("deep-space-dark");
     expect(normalizeEditorSettings({ theme: "one-dark" }).theme).toBe("one-dark");
     expect(normalizeEditorSettings({ theme: "custom" }).theme).toBe("custom");
   });

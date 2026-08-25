@@ -167,6 +167,49 @@ class AbstractJdbcAgentTest {
     }
 
     @Test
+    void prefersTheOpenGaussServerBannerOverPostgresqlCompatibilityMetadata() {
+        DatabaseMetaData metadata = proxy(DatabaseMetaData.class, (method, args) -> {
+            switch (method.getName()) {
+                case "getDatabaseProductName":
+                    return "PostgreSQL";
+                case "getDatabaseProductVersion":
+                    return "9.2.4";
+                default:
+                    return defaultValue(method.getReturnType());
+            }
+        });
+        final boolean[] returned = { false };
+        ResultSet result = proxy(ResultSet.class, (method, args) -> {
+            if ("next".equals(method.getName())) {
+                if (returned[0]) {
+                    return false;
+                }
+                returned[0] = true;
+                return true;
+            }
+            if ("getString".equals(method.getName())) {
+                return "openGauss 6.0.0 build 123";
+            }
+            return defaultValue(method.getReturnType());
+        });
+        Statement statement = proxy(Statement.class, (method, args) -> "executeQuery".equals(method.getName()) ? result : defaultValue(method.getReturnType()));
+        Connection connection = proxy(Connection.class, (method, args) -> {
+            if ("getMetaData".equals(method.getName())) {
+                return metadata;
+            }
+            if ("createStatement".equals(method.getName())) {
+                return statement;
+            }
+            return defaultValue(method.getReturnType());
+        });
+
+        Map<String, String> info = JdbcDatabaseInfo.from(connection);
+
+        assertEquals("openGauss", info.get("productName"));
+        assertEquals("6.0.0", info.get("productVersion"));
+    }
+
+    @Test
     void delegatesQueryExecutionWithSchemaAndValueReader() {
         TrackingConnection tracking = new TrackingConnection();
         TestAgent agent = new TestAgent(tracking);

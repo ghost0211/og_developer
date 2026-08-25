@@ -123,6 +123,45 @@ final class DbxJdbcPluginTest {
     }
 
     @Test
+    void detectsOpenGaussServerVersionInsteadOfJdbcCompatibilityMetadata() throws Exception {
+        DatabaseMetaData metadata = (DatabaseMetaData) Proxy.newProxyInstance(
+            DatabaseMetaData.class.getClassLoader(),
+            new Class<?>[]{DatabaseMetaData.class},
+            (proxy, method, args) -> switch (method.getName()) {
+                case "getDatabaseProductName" -> "PostgreSQL";
+                case "getDatabaseProductVersion" -> "9.2.4";
+                default -> defaultValue(method.getReturnType());
+            }
+        );
+        ResultSet version = rowsResultSet(new String[]{"version"}, new Object[][]{{"openGauss 7.0.0 build 123"}});
+        Statement statement = (Statement) Proxy.newProxyInstance(
+            Statement.class.getClassLoader(),
+            new Class<?>[]{Statement.class},
+            (proxy, method, args) -> switch (method.getName()) {
+                case "executeQuery" -> version;
+                case "close" -> null;
+                default -> defaultValue(method.getReturnType());
+            }
+        );
+        Connection connection = (Connection) Proxy.newProxyInstance(
+            Connection.class.getClassLoader(),
+            new Class<?>[]{Connection.class},
+            (proxy, method, args) -> switch (method.getName()) {
+                case "getMetaData" -> metadata;
+                case "createStatement" -> statement;
+                default -> defaultValue(method.getReturnType());
+            }
+        );
+
+        Method method = DbxJdbcPlugin.class.getDeclaredMethod("databaseInfo", Connection.class);
+        method.setAccessible(true);
+        JsonNode info = MAPPER.valueToTree(method.invoke(null, connection));
+
+        assertEquals("openGauss", info.path("productName").asText());
+        assertEquals("7.0.0", info.path("productVersion").asText());
+    }
+
+    @Test
     void databaseInfoKeepsSupportedFieldsWhenOneMetadataGetterFails() throws Exception {
         DatabaseMetaData metadata = (DatabaseMetaData) Proxy.newProxyInstance(
             DatabaseMetaData.class.getClassLoader(),

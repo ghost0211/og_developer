@@ -39,6 +39,12 @@ describe("data grid paint theme", () => {
     expect(resolveDataGridPaintTheme({ getVar: emptyCssVariable, isDark: true }).rowNumberActive).toBe(DATA_GRID_DARK_ACTIVE_ROW_BG);
   });
 
+  it("keeps zebra rows visibly distinct when color-mix is supported", () => {
+    const css = readFileSync(new URL("../../../components/grid/DataGrid.vue", import.meta.url), "utf8");
+    expect(css).toMatch(/--data-grid-row-muted-bg:\s*color-mix\(in oklab, var\(--muted\) 75%, var\(--background\)\)/);
+    expect(css).toMatch(/\[data-grid-root\]\.data-grid--dark,[\s\S]*--data-grid-row-muted-bg:\s*color-mix\(in oklab, var\(--muted\) 25%, var\(--background\)\)/);
+  });
+
   it("keeps the classic blue selection palette instead of theme accent/ring mixing", () => {
     const vars: Record<string, string> = {
       "--background": "rgb(255, 255, 255)",

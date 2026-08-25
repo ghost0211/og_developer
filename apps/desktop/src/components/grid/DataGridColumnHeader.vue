@@ -8,6 +8,7 @@ defineProps<{
   actualColumnIndex: number;
   visibleColumnIndex: number;
   selected?: boolean;
+  crosshair?: boolean;
   searchMatch?: boolean;
   dark?: boolean;
   frozen?: boolean;
@@ -46,6 +47,7 @@ const emit = defineEmits<{
       :class="[
         dark && 'data-grid-header-cell--dark',
         selected && 'data-grid-header-cell--selected outline outline-primary -outline-offset-1',
+        crosshair && !selected && 'data-grid-header-cell--crosshair',
         searchMatch && 'bg-amber-500/20 ring-1 ring-inset ring-amber-500/40',
         frozen && 'data-grid-header-cell--frozen',
         frozenSeparator && 'data-grid-header-cell--frozen-separator',
@@ -110,6 +112,17 @@ const emit = defineEmits<{
   background-color: var(--data-grid-cell-selected-single-bg, rgb(191, 219, 254)) !important;
 }
 
+.data-grid-header-cell--crosshair {
+  background-color: rgb(247, 248, 250) !important;
+  background-color: color-mix(in oklab, rgb(59 130 246) 5%, rgb(239 239 239)) !important;
+}
+
+.data-grid-header-cell--dark.data-grid-header-cell--crosshair,
+.data-grid-header-cell--dark.data-grid-header-cell--crosshair:hover {
+  background-color: rgb(34, 36, 42) !important;
+  background-color: color-mix(in oklab, rgb(59 130 246) 5%, rgb(32 32 34)) !important;
+}
+
 .data-grid-header-cell--dark.data-grid-header-cell--selected {
   background-color: var(--data-grid-cell-selected-single-bg, rgb(30, 64, 96)) !important;
   color: rgb(244, 244, 245) !important;
@@ -129,5 +142,15 @@ const emit = defineEmits<{
 
 .data-grid-header-cell--dark.data-grid-header-cell--frozen-separator {
   border-right: 2px solid rgb(100, 116, 139) !important;
+}
+
+.data-grid-header-cell--crosshair.data-grid-header-cell--frozen {
+  background-color: rgb(247, 248, 250) !important;
+  background-color: color-mix(in oklab, rgb(59 130 246) 5%, rgb(239 239 239)) !important;
+}
+
+.data-grid-header-cell--dark.data-grid-header-cell--crosshair.data-grid-header-cell--frozen {
+  background-color: rgb(34, 36, 42) !important;
+  background-color: color-mix(in oklab, rgb(59 130 246) 5%, rgb(32 32 34)) !important;
 }
 </style>

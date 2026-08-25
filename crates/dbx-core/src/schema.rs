@@ -3183,6 +3183,14 @@ for line in sys.stdin:
 
         profiled_postgres.driver_profile = Some("gaussdb".to_string());
         assert!(super::is_opengauss_family_config(&profiled_postgres));
+
+        let mut jdbc = test_connection_config(DatabaseType::Jdbc);
+        jdbc.driver_profile = Some("opengauss-jdbc".to_string());
+        assert!(super::is_opengauss_family_config(&jdbc));
+
+        jdbc.driver_profile = None;
+        jdbc.connection_string = Some("jdbc:opengauss://127.0.0.1:5432/postgres".to_string());
+        assert!(super::is_opengauss_family_config(&jdbc));
     }
 
     #[test]
@@ -6492,6 +6500,7 @@ async fn get_table_ddl_core_with_options(
     if crate::sql_dialect::parse_sqlserver_linked_schema_ref(schema).is_some() {
         return Err("DDL is not supported for SQL Server linked server tables".to_string());
     }
+    let db_config = connection_config(state, connection_id).await;
     if matches!(object_type, Some(db::ObjectSourceKind::View)) {
         let source = get_object_source_core(
             state,
@@ -6521,28 +6530,70 @@ async fn get_table_ddl_core_with_options(
         // sidebar resolved the schema.
         return retry_metadata_connection(state, connection_id, Some(database), || async {
             let pool_key = state.get_or_create_metadata_pool_for_session(connection_id, Some(database), None).await?;
-            let Some(p) = opengauss_metadata_postgres_pool(state, connection_id, database, &pool_key).await? else {
-                return Err("Materialized view DDL requires a PostgreSQL-compatible metadata connection".to_string());
+            let external_driver = {
+                let connections = state.connections.read().await;
+                match connections.get(&pool_key) {
+                    Some(PoolKind::ExternalDriver { config, session, .. })
+                        if db_config.as_ref().is_some_and(is_opengauss_family_config) =>
+                    {
+                        Some((config.clone(), session.clone()))
+                    }
+                    _ => None,
+                }
             };
-            let client = db::postgres::checkout_postgres_client(&p, None, db::connection_timeout()).await?;
-            let rows = client
-                .query(
-                    "SELECT n.nspname, pg_get_viewdef(c.oid, 0) FROM pg_catalog.pg_class c \
-                     JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
-                     WHERE c.relkind = 'm' AND c.relname = $1 ORDER BY c.oid LIMIT 1",
-                    &[&table],
-                )
-                .await
-                .map_err(|e| e.to_string())?;
-            let row = rows.first().ok_or_else(|| "Object source not found".to_string())?;
-            let nspname: String = row.get(0);
-            let definition: String = row.get(1);
-            Ok(format!(
-                "CREATE MATERIALIZED VIEW {}.{} AS {}",
-                db::postgres::pg_quote_ident(&nspname),
-                db::postgres::pg_quote_ident(table),
-                definition.trim_end()
-            ))
+            if let Some((external_config, external_session)) = external_driver {
+                match opengauss_metadata_postgres_pool(state, connection_id, database, &pool_key).await {
+                    Ok(Some(pool)) => match opengauss_materialized_view_ddl(&pool, table).await {
+                        Ok(ddl) => Ok(ddl),
+                        Err(error) => {
+                            log::warn!(
+                                "[schema][external-driver:materialized-view-ddl:native-query-failed] connection_id={} database={} table={} error={}",
+                                connection_id,
+                                database,
+                                table,
+                                error
+                            );
+                            external_opengauss_materialized_view_ddl(
+                                external_session,
+                                external_config.as_ref(),
+                                database,
+                                table,
+                            )
+                            .await
+                        }
+                    },
+                    Ok(None) => {
+                        external_opengauss_materialized_view_ddl(
+                            external_session,
+                            external_config.as_ref(),
+                            database,
+                            table,
+                        )
+                        .await
+                    }
+                    Err(error) => {
+                        log::warn!(
+                            "[schema][external-driver:materialized-view-ddl:native-pool-failed] connection_id={} database={} table={} error={}",
+                            connection_id,
+                            database,
+                            table,
+                            error
+                        );
+                        external_opengauss_materialized_view_ddl(
+                            external_session,
+                            external_config.as_ref(),
+                            database,
+                            table,
+                        )
+                        .await
+                    }
+                }
+            } else {
+                let Some(pool) = opengauss_metadata_postgres_pool(state, connection_id, database, &pool_key).await? else {
+                    return Err("Materialized view DDL requires a PostgreSQL-compatible metadata connection".to_string());
+                };
+                opengauss_materialized_view_ddl(&pool, table).await
+            }
         })
         .await;
     }
@@ -6574,17 +6625,69 @@ async fn get_table_ddl_once(
                 return external_driver_mysql_ddl(session, config.as_ref(), database, schema, table).await;
             }
             if let Some(native_config) = db_config.as_ref().filter(|config| is_opengauss_family_config(config)) {
-                // The official openGauss/GaussDB JDBC plugin cannot render DDL;
-                // build it from the native wire-driver catalogs instead.
+                // Prefer the native catalogs when the server accepts the
+                // PostgreSQL wire protocol. Official openGauss JDBC is also
+                // used for SHA256-only servers, where that fallback cannot
+                // authenticate; keep the already-open JDBC session as the
+                // second path instead of failing every DDL request.
                 let native_config = native_config.clone();
+                let external_config = config.clone();
+                let external_session = session.clone();
                 drop(connections);
                 return match native_postgres_metadata_pool(state, connection_id, database, &native_config).await {
                     Ok(Some(pool)) => match opengauss_table_ddl(&pool, schema, table).await {
                         Ok(ddl) => Ok(ddl),
-                        Err(_) => pg_ddl(&pool, schema, table).await,
+                        Err(opengauss_error) => match pg_ddl(&pool, schema, table).await {
+                            Ok(ddl) => Ok(ddl),
+                            Err(pg_error) => {
+                                log::warn!(
+                                    "[schema][external-driver:get_table_ddl:native-fallback-failed] connection_id={} database={} schema={} table={} error={}; pg_fallback={}",
+                                    connection_id,
+                                    database,
+                                    schema,
+                                    table,
+                                    opengauss_error,
+                                    pg_error
+                                );
+                                external_opengauss_table_ddl(
+                                    external_session,
+                                    external_config.as_ref(),
+                                    database,
+                                    schema,
+                                    table,
+                                )
+                                .await
+                            }
+                        },
                     },
-                    Ok(None) => Err("DDL not supported for this database type".to_string()),
-                    Err(error) => Err(error),
+                    Ok(None) => {
+                        external_opengauss_table_ddl(
+                            external_session,
+                            external_config.as_ref(),
+                            database,
+                            schema,
+                            table,
+                        )
+                        .await
+                    }
+                    Err(error) => {
+                        log::warn!(
+                            "[schema][external-driver:get_table_ddl:native-pool-failed] connection_id={} database={} schema={} table={} error={}",
+                            connection_id,
+                            database,
+                            schema,
+                            table,
+                            error
+                        );
+                        external_opengauss_table_ddl(
+                            external_session,
+                            external_config.as_ref(),
+                            database,
+                            schema,
+                            table,
+                        )
+                        .await
+                    }
                 };
             }
         }
@@ -6711,8 +6814,34 @@ async fn connection_config(state: &AppState, connection_id: &str) -> Option<Conn
 }
 
 pub(crate) fn is_opengauss_family_config(config: &ConnectionConfig) -> bool {
-    matches!(config.db_type, DatabaseType::OpenGauss | DatabaseType::Gaussdb)
-        || matches!(config.driver_profile.as_deref(), Some("opengauss" | "gaussdb"))
+    if matches!(config.db_type, DatabaseType::OpenGauss | DatabaseType::Gaussdb)
+        || config.driver_profile.as_deref().is_some_and(|profile| {
+            matches!(profile.trim().to_ascii_lowercase().as_str(), "opengauss" | "opengauss-jdbc" | "gaussdb")
+        })
+    {
+        return true;
+    }
+
+    // Generic JDBC connections can still be configured with the official
+    // openGauss driver while retaining db_type=jdbc. Keep the same metadata
+    // fallback path for those connections instead of sending unsupported
+    // getObjectSource/getTableDdl requests to the plugin.
+    if config.db_type != DatabaseType::Jdbc {
+        return false;
+    }
+    [
+        config.driver_profile.as_deref(),
+        config.driver_label.as_deref(),
+        config.connection_string.as_deref(),
+        config.jdbc_driver_class.as_deref(),
+        config.database_info.as_ref().and_then(|info| info.product_name.as_deref()),
+    ]
+    .into_iter()
+    .flatten()
+    .any(|value| {
+        let value = value.to_ascii_lowercase();
+        value.contains("opengauss") || value.contains("gaussdb")
+    })
 }
 
 fn is_native_postgres_config(config: &ConnectionConfig) -> bool {
@@ -7590,16 +7719,77 @@ async fn get_object_source_once(
         let connections = state.connections.read().await;
         if let Some(PoolKind::ExternalDriver { config, session, .. }) = connections.get(&pool_key) {
             if db_config.as_ref().is_some_and(is_opengauss_family_config) {
-                // The official openGauss/GaussDB JDBC plugin cannot read object
-                // sources; serve them from the native wire-driver catalogs
-                // (pg_proc / gs_source, including ghost routines).
+                // Prefer the native wire-driver catalogs, but fall back to
+                // executeQuery on the active JDBC session for SHA256-only
+                // servers where a second native connection cannot authenticate.
                 let native_config = db_config.clone().expect("opengauss family config present");
+                let external_config = config.clone();
+                let external_session = session.clone();
                 drop(connections);
-                let pool = native_postgres_metadata_pool(state, connection_id, database, &native_config)
-                    .await?
-                    .ok_or("Object source is not supported for this database type")?;
-                let source =
-                    postgres_object_source(&pool, schema, name, &object_type, signature, relation_name, true).await?;
+                let source = match native_postgres_metadata_pool(state, connection_id, database, &native_config).await {
+                    Ok(Some(pool)) => {
+                        match postgres_object_source(&pool, schema, name, &object_type, signature, relation_name, true)
+                            .await
+                        {
+                            Ok(source) => Ok(source),
+                            Err(error) => {
+                                log::warn!(
+                                "[schema][external-driver:get_object_source:native-query-failed] connection_id={} database={} schema={} name={} error={}",
+                                connection_id,
+                                database,
+                                schema,
+                                name,
+                                error
+                            );
+                                external_opengauss_object_source(
+                                    external_session,
+                                    external_config.as_ref(),
+                                    database,
+                                    schema,
+                                    name,
+                                    &object_type,
+                                    signature,
+                                    relation_name,
+                                )
+                                .await
+                            }
+                        }
+                    }
+                    Ok(None) => {
+                        external_opengauss_object_source(
+                            external_session,
+                            external_config.as_ref(),
+                            database,
+                            schema,
+                            name,
+                            &object_type,
+                            signature,
+                            relation_name,
+                        )
+                        .await
+                    }
+                    Err(error) => {
+                        log::warn!(
+                            "[schema][external-driver:get_object_source:native-pool-failed] connection_id={} database={} schema={} name={} error={}",
+                            connection_id,
+                            database,
+                            schema,
+                            name,
+                            error
+                        );
+                        external_opengauss_object_source(
+                            external_session,
+                            external_config.as_ref(),
+                            database,
+                            schema,
+                            name,
+                            &object_type,
+                            signature,
+                            relation_name,
+                        )
+                        .await
+                    }
+                }?;
                 let editable = if matches!(object_type, db::ObjectSourceKind::Trigger) { Some(false) } else { None };
                 return Ok(db::ObjectSource {
                     name: name.to_string(),
@@ -9057,6 +9247,202 @@ async fn external_driver_mysql_ddl(
         )
         .await?;
     mysql_external_driver_ddl_from_query_result(result)
+}
+
+async fn external_opengauss_query(
+    session: std::sync::Arc<crate::plugins::PluginDriverSession>,
+    config: &ConnectionConfig,
+    database: &str,
+    schema: Option<&str>,
+    sql: &str,
+    max_rows: usize,
+) -> Result<db::QueryResult, String> {
+    session
+        .invoke_with_timeout(
+            "executeQuery",
+            serde_json::json!({
+                "connection": config,
+                "database": database,
+                "schema": schema,
+                "sql": sql,
+                "maxRows": max_rows
+            }),
+            agent_metadata_timeout(Some(config)),
+        )
+        .await
+}
+
+async fn external_opengauss_query_text(
+    session: std::sync::Arc<crate::plugins::PluginDriverSession>,
+    config: &ConnectionConfig,
+    database: &str,
+    schema: &str,
+    sql: &str,
+) -> Result<String, String> {
+    first_string_cell(external_opengauss_query(session, config, database, Some(schema), sql, 1).await?)
+}
+
+fn opengauss_trigger_definitions_sql(schema: &str, table: &str) -> String {
+    format!(
+        "SELECT pg_catalog.pg_get_triggerdef(t.oid, true) AS trigger_definition \
+         FROM pg_catalog.pg_trigger t \
+         JOIN pg_catalog.pg_class c ON c.oid = t.tgrelid \
+         JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
+         WHERE n.nspname = {} AND c.relname = {} AND NOT t.tgisinternal \
+         ORDER BY t.tgname, t.oid",
+        sql_string(schema),
+        sql_string(table)
+    )
+}
+
+fn query_result_string_values(result: db::QueryResult) -> Vec<String> {
+    result
+        .rows
+        .into_iter()
+        .filter_map(|row| row.into_iter().find_map(|value| value.as_str().map(str::to_string)))
+        .filter(|value| !value.trim().is_empty())
+        .collect()
+}
+
+async fn external_opengauss_table_ddl(
+    session: std::sync::Arc<crate::plugins::PluginDriverSession>,
+    config: &ConnectionConfig,
+    database: &str,
+    schema: &str,
+    table: &str,
+) -> Result<String, String> {
+    let ddl = external_opengauss_query_text(
+        session.clone(),
+        config,
+        database,
+        schema,
+        &opengauss_table_ddl_sql(schema, table),
+    )
+    .await?;
+    let trigger_definitions = query_result_string_values(
+        external_opengauss_query(
+            session,
+            config,
+            database,
+            Some(schema),
+            &opengauss_trigger_definitions_sql(schema, table),
+            10_000,
+        )
+        .await?,
+    );
+    Ok(append_opengauss_trigger_definitions(ddl, &trigger_definitions))
+}
+
+async fn external_opengauss_object_source(
+    session: std::sync::Arc<crate::plugins::PluginDriverSession>,
+    config: &ConnectionConfig,
+    database: &str,
+    schema: &str,
+    name: &str,
+    object_type: &db::ObjectSourceKind,
+    signature: Option<&str>,
+    relation_name: Option<&str>,
+) -> Result<String, String> {
+    let primary_sql = if matches!(object_type, db::ObjectSourceKind::Trigger) {
+        postgres_trigger_object_source_sql(schema, name, relation_name)
+    } else {
+        opengauss_object_source_sql(schema, name, object_type, signature)
+    };
+    match external_opengauss_query_text(session.clone(), config, database, schema, &primary_sql).await {
+        Ok(source) => Ok(source),
+        Err(primary_err)
+            if postgres_missing_relispopulated_error(&primary_err)
+                && matches!(object_type, db::ObjectSourceKind::View | db::ObjectSourceKind::MaterializedView) =>
+        {
+            let fallback_sql = postgres_object_source_sql_without_relispopulated(schema, name, object_type, signature);
+            external_opengauss_query_text(session, config, database, schema, &fallback_sql)
+                .await
+                .map_err(|fallback_err| format!("{primary_err}; relispopulated fallback failed: {fallback_err}"))
+        }
+        Err(primary_err)
+            if matches!(object_type, db::ObjectSourceKind::Package | db::ObjectSourceKind::PackageBody) =>
+        {
+            let fallback_sql = opengauss_package_source_fallback_sql(schema, name, object_type);
+            external_opengauss_query_text(session, config, database, schema, &fallback_sql)
+                .await
+                .map_err(|fallback_err| format!("{primary_err}; package fallback failed: {fallback_err}"))
+        }
+        Err(primary_err)
+            if matches!(object_type, db::ObjectSourceKind::Sequence)
+                && opengauss_sequence_cache_metadata_error(&primary_err) =>
+        {
+            let fallback_sql = opengauss_sequence_object_source_sql(schema, name, false);
+            external_opengauss_query_text(session, config, database, schema, &fallback_sql)
+                .await
+                .map_err(|fallback_err| format!("{primary_err}; sequence cache fallback failed: {fallback_err}"))
+        }
+        Err(primary_err) if matches!(object_type, db::ObjectSourceKind::Procedure | db::ObjectSourceKind::Function) => {
+            let mut errors = vec![primary_err];
+            for (label, fallback_sql) in
+                opengauss_routine_source_fallback_sqls(schema, name, object_type, signature, &errors[0])
+            {
+                match external_opengauss_query_text(session.clone(), config, database, schema, &fallback_sql).await {
+                    Ok(source) => return Ok(source),
+                    Err(fallback_err) => errors.push(format!("{label} fallback failed: {fallback_err}")),
+                }
+            }
+            Err(errors.join("; "))
+        }
+        Err(primary_err) if matches!(object_type, db::ObjectSourceKind::View) => {
+            let fallback_sql = postgres_view_source_fallback_sql(schema, name);
+            external_opengauss_query_text(session, config, database, schema, &fallback_sql)
+                .await
+                .map_err(|fallback_err| format!("{primary_err}; fallback failed: {fallback_err}"))
+        }
+        Err(error) => Err(error),
+    }
+}
+
+async fn opengauss_materialized_view_ddl(pool: &deadpool_postgres::Pool, table: &str) -> Result<String, String> {
+    let client = db::postgres::checkout_postgres_client(pool, None, db::connection_timeout()).await?;
+    let rows = client
+        .query(
+            "SELECT n.nspname, pg_get_viewdef(c.oid, 0) FROM pg_catalog.pg_class c \
+             JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
+             WHERE c.relkind = 'm' AND c.relname = $1 ORDER BY c.oid LIMIT 1",
+            &[&table],
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+    let row = rows.first().ok_or_else(|| "Object source not found".to_string())?;
+    let nspname: String = row.get(0);
+    let definition: String = row.get(1);
+    Ok(format!(
+        "CREATE MATERIALIZED VIEW {}.{} AS {}",
+        db::postgres::pg_quote_ident(&nspname),
+        db::postgres::pg_quote_ident(table),
+        definition.trim_end()
+    ))
+}
+
+async fn external_opengauss_materialized_view_ddl(
+    session: std::sync::Arc<crate::plugins::PluginDriverSession>,
+    config: &ConnectionConfig,
+    database: &str,
+    table: &str,
+) -> Result<String, String> {
+    let sql = format!(
+        "SELECT n.nspname, pg_get_viewdef(c.oid, 0) FROM pg_catalog.pg_class c \
+         JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
+         WHERE c.relkind = 'm' AND c.relname = {} ORDER BY c.oid LIMIT 1",
+        sql_string(table)
+    );
+    let result = external_opengauss_query(session, config, database, None, &sql, 1).await?;
+    let row = result.rows.first().ok_or_else(|| "Object source not found".to_string())?;
+    let nspname = row.first().and_then(|value| value.as_str()).ok_or_else(|| "Object source not found".to_string())?;
+    let definition =
+        row.get(1).and_then(|value| value.as_str()).ok_or_else(|| "Object source not found".to_string())?;
+    Ok(format!(
+        "CREATE MATERIALIZED VIEW {}.{} AS {}",
+        db::postgres::pg_quote_ident(nspname),
+        db::postgres::pg_quote_ident(table),
+        definition.trim_end()
+    ))
 }
 
 fn ensure_display_ddl_terminated(sql: String) -> String {

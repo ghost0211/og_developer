@@ -2,12 +2,18 @@ package com.dbx.agent;
 
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
+import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 final class JdbcDatabaseInfo {
+    private static final String OPENGAUSS_VERSION_SQL = "SELECT version()";
+    private static final Pattern OPENGAUSS_VERSION_PATTERN = Pattern.compile("(?i)(?:openGauss|GaussDB)\\s+([0-9]+(?:\\.[0-9]+)+)");
     private JdbcDatabaseInfo() {
     }
 
@@ -51,7 +57,46 @@ final class JdbcDatabaseInfo {
         if (jdbcMajor != null && jdbcMinor != null && jdbcMajor >= 0 && jdbcMinor >= 0) {
             info.put("jdbcVersion", jdbcMajor + "." + jdbcMinor);
         }
+
+        // PostgreSQL-compatible openGauss JDBC drivers commonly expose the
+        // wire-compatibility identity (PostgreSQL 9.2.4) through JDBC metadata.
+        // Ask the server for its product banner so callers can show the real
+        // openGauss release instead of that protocol baseline.
+        if ("postgresql".equalsIgnoreCase(info.get("productName"))) {
+            String openGaussVersion = queryOpenGaussVersion(connection);
+            if (openGaussVersion != null) {
+                info.put("productName", "openGauss");
+                info.put("productVersion", openGaussVersion);
+            }
+        }
         return info;
+    }
+
+    private static String queryOpenGaussVersion(Connection connection) {
+        try (Statement statement = connection.createStatement()) {
+            if (statement == null) {
+                return null;
+            }
+            try {
+                statement.setQueryTimeout(5);
+            } catch (SQLException | AbstractMethodError | UnsupportedOperationException ignored) {
+                // Some older JDBC drivers do not implement statement timeouts;
+                // the outer metadata call must still get a chance to read the banner.
+            }
+            try (ResultSet result = statement.executeQuery(OPENGAUSS_VERSION_SQL)) {
+                if (result == null || !result.next()) {
+                    return null;
+                }
+                String banner = result.getString(1);
+                if (banner == null) {
+                    return null;
+                }
+                Matcher matcher = OPENGAUSS_VERSION_PATTERN.matcher(banner.trim());
+                return matcher.find() ? matcher.group(1) : null;
+            }
+        } catch (SQLException | AbstractMethodError | UnsupportedOperationException ignored) {
+            return null;
+        }
     }
 
     private static void putText(Map<String, String> target, String key, SqlSupplier<String> supplier) {

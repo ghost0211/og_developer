@@ -1701,12 +1701,18 @@ html.dbx-data-grid-native-selection-blocked [role="textbox"] * {
     max-width: 24rem;
     border: 1px solid rgb(229, 229, 229);
     border-color: rgb(229, 229, 229) !important;
-    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.16);
+    box-shadow:
+      0 1px 2px rgba(0, 0, 0, 0.08),
+      0 8px 18px rgba(0, 0, 0, 0.08),
+      0 24px 56px rgba(0, 0, 0, 0.14) !important;
   }
 
   .dark [data-slot="dialog-content"] {
     border-color: rgba(110, 110, 114, 0.28) !important;
-    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+    box-shadow:
+      0 1px 2px rgba(0, 0, 0, 0.3),
+      0 8px 18px rgba(0, 0, 0, 0.3),
+      0 24px 56px rgba(0, 0, 0, 0.48) !important;
   }
 
   [data-slot="dialog-content"][class~="max-w-sm"] {
@@ -2083,16 +2089,50 @@ html.dbx-data-grid-native-selection-blocked [role="textbox"] * {
 .app-tab-bar {
   border-color: var(--border);
   background: var(--dbx-chrome);
+  backdrop-filter: blur(12px) saturate(1.15);
+  -webkit-backdrop-filter: blur(12px) saturate(1.15);
 }
 .app-sidebar-panel {
   color: var(--sidebar-foreground);
   background: var(--sidebar);
+  border-right: 1px solid var(--sidebar-border);
+  backdrop-filter: blur(14px) saturate(1.12);
+  -webkit-backdrop-filter: blur(14px) saturate(1.12);
+  box-shadow: inset -1px 0 0 var(--sidebar-border);
 }
 .app-sidebar-toolbar,
 .connection-tree-search,
 .sticky-database-header {
   border-color: var(--sidebar-border);
   background: var(--dbx-sidebar-header);
+}
+.app-sidebar-toolbar {
+  backdrop-filter: blur(10px) saturate(1.1);
+  -webkit-backdrop-filter: blur(10px) saturate(1.1);
+}
+
+@supports (background: color-mix(in oklab, white 50%, transparent)) {
+  .app-toolbar,
+  .app-tab-bar {
+    border-color: color-mix(in oklab, var(--border) 58%, transparent);
+    background: color-mix(in oklab, var(--dbx-chrome) 82%, transparent);
+    box-shadow:
+      0 1px 0 color-mix(in oklab, var(--border) 48%, transparent),
+      0 4px 16px color-mix(in oklab, var(--foreground) 5%, transparent);
+  }
+
+  .app-sidebar-panel {
+    border-right-color: color-mix(in oklab, var(--sidebar-border) 68%, transparent);
+    background: color-mix(in oklab, var(--sidebar) 88%, transparent);
+    box-shadow:
+      inset -1px 0 0 color-mix(in oklab, var(--sidebar-border) 78%, transparent),
+      8px 0 22px -18px color-mix(in oklab, var(--foreground) 22%, transparent);
+  }
+
+  .app-sidebar-toolbar {
+    border-color: color-mix(in oklab, var(--sidebar-border) 58%, transparent);
+    background: color-mix(in oklab, var(--dbx-sidebar-header) 78%, transparent);
+  }
 }
 .app-editor-toolbar {
   border-color: var(--border);
@@ -2141,23 +2181,6 @@ html.theme-vscode .app-tab-scroll.wrap-mode .app-tab-pill[data-active-tab="false
 }
 
 /* Frosted glass menus */
-.cn-menu-translucent {
-  backdrop-filter: blur(8px) saturate(1.6) !important;
-  -webkit-backdrop-filter: blur(8px) saturate(1.6) !important;
-  background-color: rgb(255 255 255 / 0.95) !important;
-  background-color: oklch(1 0 0 / 0.95) !important;
-  box-shadow: none !important;
-  border: 0.5px solid rgb(0 0 0 / 0.12) !important;
-  border: 0.5px solid oklch(0 0 0 / 0.12) !important;
-  --tw-ring-shadow: none !important;
-}
-.dark .cn-menu-translucent {
-  background-color: rgb(23 23 23 / 0.82) !important;
-  background-color: oklch(0.205 0 0 / 0.82) !important;
-  border-color: rgb(255 255 255 / 0.1) !important;
-  border-color: oklch(1 0 0 / 0.1) !important;
-}
-
 [data-slot="context-menu-content"],
 [data-slot="context-menu-sub-content"],
 [data-slot="dropdown-menu-content"],
@@ -2165,8 +2188,15 @@ html.theme-vscode .app-tab-scroll.wrap-mode .app-tab-pill[data-active-tab="false
 [data-slot="select-content"],
 .cn-menu-translucent {
   background-color: rgba(255, 255, 255, 0.96) !important;
+  background-color: color-mix(in oklab, var(--popover) 88%, transparent) !important;
   border: 1px solid rgba(0, 0, 0, 0.1) !important;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12) !important;
+  border-color: color-mix(in oklab, var(--border) 46%, transparent) !important;
+  backdrop-filter: blur(14px) saturate(1.25) !important;
+  -webkit-backdrop-filter: blur(14px) saturate(1.25) !important;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.08),
+    0 7px 16px rgba(0, 0, 0, 0.08),
+    0 22px 46px rgba(0, 0, 0, 0.14) !important;
   --tw-ring-color: transparent !important;
   --tw-ring-shadow: 0 0 transparent !important;
   --tw-shadow: 0 0 transparent !important;
@@ -2179,8 +2209,34 @@ html.theme-vscode .app-tab-scroll.wrap-mode .app-tab-pill[data-active-tab="false
 .dark [data-slot="select-content"],
 .dark .cn-menu-translucent {
   background-color: rgba(23, 23, 23, 0.94) !important;
-  border-color: rgba(255, 255, 255, 0.12) !important;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45) !important;
+  background-color: color-mix(in oklab, var(--popover) 88%, transparent) !important;
+  border-color: color-mix(in oklab, var(--border) 58%, transparent) !important;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.28),
+    0 8px 18px rgba(0, 0, 0, 0.3),
+    0 24px 50px rgba(0, 0, 0, 0.48) !important;
+}
+
+[data-slot="dialog-content"] {
+  background-color: var(--popover) !important;
+  background-color: color-mix(in oklab, var(--popover) 94%, transparent) !important;
+  border-color: color-mix(in oklab, var(--border) 46%, transparent) !important;
+  backdrop-filter: blur(12px) saturate(1.12) !important;
+  -webkit-backdrop-filter: blur(12px) saturate(1.12) !important;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.08),
+    0 8px 18px rgba(0, 0, 0, 0.09),
+    0 24px 56px rgba(0, 0, 0, 0.16) !important;
+}
+
+.dark [data-slot="dialog-content"] {
+  background-color: var(--popover) !important;
+  background-color: color-mix(in oklab, var(--popover) 94%, transparent) !important;
+  border-color: color-mix(in oklab, var(--border) 58%, transparent) !important;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.3),
+    0 8px 18px rgba(0, 0, 0, 0.32),
+    0 24px 56px rgba(0, 0, 0, 0.5) !important;
 }
 
 /* A few compound pickers render their own separate surface cards. */

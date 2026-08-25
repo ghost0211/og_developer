@@ -9,6 +9,7 @@ import AppActivityBar, { type ActivityPanelId } from "@/components/layout/AppAct
 import EditorToolbar from "@/components/layout/EditorToolbar.vue";
 import ContentArea from "@/components/layout/ContentArea.vue";
 import AppDialogs from "@/components/layout/AppDialogs.vue";
+import BottomStatusBar from "@/components/layout/BottomStatusBar.vue";
 import WelcomeScreen from "@/components/layout/WelcomeScreen.vue";
 import type { ConfigTab } from "@/components/connection/ConnectionDialog.vue";
 import { useConnectionStore } from "@/stores/connectionStore";
@@ -515,6 +516,7 @@ watch(
     if (id) newQueryContextSource.value = "tab";
     if (id && settingsDialogOpen.value) closeSettingsPage({ restoreReturnSurface: false });
     selectedSql.value = "";
+    cursorPos.value = activeTab.value?.editorSelection?.head ?? 0;
     activeOutputView.value = "result";
     if (id) queryStore.reloadEvictedTab(id);
   },
@@ -2698,6 +2700,17 @@ onUnmounted(() => {
             </div>
           </div>
         </div>
+
+        <BottomStatusBar
+          :active-tab="activeTab"
+          :active-connection="activeConnection"
+          :connected="!!activeConnection && connectionStore.connectedIds.has(activeConnection.id)"
+          :cursor-pos="cursorPos"
+          :ui-scale="settingsStore.editorSettings.uiScale"
+          @change-schema="changeActiveSchema"
+          @toggle-auto-commit="() => activeTab && queryStore.setAutoCommit(activeTab.id, !(activeTab.autoCommit ?? true))"
+          @set-ui-scale="setGlobalUiScale"
+        />
 
         <AppDialogs
           :show-connection-dialog="showConnectionDialog"

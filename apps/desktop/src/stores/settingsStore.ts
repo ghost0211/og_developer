@@ -322,6 +322,7 @@ function inferAiProviderFromConfig(config: Partial<AiConfig> | null | undefined)
 
 export type EditorTheme =
   | "app"
+  | "deep-space-dark"
   | "one-dark"
   | "vscode-dark"
   | "vscode-light"
@@ -552,6 +553,7 @@ export const EDITOR_THEMES: {
   dark: boolean;
 }[] = [
   { value: "app", label: "Follow app theme", dark: false },
+  { value: "deep-space-dark", label: "Deep Space Dark", dark: true },
   { value: "one-dark", label: "One Dark", dark: true },
   { value: "vscode-dark", label: "VS Dark+", dark: true },
   { value: "vscode-light", label: "VS Light+", dark: false },
@@ -1329,7 +1331,7 @@ export const useSettingsStore = defineStore("settings", () => {
     if (partial.fontSize !== undefined) editorSettings.value.fontSize = partial.fontSize;
     if (partial.uiFontFamily !== undefined) editorSettings.value.uiFontFamily = normalizeFontFamily(partial.uiFontFamily, DEFAULT_EDITOR_SETTINGS.uiFontFamily);
     if (partial.uiScale !== undefined) editorSettings.value.uiScale = normalizeUiScale(partial.uiScale);
-    if (partial.theme !== undefined) editorSettings.value.theme = partial.theme;
+    if (partial.theme !== undefined && EDITOR_THEME_VALUES.has(partial.theme)) editorSettings.value.theme = partial.theme;
     if (partial.customThemeColors !== undefined) {
       editorSettings.value.customThemeColors = {
         ...editorSettings.value.customThemeColors,

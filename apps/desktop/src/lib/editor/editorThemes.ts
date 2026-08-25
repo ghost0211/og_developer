@@ -74,6 +74,7 @@ function createCustomTheme(EditorView: typeof import("@codemirror/view").EditorV
   const defaultColors = isDark ? { background: "#1e1e2e", foreground: "#cdd6f4" } : { background: "#fafafa", foreground: "#242424" };
 
   const c = { ...defaultColors, ...customThemeColors, ...colors };
+  const bracketGlow = c.matchingBracket;
 
   // 映射用户自定义属性名到 CodeMirror 内部属性名
   if (colors) {
@@ -91,6 +92,8 @@ function createCustomTheme(EditorView: typeof import("@codemirror/view").EditorV
         color: c.foreground,
         [EDITOR_SELECTION_BACKGROUND_CSS_VAR]: c.selection,
         [SQL_TABLE_COLOR_CSS_VAR]: tableColor,
+        "--dbx-editor-bracket-background": c.matchingBracket,
+        "--dbx-editor-bracket-glow": bracketGlow,
       },
       ".cm-content": {
         caretColor: c.cursor,
@@ -102,7 +105,7 @@ function createCustomTheme(EditorView: typeof import("@codemirror/view").EditorV
         backgroundColor: c.selection,
       },
       ".cm-activeLine": {
-        backgroundColor: c.activeLine,
+        background: c.activeLine,
       },
       ".cm-gutters": {
         backgroundColor: c.gutterBackground,
@@ -110,11 +113,13 @@ function createCustomTheme(EditorView: typeof import("@codemirror/view").EditorV
         borderRight: "1px solid #313244",
       },
       ".cm-activeLineGutter": {
-        backgroundColor: c.activeLine,
+        background: c.activeLine,
         color: c.lineNumberActive,
       },
       ".cm-matchingBracket": {
         backgroundColor: c.matchingBracket,
+        borderRadius: "3px",
+        boxShadow: `inset 0 0 0 1px ${bracketGlow}, 0 0 8px ${bracketGlow}`,
         outline: "none",
       },
     },
@@ -226,12 +231,45 @@ type IdeEditorThemeColors = {
   tag: string;
   attribute: string;
   className: string;
+  matchingBracketGlow?: string;
   keywordBold?: boolean;
   stringBold?: boolean;
   numberBold?: boolean;
 };
 
 const IDE_EDITOR_THEMES = {
+  deepSpaceDark: {
+    dark: true,
+    background: "#111318",
+    foreground: "#dbe4f0",
+    selection: "#1f3b5d",
+    selectionMatch: "#173b50",
+    cursor: "#7dd3fc",
+    gutterBackground: "#0d1016",
+    gutterForeground: "#68758a",
+    gutterActiveForeground: "#d7e2ef",
+    activeLine: "linear-gradient(90deg, rgb(255 255 255 / 0.04), rgb(255 255 255 / 0.018) 70%, transparent)",
+    matchingBracket: "rgb(56 189 248 / 0.12)",
+    matchingBracketGlow: "rgb(56 189 248 / 0.58)",
+    gutterBorder: "rgb(148 163 184 / 0.16)",
+    keyword: "#38bdf8",
+    string: "#fbbf24",
+    number: "#f0abfc",
+    comment: "#8b8fa3",
+    type: "#c4b5fd",
+    variable: "#a7f3d0",
+    function: "#67e8f9",
+    operator: "#bae6fd",
+    punctuation: "#94a3b8",
+    property: "#86efac",
+    table: "#5eead4",
+    builtin: "#fda4af",
+    meta: "#c4b5fd",
+    invalid: "#fb7185",
+    tag: "#38bdf8",
+    attribute: "#fbbf24",
+    className: "#a7f3d0",
+  },
   ideaLight: {
     dark: false,
     background: "#ffffff",
@@ -489,6 +527,7 @@ const IDE_EDITOR_THEMES = {
 } satisfies Record<string, IdeEditorThemeColors>;
 
 function createIdeEditorTheme(EditorView: typeof import("@codemirror/view").EditorView, c: IdeEditorThemeColors): Extension {
+  const bracketGlow = c.matchingBracketGlow ?? c.matchingBracket;
   const theme = EditorView.theme(
     {
       "&": {
@@ -496,6 +535,8 @@ function createIdeEditorTheme(EditorView: typeof import("@codemirror/view").Edit
         color: c.foreground,
         [EDITOR_SELECTION_BACKGROUND_CSS_VAR]: c.selection,
         [SQL_TABLE_COLOR_CSS_VAR]: c.table,
+        "--dbx-editor-bracket-background": c.matchingBracket,
+        "--dbx-editor-bracket-glow": bracketGlow,
       },
       ".cm-scroller": {
         backgroundColor: c.background,
@@ -513,7 +554,7 @@ function createIdeEditorTheme(EditorView: typeof import("@codemirror/view").Edit
         backgroundColor: c.selectionMatch,
       },
       ".cm-activeLine": {
-        backgroundColor: c.activeLine,
+        background: c.activeLine,
       },
       ".cm-gutters": {
         backgroundColor: c.gutterBackground,
@@ -521,11 +562,13 @@ function createIdeEditorTheme(EditorView: typeof import("@codemirror/view").Edit
         color: c.gutterForeground,
       },
       ".cm-activeLineGutter": {
-        backgroundColor: c.activeLine,
+        background: c.activeLine,
         color: c.gutterActiveForeground,
       },
       ".cm-matchingBracket": {
         backgroundColor: c.matchingBracket,
+        borderRadius: "3px",
+        boxShadow: `inset 0 0 0 1px ${bracketGlow}, 0 0 8px ${bracketGlow}`,
         outline: "none",
       },
     },
@@ -634,6 +677,26 @@ export function cellDetailActiveLineColor(): string {
   return colorMixValue("var(--accent)", "color-mix(in oklch, var(--foreground) 4%, transparent)");
 }
 
+export function buildEditorChromeThemeRules(): CodeMirrorStyleSpec {
+  const bracketBackground = "var(--dbx-editor-bracket-background, color-mix(in oklab, currentColor 12%, transparent))";
+  const bracketGlow = "var(--dbx-editor-bracket-glow, color-mix(in oklab, currentColor 55%, transparent))";
+  return {
+    ".cm-matchingBracket": {
+      borderRadius: "3px",
+      boxShadow: `inset 0 0 0 1px ${bracketGlow}, 0 0 8px ${bracketGlow}`,
+    },
+    ".cm-sql-block-match": {
+      backgroundColor: bracketBackground,
+      borderRadius: "3px",
+      boxShadow: `inset 0 0 0 1px ${bracketGlow}, 0 0 8px ${bracketGlow}`,
+    },
+  };
+}
+
+export function editorChromeTheme(EditorView: typeof import("@codemirror/view").EditorView): Extension {
+  return EditorView.theme(buildEditorChromeThemeRules());
+}
+
 /** Resolve the concrete CodeMirror theme used by the "Follow app theme" setting. */
 export function resolveEditorTheme(theme: EditorTheme, appAppearance: AppThemeAppearance, appPalette: AppThemePalette = "pearl"): Exclude<EditorTheme, "app"> {
   if (theme === "app") {
@@ -651,7 +714,7 @@ export function resolveEditorTheme(theme: EditorTheme, appAppearance: AppThemeAp
       case "claude":
         return appAppearance === "dark" ? "claude-dark" : "claude-light";
       default:
-        return appAppearance === "dark" ? "one-dark" : "vscode-light";
+        return appAppearance === "dark" ? "deep-space-dark" : "vscode-light";
     }
   }
   return theme;
@@ -661,6 +724,8 @@ export function resolveEditorTheme(theme: EditorTheme, appAppearance: AppThemeAp
 export async function loadEditorTheme(theme: EditorTheme, appAppearance: AppThemeAppearance = "dark", customColors?: CustomThemeColors, appPalette: AppThemePalette = "pearl"): Promise<Extension> {
   const resolvedTheme = resolveEditorTheme(theme, appAppearance, appPalette);
   switch (resolvedTheme) {
+    case "deep-space-dark":
+      return loadIdeEditorTheme(IDE_EDITOR_THEMES.deepSpaceDark);
     case "one-dark":
       return (await import("@codemirror/theme-one-dark")).oneDark;
     case "vscode-dark":

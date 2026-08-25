@@ -3811,7 +3811,9 @@ impl AppState {
                     .await?;
                 let mut info = database_info_from_protocol_value(&response);
                 // og developer: JDBC connections do not report the openGauss
-                // compatibility mode; detect it over the same session.
+                // compatibility mode or the server release reliably; detect
+                // both over the same session instead of trusting PostgreSQL's
+                // wire-compatibility metadata (often 9.2.4).
                 if crate::schema::is_opengauss_family_config(&config) {
                     let compatibility = session
                         .invoke_with_timeout::<db::QueryResult>(
@@ -3829,9 +3831,37 @@ impl AppState {
                         .await
                         .ok()
                         .and_then(|result| db::postgres::sql_compatibility_from_query_result(&result));
+                    let product_version = session
+                        .invoke_with_timeout::<db::QueryResult>(
+                            "executeQuery",
+                            serde_json::json!({
+                                "connection": config.as_ref(),
+                                "sql": db::postgres::OPENGAUSS_VERSION_SQL,
+                                "database": config.effective_database().unwrap_or(""),
+                                "schema": null,
+                                "maxRows": 1,
+                                "timeoutSecs": 5,
+                            }),
+                            Some(db::connection_timeout()),
+                        )
+                        .await
+                        .ok()
+                        .and_then(|result| db::postgres::opengauss_product_version_from_query_result(&result));
+
+                    let info = info.get_or_insert_with(DatabaseConnectionInfo::default);
+                    let metadata_is_postgresql =
+                        info.product_name.as_deref().is_some_and(|name| name.eq_ignore_ascii_case("postgresql"));
+                    info.product_name =
+                        Some(if config.db_type == DatabaseType::Gaussdb { "GaussDB" } else { "openGauss" }.to_string());
+                    if let Some(product_version) = product_version {
+                        info.product_version = Some(product_version);
+                    } else if metadata_is_postgresql {
+                        // Do not preserve the JDBC compatibility baseline as
+                        // though it were the openGauss server version.
+                        info.product_version = None;
+                    }
                     if let Some(compatibility) = compatibility {
-                        info.get_or_insert_with(DatabaseConnectionInfo::default).sql_compatibility =
-                            Some(compatibility);
+                        info.sql_compatibility = Some(compatibility);
                     }
                 }
                 Ok(info)
@@ -3840,13 +3870,16 @@ impl AppState {
                 db::mysql::database_connection_info(&pool, db::mysql::protocol_product_name(&config)).await.map(Some)
             }
             Some(ConnectionDatabaseInfoSource::NativeOpengauss(pool)) => {
-                // og developer: surface the openGauss compatibility mode so the
-                // sidebar and editor can adapt.
+                // og developer: surface the openGauss compatibility mode and
+                // server release so the UI does not fall back to PostgreSQL's
+                // protocol baseline.
                 let compatibility = db::postgres::postgres_sql_compatibility(&pool).await;
+                let product_version = db::postgres::opengauss_product_version(&pool).await;
                 Ok(Some(DatabaseConnectionInfo {
                     product_name: Some(
                         if config.db_type == DatabaseType::Gaussdb { "GaussDB" } else { "openGauss" }.to_string(),
                     ),
+                    product_version,
                     current_database: database
                         .map(str::to_string)
                         .or_else(|| config.effective_database().map(str::to_string)),

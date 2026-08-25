@@ -79,3 +79,28 @@ test("data grid paint theme resolves cellDirty token", () => {
 
   assert.equal(resolveDataGridPaintTheme({ getVar, isDark: false }).cellDirty, "rgb(166, 210, 255)");
 });
+
+test("data grid paint theme exposes subtle crosshair and value-state surfaces", () => {
+  const theme = resolveDataGridPaintTheme({ getVar: () => "", isDark: false });
+
+  assert.match(theme.cellCrosshair, /rgba?\(/);
+  assert.match(theme.cellNullBackground, /rgb/);
+  assert.match(theme.cellNullBorder, /rgb/);
+  assert.match(theme.cellBooleanTrue, /rgb/);
+  assert.match(theme.cellBooleanFalse, /rgb/);
+});
+
+test("DataGrid keeps advanced value visuals consistent across DOM and Canvas modes", () => {
+  const gridSource = readFileSync("apps/desktop/src/components/grid/DataGrid.vue", "utf8");
+  const rendererSource = readFileSync("apps/desktop/src/lib/dataGrid/canvasDataGridRenderer.ts", "utf8");
+  const headerSource = readFileSync("apps/desktop/src/components/grid/DataGridColumnHeader.vue", "utf8");
+
+  assert.match(gridSource, /data-grid-cell--crosshair/);
+  assert.match(gridSource, /data-grid-row-number--crosshair/);
+  assert.match(gridSource, /class=\"data-grid-null-pill\">\[NULL\]<\/span>/);
+  assert.match(gridSource, /data-grid-boolean-dot--true/);
+  assert.match(gridSource, /cellVisualKind: canvasCellVisualKind/);
+  assert.match(rendererSource, /drawCanvasNullPill/);
+  assert.match(rendererSource, /drawCanvasBooleanValue/);
+  assert.match(headerSource, /data-grid-header-cell--crosshair/);
+});

@@ -36,6 +36,8 @@ export interface CanvasRightAlignedActionCell extends CanvasHoverCell {
   reservedWidth: number;
 }
 
+export type CanvasCellVisualKind = "null" | "boolean-true" | "boolean-false";
+
 /** 搜索匹配的数值 key：列头匹配 displayRow 为 -1。相比字符串拼接 key，
  * 每次按键构建 matchSet、每帧对可见单元格查询都零字符串分配。
  * ponytail: 列数上限 65536，网格列数远达不到 */
@@ -67,11 +69,13 @@ export interface DrawCanvasDataGridOptions {
   visibleColumnIndexes: number[];
   rowNumberWidth: number;
   hoverCell: CanvasHoverCell | null;
+  crosshairCell?: CanvasHoverCell | null;
   isScrolling: boolean;
   editingCell: CanvasEditingCell | null;
   searchMatchKeys: ReadonlySet<number>;
   currentSearchMatch: CanvasSearchMatch | null;
   formatCell: (value: CellValue, columnIndex: number) => string;
+  cellVisualKind?: (value: CellValue, columnIndex: number, row: CanvasDataGridRow) => CanvasCellVisualKind | undefined;
   draftCellPlaceholder?: string;
   isRowActive: (rowIndex: number) => boolean;
   rowCellsUseSelectionVisual: (rowId: number) => boolean;
@@ -94,6 +98,7 @@ interface CanvasRenderState {
   tabularFont: string;
   semiboldFont: string;
   italicFont: string;
+  nullFont: string;
   theme: DataGridPaintTheme;
   searchFill: string;
   currentSearchFill: string;
@@ -259,6 +264,12 @@ function resolveCanvasRenderState(canvas: HTMLCanvasElement, isDark: boolean, st
     weight: canvasStyle.fontWeight,
     lineHeight,
   });
+  const nullFont = canvasFont({
+    family: canvasTabularFontFamily(fontFamily),
+    sizePx: Math.max(10, fontSize - 3),
+    style: "italic",
+    lineHeight,
+  });
   const theme = resolveDataGridPaintTheme({
     getVar: (name) => canvasStyle.getPropertyValue(name),
     isDark,
@@ -269,6 +280,7 @@ function resolveCanvasRenderState(canvas: HTMLCanvasElement, isDark: boolean, st
     tabularFont,
     semiboldFont,
     italicFont,
+    nullFont,
     theme,
     searchFill: isDark ? DATA_GRID_DARK_SEARCH_COLORS.match : theme.cellSearch,
     currentSearchFill: isDark ? DATA_GRID_DARK_SEARCH_COLORS.current : theme.cellCurrentSearch,
@@ -276,6 +288,63 @@ function resolveCanvasRenderState(canvas: HTMLCanvasElement, isDark: boolean, st
   };
   canvasRenderStateCache.set(canvas, state);
   return state;
+}
+
+function roundedCanvasRect(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number) {
+  const r = Math.min(radius, width / 2, height / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + width - r, y);
+  ctx.quadraticCurveTo(x + width, y, x + width, y + r);
+  ctx.lineTo(x + width, y + height - r);
+  ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
+  ctx.lineTo(x + r, y + height);
+  ctx.quadraticCurveTo(x, y + height, x, y + height - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+function drawCanvasNullPill(options: { ctx: CanvasRenderingContext2D; text: string; anchorX: number; maxWidth: number; textY: number; isRightAlign: boolean; background: string; border: string; textColor: string }): { x: number; width: number } | null {
+  const { ctx, text, anchorX, maxWidth, textY, isRightAlign, background, border, textColor } = options;
+  const padding = 5;
+  const label = fitCanvasText(ctx, text, Math.max(0, maxWidth - padding * 2));
+  const labelWidth = ctx.measureText(label).width;
+  const pillWidth = Math.min(maxWidth, labelWidth + padding * 2);
+  if (pillWidth <= 0) return null;
+  const x = isRightAlign ? anchorX - pillWidth : anchorX;
+  const y = textY - 8;
+  roundedCanvasRect(ctx, x, y, pillWidth, 16, 8);
+  ctx.fillStyle = background;
+  ctx.fill();
+  ctx.strokeStyle = border;
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.fillStyle = textColor;
+  ctx.textAlign = "center";
+  ctx.fillText(label, x + pillWidth / 2, textY);
+  ctx.textAlign = isRightAlign ? "right" : "left";
+  return { x, width: pillWidth };
+}
+
+function drawCanvasBooleanValue(options: { ctx: CanvasRenderingContext2D; text: string; anchorX: number; maxWidth: number; textY: number; isRightAlign: boolean; dotColor: string; textColor: string }): { x: number; width: number } | null {
+  const { ctx, text, anchorX, maxWidth, textY, isRightAlign, dotColor, textColor } = options;
+  const gap = 6;
+  const dotRadius = 2.5;
+  const label = fitCanvasText(ctx, text, Math.max(0, maxWidth - dotRadius * 2 - gap - 2), isRightAlign ? "right" : "left");
+  const labelWidth = ctx.measureText(label).width;
+  const totalWidth = dotRadius * 2 + gap + labelWidth;
+  if (totalWidth <= 0 || maxWidth <= 0) return null;
+  const startX = isRightAlign ? anchorX - totalWidth : anchorX;
+  ctx.fillStyle = dotColor;
+  ctx.beginPath();
+  ctx.arc(startX + dotRadius, textY, dotRadius, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = textColor;
+  ctx.textAlign = "left";
+  ctx.fillText(label, startX + dotRadius * 2 + gap, textY);
+  ctx.textAlign = isRightAlign ? "right" : "left";
+  return { x: startX, width: totalWidth };
 }
 
 export function drawCanvasDataGrid(options: DrawCanvasDataGridOptions) {
@@ -295,11 +364,13 @@ export function drawCanvasDataGrid(options: DrawCanvasDataGridOptions) {
     visibleColumnIndexes,
     rowNumberWidth,
     hoverCell,
+    crosshairCell,
     isScrolling,
     editingCell,
     searchMatchKeys,
     currentSearchMatch,
     formatCell,
+    cellVisualKind,
     draftCellPlaceholder,
     isRowActive,
     rowCellsUseSelectionVisual,
@@ -333,7 +404,7 @@ export function drawCanvasDataGrid(options: DrawCanvasDataGridOptions) {
   ctx.imageSmoothingEnabled = false;
   ctx.clearRect(0, 0, width, height);
 
-  const { normalFont, tabularFont, semiboldFont, italicFont, theme, searchFill, currentSearchFill, currentSearchBorder } = resolveCanvasRenderState(canvas, isDark, styleKey);
+  const { normalFont, tabularFont, semiboldFont, italicFont, nullFont, theme, searchFill, currentSearchFill, currentSearchBorder } = resolveCanvasRenderState(canvas, isDark, styleKey);
 
   const scrollTop = scroller.scrollTop;
   const scrollLeft = scroller.scrollLeft;
@@ -377,6 +448,11 @@ export function drawCanvasDataGrid(options: DrawCanvasDataGridOptions) {
     ctx.globalAlpha = item.isDeleted ? 0.7 : 1;
     ctx.fillStyle = rowFill;
     ctx.fillRect(0, y, width, CANVAS_DATA_GRID_ROW_HEIGHT);
+    const crosshairRow = crosshairCell?.rowIndex === item.displayIndex && !rowSelectionVisual && !rowIsActive;
+    if (crosshairRow) {
+      ctx.fillStyle = theme.cellCrosshair;
+      ctx.fillRect(0, y, width, CANVAS_DATA_GRID_ROW_HEIGHT);
+    }
 
     const rowNumberFill = rowSelectionVisual
       ? theme.rowNumberSelected
@@ -393,6 +469,10 @@ export function drawCanvasDataGrid(options: DrawCanvasDataGridOptions) {
                 : theme.rowNumberDefault;
     ctx.fillStyle = rowNumberFill;
     ctx.fillRect(0, y, rowNumberWidth, CANVAS_DATA_GRID_ROW_HEIGHT);
+    if (crosshairRow) {
+      ctx.fillStyle = theme.cellCrosshair;
+      ctx.fillRect(0, y, rowNumberWidth, CANVAS_DATA_GRID_ROW_HEIGHT);
+    }
     ctx.strokeStyle = theme.border;
     ctx.beginPath();
     ctx.moveTo(rowNumberBorderX, y);
@@ -434,12 +514,17 @@ export function drawCanvasDataGrid(options: DrawCanvasDataGridOptions) {
       const isDirtyCell = item.isDirtyCol[actualColIdx];
       const selectedFillVisual = rowSelectionVisual || selectedCell;
       const selectedBorderVisual = selectedCell;
+      const isCrosshairColumn = crosshairCell?.visibleColIdx === visibleColIdx && !selectedFillVisual && !isDirtyCell;
       const isSearchMatch = paintSearchMatches && searchMatchKeys.has(dataGridSearchMatchKey(item.displayIndex, actualColIdx));
       const isCurrentSearchMatch = paintSearchMatches && currentSearchMatch?.displayRow === item.displayIndex && currentSearchMatch.col === actualColIdx;
       const clippedX = Math.max(drawX, rowNumberWidth);
       const cellPaintWidth = Math.min(width, drawX + colWidth) - clippedX;
       if (cellPaintWidth <= 0) return;
 
+      if (isCrosshairColumn) {
+        ctx.fillStyle = theme.cellCrosshair;
+        ctx.fillRect(clippedX, y, cellPaintWidth, CANVAS_DATA_GRID_ROW_HEIGHT);
+      }
       if (isDirtyCell && !selectedFillVisual) {
         ctx.fillStyle = theme.cellDirty;
         ctx.fillRect(clippedX, y, cellPaintWidth, CANVAS_DATA_GRID_ROW_HEIGHT);
@@ -479,18 +564,52 @@ export function drawCanvasDataGrid(options: DrawCanvasDataGridOptions) {
       const isRightAlign = columnAligns?.[visibleColIdx] === "right";
       const isEditingThisCell = editingCell?.rowId === item.id && editingCell.col === actualColIdx;
       ctx.textAlign = isRightAlign ? "right" : "left";
-      ctx.fillStyle = value === null ? theme.mutedForeground : theme.foreground;
-      ctx.font = value === null ? italicFont : tabularFont;
-      setCanvasNumericVariant(ctx, value === null ? "normal" : "tabular-nums");
+      const visualKind = isEditingThisCell ? undefined : cellVisualKind?.(value, actualColIdx, item);
       const reservedWidth = rightAlignedActionCell?.rowIndex === item.displayIndex && rightAlignedActionCell.visibleColIdx === visibleColIdx ? rightAlignedActionCell.reservedWidth : 0;
       const { textAnchorX, maxWidth: cellMaxWidth } = resolveCanvasCellTextLayout({ drawX, colWidth, dpr: scaleX, isRightAlign, reservedWidth });
       const rawDisplayText = item.isDraft && value === null ? (draftCellPlaceholder ?? "") : formatCell(value, actualColIdx);
       const displayText = isEditingThisCell ? "" : firstLineCellDisplayValue(rawDisplayText);
-      const text = isEditingThisCell ? displayText : fitCanvasText(ctx, displayText, cellMaxWidth, isRightAlign ? "right" : "left");
-      ctx.fillText(text, textAnchorX, textY);
-      if (item.isDeleted && text) {
-        const textWidth = ctx.measureText(text).width;
-        const lineStartX = isRightAlign ? textAnchorX - textWidth : textAnchorX;
+      let text = "";
+      let visualBounds: { x: number; width: number } | null = null;
+      if (visualKind === "null") {
+        ctx.fillStyle = theme.mutedForeground;
+        ctx.font = nullFont;
+        setCanvasNumericVariant(ctx, "normal");
+        visualBounds = drawCanvasNullPill({
+          ctx,
+          text: "[NULL]",
+          anchorX: textAnchorX,
+          maxWidth: cellMaxWidth,
+          textY,
+          isRightAlign,
+          background: theme.cellNullBackground,
+          border: theme.cellNullBorder,
+          textColor: theme.mutedForeground,
+        });
+      } else if (visualKind === "boolean-true" || visualKind === "boolean-false") {
+        ctx.fillStyle = theme.foreground;
+        ctx.font = tabularFont;
+        setCanvasNumericVariant(ctx, "tabular-nums");
+        visualBounds = drawCanvasBooleanValue({
+          ctx,
+          text: displayText,
+          anchorX: textAnchorX,
+          maxWidth: cellMaxWidth,
+          textY,
+          isRightAlign,
+          dotColor: visualKind === "boolean-true" ? theme.cellBooleanTrue : theme.cellBooleanFalse,
+          textColor: theme.foreground,
+        });
+      } else {
+        ctx.fillStyle = value === null ? theme.mutedForeground : theme.foreground;
+        ctx.font = value === null ? italicFont : tabularFont;
+        setCanvasNumericVariant(ctx, value === null ? "normal" : "tabular-nums");
+        text = isEditingThisCell ? displayText : fitCanvasText(ctx, displayText, cellMaxWidth, isRightAlign ? "right" : "left");
+        ctx.fillText(text, textAnchorX, textY);
+      }
+      if (item.isDeleted && (text || visualBounds)) {
+        const textWidth = visualBounds?.width ?? ctx.measureText(text).width;
+        const lineStartX = visualBounds?.x ?? (isRightAlign ? textAnchorX - textWidth : textAnchorX);
         ctx.strokeStyle = theme.foreground;
         ctx.beginPath();
         ctx.moveTo(lineStartX, textY);
@@ -560,6 +679,10 @@ export function drawCanvasDataGrid(options: DrawCanvasDataGridOptions) {
       ctx.fillRect(rowNumberWidth, y, frozenWidth, CANVAS_DATA_GRID_ROW_HEIGHT);
       if (rowFill !== theme.background) {
         ctx.fillStyle = rowFill;
+        ctx.fillRect(rowNumberWidth, y, frozenWidth, CANVAS_DATA_GRID_ROW_HEIGHT);
+      }
+      if (crosshairRow) {
+        ctx.fillStyle = theme.cellCrosshair;
         ctx.fillRect(rowNumberWidth, y, frozenWidth, CANVAS_DATA_GRID_ROW_HEIGHT);
       }
       // 绘制冻结列的每个单元格（x 坐标不受 scrollLeft 影响）

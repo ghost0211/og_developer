@@ -188,4 +188,17 @@ describe("drawCanvasDataGrid with frozen columns", () => {
     });
     expect(() => drawCanvasDataGrid(options)).not.toThrow();
   });
+
+  it("draws crosshair and NULL/boolean value visuals with frozen columns", () => {
+    const canvas = createMockCanvas();
+    const options = createBaseOptions({
+      canvas,
+      frozenColumnCount: 1,
+      rowCount: 2,
+      rowAt: (index: number) => (index < 2 ? createMockRow(index, index, [index === 0 ? null : "true", "value", "value"]) : undefined),
+      crosshairCell: { rowIndex: 0, visibleColIdx: 1 },
+      cellVisualKind: (value) => (value === null ? "null" : "boolean-true"),
+    });
+    expect(() => drawCanvasDataGrid(options)).not.toThrow();
+  });
 });

@@ -44,6 +44,66 @@ use crate::types::{
 
 pub(crate) const GAUSSDB_COMPATIBILITY_SQL: &str =
     "SELECT datcompatibility FROM pg_catalog.pg_database WHERE datname = current_database()";
+pub(crate) const OPENGAUSS_VERSION_SQL: &str = "SELECT version()";
+
+/// Reads the product release from an openGauss/GaussDB server banner. JDBC
+/// metadata often reports PostgreSQL 9.2.4 for the wire-compatible protocol,
+/// so only a banner that identifies the actual product is accepted here.
+pub(crate) fn opengauss_product_version_from_server_text(value: &str) -> Option<String> {
+    let normalized = value.trim();
+    let lower = normalized.to_ascii_lowercase();
+    let product = if lower.contains("opengauss") {
+        "opengauss"
+    } else if lower.contains("gaussdb") {
+        "gaussdb"
+    } else {
+        // A few builds return only the server release from version(); accept
+        // that shape here because this function is called only for an
+        // openGauss-family connection. A PostgreSQL banner still fails this
+        // numeric-only check and is never treated as the server release.
+        return standalone_version_candidate(normalized);
+    };
+    let product_end = lower.find(product)? + product.len();
+    normalized[product_end..].split_whitespace().find_map(version_number_candidate)
+}
+
+fn version_number_candidate(value: &str) -> Option<String> {
+    let token = value.trim_matches(|character: char| !character.is_ascii_digit() && character != '.');
+    let candidate: String =
+        token.chars().take_while(|character| character.is_ascii_digit() || *character == '.').collect();
+    valid_version_candidate(&candidate).then_some(candidate)
+}
+
+fn standalone_version_candidate(value: &str) -> Option<String> {
+    let token = value.trim().strip_prefix('v').or_else(|| value.trim().strip_prefix('V')).unwrap_or(value.trim());
+    let candidate: String =
+        token.chars().take_while(|character| character.is_ascii_digit() || *character == '.').collect();
+    let suffix = &token[candidate.len()..];
+    if !suffix.is_empty() && !suffix.starts_with('-') && !suffix.starts_with('_') {
+        return None;
+    }
+    valid_version_candidate(&candidate).then_some(candidate)
+}
+
+fn valid_version_candidate(candidate: &str) -> bool {
+    let components: Vec<&str> = candidate.split('.').collect();
+    components.len() >= 2
+        && components
+            .iter()
+            .all(|component| !component.is_empty() && component.chars().all(|character| character.is_ascii_digit()))
+}
+
+pub(crate) fn opengauss_product_version_from_query_result(result: &QueryResult) -> Option<String> {
+    result.rows.first()?.first()?.as_str().and_then(opengauss_product_version_from_server_text)
+}
+
+pub async fn opengauss_product_version(pool: &Pool) -> Option<String> {
+    let timeout = super::connection_timeout();
+    let client = checkout_postgres_client(pool, None, timeout).await.ok()?;
+    let row = tokio::time::timeout(timeout, client.query_opt(OPENGAUSS_VERSION_SQL, &[])).await.ok()?.ok()??;
+    let value = row.try_get::<_, String>(0).ok()?;
+    opengauss_product_version_from_server_text(&value)
+}
 
 pub async fn gaussdb_identifier_quote(pool: &Pool) -> Option<String> {
     let timeout = super::connection_timeout();
@@ -5374,6 +5434,14 @@ mod tests {
         }
         assert_eq!(gaussdb_identifier_quote_for_compatibility_mode("C"), None);
         assert_eq!(gaussdb_identifier_quote_for_compatibility_mode(""), None);
+    }
+
+    #[test]
+    fn extracts_open_gauss_server_version_without_accepting_postgresql_compatibility_version() {
+        assert_eq!(opengauss_product_version_from_server_text("openGauss 6.0.0 build 123"), Some("6.0.0".to_string()));
+        assert_eq!(opengauss_product_version_from_server_text("GaussDB 5.0.0 (build 456)"), Some("5.0.0".to_string()));
+        assert_eq!(opengauss_product_version_from_server_text("7.0.0-RC1"), Some("7.0.0".to_string()));
+        assert_eq!(opengauss_product_version_from_server_text("PostgreSQL 9.2.4 on x86_64"), None);
     }
 
     #[test]
