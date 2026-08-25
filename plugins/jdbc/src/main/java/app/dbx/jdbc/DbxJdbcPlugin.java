@@ -884,13 +884,17 @@ public final class DbxJdbcPlugin {
     private static final String[] OPENGAUSS_OUTPUT_DRAIN_SQLS =
         { "select lines from gms_output.get_lines(null, 1000)", "select lines from dbms_output.get_lines(null, 1000)" };
 
-    private static boolean openGaussOutputSupported(JsonNode connection) {
+    private static boolean isOpenGaussConnection(JsonNode connection) {
         String profile = optionalText(connection, "driver_profile");
         if (profile != null && profile.equalsIgnoreCase("opengauss-jdbc")) {
             return true;
         }
         String url = optionalText(connection, "connection_string");
         return url != null && url.toLowerCase(Locale.ROOT).startsWith("jdbc:opengauss:");
+    }
+
+    private static boolean openGaussOutputSupported(JsonNode connection) {
+        return isOpenGaussConnection(connection);
     }
 
     private static void enableOpenGaussOutput(Connection conn) {
@@ -1821,6 +1825,9 @@ public final class DbxJdbcPlugin {
             primaryKeys = safePrimaryKeys(meta, null, schemaPattern, table);
             appendColumns(result, meta, null, schemaPattern, table, primaryKeys);
         }
+        if (isOpenGaussConnection(connection)) {
+            mergeOpenGaussFormattedColumnTypes(conn, result, schemaPattern, table);
+        }
         if (quirks.useCatalogFallbackSql()) {
             mergeShowFullColumnMetadata(conn, result, schemaPattern, table);
         }
@@ -2507,6 +2514,63 @@ public final class DbxJdbcPlugin {
 
     private static String sqlString(String value) {
         return "'" + (value == null ? "" : value).replace("'", "''") + "'";
+    }
+
+    private static void mergeOpenGaussFormattedColumnTypes(
+        Connection conn,
+        ArrayNode result,
+        String schema,
+        String table
+    ) {
+        String sql = "SELECT a.attname AS column_name, " +
+            "pg_catalog.format_type(a.atttypid, a.atttypmod) AS data_type " +
+            "FROM pg_catalog.pg_attribute a " +
+            "JOIN pg_catalog.pg_class c ON c.oid = a.attrelid " +
+            "JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace " +
+            "WHERE n.nspname = ? AND c.relname = ? " +
+            "AND a.attnum > 0 AND NOT a.attisdropped " +
+            "ORDER BY a.attnum";
+        try (PreparedStatement statement = conn.prepareStatement(sql)) {
+            statement.setString(1, schema);
+            statement.setString(2, table);
+            try (ResultSet rs = statement.executeQuery()) {
+                while (rs.next()) {
+                    String name = rs.getString("column_name");
+                    String dataType = rs.getString("data_type");
+                    if (name == null || dataType == null || dataType.isBlank()) {
+                        continue;
+                    }
+                    for (JsonNode candidate : result) {
+                        if (candidate instanceof ObjectNode item && name.equals(item.path("name").asText())) {
+                            item.put("data_type", dataType);
+                            break;
+                        }
+                    }
+                }
+            }
+        } catch (SQLException | AbstractMethodError | UnsupportedOperationException ignored) {
+            // Generic JDBC metadata remains usable when catalog access is restricted.
+        }
+        normalizeOpenGaussIntegerTypeAliases(result);
+    }
+
+    private static void normalizeOpenGaussIntegerTypeAliases(ArrayNode result) {
+        for (JsonNode candidate : result) {
+            if (!(candidate instanceof ObjectNode item)) {
+                continue;
+            }
+            String dataType = item.path("data_type").asText("");
+            String canonical = switch (dataType.toLowerCase(Locale.ROOT)) {
+                case "int2" -> "smallint";
+                case "int4" -> "integer";
+                case "int8" -> "bigint";
+                case "_int2", "int2[]" -> "smallint[]";
+                case "_int4", "int4[]" -> "integer[]";
+                case "_int8", "int8[]" -> "bigint[]";
+                default -> dataType;
+            };
+            item.put("data_type", canonical);
+        }
     }
 
     private static void appendColumns(

@@ -1232,6 +1232,45 @@ final class DbxJdbcPluginTest {
     }
 
     @Test
+    void openGaussColumnsPreferServerFormattedTypesOverJdbcInternalAliases() throws Exception {
+        ArrayNode columns = MAPPER.createArrayNode();
+        columns.addObject().put("name", "id").put("data_type", "int4");
+        columns.addObject().put("name", "total").put("data_type", "int8");
+        ResultSet formattedTypes = rowsResultSet(
+            new String[] { "column_name", "data_type" },
+            new Object[][] { { "id", "integer" }, { "total", "bigint" } }
+        );
+        List<String> sql = new ArrayList<>();
+        Connection connection = (Connection) Proxy.newProxyInstance(
+            DbxJdbcPluginTest.class.getClassLoader(),
+            new Class<?>[] { Connection.class },
+            (proxy, method, args) -> switch (method.getName()) {
+                case "prepareStatement" -> {
+                    sql.add(String.valueOf(args[0]));
+                    yield preparedStatement(formattedTypes);
+                }
+                case "isClosed" -> false;
+                case "close" -> null;
+                default -> defaultValue(method.getReturnType());
+            }
+        );
+        Method method = DbxJdbcPlugin.class.getDeclaredMethod(
+            "mergeOpenGaussFormattedColumnTypes",
+            Connection.class,
+            ArrayNode.class,
+            String.class,
+            String.class
+        );
+        method.setAccessible(true);
+
+        method.invoke(null, connection, columns, "public", "orders");
+
+        assertEquals("integer", columns.path(0).path("data_type").asText());
+        assertEquals("bigint", columns.path(1).path("data_type").asText());
+        assertEquals(true, sql.get(0).contains("format_type(a.atttypid, a.atttypmod)"));
+    }
+
+    @Test
     void kingbaseGetColumnsUsesFormattedCatalogTypes() throws Exception {
         Method method = DbxJdbcPlugin.class.getDeclaredMethod("kingbaseGetColumns", Connection.class, String.class, String.class);
         method.setAccessible(true);
