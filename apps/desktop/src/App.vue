@@ -98,6 +98,7 @@ import { shouldBlockAppNativeSelectAll } from "@/lib/common/clipboard";
 import { APP_FONT_SANS_CSS_VAR, DATA_GRID_FONT_FAMILY_CSS_VAR, DEFAULT_DATA_GRID_FONT_FAMILY, DEFAULT_UI_FONT_FAMILY } from "@/lib/app/appFonts";
 import { rankSavedSqlHistory } from "@/lib/savedSql/savedSqlHistory";
 import { savedSqlDefaultTargetForWrite } from "@/lib/savedSql/savedSqlExecutionTarget";
+import { menuSearchTableDdlTarget } from "@/lib/search/menuSearchObjectNavigation";
 import { initSavedSqlEditorPositions } from "@/lib/app/savedSqlEditorPosition";
 import { isSchemaAware, isSingleDatabase, usesTreeSchemaMode } from "@/lib/database/databaseFeatureSupport";
 import { codeMirrorSqlDialect, connectionUsesDatabaseObjectTreeMode, effectiveDatabaseTypeForConnection } from "@/lib/database/jdbcDialect";
@@ -1729,15 +1730,9 @@ const OBJECT_SOURCE_KINDS = new Set(["VIEW", "MATERIALIZED_VIEW", "PROCEDURE", "
 function openObjectFromMenuSearch(hit: { connectionId: string; database: string; schema: string; objectType: string; name: string; signature?: string }) {
   const objectType = hit.objectType.toUpperCase();
   if (objectType === "TABLE" || objectType === "COLUMN") {
-    const tableName = objectType === "COLUMN" ? hit.name.slice(0, hit.name.lastIndexOf(".")) : hit.name;
-    if (!tableName) return;
-    queryEditorDdlTarget.value = {
-      connectionId: hit.connectionId,
-      database: hit.database,
-      schema: hit.schema || undefined,
-      tableName,
-      objectType: "TABLE" as ObjectSourceKind,
-    };
+    const ddlTarget = menuSearchTableDdlTarget(hit);
+    if (!ddlTarget) return;
+    queryEditorDdlTarget.value = ddlTarget;
     showQueryEditorDdlDialog.value = true;
     return;
   }
