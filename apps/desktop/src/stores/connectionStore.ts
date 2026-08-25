@@ -4284,7 +4284,6 @@ export const useConnectionStore = defineStore("connection", () => {
 
   async function loadObjectGroupChildren(node: TreeNode, options?: LoadTreeOptions) {
     if (node.type === "group-materialized-views") {
-      console.log("[ogdbg] MV group expand", node.type, "force=", options?.force);
     }
     const configForScope = node.connectionId ? getConfig(node.connectionId) : undefined;
     const objectTypesForScope = objectTypesForGroupNode(node.type);
@@ -4910,6 +4909,7 @@ export const useConnectionStore = defineStore("connection", () => {
     if (!enabled || !node.connectionId || !node.database) return [];
     const labelKey = direction === "references" ? "tree.references" : "tree.referencedBy";
     const nodeType = direction === "references" ? ("group-references" as const) : ("group-referenced-by" as const);
+    const resolvedName = node.parentName && !objectName.includes(".") ? `${node.parentName}.${objectName}` : objectName;
     return [
       {
         id: `${node.id}:__${direction}`,
@@ -4917,7 +4917,7 @@ export const useConnectionStore = defineStore("connection", () => {
         type: nodeType,
         referenceDirection: direction,
         referenceObjectType: objectType,
-        objectName,
+        objectName: resolvedName,
         connectionId: node.connectionId,
         database: node.database,
         schema: node.schema,
@@ -5138,7 +5138,6 @@ export const useConnectionStore = defineStore("connection", () => {
       const refs = await api.listObjectReferences(node.connectionId, node.database, querySchema, node.referenceObjectType, node.objectName, node.referenceDirection);
       const targetNode = treeNodeLoadTarget(load);
       if (!targetNode) return;
-      console.log("[ogdbg] reference loaded", node.referenceObjectType, node.objectName, node.referenceDirection, "rows=", refs.length);
       setChildren(
         targetNode,
         refs.map((ref) => ({
@@ -5179,25 +5178,29 @@ export const useConnectionStore = defineStore("connection", () => {
       const subprograms = await api.listOpengaussPackageSubprograms(connectionId, database, querySchema, packageName);
       const targetNode = treeNodeLoadTarget(load);
       if (!targetNode) return;
-      setChildren(
-        targetNode,
-        subprograms.map((sub) => {
-          const args = sub.arguments?.trim() ?? "";
-          const objectType = sub.functionType?.toUpperCase().includes("PROC") ? "PROCEDURE" : "FUNCTION";
-          return {
-            id: `${nodeId}:${sub.name}:${args}:${objectType}`,
-            label: args ? `${sub.name}(${args})` : sub.name,
-            type: (objectType === "PROCEDURE" ? "procedure" : "function") as TreeNode["type"],
-            objectName: sub.name,
-            signature: args || undefined,
-            connectionId,
-            database,
-            schema,
-            parentName: packageName,
-            isExpanded: false,
-          };
-        }),
-      );
+      const subprogramNodes: TreeNode[] = subprograms.map((sub) => {
+        const args = sub.arguments?.trim() ?? "";
+        const objectType = sub.functionType?.toUpperCase().includes("PROC") ? "PROCEDURE" : "FUNCTION";
+        return {
+          id: `${nodeId}:${sub.name}:${args}:${objectType}`,
+          label: args ? `${sub.name}(${args})` : sub.name,
+          type: (objectType === "PROCEDURE" ? "procedure" : "function") as TreeNode["type"],
+          objectName: sub.name,
+          signature: args || undefined,
+          connectionId,
+          database,
+          schema,
+          parentName: packageName,
+          isExpanded: false,
+        };
+      });
+
+      const config = getConfig(connectionId);
+      const isOpengaussFamily = isOpengaussFamilyConfig(config);
+      const pkgType = node.type === "package-body" ? "package_body" : "package";
+      const referenceGroups = [...buildObjectReferenceGroupNodes(node, pkgType, packageName, "references", isOpengaussFamily), ...buildObjectReferenceGroupNodes(node, pkgType, packageName, "referencedBy", isOpengaussFamily)];
+
+      setChildren(targetNode, [...subprogramNodes, ...referenceGroups]);
       targetNode.isExpanded = true;
     } catch {
       // Older servers without the catalogs fail the query; keep the node a leaf.

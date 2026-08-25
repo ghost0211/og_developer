@@ -15,7 +15,7 @@ use crate::db;
 use crate::models::connection::{ConnectionConfig, DatabaseType};
 use crate::query::{agent_execute_query_params, should_discard_pool_after_error, QueryExecutionOptions};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::future::Future;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -6329,17 +6329,237 @@ pub struct ObjectReferenceInfo {
     pub detail: Option<String>,
 }
 
+async fn opengauss_fetch_raw_object_source(
+    client: &deadpool_postgres::Client,
+    schema: &str,
+    name: &str,
+    object_type: &str,
+    has_gs_package: bool,
+    has_gs_source: bool,
+) -> Option<String> {
+    let lower_type = object_type.to_lowercase();
+    if lower_type == "package" {
+        if has_gs_source {
+            let sql = "SELECT s.src FROM dbe_pldeveloper.gs_source s \
+                       JOIN pg_catalog.pg_namespace n ON n.oid = s.nspid \
+                       WHERE n.nspname = $1 AND s.name = $2 AND s.type = 'package' \
+                       ORDER BY s.id DESC LIMIT 1";
+            if let Ok(rows) = client.query(sql, &[&schema, &name]).await {
+                if let Some(row) = rows.first() {
+                    if let Ok(src) = row.try_get::<_, String>(0) {
+                        if !src.trim().is_empty() {
+                            return Some(src);
+                        }
+                    }
+                }
+            }
+        }
+        if has_gs_package {
+            let sql = "SELECT p.pkgspecsrc FROM pg_catalog.gs_package p \
+                       JOIN pg_catalog.pg_namespace n ON n.oid = p.pkgnamespace \
+                       WHERE n.nspname = $1 AND p.pkgname = $2 LIMIT 1";
+            if let Ok(rows) = client.query(sql, &[&schema, &name]).await {
+                if let Some(row) = rows.first() {
+                    if let Ok(src) = row.try_get::<_, String>(0) {
+                        return Some(src);
+                    }
+                }
+            }
+        }
+    } else if lower_type == "package_body" || lower_type == "package-body" {
+        if has_gs_source {
+            let sql = "SELECT s.src FROM dbe_pldeveloper.gs_source s \
+                       JOIN pg_catalog.pg_namespace n ON n.oid = s.nspid \
+                       WHERE n.nspname = $1 AND s.name = $2 AND s.type = 'package body' \
+                       ORDER BY s.id DESC LIMIT 1";
+            if let Ok(rows) = client.query(sql, &[&schema, &name]).await {
+                if let Some(row) = rows.first() {
+                    if let Ok(src) = row.try_get::<_, String>(0) {
+                        if !src.trim().is_empty() {
+                            return Some(src);
+                        }
+                    }
+                }
+            }
+        }
+        if has_gs_package {
+            let sql = "SELECT COALESCE(p.pkgbodydeclsrc, '') || E'\\n' || COALESCE(p.pkgbodyinitsrc, '') \
+                       FROM pg_catalog.gs_package p \
+                       JOIN pg_catalog.pg_namespace n ON n.oid = p.pkgnamespace \
+                       WHERE n.nspname = $1 AND p.pkgname = $2 LIMIT 1";
+            if let Ok(rows) = client.query(sql, &[&schema, &name]).await {
+                if let Some(row) = rows.first() {
+                    if let Ok(src) = row.try_get::<_, String>(0) {
+                        return Some(src);
+                    }
+                }
+            }
+        }
+    } else if lower_type == "procedure" || lower_type == "function" {
+        if let Some((package, member)) = name.split_once('.') {
+            let sql = "SELECT p.prosrc \
+                       FROM pg_catalog.pg_proc p \
+                       JOIN pg_catalog.gs_package pkg ON pkg.oid = p.propackageid \
+                       JOIN pg_catalog.pg_namespace n ON n.oid = pkg.pkgnamespace \
+                       WHERE n.nspname = $1 AND pkg.pkgname = $2 AND p.proname = $3 LIMIT 1";
+            if let Ok(rows) = client.query(sql, &[&schema, &package, &member]).await {
+                if let Some(row) = rows.first() {
+                    if let Ok(src) = row.try_get::<_, String>(0) {
+                        return Some(src);
+                    }
+                }
+            }
+        } else {
+            if has_gs_source {
+                let sql = "SELECT s.src FROM dbe_pldeveloper.gs_source s \
+                           JOIN pg_catalog.pg_namespace n ON n.oid = s.nspid \
+                           WHERE n.nspname = $1 AND s.name = $2 AND s.type IN ('procedure', 'function') \
+                           ORDER BY s.id DESC LIMIT 1";
+                if let Ok(rows) = client.query(sql, &[&schema, &name]).await {
+                    if let Some(row) = rows.first() {
+                        if let Ok(src) = row.try_get::<_, String>(0) {
+                            if !src.trim().is_empty() {
+                                return Some(src);
+                            }
+                        }
+                    }
+                }
+            }
+            let sql = "SELECT p.prosrc FROM pg_catalog.pg_proc p \
+                       JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace \
+                       WHERE n.nspname = $1 AND p.proname = $2 LIMIT 1";
+            if let Ok(rows) = client.query(sql, &[&schema, &name]).await {
+                if let Some(row) = rows.first() {
+                    if let Ok(src) = row.try_get::<_, String>(0) {
+                        return Some(src);
+                    }
+                }
+            }
+        }
+    } else if lower_type == "view" || lower_type == "materialized_view" {
+        let sql = "SELECT pg_get_viewdef(c.oid) FROM pg_catalog.pg_class c \
+                   JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
+                   WHERE n.nspname = $1 AND c.relname = $2 LIMIT 1";
+        if let Ok(rows) = client.query(sql, &[&schema, &name]).await {
+            if let Some(row) = rows.first() {
+                if let Ok(src) = row.try_get::<_, String>(0) {
+                    return Some(src);
+                }
+            }
+        }
+    }
+    None
+}
+
+fn plsql_candidate_identifiers(references: &crate::plsql_references::PlSqlCandidateReferences) -> Vec<String> {
+    references
+        .tables
+        .iter()
+        .chain(references.routines.iter())
+        .chain(references.packages.iter())
+        .chain(references.sequences.iter())
+        .chain(references.types.iter())
+        .cloned()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+fn plsql_candidate_schema_matches(
+    references: &crate::plsql_references::PlSqlCandidateReferences,
+    source_schema: &str,
+    candidate_schema: &str,
+    candidate_name: &str,
+) -> bool {
+    if candidate_schema.eq_ignore_ascii_case(source_schema) || candidate_schema.eq_ignore_ascii_case("public") {
+        return true;
+    }
+    let candidate_name = candidate_name.to_lowercase();
+    references.qualified_names.iter().any(|(qualifier, member)| {
+        qualifier.eq_ignore_ascii_case(candidate_schema)
+            && (member == &candidate_name
+                || candidate_name.starts_with(&format!("{member}."))
+                || candidate_name.ends_with(&format!(".{member}")))
+    })
+}
+
+fn plsql_routine_candidate_is_self(
+    source_schema: &str,
+    object_name: &str,
+    candidate_schema: &str,
+    candidate_name: &str,
+    candidate_package: Option<&str>,
+) -> bool {
+    if !candidate_schema.eq_ignore_ascii_case(source_schema) {
+        return false;
+    }
+    let full_name = candidate_package.map(|package| format!("{package}.{candidate_name}"));
+    full_name.as_deref().is_some_and(|name| name.eq_ignore_ascii_case(object_name))
+        || (candidate_package.is_none() && candidate_name.eq_ignore_ascii_case(object_name))
+}
+
+fn plsql_candidate_is_self(
+    source_schema: &str,
+    object_type: &str,
+    object_name: &str,
+    candidate_schema: &str,
+    candidate_name: &str,
+) -> bool {
+    if !candidate_schema.eq_ignore_ascii_case(source_schema) {
+        return false;
+    }
+    if candidate_name.eq_ignore_ascii_case(object_name) {
+        return true;
+    }
+    matches!(object_type, "package" | "package_body" | "package-body")
+        && candidate_name.get(..object_name.len()).is_some_and(|prefix| prefix.eq_ignore_ascii_case(object_name))
+        && candidate_name.as_bytes().get(object_name.len()) == Some(&b'.')
+}
+
+#[cfg(test)]
+mod plsql_reference_resolution_tests {
+    use super::{
+        plsql_candidate_identifiers, plsql_candidate_is_self, plsql_candidate_schema_matches,
+        plsql_routine_candidate_is_self,
+    };
+
+    #[test]
+    fn limits_catalog_resolution_to_reference_contexts_and_visible_schemas() {
+        let refs = crate::plsql_references::extract_plsql_referenced_identifiers(
+            "DECLARE local_name integer; BEGIN SELECT * FROM target_rows; RETURN other_schema.helper(1); END;",
+        );
+        let identifiers = plsql_candidate_identifiers(&refs);
+        assert!(identifiers.contains(&"target_rows".to_string()));
+        assert!(identifiers.contains(&"helper".to_string()));
+        assert!(!identifiers.contains(&"local_name".to_string()));
+        assert!(plsql_candidate_schema_matches(&refs, "app", "app", "target_rows"));
+        assert!(plsql_candidate_schema_matches(&refs, "app", "other_schema", "helper"));
+        assert!(!plsql_candidate_schema_matches(&refs, "app", "sqladvisor", "helper"));
+
+        let package_refs = crate::plsql_references::extract_plsql_referenced_identifiers(
+            "BEGIN RETURN hr.emp_pkg.get_salary(1); END;",
+        );
+        assert!(plsql_candidate_schema_matches(&package_refs, "app", "hr", "emp_pkg.get_salary"));
+    }
+
+    #[test]
+    fn package_members_are_not_reported_as_external_self_dependencies() {
+        assert!(plsql_candidate_is_self("app", "package_body", "ref_pkg", "app", "ref_pkg.run"));
+        assert!(!plsql_candidate_is_self("app", "package_body", "ref_pkg", "app", "helper"));
+        assert!(plsql_routine_candidate_is_self("app", "user_pkg.sync_user", "app", "sync_user", Some("user_pkg")));
+        assert!(!plsql_routine_candidate_is_self("app", "sync_user", "app", "sync_user", Some("user_pkg")));
+        assert!(plsql_routine_candidate_is_self("app", "sync_user", "app", "sync_user", None));
+    }
+}
+
 /// List which objects a database object references, or which reference it.
 ///
-/// openGauss only tracks certain dependency classes in pg_depend:
-/// - views / materialized views record their table references via rewrite rules;
-/// - functions/procedures/packages only record signature-level (pg_proc) deps —
-///   body references are not tracked;
-/// - synonyms record nothing in pg_depend, so only their `references` side is
-///   served from pg_synonym itself.
+/// Combines system catalog dependencies (`pg_depend`) with static PL/SQL and SQL
+/// AST symbol extraction from routine bodies and packages for comprehensive,
+/// bidirectional reference tracking.
 ///
 /// `object_type` is one of: table, view, materialized_view, procedure,
-/// function, package, synonym, sequence, type. `direction` is
+/// function, package, package_body, synonym, sequence, type. `direction` is
 /// "references" | "referencedBy".
 pub async fn list_object_references_core(
     state: &AppState,
@@ -6357,37 +6577,166 @@ pub async fn list_object_references_core(
         };
         let client = db::postgres::checkout_postgres_client(&p, None, db::connection_timeout()).await?;
 
+        let has_gs_package = db::postgres::postgres_has_pg_catalog_relation(&client, "gs_package").await.unwrap_or(false);
+        let has_pg_synonym = db::postgres::postgres_has_pg_catalog_relation(&client, "pg_synonym").await.unwrap_or(false);
+        let has_gs_source = db::postgres::postgres_has_namespaced_relation(&client, "dbe_pldeveloper", "gs_source").await.unwrap_or(false);
+
         if direction == "referencedBy" {
+            let mut results: Vec<ObjectReferenceInfo> = Vec::new();
+            let mut seen_keys = HashSet::new();
+
+            // 1. DDL-level references from pg_depend
             let oid_sql = match object_type {
-                "sequence" => "SELECT c.oid FROM pg_catalog.pg_class c WHERE c.relkind = 'S' AND c.relname = $1 AND c.relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = $2)",
+                "sequence" => "SELECT c.oid FROM pg_catalog.pg_class c WHERE c.relkind = 'S' AND c.relname = $1 AND c.relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = $2)".to_string(),
                 "type" => {
-                    "SELECT t.oid FROM pg_catalog.pg_type t WHERE t.typname = $1 AND t.typnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = $2)"
+                    "SELECT t.oid FROM pg_catalog.pg_type t WHERE t.typname = $1 AND t.typnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = $2)".to_string()
                 }
                 "synonym" => {
-                    "SELECT s.synname FROM pg_catalog.pg_synonym s WHERE s.synname = $1 AND s.synnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = $2)"
+                    "SELECT s.synname FROM pg_catalog.pg_synonym s WHERE s.synname = $1 AND s.synnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = $2)".to_string()
                 }
-                "function" | "procedure" | "package" => {
-                    "SELECT p.oid FROM pg_catalog.pg_proc p WHERE p.proname = $1 AND p.pronamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = $2) LIMIT 1"
+                "function" | "procedure" => {
+                    if let Some((package, member)) = object_name.split_once('.') {
+                        format!("SELECT p.oid FROM pg_catalog.pg_proc p JOIN pg_catalog.gs_package pkg ON pkg.oid = p.propackageid JOIN pg_catalog.pg_namespace n ON n.oid = pkg.pkgnamespace WHERE n.nspname = $2 AND pkg.pkgname = {} AND p.proname = {} LIMIT 1", sql_string(package), sql_string(member))
+                    } else {
+                        "SELECT p.oid FROM pg_catalog.pg_proc p WHERE p.proname = $1 AND p.pronamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = $2) LIMIT 1".to_string()
+                    }
+                }
+                "package" | "package_body" if has_gs_package => {
+                    "SELECT p.oid FROM pg_catalog.gs_package p WHERE p.pkgname = $1 AND p.pkgnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = $2) LIMIT 1".to_string()
                 }
                 _ => {
                     // table / view / materialized_view
-                    "SELECT c.oid FROM pg_catalog.pg_class c WHERE c.relname = $1 AND c.relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = $2)"
+                    "SELECT c.oid FROM pg_catalog.pg_class c WHERE c.relname = $1 AND c.relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = $2)".to_string()
                 }
             };
-            if object_type == "synonym" {
-                // openGauss does not record synonym references in pg_depend.
-                return Ok(vec![]);
+
+            // gs_package dependencies primarily describe ownership/membership
+            // of its own pg_proc rows, not calls from external PL objects.
+            // Static source analysis below supplies the meaningful package uses.
+            if object_type != "synonym" && object_type != "package" && object_type != "package_body" {
+                if let Ok(oid_rows) = client.query(&oid_sql, &[&object_name, &schema]).await {
+                    if let Some(row) = oid_rows.first() {
+                        let object_oid: u32 = row.get(0);
+                        if let Ok(rows) = client.query(db::postgres::opengauss_referenced_by_sql(), &[&object_oid]).await {
+                            for r in rows {
+                                let ref_schema = r.try_get::<_, String>(0).unwrap_or_default();
+                                let ref_name = r.try_get::<_, String>(1).unwrap_or_default();
+                                let ref_kind = r.try_get::<_, String>(2).unwrap_or_default();
+                                let detail = r.try_get::<_, String>(3).ok().filter(|d| !d.trim().is_empty());
+                                let key = (ref_schema.clone(), ref_name.clone(), ref_kind.clone());
+                                if !seen_keys.contains(&key) {
+                                    seen_keys.insert(key);
+                                    results.push(ObjectReferenceInfo {
+                                        schema: ref_schema,
+                                        name: ref_name,
+                                        object_type: ref_kind,
+                                        detail,
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
             }
-            let oid_rows = client
-                .query(oid_sql, &[&object_name, &schema])
-                .await
-                .map_err(|e| e.to_string())?;
-            let Some(row) = oid_rows.first() else {
-                return Ok(vec![]);
+
+            // 2. PL/SQL routine body & package body references
+            let target_ident = if let Some((_, member)) = object_name.split_once('.') {
+                member
+            } else {
+                object_name
             };
-            let object_oid: u32 = row.get(0);
+
+            if !target_ident.trim().is_empty() {
+                // Search pg_proc for routines referencing target_ident
+                let search_proc_sql = db::postgres::opengauss_search_routine_prosrc_sql();
+                if let Ok(proc_rows) = client.query(search_proc_sql, &[&target_ident]).await {
+                    for r in proc_rows {
+                        let ref_schema: String = r.try_get(0).unwrap_or_default();
+                        let proc_name: String = r.try_get(1).unwrap_or_default();
+                        let routine_type: String = r.try_get(2).unwrap_or_default();
+                        let prosrc: String = r.try_get(3).unwrap_or_default();
+                        let pkg_name: Option<String> = r.try_get(4).ok().filter(|s: &String| !s.is_empty());
+
+                        let full_name = if let Some(ref pkg) = pkg_name {
+                            format!("{pkg}.{proc_name}")
+                        } else {
+                            proc_name.clone()
+                        };
+
+                        if plsql_routine_candidate_is_self(
+                            schema,
+                            object_name,
+                            &ref_schema,
+                            &proc_name,
+                            pkg_name.as_deref(),
+                        ) {
+                            continue;
+                        }
+
+                        // Verify a real reference context, not merely a matching
+                        // parameter, local variable, comment, or declaration name.
+                        if crate::plsql_references::plsql_source_references_object(&prosrc, object_type, object_name) {
+                            let key = (ref_schema.clone(), full_name.clone(), routine_type.clone());
+                            if !seen_keys.contains(&key) {
+                                seen_keys.insert(key);
+                                results.push(ObjectReferenceInfo {
+                                    schema: ref_schema,
+                                    name: full_name,
+                                    object_type: routine_type,
+                                    detail: Some("PL/SQL 过程/函数引用".to_string()),
+                                });
+                            }
+                        }
+                    }
+                }
+
+                // Search gs_package for package bodies referencing target_ident
+                if has_gs_package {
+                    let search_pkg_sql = db::postgres::opengauss_search_package_body_src_sql();
+                    if let Ok(pkg_rows) = client.query(search_pkg_sql, &[&target_ident]).await {
+                        for r in pkg_rows {
+                            let ref_schema: String = r.try_get(0).unwrap_or_default();
+                            let pkg_name: String = r.try_get(1).unwrap_or_default();
+                            let pkg_type: String = r.try_get(2).unwrap_or_default();
+                            let src: String = r.try_get(3).unwrap_or_default();
+
+                            let target_is_member_of_package = object_name
+                                .split_once('.')
+                                .is_some_and(|(package, _)| package.eq_ignore_ascii_case(&pkg_name));
+                            if ref_schema == schema
+                                && (pkg_name.eq_ignore_ascii_case(object_name) || target_is_member_of_package)
+                            {
+                                continue;
+                            }
+
+                            if crate::plsql_references::plsql_source_references_object(&src, object_type, object_name) {
+                                let key = (ref_schema.clone(), pkg_name.clone(), pkg_type.clone());
+                                if !seen_keys.contains(&key) {
+                                    seen_keys.insert(key);
+                                    results.push(ObjectReferenceInfo {
+                                        schema: ref_schema,
+                                        name: pkg_name,
+                                        object_type: pkg_type,
+                                        detail: Some("PL/SQL 包引用".to_string()),
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Sort results cleanly
+            results.sort_by(|a, b| {
+                a.object_type.cmp(&b.object_type).then_with(|| a.schema.cmp(&b.schema)).then_with(|| a.name.cmp(&b.name))
+            });
+            return Ok(results);
+        }
+
+        // direction == "references"
+        if object_type == "synonym" {
             let rows = client
-                .query(db::postgres::opengauss_referenced_by_sql(), &[&object_oid])
+                .query(db::postgres::opengauss_synonym_target_sql(), &[&object_name, &schema])
                 .await
                 .map_err(|e| e.to_string())?;
             return Ok(rows
@@ -6395,35 +6744,95 @@ pub async fn list_object_references_core(
                 .map(|row| ObjectReferenceInfo {
                     schema: row.try_get::<_, String>(0).unwrap_or_default(),
                     name: row.try_get::<_, String>(1).unwrap_or_default(),
-                    object_type: row.try_get::<_, String>(2).unwrap_or_default(),
-                    detail: row.try_get::<_, String>(3).ok().filter(|d| !d.trim().is_empty()),
+                    object_type: "synonym_target".to_string(),
+                    detail: None,
                 })
                 .collect());
         }
 
-        // direction == "references"
-        match object_type {
-            "view" | "materialized_view" => query_reference_rows(&client, db::postgres::opengauss_view_references_sql(), object_name, schema).await,
-            "function" | "procedure" | "package" => query_reference_rows(&client, db::postgres::opengauss_routine_references_sql(), object_name, schema).await,
-            "synonym" => {
-                // Synonym references: the object it points at (from pg_synonym).
-                let rows = client
-                    .query(db::postgres::opengauss_synonym_target_sql(), &[&object_name, &schema])
-                    .await
-                    .map_err(|e| e.to_string())?;
-                Ok(rows
-                    .iter()
-                    .map(|row| ObjectReferenceInfo {
-                        schema: row.try_get::<_, String>(0).unwrap_or_default(),
-                        name: row.try_get::<_, String>(1).unwrap_or_default(),
-                        object_type: "synonym_target".to_string(),
-                        detail: None,
-                    })
-                    .collect())
+        let mut results: Vec<ObjectReferenceInfo> = Vec::new();
+        let mut seen_keys = HashSet::new();
+
+        // 1. If view / materialized_view, run pg_depend rewrite rule check first
+        if object_type == "view" || object_type == "materialized_view" {
+            if let Ok(dep_rows) = query_reference_rows(&client, db::postgres::opengauss_view_references_sql(), object_name, schema).await {
+                for r in dep_rows {
+                    let key = (r.schema.clone(), r.name.clone(), r.object_type.clone());
+                    if !seen_keys.contains(&key) {
+                        seen_keys.insert(key);
+                        results.push(r);
+                    }
+                }
             }
-            // Tables, sequences and types do not expose a "references" side.
-            _ => Ok(vec![]),
         }
+
+        // 2. Extract source code and parse referenced identifiers
+        if let Some(source) = opengauss_fetch_raw_object_source(&client, schema, object_name, object_type, has_gs_package, has_gs_source).await {
+            let extracted = crate::plsql_references::extract_plsql_referenced_identifiers(&source);
+            let idents = plsql_candidate_identifiers(&extracted);
+            if !idents.is_empty() {
+                let find_sql = db::postgres::opengauss_find_candidate_objects_sql(has_gs_package, has_pg_synonym);
+
+                if let Ok(matched_rows) = client.query(&find_sql, &[&idents]).await {
+                    for r in matched_rows {
+                        let ref_schema: String = r.try_get(0).unwrap_or_default();
+                        let ref_name: String = r.try_get(1).unwrap_or_default();
+                        let ref_kind: String = r.try_get(2).unwrap_or_default();
+                        let mut detail: Option<String> = r.try_get(3).ok().filter(|d: &String| !d.trim().is_empty());
+
+                        if plsql_candidate_is_self(schema, object_type, object_name, &ref_schema, &ref_name)
+                            || !plsql_candidate_schema_matches(&extracted, schema, &ref_schema, &ref_name)
+                        {
+                            continue;
+                        }
+
+                        let key = (ref_schema.clone(), ref_name.clone(), ref_kind.clone());
+                        if !seen_keys.contains(&key) {
+                            seen_keys.insert(key);
+                            if detail.is_none() {
+                                let name_lower = ref_name.to_lowercase();
+                                if extracted.tables.contains(&name_lower) {
+                                    detail = Some("表/视图操作".to_string());
+                                } else if extracted.routines.contains(&name_lower) {
+                                    detail = Some("例程调用".to_string());
+                                } else if extracted.packages.contains(&name_lower) {
+                                    detail = Some("包引用".to_string());
+                                } else if extracted.sequences.contains(&name_lower) {
+                                    detail = Some("序列生成".to_string());
+                                } else if extracted.types.contains(&name_lower) {
+                                    detail = Some("类型引用".to_string());
+                                }
+                            }
+                            results.push(ObjectReferenceInfo {
+                                schema: ref_schema,
+                                name: ref_name,
+                                object_type: ref_kind,
+                                detail,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. Routine signature pg_depend fallback
+        if object_type == "function" || object_type == "procedure" || object_type == "package" || object_type == "package_body" {
+            if let Ok(routine_dep_rows) = query_reference_rows(&client, db::postgres::opengauss_routine_references_sql(), object_name, schema).await {
+                for r in routine_dep_rows {
+                    let key = (r.schema.clone(), r.name.clone(), r.object_type.clone());
+                    if !seen_keys.contains(&key) {
+                        seen_keys.insert(key);
+                        results.push(r);
+                    }
+                }
+            }
+        }
+
+        // Sort results cleanly
+        results.sort_by(|a, b| {
+            a.object_type.cmp(&b.object_type).then_with(|| a.schema.cmp(&b.schema)).then_with(|| a.name.cmp(&b.name))
+        });
+        Ok(results)
     })
     .await
 }

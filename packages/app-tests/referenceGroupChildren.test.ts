@@ -30,6 +30,7 @@ let restoreLocalStorage: (() => void) | undefined;
 
 const apiMock = vi.hoisted(() => ({
   listObjectReferences: vi.fn(),
+  listOpengaussPackageSubprograms: vi.fn(),
   getConfig: vi.fn(),
   listDatabases: vi.fn(),
   listSchemas: vi.fn(),
@@ -41,6 +42,7 @@ beforeEach(() => {
   setActivePinia(createPinia());
   restoreLocalStorage = installMemoryStorage();
   apiMock.listObjectReferences.mockReset();
+  apiMock.listOpengaussPackageSubprograms.mockReset();
   apiMock.listDatabases.mockReset();
   apiMock.listSchemas.mockReset();
   apiMock.getConfig.mockReset();
@@ -86,7 +88,6 @@ test("reference group children render from listObjectReferences", async () => {
   apiMock.listSchemas.mockResolvedValue([]);
 
   await store.loadReferenceGroupChildren(refNode);
-  console.log("API calls:", apiMock.listObjectReferences.mock.calls.length, JSON.stringify(apiMock.listObjectReferences.mock.calls));
 
   // @ts-expect-error store internals
   const live = store.treeNodes[0].children[0].children[0];
@@ -98,4 +99,81 @@ test("reference group children render from listObjectReferences", async () => {
   assert.equal(apiMock.listObjectReferences.mock.calls[0][3], "table");
   assert.equal(apiMock.listObjectReferences.mock.calls[0][4], "ogdev_emp");
   assert.equal(apiMock.listObjectReferences.mock.calls[0][5], "referencedBy");
+});
+
+test("package and package body nodes expose their own reference groups", async () => {
+  const store = useConnectionStore();
+  store.connections = [{ id: "conn", name: "conn", db_type: "opengauss", host: "h", port: 1, username: "u", password: "" } as ConnectionConfig];
+  // @ts-expect-error store internals
+  store.connectedIds = new Set(["conn"]);
+  apiMock.listOpengaussPackageSubprograms.mockResolvedValue([]);
+
+  for (const nodeType of ["package", "package-body"] as const) {
+    const packageNode: TreeNode = {
+      id: `conn:db:public:ref_pkg:${nodeType}`,
+      label: "ref_pkg",
+      objectName: "ref_pkg",
+      type: nodeType,
+      connectionId: "conn",
+      database: "db",
+      schema: "public",
+      isExpanded: false,
+      children: [],
+    };
+    // @ts-expect-error store internals
+    store.treeNodes = [packageNode];
+
+    await store.loadOpengaussPackageSubprograms("conn", "db", "ref_pkg", "public", packageNode.id);
+
+    const livePackage = store.treeNodes[0]!;
+    assert.deepEqual(
+      livePackage.children?.map((child) => [child.type, child.referenceObjectType, child.objectName]),
+      [
+        ["group-references", nodeType === "package-body" ? "package_body" : "package", "ref_pkg"],
+        ["group-referenced-by", nodeType === "package-body" ? "package_body" : "package", "ref_pkg"],
+      ],
+    );
+  }
+});
+
+test("routine references and package references render correctly with appropriate node types", async () => {
+  const store = useConnectionStore();
+  const procRefNode: TreeNode = {
+    id: "conn:db:public:ogtest_proc:__references",
+    label: "tree.references",
+    type: "group-references",
+    referenceDirection: "references",
+    referenceObjectType: "procedure",
+    objectName: "ogtest_proc",
+    connectionId: "conn",
+    database: "db",
+    schema: "public",
+    isExpanded: false,
+    children: [],
+  };
+
+  // @ts-expect-error store internals
+  store.treeNodes = [{ id: "conn", type: "connection", connectionId: "conn", label: "conn", children: [procRefNode] }];
+  // @ts-expect-error store internals
+  store.configs = new Map([["conn", { id: "conn", name: "conn", db_type: "opengauss", host: "h", port: 1, username: "u", password: "" }]]);
+  // @ts-expect-error store internals
+  store.connectedIds = new Set(["conn"]);
+
+  apiMock.listObjectReferences.mockResolvedValue([
+    { schema: "public", name: "ogdev_emp", objectType: "table", detail: "表/视图操作" },
+    { schema: "pkg_service", name: "gms_output", objectType: "package", detail: "包引用" },
+    { schema: "public", name: "calc_tax", objectType: "function", detail: "例程调用" },
+  ]);
+
+  await store.loadReferenceGroupChildren(procRefNode);
+
+  // @ts-expect-error store internals
+  const live = store.treeNodes[0].children[0];
+  assert.equal(live.children?.length, 3);
+  assert.equal(live.children?.[0].type, "table");
+  assert.equal(live.children?.[0].label, "public.ogdev_emp (表/视图操作)");
+  assert.equal(live.children?.[1].type, "package");
+  assert.equal(live.children?.[1].label, "pkg_service.gms_output (包引用)");
+  assert.equal(live.children?.[2].type, "function");
+  assert.equal(live.children?.[2].label, "public.calc_tax (例程调用)");
 });

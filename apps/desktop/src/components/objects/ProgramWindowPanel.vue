@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import { AlertCircle, Bug, CheckCircle2, Code2, Copy, ExternalLink, FileCode, GitCompare, Loader2, Package, Play, RefreshCw, RotateCcw, Sparkles, TerminalSquare, X } from "@lucide/vue";
+import { AlertCircle, Braces, Bug, CheckCircle2, Code2, Copy, ExternalLink, Eye, FileCode, GitCompare, Layers, Loader2, Network, Package, Play, RefreshCw, RotateCcw, Sparkles, Table2, TerminalSquare, X } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
 import { Splitpanes, Pane } from "splitpanes";
 import "splitpanes/dist/splitpanes.css";
@@ -72,8 +72,15 @@ const packageSourcesLoaded = ref(false);
 
 // Bottom Splitpanes & Compilation Panel
 const showBottomPanel = ref(false);
-const bottomTab = ref<"errors" | "logs" | "diff">("errors");
+const bottomTab = ref<"errors" | "logs" | "diff" | "dependencies">("errors");
 const splitpanesSize = ref(70);
+
+// Dependencies state
+type ObjectReferenceInfo = Awaited<ReturnType<typeof api.listObjectReferences>>[number];
+const dependenciesLoading = ref(false);
+const dependenciesError = ref("");
+const referencesList = ref<ObjectReferenceInfo[]>([]);
+const referencedByList = ref<ObjectReferenceInfo[]>([]);
 
 // Parsed Errors
 interface ParsedCompileError {
@@ -163,6 +170,9 @@ watch([draftSource, packageSpecDraft, packageBodyDraft], syncProgramWindowState,
 async function loadSource(options: { preserveDraft?: boolean } = {}) {
   const preserveDraft = options.preserveDraft !== false;
   packageSourcesLoaded.value = false;
+  dependenciesError.value = "";
+  referencesList.value = [];
+  referencedByList.value = [];
   const serial = ++loadSerial;
   loading.value = true;
   loadError.value = "";
@@ -462,6 +472,74 @@ const diffLines = computed<DiffLine[]>(() => {
 
 const isRoutine = computed(() => props.objectType === "PROCEDURE" || props.objectType === "FUNCTION" || resolvedObjectType.value === "PROCEDURE" || resolvedObjectType.value === "FUNCTION");
 
+// --- Dependencies ---
+async function loadDependencies() {
+  if (!props.connectionId || !props.database) return;
+  dependenciesLoading.value = true;
+  dependenciesError.value = "";
+  try {
+    const schema = props.schema || props.database;
+    const objType = isPackage.value ? (activePackagePart.value === "body" ? "package_body" : "package") : resolvedObjectType.value.toLowerCase();
+    const [refs, refBy] = await Promise.all([api.listObjectReferences(props.connectionId, props.database, schema, objType, props.name, "references"), api.listObjectReferences(props.connectionId, props.database, schema, objType, props.name, "referencedBy")]);
+    referencesList.value = refs;
+    referencedByList.value = refBy;
+  } catch (e: any) {
+    referencesList.value = [];
+    referencedByList.value = [];
+    dependenciesError.value = e?.message || String(e);
+    console.warn("[ProgramWindow] failed to load dependencies", e);
+  } finally {
+    dependenciesLoading.value = false;
+  }
+}
+
+function openDependenciesTab() {
+  showBottomPanel.value = true;
+  bottomTab.value = "dependencies";
+  void loadDependencies();
+}
+
+function jumpToObject(item: ObjectReferenceInfo) {
+  const t = (item.objectType || "").toLowerCase();
+  if (t === "procedure" || t === "function" || t === "package" || t === "package_body" || t === "package-body") {
+    const kind: ObjectSourceKind = t === "procedure" ? "PROCEDURE" : t === "function" ? "FUNCTION" : t === "package_body" || t === "package-body" ? "PACKAGE_BODY" : "PACKAGE";
+    queryStore.openProgramWindow({
+      connectionId: props.connectionId,
+      database: props.database,
+      schema: item.schema,
+      name: item.name,
+      objectType: kind,
+      catalog: props.catalog,
+    });
+  } else if (t === "table" || t === "view" || t === "materialized_view") {
+    queryStore.openTableStructure(props.connectionId, props.database, item.schema, item.name, undefined, undefined, props.catalog);
+  }
+}
+
+function iconForType(type: string) {
+  const t = (type || "").toLowerCase();
+  switch (t) {
+    case "table":
+      return Table2;
+    case "view":
+    case "materialized_view":
+      return Eye;
+    case "procedure":
+    case "function":
+      return FileCode;
+    case "package":
+    case "package_body":
+    case "package-body":
+      return Package;
+    case "type":
+      return Braces;
+    case "sequence":
+      return Layers;
+    default:
+      return Code2;
+  }
+}
+
 // Watch props reload
 watch(
   () => [props.connectionId, props.database, props.catalog, props.schema, props.name, props.objectType] as const,
@@ -521,6 +599,13 @@ watch(
           <GitCompare class="h-3.5 w-3.5 text-blue-500" />
           <span>差异比对</span>
           <span v-if="isDirty" class="h-1.5 w-1.5 rounded-full bg-amber-500" />
+        </Button>
+
+        <!-- Dependencies -->
+        <Button variant="ghost" size="sm" class="h-7 gap-1 px-2 text-muted-foreground hover:text-foreground" :class="{ 'bg-muted text-foreground': showBottomPanel && bottomTab === 'dependencies' }" :title="'查看对象的引用与被引用依赖关系'" @click="openDependenciesTab">
+          <Network class="h-3.5 w-3.5 text-indigo-500" />
+          <span>依赖关系</span>
+          <span v-if="referencesList.length + referencedByList.length > 0" class="text-[10px] font-mono text-muted-foreground"> ({{ referencesList.length + referencedByList.length }}) </span>
         </Button>
 
         <!-- Revert -->
@@ -655,6 +740,14 @@ watch(
                   <span>差异比对 (Diff)</span>
                 </TabsTrigger>
 
+                <!-- Dependencies Tab -->
+                <TabsTrigger value="dependencies" class="h-7 px-3 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm" @click="loadDependencies">
+                  <span>依赖关系 (Dependencies)</span>
+                  <span v-if="referencesList.length + referencedByList.length > 0" class="ml-1.5 rounded-full bg-muted px-1.5 py-0.2 text-[10px] font-mono">
+                    {{ referencesList.length + referencedByList.length }}
+                  </span>
+                </TabsTrigger>
+
                 <!-- Compile Logs Tab -->
                 <TabsTrigger value="logs" class="h-7 px-3 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm">
                   <span>编译日志</span>
@@ -725,6 +818,92 @@ watch(
                 <span v-if="log.level === 'error'" class="text-destructive font-semibold">{{ log.text }}</span>
                 <span v-else-if="log.level === 'success'" class="text-emerald-600 dark:text-emerald-400 font-medium">{{ log.text }}</span>
                 <span v-else class="text-foreground">{{ log.text }}</span>
+              </div>
+            </TabsContent>
+
+            <!-- Tab 4: Dependencies -->
+            <TabsContent value="dependencies" class="m-0 flex-1 min-h-0 overflow-auto bg-muted/5 p-3 text-xs">
+              <div v-if="dependenciesLoading" class="flex h-full items-center justify-center text-muted-foreground gap-2">
+                <Loader2 class="h-4 w-4 animate-spin text-primary" />
+                <span>正在加载对象依赖关系...</span>
+              </div>
+
+              <div v-else-if="dependenciesError" class="flex h-full flex-col items-center justify-center gap-3 p-6 text-center text-destructive">
+                <AlertCircle class="h-5 w-5" />
+                <span class="max-w-2xl break-words">{{ dependenciesError }}</span>
+                <Button variant="outline" size="sm" @click="loadDependencies">重新加载依赖关系</Button>
+              </div>
+
+              <div v-else class="flex flex-col h-full gap-3">
+                <div class="flex items-center justify-between pb-2 border-b">
+                  <span class="font-medium text-muted-foreground text-[11px]">
+                    分析对象: <strong class="text-foreground font-mono">{{ targetLabel }}</strong> ({{ props.objectType }})
+                  </span>
+                  <Button variant="ghost" size="sm" class="h-6 gap-1 px-2 text-xs" :disabled="dependenciesLoading" @click="loadDependencies">
+                    <RefreshCw class="h-3 w-3" :class="{ 'animate-spin': dependenciesLoading }" />
+                    <span>刷新依赖</span>
+                  </Button>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1 min-h-0">
+                  <!-- Left: References (Depends On) -->
+                  <div class="flex flex-col border rounded-md bg-background min-h-0 overflow-hidden">
+                    <div class="flex items-center justify-between bg-muted/40 px-3 py-1.5 border-b shrink-0 select-none">
+                      <div class="flex items-center gap-1.5 font-medium">
+                        <Code2 class="h-3.5 w-3.5 text-blue-500" />
+                        <span>引用的对象 (References / Depends On)</span>
+                      </div>
+                      <Badge variant="outline" class="text-[10px] font-mono">{{ referencesList.length }}</Badge>
+                    </div>
+
+                    <div class="flex-1 min-h-0 overflow-y-auto p-2 divide-y divide-border/40">
+                      <div v-if="referencesList.length === 0" class="flex h-32 items-center justify-center text-muted-foreground/60 italic text-center p-4">此对象未检测到外部引用的表、函数、包或类型</div>
+                      <div v-for="(item, idx) in referencesList" :key="idx" class="flex items-center justify-between py-1.5 px-2 hover:bg-muted/50 rounded group transition-colors cursor-pointer" @click="jumpToObject(item)">
+                        <div class="flex items-center gap-2 min-w-0 flex-1">
+                          <component :is="iconForType(item.objectType)" class="h-3.5 w-3.5 shrink-0 text-primary" />
+                          <span class="font-mono text-xs truncate" :title="`${item.schema}.${item.name}`">
+                            <span class="text-muted-foreground text-[11px]">{{ item.schema }}.</span>
+                            <span class="font-semibold text-foreground">{{ item.name }}</span>
+                          </span>
+                        </div>
+                        <div class="flex items-center gap-2 shrink-0">
+                          <span v-if="item.detail" class="text-[10px] text-muted-foreground">{{ item.detail }}</span>
+                          <Badge variant="secondary" class="text-[9px] uppercase font-mono px-1 py-0">{{ item.objectType }}</Badge>
+                          <ExternalLink class="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Right: Referenced By (Used By) -->
+                  <div class="flex flex-col border rounded-md bg-background min-h-0 overflow-hidden">
+                    <div class="flex items-center justify-between bg-muted/40 px-3 py-1.5 border-b shrink-0 select-none">
+                      <div class="flex items-center gap-1.5 font-medium">
+                        <Network class="h-3.5 w-3.5 text-indigo-500" />
+                        <span>被哪些对象引用 (Referenced By / Used By)</span>
+                      </div>
+                      <Badge variant="outline" class="text-[10px] font-mono">{{ referencedByList.length }}</Badge>
+                    </div>
+
+                    <div class="flex-1 min-h-0 overflow-y-auto p-2 divide-y divide-border/40">
+                      <div v-if="referencedByList.length === 0" class="flex h-32 items-center justify-center text-muted-foreground/60 italic text-center p-4">暂无其他存储过程、函数、包体或视图引用此对象</div>
+                      <div v-for="(item, idx) in referencedByList" :key="idx" class="flex items-center justify-between py-1.5 px-2 hover:bg-muted/50 rounded group transition-colors cursor-pointer" @click="jumpToObject(item)">
+                        <div class="flex items-center gap-2 min-w-0 flex-1">
+                          <component :is="iconForType(item.objectType)" class="h-3.5 w-3.5 shrink-0 text-indigo-500" />
+                          <span class="font-mono text-xs truncate" :title="`${item.schema}.${item.name}`">
+                            <span class="text-muted-foreground text-[11px]">{{ item.schema }}.</span>
+                            <span class="font-semibold text-foreground">{{ item.name }}</span>
+                          </span>
+                        </div>
+                        <div class="flex items-center gap-2 shrink-0">
+                          <span v-if="item.detail" class="text-[10px] text-muted-foreground">{{ item.detail }}</span>
+                          <Badge variant="secondary" class="text-[9px] uppercase font-mono px-1 py-0">{{ item.objectType }}</Badge>
+                          <ExternalLink class="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </TabsContent>
           </Tabs>

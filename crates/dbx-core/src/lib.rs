@@ -52,6 +52,7 @@ mod nanosleep_stub;
 pub mod object_source_sql;
 pub mod opengauss_debug;
 pub mod path_utils;
+pub mod plsql_references;
 pub mod plugins;
 pub mod process;
 pub mod production_safety;

@@ -2983,6 +2983,121 @@ pub(crate) fn opengauss_view_references_sql() -> &'static str {
        AND d.refclassid = 'pg_catalog.pg_class'::regclass"
 }
 
+/// Query matching candidate database objects by name across system catalogs
+/// (tables, views, mviews, sequences, routines, package members, packages, types, synonyms).
+pub(crate) fn opengauss_find_candidate_objects_sql(has_gs_package: bool, has_pg_synonym: bool) -> String {
+    let mut parts = vec![
+        // 1. pg_class (tables, views, materialized views, sequences, composite types)
+        "SELECT n.nspname AS ref_schema, c.relname AS ref_name, \
+                CASE c.relkind \
+                  WHEN 'r' THEN 'table' \
+                  WHEN 'p' THEN 'table' \
+                  WHEN 'f' THEN 'table' \
+                  WHEN 'v' THEN 'view' \
+                  WHEN 'm' THEN 'materialized_view' \
+                  WHEN 'S' THEN 'sequence' \
+                  WHEN 'L' THEN 'sequence' \
+                  WHEN 'z' THEN 'sequence' \
+                  WHEN 'Z' THEN 'sequence' \
+                  WHEN 'c' THEN 'type' \
+                END AS ref_kind, \
+                '' AS detail \
+         FROM pg_catalog.pg_class c \
+         JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
+         WHERE lower(c.relname) = ANY($1) \
+           AND c.relkind IN ('r', 'p', 'f', 'v', 'm', 'S', 'L', 'z', 'Z', 'c') \
+           AND n.nspname NOT IN ('pg_catalog', 'information_schema', 'pg_toast')".to_string(),
+
+        // 2. pg_proc (standalone functions and procedures)
+        "SELECT n.nspname, p.proname, \
+                CASE p.prokind WHEN 'p' THEN 'procedure' ELSE 'function' END, \
+                '' \
+         FROM pg_catalog.pg_proc p \
+         JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace \
+         WHERE lower(p.proname) = ANY($1) \
+           AND (p.propackageid = 0 OR p.propackageid IS NULL) \
+           AND n.nspname NOT IN ('pg_catalog', 'information_schema', 'cstore', 'dbe_perf', 'dbe_pldebugger', 'pkg_service')".to_string(),
+
+        // 3. pg_type (custom types)
+        "SELECT n.nspname, t.typname, 'type', '' \
+         FROM pg_catalog.pg_type t \
+         JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace \
+         LEFT JOIN pg_catalog.pg_class relation_type ON relation_type.oid = t.typrelid \
+         WHERE lower(t.typname) = ANY($1) \
+           AND t.typtype IN ('c', 'e', 'd', 'a') \
+           AND (t.typtype <> 'c' OR relation_type.relkind = 'c') \
+           AND n.nspname NOT IN ('pg_catalog', 'information_schema')".to_string(),
+    ];
+
+    if has_gs_package {
+        // 4. Packages from gs_package
+        parts.push(
+            "SELECT n.nspname, p.pkgname, 'package', '' \
+             FROM pg_catalog.gs_package p \
+             JOIN pg_catalog.pg_namespace n ON n.oid = p.pkgnamespace \
+             WHERE lower(p.pkgname) = ANY($1) \
+               AND n.nspname NOT IN ('pg_catalog', 'information_schema')"
+                .to_string(),
+        );
+        // 5. Package members
+        parts.push(
+            "SELECT n.nspname, pkg.pkgname || '.' || p.proname, \
+                    CASE p.prokind WHEN 'p' THEN 'procedure' ELSE 'function' END, \
+                    'package member' \
+             FROM pg_catalog.pg_proc p \
+             JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace \
+             JOIN pg_catalog.gs_package pkg ON pkg.oid = p.propackageid \
+             WHERE lower(pkg.pkgname || '.' || p.proname) = ANY($1) \
+               AND n.nspname NOT IN ('pg_catalog', 'information_schema', 'cstore', 'dbe_perf')"
+                .to_string(),
+        );
+    }
+
+    if has_pg_synonym {
+        // 6. Synonyms
+        parts.push(
+            "SELECT n.nspname, s.synname, 'synonym', 'FOR ' || s.synobjschema || '.' || s.synobjname \
+             FROM pg_catalog.pg_synonym s \
+             JOIN pg_catalog.pg_namespace n ON n.oid = s.synnamespace \
+             WHERE lower(s.synname) = ANY($1) \
+               AND n.nspname NOT IN ('pg_catalog', 'information_schema')"
+                .to_string(),
+        );
+    }
+
+    parts.join(" UNION ALL ")
+}
+
+/// Search user routines (pg_proc) whose source code contains the given target object name.
+pub(crate) fn opengauss_search_routine_prosrc_sql() -> &'static str {
+    "SELECT n.nspname, p.proname, \
+            CASE p.prokind WHEN 'p' THEN 'procedure' ELSE 'function' END AS routine_type, \
+            p.prosrc, \
+            pkg.pkgname \
+     FROM pg_catalog.pg_proc p \
+     JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace \
+     LEFT JOIN pg_catalog.gs_package pkg ON pkg.oid = p.propackageid \
+     WHERE p.prosrc ILIKE ('%' || $1 || '%') \
+       AND n.nspname NOT IN ('pg_catalog', 'information_schema', 'pg_toast', 'cstore', 'dbe_perf', 'dbe_pldebugger', 'pkg_service')"
+}
+
+/// Search user package specifications and bodies (gs_package) whose source code contains the target object name.
+pub(crate) fn opengauss_search_package_body_src_sql() -> &'static str {
+    "SELECT n.nspname, p.pkgname, 'package_body' AS pkg_type, \
+            COALESCE(p.pkgbodydeclsrc, '') || E'\\n' || COALESCE(p.pkgbodyinitsrc, '') AS src \
+     FROM pg_catalog.gs_package p \
+     JOIN pg_catalog.pg_namespace n ON n.oid = p.pkgnamespace \
+     WHERE (p.pkgbodydeclsrc ILIKE ('%' || $1 || '%') OR p.pkgbodyinitsrc ILIKE ('%' || $1 || '%')) \
+       AND n.nspname NOT IN ('pg_catalog', 'information_schema') \
+     UNION ALL \
+     SELECT n.nspname, p.pkgname, 'package' AS pkg_type, \
+            p.pkgspecsrc AS src \
+     FROM pg_catalog.gs_package p \
+     JOIN pg_catalog.pg_namespace n ON n.oid = p.pkgnamespace \
+     WHERE p.pkgspecsrc ILIKE ('%' || $1 || '%') \
+       AND n.nspname NOT IN ('pg_catalog', 'information_schema')"
+}
+
 /// Tables/views referenced by a function/procedure/package (signature-level
 /// dependencies recorded in pg_depend; function-body references are not
 /// tracked by openGauss).
@@ -3139,7 +3254,7 @@ fn postgres_has_namespaced_relation_sql(namespace: &str, relation_name: &str) ->
     )
 }
 
-async fn postgres_has_pg_catalog_relation(
+pub(crate) async fn postgres_has_pg_catalog_relation(
     client: &deadpool_postgres::Client,
     relation_name: &str,
 ) -> Result<bool, String> {
@@ -3149,7 +3264,7 @@ async fn postgres_has_pg_catalog_relation(
     Ok(pg_row_try_bool(&row, 0).unwrap_or(false))
 }
 
-async fn postgres_has_namespaced_relation(
+pub(crate) async fn postgres_has_namespaced_relation(
     client: &deadpool_postgres::Client,
     namespace: &str,
     relation_name: &str,
@@ -7702,6 +7817,39 @@ mod tests {
         assert!(postgres_completion_routines_sql().contains("ORDER BY p.proname LIMIT $4"));
         assert!(postgres_completion_columns_sql().contains("a.attname ILIKE $3 ESCAPE '~'"));
         assert!(postgres_visible_table_schema_sql().contains("pg_catalog.pg_table_is_visible(c.oid)"));
+    }
+
+    #[test]
+    fn opengauss_find_candidate_objects_sql_includes_packages_and_synonyms() {
+        let full_sql = opengauss_find_candidate_objects_sql(true, true);
+        assert!(full_sql.contains("pg_catalog.pg_class"));
+        assert!(full_sql.contains("pg_catalog.pg_proc"));
+        assert!(full_sql.contains("pg_catalog.pg_type"));
+        assert!(full_sql.contains("pg_catalog.gs_package"));
+        assert!(full_sql.contains("pg_catalog.pg_synonym"));
+        assert!(full_sql.contains("pkg.pkgname || '.' || p.proname"));
+        assert!(full_sql.contains("relation_type.relkind = 'c'"));
+        assert!(full_sql.contains("c.relkind IN ('r', 'p', 'f', 'v', 'm', 'S', 'L', 'z', 'Z', 'c')"));
+        assert!(full_sql.contains("lower(pkg.pkgname || '.' || p.proname) = ANY($1)"));
+        assert!(!full_sql.contains("lower(pkg.pkgname) = ANY($1) OR lower(pkg.pkgname || '.' || p.proname)"));
+
+        let basic_sql = opengauss_find_candidate_objects_sql(false, false);
+        assert!(basic_sql.contains("pg_catalog.pg_class"));
+        assert!(!basic_sql.contains("pg_catalog.gs_package"));
+        assert!(!basic_sql.contains("pg_catalog.pg_synonym"));
+    }
+
+    #[test]
+    fn opengauss_search_prosrc_sqls_query_user_routines_and_packages() {
+        let routine_sql = opengauss_search_routine_prosrc_sql();
+        assert!(routine_sql.contains("pg_catalog.pg_proc"));
+        assert!(routine_sql.contains("p.prosrc ILIKE"));
+        assert!(routine_sql.contains("gs_package"));
+
+        let pkg_sql = opengauss_search_package_body_src_sql();
+        assert!(pkg_sql.contains("pg_catalog.gs_package"));
+        assert!(pkg_sql.contains("p.pkgbodydeclsrc ILIKE"));
+        assert!(pkg_sql.contains("p.pkgspecsrc ILIKE"));
     }
 
     #[test]
