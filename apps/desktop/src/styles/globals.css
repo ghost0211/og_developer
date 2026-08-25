@@ -1570,6 +1570,112 @@ html.dbx-data-grid-native-selection-blocked [role="textbox"] * {
   font-family: var(--dbx-editor-font-family, var(--font-mono, monospace));
 }
 
+/*
+ * CodeMirror normally injects these layout rules through style-mod. Some
+ * embedded WebViews can reject or delay dynamically mounted style modules,
+ * leaving .cm-gutters as a block that covers the editor and exposing the
+ * aria-live announcement (for example, “Selection deleted”). Keep the
+ * structural rules in the application stylesheet as a fallback; theme and
+ * syntax colors remain owned by CodeMirror extensions.
+ */
+:where(.cm-editor) {
+  position: relative;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+}
+
+:where(.cm-editor) .cm-scroller {
+  position: relative;
+  z-index: 0;
+  display: flex;
+  align-items: flex-start;
+  height: 100%;
+  overflow-x: auto;
+  overflow-y: auto;
+}
+
+:where(.cm-editor) .cm-content {
+  display: block;
+  flex-grow: 2;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  min-height: 100%;
+  margin: 0;
+  padding: 0;
+  outline: none;
+  white-space: pre;
+  word-wrap: normal;
+}
+
+:where(.cm-editor) .cm-content.cm-lineWrapping {
+  flex-shrink: 1;
+  white-space: break-spaces;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+:where(.cm-editor) .cm-line {
+  display: block;
+  padding: 0 2px 0 6px;
+}
+
+:where(.cm-editor) .cm-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  contain: size style;
+}
+
+:where(.cm-editor) .cm-layer > * {
+  position: absolute;
+}
+
+:where(.cm-editor) .cm-gutters {
+  z-index: 200;
+  display: flex;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  height: 100%;
+}
+
+:where(.cm-editor) .cm-gutter {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  min-height: 100%;
+  overflow: hidden;
+}
+
+:where(.cm-editor) .cm-gutterElement {
+  box-sizing: border-box;
+}
+
+/* Defense in depth for WebViews that also skip the bookmark extension's
+ * dynamically mounted baseTheme rules. */
+:where(.cm-editor) .cm-sql-bookmark-gutter {
+  flex: 0 0 18px;
+  width: 18px;
+  min-width: 18px;
+  max-width: 18px;
+  overflow: hidden;
+}
+
+:where(.cm-editor) .cm-sql-bookmark-gutter .cm-gutterElement {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  min-width: 18px;
+  max-width: 18px;
+}
+
+:where(.cm-editor) .cm-announced {
+  position: fixed;
+  top: -10000px;
+}
+
 :root {
   --dbx-data-grid-font-family: "Geist Variable Tabular", "Geist Variable", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
 }

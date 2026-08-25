@@ -315,13 +315,24 @@ export function sqlBookmarkExtension() {
     bookmarkMenuPlugin,
     EditorView.baseTheme({
       ".cm-sql-bookmark-gutter": {
+        // Keep the hit target narrow even when a WebView fails to apply
+        // CodeMirror's flex-gutter defaults. Without a flex basis, the
+        // bookmark gutter can expand to the whole editor and every click
+        // toggles a bookmark.
+        flex: "0 0 18px",
         width: "18px",
+        minWidth: "18px",
+        maxWidth: "18px",
+        overflow: "hidden",
         cursor: "pointer",
       },
       ".cm-sql-bookmark-gutter .cm-gutterElement": {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
+        width: "18px",
+        minWidth: "18px",
+        maxWidth: "18px",
       },
       ".cm-sql-bookmark-icon": {
         fontSize: "10px",

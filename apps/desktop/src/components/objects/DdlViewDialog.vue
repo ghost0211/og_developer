@@ -198,24 +198,24 @@ function onClose() {
 
 <template>
   <Dialog :open="props.open" @update:open="onClose">
-    <DialogContent class="sm:max-w-190">
+    <DialogContent class="h-[min(760px,calc(var(--dbx-viewport-height)-2rem))] grid-rows-[auto_minmax(0,1fr)_auto] sm:max-w-190">
       <DialogHeader>
         <DialogTitle>DDL - {{ props.tableName }}</DialogTitle>
       </DialogHeader>
-      <div class="grid gap-3">
-        <div v-if="ddlLoading" class="flex min-h-80 items-center justify-center gap-2 text-sm text-muted-foreground">
+      <div class="grid min-h-0 gap-3">
+        <div v-if="ddlLoading" class="flex min-h-0 items-center justify-center gap-2 text-sm text-muted-foreground">
           <Loader2 class="h-4 w-4 animate-spin" />
           <span>{{ t("contextMenu.viewDdlLoading") }}</span>
         </div>
-        <div v-else-if="ddlError" class="flex min-h-80 flex-col items-center justify-center gap-3 text-sm">
+        <div v-else-if="ddlError" class="flex min-h-0 flex-col items-center justify-center gap-3 text-sm">
           <p class="text-destructive">{{ ddlError }}</p>
           <Button variant="outline" size="sm" @click="retry">
             <RefreshCw />
             {{ t("common.retry") }}
           </Button>
         </div>
-        <div v-else class="ddl-view-editor relative min-h-80 max-h-[60vh] overflow-hidden rounded border">
-          <div ref="ddlEditorContainer" class="h-full" />
+        <div v-else class="ddl-view-editor relative h-full min-h-0 overflow-hidden rounded border">
+          <div ref="ddlEditorContainer" class="absolute inset-0" />
           <EditorSearchPanel v-if="ddlEditorView" ref="ddlSearchPanelRef" :view="ddlEditorView" />
         </div>
       </div>
@@ -235,6 +235,12 @@ function onClose() {
 </template>
 
 <style scoped>
+.ddl-view-editor :deep(.cm-editor),
+.ddl-view-editor :deep(.cm-scroller) {
+  height: 100%;
+  min-height: 0;
+}
+
 .ddl-view-editor :deep(.cm-content),
 .ddl-view-editor :deep(.cm-line) {
   cursor: text;
