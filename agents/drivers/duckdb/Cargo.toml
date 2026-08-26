@@ -36,11 +36,13 @@ sysinfo = "0.32"
 tokio-util = "0.7"
 uuid = { version = "1", features = ["v4"] }
 
+# Keep these patches in sync with the root workspace's [patch.crates-io]
+# (root Cargo.toml), so dbx-core compiles against the same crate sources.
 [patch.crates-io]
-tokio-postgres = { git = "https://github.com/t8y2/tokio-postgres-gaussdb.git", rev = "115f9fef10f0fc3669b5337955e4eb461fc349a6" }
-postgres-types = { git = "https://github.com/t8y2/tokio-postgres-gaussdb.git", rev = "115f9fef10f0fc3669b5337955e4eb461fc349a6" }
-postgres-protocol = { git = "https://github.com/t8y2/tokio-postgres-gaussdb.git", rev = "115f9fef10f0fc3669b5337955e4eb461fc349a6" }
-mysql_async = { git = "https://github.com/t8y2/mysql_async.git", rev = "2be6e392eb9b06d20dcd2d8ed8eae748d413c9ec" }
+tokio-postgres = { path = "../../../vendor/tokio-postgres-gaussdb/tokio-postgres" }
+postgres-types = { path = "../../../vendor/tokio-postgres-gaussdb/postgres-types" }
+postgres-protocol = { path = "../../../vendor/tokio-postgres-gaussdb/postgres-protocol" }
+mysql_async = { git = "https://github.com/t8y2/mysql_async.git", rev = "b615bb0b10b5975182a4aa069cabc3d09021f6ab" }
 
 [profile.release]
 panic = "abort"

@@ -197,7 +197,7 @@
             fetcherVersion = 4;
             # Update with the hash reported by a failed fixed-output build:
             #   nix build .#dbx-pnpm-deps 2>&1 | grep 'got:'
-            hash = "sha256-iFr+nYvhdFO6Y3fOs3tlhQL/10rgY3f2T1CbjnNZ3Nc=";
+            hash = "sha256-dHSsx/b47KOmzwO98Li6UUfp5vM/+V2JtpC484Yqdp8=";
           };
 
           # ── Step 2: vendor Cargo dependencies ───────────────────────────── #
@@ -207,12 +207,10 @@
             # package-name/version keys, these remain stable when a package
             # version inside the same checkout changes.
             outputHashes = {
-              "git+https://github.com/t8y2/rust_mysql_common.git?rev=77085e91e5081309d585153e3b656ce33bc1fe74#77085e91e5081309d585153e3b656ce33bc1fe74" =
-                "sha256-8lWgsdTuLTgOmzP7tXmA9LnomOE0wjxXsCBw9NEMt2o=";
-              "git+https://github.com/t8y2/mysql_async.git?rev=2be6e392eb9b06d20dcd2d8ed8eae748d413c9ec#2be6e392eb9b06d20dcd2d8ed8eae748d413c9ec" =
-                "sha256-tMFvmypIBh1GHg3cLFWmLf6N1wrwKPlzx2G/MHwtlFM=";
-              "git+https://github.com/t8y2/tokio-postgres-gaussdb.git?rev=115f9fef10f0fc3669b5337955e4eb461fc349a6#115f9fef10f0fc3669b5337955e4eb461fc349a6" =
-                "sha256-HRbYVSD7iIwG3m1tOGoIZy0xAZwALWIpTtakVSYPIYI=";
+              "git+https://github.com/t8y2/rust_mysql_common.git?rev=47740d85a8277167a5717afac785d37b46a36296#47740d85a8277167a5717afac785d37b46a36296" =
+                "sha256-fw1rDLNh0BByLHjS8Cgc7KQxdj3N51HVMHXvRyETsas=";
+              "git+https://github.com/t8y2/mysql_async.git?rev=b615bb0b10b5975182a4aa069cabc3d09021f6ab#b615bb0b10b5975182a4aa069cabc3d09021f6ab" =
+                "sha256-WNp8cdlnoyE4nzwGDhibqLYQbRz9YrsITis59TId5K0=";
             };
           };
 
