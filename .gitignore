@@ -76,3 +76,6 @@ DBX_*_x64-portable.zip
 dbx-devtest-connections.json
 .npmrc
 outputs/opengauss-docs/
+
+# Local requirement docs (working notes; do not track)
+需求文档/

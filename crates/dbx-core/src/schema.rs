@@ -4740,7 +4740,7 @@ async fn list_objects_once(
                 match native_postgres_metadata_pool(state, connection_id, database, native_config).await {
                     Ok(Some(pool)) => {
                         let mut objects = db::postgres::list_objects(&pool, schema).await?;
-                        if let Some(types) = object_types.as_deref().filter(|t| !t.is_empty()) {
+                        if let Some(types) = object_types.filter(|t| !t.is_empty()) {
                             objects.retain(|o| types.contains(&o.object_type));
                         }
                         return Ok(unpaged_object_list(objects));

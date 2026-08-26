@@ -390,7 +390,7 @@ pub async fn list_database_search_scope_targets(state: &AppState) -> Vec<Databas
 }
 
 fn connection_is_selected(targets: Option<&[DatabaseSearchScopeTarget]>, connection_id: &str, database: &str) -> bool {
-    targets.map_or(true, |targets| {
+    targets.is_none_or(|targets| {
         targets.iter().any(|target| {
             target.connection_id == connection_id && (target.database.is_empty() || target.database == database)
         })
@@ -423,10 +423,10 @@ async fn search_connected_postgres(
         .map(<[DatabaseSearchScopeTarget]>::len)
         .unwrap_or_else(|| configs.values().filter(|config| supports_postgres_search(config)).count())
         .max(1);
-    let query_limit = (limit + target_count - 1) / target_count;
+    let query_limit = limit.div_ceil(target_count);
     let mut searched = std::collections::HashSet::new();
     let mut pool_entries = connections.iter().collect::<Vec<_>>();
-    pool_entries.sort_by(|(left, _), (right, _)| left.cmp(right));
+    pool_entries.sort_by_key(|(left, _)| *left);
     for (pool_key, pool) in pool_entries {
         if metadata_hits.len() >= limit || definition_hits.len() >= limit {
             break;

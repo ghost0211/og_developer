@@ -285,14 +285,12 @@ pub fn extract_plsql_referenced_identifiers(source: &str) -> PlSqlCandidateRefer
                 }
 
                 // Check for %ROWTYPE or %TYPE (e.g. `emp%ROWTYPE` or `emp.salary%TYPE`)
-                if i + 1 < num_tokens && tokens[i + 1] == Token::Percent {
-                    if i + 2 < num_tokens {
-                        if let Token::Ident(type_attr) = &tokens[i + 2] {
-                            let type_attr_lower = type_attr.to_lowercase();
-                            if type_attr_lower == "rowtype" || type_attr_lower == "type" {
-                                refs.types.insert(name_lower.clone());
-                                refs.tables.insert(name_lower.clone());
-                            }
+                if i + 1 < num_tokens && tokens[i + 1] == Token::Percent && i + 2 < num_tokens {
+                    if let Token::Ident(type_attr) = &tokens[i + 2] {
+                        let type_attr_lower = type_attr.to_lowercase();
+                        if type_attr_lower == "rowtype" || type_attr_lower == "type" {
+                            refs.types.insert(name_lower.clone());
+                            refs.tables.insert(name_lower.clone());
                         }
                     }
                 }
@@ -375,27 +373,27 @@ pub fn extract_plsql_referenced_identifiers(source: &str) -> PlSqlCandidateRefer
                             if keyword.eq_ignore_ascii_case("function")
                                 || keyword.eq_ignore_ascii_case("procedure")
                     );
-                if i + 1 < num_tokens && tokens[i + 1] == Token::LParen {
-                    if !is_declaration_name && !is_builtin_keyword_or_function(&name_lower) {
-                        refs.routines.insert(name_lower.clone());
-                    }
+                if i + 1 < num_tokens
+                    && tokens[i + 1] == Token::LParen
+                    && !is_declaration_name
+                    && !is_builtin_keyword_or_function(&name_lower)
+                {
+                    refs.routines.insert(name_lower.clone());
                 }
             }
 
-            Token::StringLiteral(lit) => {
-                // Check if this string literal was an argument to nextval('seq') or currval('seq')
-                if i >= 2 && tokens[i - 1] == Token::LParen {
-                    if let Token::Ident(fn_name) = &tokens[i - 2] {
-                        let fn_name_lower = fn_name.to_lowercase();
-                        if fn_name_lower == "nextval"
-                            || fn_name_lower == "currval"
-                            || fn_name_lower == "pg_get_serial_sequence"
-                        {
-                            let clean_seq = lit.trim().trim_matches('"').to_lowercase();
-                            if !clean_seq.is_empty() {
-                                refs.sequences.insert(clean_seq.clone());
-                                refs.all_identifiers.insert(clean_seq);
-                            }
+            // Check if this string literal was an argument to nextval('seq') or currval('seq')
+            Token::StringLiteral(lit) if i >= 2 && tokens[i - 1] == Token::LParen => {
+                if let Token::Ident(fn_name) = &tokens[i - 2] {
+                    let fn_name_lower = fn_name.to_lowercase();
+                    if fn_name_lower == "nextval"
+                        || fn_name_lower == "currval"
+                        || fn_name_lower == "pg_get_serial_sequence"
+                    {
+                        let clean_seq = lit.trim().trim_matches('"').to_lowercase();
+                        if !clean_seq.is_empty() {
+                            refs.sequences.insert(clean_seq.clone());
+                            refs.all_identifiers.insert(clean_seq);
                         }
                     }
                 }

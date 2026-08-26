@@ -378,7 +378,7 @@ pub fn parse_branch_refs(refs_text: &str, current: &str) -> GitBranchInfo {
 // Core Git Async Functions
 // ============================================================================
 
-/// 1. `git_is_repo(path: String) -> bool`
+/// `git_is_repo(path: String) -> bool`
 /// Returns true if the path is inside a git work tree. Returns false if git is missing or path is not a repo.
 pub async fn git_is_repo(path: &str) -> bool {
     let p = Path::new(path);
@@ -391,7 +391,7 @@ pub async fn git_is_repo(path: &str) -> bool {
     }
 }
 
-/// 2. `git_clone(request: GitCloneRequest) -> Result<String, String>`
+/// `git_clone(request: GitCloneRequest) -> Result<String, String>`
 /// Clones repository to targetDir with optional branch and credentials. Sanitizes credentials on error.
 pub async fn git_clone(request: GitCloneRequest) -> Result<String, String> {
     let target_dir = request.target_dir.trim();
@@ -429,7 +429,7 @@ pub async fn git_clone(request: GitCloneRequest) -> Result<String, String> {
     }
 }
 
-/// 3. `git_status(repo_path: String) -> Result<GitStatusInfo, String>`
+/// `git_status(repo_path: String) -> Result<GitStatusInfo, String>`
 /// Retrieves detailed status using `git status --porcelain=v2 --branch -z`.
 pub async fn git_status(repo_path: &str) -> Result<GitStatusInfo, String> {
     let output = run_git_command(&["-C", repo_path, "status", "--porcelain=v2", "--branch", "-z"], None).await?;
@@ -441,7 +441,7 @@ pub async fn git_status(repo_path: &str) -> Result<GitStatusInfo, String> {
     }
 }
 
-/// 4. `git_branches(repo_path: String) -> Result<GitBranchInfo, String>`
+/// `git_branches(repo_path: String) -> Result<GitBranchInfo, String>`
 /// Retrieves current, local, and remote branches.
 pub async fn git_branches(repo_path: &str) -> Result<GitBranchInfo, String> {
     // 1. Get branch refs
@@ -478,7 +478,7 @@ pub async fn git_branches(repo_path: &str) -> Result<GitBranchInfo, String> {
     Ok(parse_branch_refs(&refs_text, &current))
 }
 
-/// 5. `git_checkout(repo_path: String, branch: String, create: bool) -> Result<(), String>`
+/// `git_checkout(repo_path: String, branch: String, create: bool) -> Result<(), String>`
 /// Switches branch or creates and switches branch.
 pub async fn git_checkout(repo_path: &str, branch: &str, create: bool) -> Result<(), String> {
     let output = if create {
@@ -495,7 +495,7 @@ pub async fn git_checkout(repo_path: &str, branch: &str, create: bool) -> Result
     }
 }
 
-/// 6. `git_stage(repo_path: String, paths: Vec<String>) -> Result<(), String>`
+/// `git_stage(repo_path: String, paths: Vec<String>) -> Result<(), String>`
 /// Adds paths to the staging area via `git add -- <paths...>`.
 pub async fn git_stage(repo_path: &str, paths: &[String]) -> Result<(), String> {
     if paths.is_empty() {
@@ -516,7 +516,7 @@ pub async fn git_stage(repo_path: &str, paths: &[String]) -> Result<(), String> 
     }
 }
 
-/// 7. `git_unstage(repo_path: String, paths: Vec<String>) -> Result<(), String>`
+/// `git_unstage(repo_path: String, paths: Vec<String>) -> Result<(), String>`
 /// Removes paths from the staging area. Uses `git restore --staged -- <paths...>`, with a fallback to `git reset HEAD --` for older git versions or initial repo states.
 pub async fn git_unstage(repo_path: &str, paths: &[String]) -> Result<(), String> {
     if paths.is_empty() {
@@ -548,7 +548,7 @@ pub async fn git_unstage(repo_path: &str, paths: &[String]) -> Result<(), String
     }
 }
 
-/// 8. `git_commit(repo_path: String, message: String) -> Result<(), String>`
+/// `git_commit(repo_path: String, message: String) -> Result<(), String>`
 /// Commits staged changes with the provided commit message.
 pub async fn git_commit(repo_path: &str, message: &str) -> Result<(), String> {
     if message.trim().is_empty() {
@@ -565,7 +565,7 @@ pub async fn git_commit(repo_path: &str, message: &str) -> Result<(), String> {
     }
 }
 
-/// 9. `git_pull(repo_path: String) -> Result<String, String>`
+/// `git_pull(repo_path: String) -> Result<String, String>`
 /// Pulls remote changes (respecting user pull configuration) and returns output summary.
 pub async fn git_pull(repo_path: &str) -> Result<String, String> {
     let output = run_git_command(&["-C", repo_path, "pull"], None).await?;
@@ -593,7 +593,7 @@ pub async fn git_pull(repo_path: &str) -> Result<String, String> {
     }
 }
 
-/// 10. `git_push(repo_path: String) -> Result<String, String>`
+/// `git_push(repo_path: String) -> Result<String, String>`
 /// Pushes current branch. Automatically configures upstream tracking if not present.
 pub async fn git_push(repo_path: &str) -> Result<String, String> {
     // Check if upstream branch is configured
@@ -639,7 +639,7 @@ pub async fn git_push(repo_path: &str) -> Result<String, String> {
     }
 }
 
-/// 11. `git_file_diff(repo_path: String, path: String, staged: bool) -> Result<GitFileDiff, String>`
+/// `git_file_diff(repo_path: String, path: String, staged: bool) -> Result<GitFileDiff, String>`
 /// Returns oldText/newText/isNew/isDeleted for row-level diffing in frontend.
 pub async fn git_file_diff(repo_path: &str, path: &str, staged: bool) -> Result<GitFileDiff, String> {
     if staged {
