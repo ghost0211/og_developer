@@ -1,4 +1,4 @@
-# og developer
+# OG Developer
 
 专门的 openGauss 数据库开发工具。基于 [dbx](https://github.com/t8y2/dbx)
 （Apache-2.0）的深度定制版，专注 openGauss 一种数据库，做透方言细节与
@@ -6,7 +6,7 @@ PL/SQL 开发体验。
 
 ## 仓库布局
 
-- 本目录（`projects/og_developer`）—— og developer 工作仓库
+- 本目录（`projects/og_developer`）—— OG Developer 工作仓库
   - `main`：产品主线（品牌化、入口裁剪、专用特性都在这里）
   - `opengauss-fixes`：干净的 openGauss 修复集，可用于给上游提 PR
   - remote `dbx`：本地参考仓库（`projects/dbx`）
@@ -15,7 +15,7 @@ PL/SQL 开发体验。
 
 ## 与原版的差异
 
-1. **品牌化**：productName `og developer`，identifier `com.ogdeveloper.app`，
+1. **品牌化**：展示名 `OG Developer`，productName `ogdeveloper`，identifier `com.ogdeveloper.app`，
    版本从 0.1.0 起步。
 2. **入口裁剪**：连接类型选择器只保留 openGauss
    （`ConnectionDialog.vue` 里的 `ENABLED_DATABASE_TYPES` 白名单，

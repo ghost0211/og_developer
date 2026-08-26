@@ -100,6 +100,77 @@ fn scan_sql_files(dir: &Path, depth: usize, visited: &mut HashSet<String>) -> Ve
     entries
 }
 
+/// List one directory level, keeping every file type and directory. The
+/// project files panel loads child directories on demand so a large project
+/// does not become one giant response or DOM tree on initial load.
+fn scan_directory_entries(dir: &Path, visited: &mut HashSet<String>) -> Vec<SqlFileEntry> {
+    let canonical = std::fs::canonicalize(dir).ok();
+    if let Some(ref c) = canonical {
+        let c_str = c.to_string_lossy().to_string();
+        if !visited.insert(c_str) {
+            return vec![];
+        }
+    }
+
+    let mut entries = Vec::new();
+    let dir_entries = match std::fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(_) => return entries,
+    };
+
+    for entry in dir_entries.flatten() {
+        let file_type = match entry.file_type() {
+            Ok(ft) => ft,
+            Err(_) => continue,
+        };
+        let path = entry.path();
+        let name = match path.file_name().and_then(|n| n.to_str()) {
+            Some(name) => name.to_string(),
+            None => continue,
+        };
+
+        if file_type.is_dir() {
+            entries.push(SqlFileEntry {
+                name,
+                path: path.to_string_lossy().to_string(),
+                is_dir: true,
+                children: vec![],
+            });
+        } else if file_type.is_file() {
+            entries.push(SqlFileEntry {
+                name,
+                path: path.to_string_lossy().to_string(),
+                is_dir: false,
+                children: vec![],
+            });
+        }
+    }
+
+    entries.sort_by(|a, b| {
+        if a.is_dir != b.is_dir {
+            b.is_dir.cmp(&a.is_dir)
+        } else {
+            a.name.to_lowercase().cmp(&b.name.to_lowercase())
+        }
+    });
+
+    entries
+}
+
+#[tauri::command]
+pub async fn list_files_in_folder(folder_path: String) -> Result<Vec<SqlFileEntry>, String> {
+    let path = Path::new(&folder_path).to_path_buf();
+    tauri::async_runtime::spawn_blocking(move || {
+        if !path.is_dir() {
+            return Err(format!("Path is not a directory: {}", folder_path));
+        }
+        let mut visited = HashSet::new();
+        Ok(scan_directory_entries(&path, &mut visited))
+    })
+    .await
+    .map_err(|e| format!("Failed to scan folder: {e}"))?
+}
+
 #[tauri::command]
 pub async fn list_sql_files_in_folder(folder_path: String) -> Result<Vec<SqlFileEntry>, String> {
     let path = Path::new(&folder_path).to_path_buf();
@@ -150,6 +221,38 @@ mod tests {
         names.sort();
 
         assert_eq!(names, vec!["nested.SQL", "root.sql"]);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn scan_directory_entries_includes_all_file_types_and_deep_paths() {
+        let root = std::env::temp_dir().join(format!("dbx-project-folder-scan-{}", uuid::Uuid::new_v4()));
+        let hidden = root.join(".git");
+        let generated = root.join("target");
+        let mut deep = root.clone();
+        for level in 0..=(MAX_SCAN_DEPTH + 1) {
+            deep = deep.join(format!("level-{level}"));
+        }
+        std::fs::create_dir_all(&hidden).unwrap();
+        std::fs::create_dir_all(&generated).unwrap();
+        std::fs::create_dir_all(&deep).unwrap();
+        std::fs::write(root.join("README.md"), "project").unwrap();
+        std::fs::write(hidden.join("metadata"), "git metadata").unwrap();
+        std::fs::write(generated.join("build.log"), "build output").unwrap();
+        std::fs::write(deep.join("deep.txt"), "deep file").unwrap();
+
+        let mut visited = HashSet::new();
+        let entries = scan_directory_entries(&root, &mut visited);
+        let names: Vec<_> = entries.iter().map(|entry| entry.name.as_str()).collect();
+        assert!(names.contains(&"README.md"));
+        assert!(names.contains(&".git"));
+        assert!(names.contains(&"target"));
+        assert!(names.contains(&"level-0"));
+        assert!(entries.iter().filter(|entry| entry.is_dir).all(|entry| entry.children.is_empty()));
+
+        let mut visited = HashSet::new();
+        let deep_entries = scan_directory_entries(&deep, &mut visited);
+        assert!(deep_entries.iter().any(|entry| entry.name == "deep.txt"));
         std::fs::remove_dir_all(root).unwrap();
     }
 }

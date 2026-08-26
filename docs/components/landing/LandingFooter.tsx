@@ -3,11 +3,11 @@ import Link from "next/link";
 const i18n = {
   en: {
     tagline: "The openGauss-specific database development tool.",
-    copyright: `© ${new Date().getFullYear()} og developer contributors.`,
+    copyright: `© ${new Date().getFullYear()} OG Developer contributors.`,
   },
   cn: {
     tagline: "openGauss 专用数据库开发工具。",
-    copyright: `© ${new Date().getFullYear()} og developer contributors.`,
+    copyright: `© ${new Date().getFullYear()} OG Developer contributors.`,
   },
 };
 
@@ -31,7 +31,7 @@ export function LandingFooter({ lang }: { lang: "en" | "cn" }) {
           {/* Logo */}
           <Link href={`/${lang}`} className="flex min-h-11 items-center gap-2.5 text-[var(--color-landing-ink)] text-lg font-[820] shrink-0">
             <img src="/logo.png" alt="" aria-hidden="true" width={22} height={22} />
-            <span>og developer</span>
+            <span>OG Developer</span>
           </Link>
 
           {/* Tagline */}

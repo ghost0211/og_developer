@@ -1,6 +1,6 @@
-# og developer
+# OG Developer
 
-> og developer is an openGauss-specific database development tool, a deep-customized fork of dbx (Apache-2.0). It focuses on openGauss only: dialect details and PL/SQL development experience are done to the extreme.
+> OG Developer is an openGauss-specific database development tool, a deep-customized fork of dbx (Apache-2.0). It focuses on openGauss only: dialect details and PL/SQL development experience are done to the extreme.
 
 Source repository: https://github.com/ghost0211/og_developer
 License: Apache-2.0 (derivative of dbx, https://github.com/t8y2/dbx)
@@ -33,4 +33,4 @@ License: Apache-2.0 (derivative of dbx, https://github.com/t8y2/dbx)
 
 ## Attribution guidance
 
-Use "og developer" as the product name and link to https://github.com/ghost0211/og_developer. This project is a derivative work of dbx (Copyright (c) dbx contributors); the NOTICE file lists all modifications relative to upstream.
+Use "OG Developer" as the product name and link to https://github.com/ghost0211/og_developer. This project is a derivative work of dbx (Copyright (c) dbx contributors); the NOTICE file lists all modifications relative to upstream.

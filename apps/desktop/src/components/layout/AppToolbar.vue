@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import { computed, ref, onMounted, onBeforeUnmount, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
+import { useI18n } from "vue-i18n";
+import { Languages } from "@lucide/vue";
 import AppMenuBar from "@/components/layout/AppMenuBar.vue";
 import WindowControls from "@/components/layout/WindowControls.vue";
 import ExportProgressPopover from "@/components/export/ExportProgressPopover.vue";
 import { MAC_TRAFFIC_LIGHT_X, macTrafficLightInsetPaddingForScale, shouldReserveMacTrafficLightInset, useWindowControls } from "@/composables/useWindowControls";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { currentLocale, nextLocale, setLocale } from "@/i18n";
 import type { AppThemeMode } from "@/lib/app/appTheme";
 import type { SqlProject } from "@/stores/projectStore";
 
@@ -35,6 +38,7 @@ const emit = defineEmits<{
   "export-config": [];
   "create-project": [];
   "open-project": [];
+  "clone-from-git": [];
   "select-project": [projectId: string];
   undo: [];
   redo: [];
@@ -59,6 +63,8 @@ const emit = defineEmits<{
   "toggle-history": [];
   "toggle-sql-library": [];
   "toggle-sql-file-panel": [];
+  "toggle-project-file-panel": [];
+  "toggle-git-panel": [];
   "open-settings": [initialTab?: string];
   "search-files": [];
   "search-metadata": [];
@@ -66,13 +72,14 @@ const emit = defineEmits<{
   "quick-open": [];
   "search-table-data": [];
   "open-sessions": [];
+  "open-invalid-objects": [];
+  "open-command-window": [];
   "open-table-import": [];
   "open-database-export": [];
   "open-transfer": [];
   "open-sql-file": [];
   "open-schema-diff": [];
   "open-data-compare": [];
-  "open-scheduled-backups": [];
   "open-shortcuts": [];
   "open-docs": [];
   "export-debug-logs": [];
@@ -80,7 +87,14 @@ const emit = defineEmits<{
 }>();
 
 const settingsStore = useSettingsStore();
+const { t } = useI18n();
 const { isMac, isDesktop, showControls, isMaximized, isFullscreen, minimize, toggleMaximize, close } = useWindowControls();
+
+const localeToggleLabel = computed(() => (currentLocale() === "zh-CN" ? "中" : "EN"));
+
+function toggleLocale() {
+  void setLocale(nextLocale(currentLocale()));
+}
 
 function onToolbarDblClick(e: MouseEvent) {
   if (isDesktop) return;
@@ -210,6 +224,7 @@ const toolbarStyle = computed(() => {
         @export-config="emit('export-config')"
         @create-project="emit('create-project')"
         @open-project="emit('open-project')"
+        @clone-from-git="emit('clone-from-git')"
         @select-project="emit('select-project', $event)"
         @undo="emit('undo')"
         @redo="emit('redo')"
@@ -231,6 +246,8 @@ const toolbarStyle = computed(() => {
         @toggle-history="emit('toggle-history')"
         @toggle-sql-library="emit('toggle-sql-library')"
         @toggle-sql-file-panel="emit('toggle-sql-file-panel')"
+        @toggle-project-file-panel="emit('toggle-project-file-panel')"
+        @toggle-git-panel="emit('toggle-git-panel')"
         @toggle-fullscreen="emit('toggle-fullscreen')"
         @open-settings="emit('open-settings', $event)"
         @set-theme-mode="emit('set-theme-mode', $event)"
@@ -240,13 +257,14 @@ const toolbarStyle = computed(() => {
         @quick-open="emit('quick-open')"
         @search-table-data="emit('search-table-data')"
         @open-sessions="emit('open-sessions')"
+        @open-invalid-objects="emit('open-invalid-objects')"
+        @open-command-window="emit('open-command-window')"
         @open-table-import="emit('open-table-import')"
         @open-database-export="emit('open-database-export')"
         @open-transfer="emit('open-transfer')"
         @open-sql-file="emit('open-sql-file')"
         @open-schema-diff="emit('open-schema-diff')"
         @open-data-compare="emit('open-data-compare')"
-        @open-scheduled-backups="emit('open-scheduled-backups')"
         @open-shortcuts="emit('open-shortcuts')"
         @open-docs="emit('open-docs')"
         @export-debug-logs="emit('export-debug-logs')"
@@ -257,6 +275,16 @@ const toolbarStyle = computed(() => {
     <div class="flex-1" data-tauri-drag-region />
 
     <div class="flex shrink-0 items-center gap-1">
+      <button
+        type="button"
+        class="inline-flex h-7 items-center gap-1 rounded px-1.5 text-xs font-medium leading-none text-foreground/80 transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none"
+        :title="t('settings.languageTitle')"
+        :aria-label="t('settings.languageTitle')"
+        @click="toggleLocale"
+      >
+        <Languages class="h-3.5 w-3.5 text-muted-foreground" />
+        <span>{{ localeToggleLabel }}</span>
+      </button>
       <ExportProgressPopover />
     </div>
 

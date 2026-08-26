@@ -418,11 +418,11 @@ async function loadLocalTableSearchResults(parentNodeId: string, refresh = false
   }
 }
 
-// ogdeveloper: toggles mutate isExpanded without touching children, which the
+// OG Developer: toggles mutate isExpanded without touching children, which the
 // pipeline below never tracks — bump this version on every toggle so the
 // computed re-runs. The conditional-return form survives minifier DCE.
 const treeExpansionVersion = ref(0);
-// ogdeveloper: this vue-virtual-scroller build does not prune pooled rows when
+// OG Developer: this vue-virtual-scroller build does not prune pooled rows when
 // items shrink (collapse left stale children in the DOM). Remount the scroller
 // on shrink only — expands keep scroll position.
 const treeScrollerRemountKey = ref(0);

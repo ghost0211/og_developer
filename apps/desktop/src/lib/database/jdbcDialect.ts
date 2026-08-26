@@ -11,7 +11,7 @@ export type OpengaussConnectionMode = "native" | "jdbc";
 const GAUSSDB_IDENTIFIER_QUOTE_STYLE_KEY = "gaussdbIdentifierQuoteStyle";
 export const GAUSSDB_M_JDBC_DRIVER_PROFILE = "gaussdb-m";
 export const GAUSSDB_M_JDBC_DRIVER_CLASS = "com.huawei.gaussdb.jdbc.Driver";
-// og developer: openGauss can route through the official JDBC driver, whose
+// OG Developer: openGauss can route through the official JDBC driver, whose
 // SHA256 password authentication the native PostgreSQL wire protocol lacks.
 // The auto-provisioned Maven artifact org.opengauss:opengauss-jdbc keeps
 // upstream pgJDBC branding (org.postgresql.Driver + jdbc:postgresql://).
@@ -218,7 +218,7 @@ export function codeMirrorSqlDialectForConnection(connection?: JdbcDialectConnec
   const databaseType = effectiveDatabaseTypeForConnection(connection);
   if (databaseType === "clickhouse") return "clickhouse";
   if (databaseType === "opengauss") {
-    // og developer: adapt editor highlighting to the compatibility mode —
+    // OG Developer: adapt editor highlighting to the compatibility mode —
     // B mode speaks MySQL syntax (dolphin), M mode SQL Server syntax (shark).
     const compatibility = connection?.database_info?.sqlCompatibility?.trim().toUpperCase();
     if (compatibility === "B") return "mysql";

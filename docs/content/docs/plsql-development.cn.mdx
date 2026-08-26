@@ -3,7 +3,7 @@ title: PL/SQL 开发
 description: PL/SQL 感知的语句切分、A 兼容类型、源码重建、DBMS_OUTPUT / RAISE NOTICE 捕获与编译错误行定位。
 ---
 
-og developer 把 openGauss 方言细节做透，让 PL/SQL 开发体验接近原生。本页介绍在常规[查询编辑器](/cn/docs/query-editor)之上的 openGauss 专属行为。
+OG Developer 把 openGauss 方言细节做透，让 PL/SQL 开发体验接近原生。本页介绍在常规[查询编辑器](/cn/docs/query-editor)之上的 openGauss 专属行为。
 
 ## PL/SQL 感知的语句切分
 
@@ -22,7 +22,7 @@ openGauss 复用 GaussDB 方言 profile：PL/SQL 块、`/` 行终止符、dollar
 包、包体和同义词的源码从 openGauss 目录重建：
 
 - `gs_source` 保存原始 `CREATE` 文本，存在时优先取用
-- `gs_package` 保存规范化形式；og developer 从其中重建可执行 DDL 兜底（spec、body、含初始化段的 body）
+- `gs_package` 保存规范化形式；OG Developer 从其中重建可执行 DDL 兜底（spec、body、含初始化段的 body）
 - 重建出的 DDL 可直接执行——在编辑器里改完源码再跑一遍即可重新编译，无需离开编辑器
 
 ## DBMS_OUTPUT 与 RAISE NOTICE 消息
@@ -31,7 +31,7 @@ openGauss 复用 GaussDB 方言 profile：PL/SQL 块、`/` 行终止符、dollar
 
 ## 编译错误行定位
 
-openGauss 的编译错误带 `LINE n` 位置（通常还附带完整 QUERY 文本）。og developer 把位置映射回编辑器行，`CREATE PACKAGE` 失败时直接指向出错行，而不是一整屏报错文本。
+openGauss 的编译错误带 `LINE n` 位置（通常还附带完整 QUERY 文本）。OG Developer 把位置映射回编辑器行，`CREATE PACKAGE` 失败时直接指向出错行，而不是一整屏报错文本。
 
 ## openGauss 对象树
 

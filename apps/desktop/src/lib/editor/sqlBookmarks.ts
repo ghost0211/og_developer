@@ -1,7 +1,7 @@
 import { RangeSet, StateEffect, StateField } from "@codemirror/state";
 import { EditorView, GutterMarker, ViewPlugin, gutter, keymap } from "@codemirror/view";
 
-// ogdeveloper: SQL bookmarks with auto-names (位置1, 位置2, …).
+// OG Developer: SQL bookmarks with auto-names (位置1, 位置2, …).
 // - click the gutter left of the line numbers to toggle a bookmark (🔖)
 // - right-click the line-number gutter for 添加位置 / 删除位置 / 书签 submenu
 // - F2 / Shift-F2 jump between bookmarks

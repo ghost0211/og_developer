@@ -47,8 +47,6 @@ import { createRunStatementButtonDom, loadEditorTheme, editorFontTheme } from "@
 import { orderAiConfigsForDisplay } from "@/lib/ai/aiConfigOrdering";
 import { MAX_AGENT_TURNS_DEFAULT, MAX_AGENT_TURNS_MAX, MAX_AGENT_TURNS_MIN, maxAgentTurnsOutOfRange, normalizeMaxAgentTurns } from "@/lib/ai/maxAgentTurns";
 import ThemeCustomizerDialog from "./ThemeCustomizerDialog.vue";
-import TunnelProfileManager from "@/components/connection/TunnelProfileManager.vue";
-import ScheduledDatabaseBackupSettings from "@/components/backup/ScheduledDatabaseBackupSettings.vue";
 import DangerConfirmDialog from "./DangerConfirmDialog.vue";
 import { isTauriRuntime } from "@/lib/backend/tauriRuntime";
 import { useTheme } from "@/composables/useTheme";
@@ -78,9 +76,8 @@ import { APP_THEME_PALETTES, type AppCornerStyle, type AppThemeAppearance, type 
 import { editorSettingsDraftChanged, editorSettingsDraftFromSettings, editorSettingsPatchFromDraft, normalizeTableOpenPageSizeDraft, type EditorSettingsDraft } from "@/lib/settings/editorSettingsDraft";
 import { useConnectionStore } from "@/stores/connectionStore";
 import { usePromptTemplateStore } from "@/stores/promptTemplateStore";
-import { currentLocale, setLocale, type Locale } from "@/i18n";
-import { SETTINGS_SEARCH_DEFINITIONS, TOOLBAR_VISIBILITY_ITEMS, createShortcutSettingsSearchDefinitions, resolveSettingsSearchEntries, searchSettings, toolbarVisibilityItemLabel, type SettingsCategory, type SettingsSearchEntry, type ToolbarVisibilityItem } from "@/lib/settings/settingsSearch";
-import { LOCALE_OPTIONS } from "@/lib/app/localeOptions";
+import { currentLocale } from "@/i18n";
+import { SETTINGS_SEARCH_DEFINITIONS, createShortcutSettingsSearchDefinitions, resolveSettingsSearchEntries, searchSettings, type SettingsCategory, type SettingsSearchEntry } from "@/lib/settings/settingsSearch";
 import { apiUrl } from "@/lib/common/webPath";
 import { DEFAULT_DATA_GRID_FONT_FAMILY, DEFAULT_UI_FONT_FAMILY, normalizeCustomFontFamilyInput, readableFontFamily, SYSTEM_UI_FONT_FAMILY } from "@/lib/app/appFonts";
 import { buildFontFamilyOptions, displayFontFamily, isPresetFontFamily, loadSystemFontNames } from "@/lib/app/fontFamilyOptions";
@@ -105,7 +102,6 @@ const appThemePaletteOptions = computed(
     })),
 );
 const selectedThemePaletteOption = computed(() => appThemePaletteOptions.value.find((option) => option.value === themePalette.value) ?? appThemePaletteOptions.value[0]);
-const selectedLocaleOption = computed(() => LOCALE_OPTIONS.find((locale) => locale.value === currentLocale()) ?? LOCALE_OPTIONS[0]);
 const appThemeModeOptions = computed(() => [
   { value: "light" as AppThemeMode, label: t("toolbar.themeLight"), icon: Sun },
   { value: "dark" as AppThemeMode, label: t("toolbar.themeDark"), icon: Moon },
@@ -286,7 +282,7 @@ const editInfiniteScrollMaxRows = ref(settingsStore.editorSettings.infiniteScrol
 const editRegexMaxMatchCount = ref(settingsStore.editorSettings.regexMaxMatchCount);
 const editAutoCalculateTotalRows = ref(settingsStore.editorSettings.autoCalculateTotalRows);
 const editTableColumnTemplateRows = ref<TableColumnTemplateGridRow[]>(tableColumnTemplateRowsFromSettings(settingsStore.editorSettings.tableColumnTemplateFields));
-// og developer: settings pickers only offer openGauss dialects.
+// OG Developer: settings pickers only offer openGauss dialects.
 const SETTINGS_DATABASE_TYPES = new Set(["opengauss"]);
 const settingsTableColumnTemplateDatabaseTypes = TABLE_COLUMN_TEMPLATE_DATABASE_TYPES.filter((dbType) => SETTINGS_DATABASE_TYPES.has(dbType));
 const editTableColumnTemplateDatabaseType = ref<DatabaseType>(settingsTableColumnTemplateDatabaseTypes[0] ?? "opengauss");
@@ -336,10 +332,6 @@ const editExportRowLimit = ref(settingsStore.editorSettings.exportRowLimit);
 const editQueryExportKeysetOptimizationEnabled = ref(settingsStore.editorSettings.queryExportKeysetOptimizationEnabled);
 const editUpdateDownloadSource = ref<UpdateDownloadSource>(settingsStore.editorSettings.updateDownloadSource);
 const editToolbarItems = ref({ ...settingsStore.editorSettings.toolbarItems });
-const toolbarVisibilityItems = TOOLBAR_VISIBILITY_ITEMS;
-function getToolbarVisibilityItemLabel(item: ToolbarVisibilityItem): string {
-  return toolbarVisibilityItemLabel(item, t);
-}
 const systemFonts = ref<string[]>([]);
 const systemFontsLoading = ref(false);
 const systemFontsLoaded = ref(false);
@@ -1165,10 +1157,6 @@ function onDisconnectTabHandlingModeChange(v: any) {
   }
 }
 
-function onLocaleChange(v: any) {
-  if (typeof v === "string") void setLocale(v as Locale);
-}
-
 function setSidebarObjectDisplay(value: "grouped" | "simple") {
   editSidebarObjectDisplay.value = value;
 }
@@ -1257,8 +1245,6 @@ const settingsCategoryNav = computed<{ value: SettingsCategory; label: string }[
   { value: "formatter", label: t("settings.sqlFormatterTab") },
   { value: "navigation", label: t("settings.navigationTab") },
   { value: "data", label: t("settings.dataTab") },
-  { value: "backups", label: t("databaseBackup.title") },
-  { value: "tunnels", label: t("settings.tunnelsTab") },
   { value: "shortcuts", label: t("settings.shortcutsTab") },
   { value: "snippets", label: t("settings.snippetsTab") },
   { value: "ai", label: t("settings.aiTab") },
@@ -1836,7 +1822,7 @@ function normalizeMaxRetries(value: number | undefined): number {
 const aiDeleteConfirmOpen = ref(false);
 const aiDeleteConfigId = ref<string | null>(null);
 
-// ogdeveloper: CLI providers depend on the MCP bridge, which this product does
+// OG Developer: CLI providers depend on the MCP bridge, which this product does
 // not ship — they are unavailable on every platform, not just web.
 const CLI_AI_PROVIDERS = new Set<AiProvider>(["claude-code-cli", "pi-agent-cli", "codex-cli"]);
 const aiProviderOptions = computed(() => Object.values(AI_PROVIDER_PRESETS).filter((provider) => !CLI_AI_PROVIDERS.has(provider.provider)));
@@ -3076,34 +3062,6 @@ onUnmounted(() => {
               <div class="settings-appearance-top-grid">
                 <div class="settings-appearance-field min-w-0">
                   <div class="flex h-9 items-end">
-                    <Label class="whitespace-normal leading-tight">{{ t("settings.languageTitle") }}</Label>
-                  </div>
-                  <Select :model-value="currentLocale()" @update:model-value="onLocaleChange">
-                    <SelectTrigger class="h-8 w-full gap-0.5 px-0.5">
-                      <SelectValue>
-                        <span v-if="selectedLocaleOption" class="flex min-w-0 items-center gap-0.5">
-                          <span class="inline-flex h-5 shrink-0 items-center justify-center text-sm font-medium leading-none">
-                            {{ selectedLocaleOption.flag }}
-                          </span>
-                          <span class="truncate">{{ selectedLocaleOption.label }}</span>
-                        </span>
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent class="w-[150px]">
-                      <SelectItem v-for="locale in LOCALE_OPTIONS" :key="locale.value" :value="locale.value">
-                        <div class="flex items-center gap-1">
-                          <span class="inline-flex h-5 w-6 shrink-0 items-center justify-center text-sm font-medium leading-none">
-                            {{ locale.flag }}
-                          </span>
-                          <span>{{ locale.label }}</span>
-                        </div>
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div class="settings-appearance-field min-w-0">
-                  <div class="flex h-9 items-end">
                     <Label class="whitespace-normal leading-tight">{{ t("settings.colorTheme") }}</Label>
                   </div>
                   <Select :model-value="themePalette" @update:model-value="(value) => setThemePalette(value as AppThemePalette)">
@@ -3358,7 +3316,7 @@ onUnmounted(() => {
                 <div class="settings-appearance-choice-grid">
                   <Button type="button" variant="outline" class="settings-choice-card h-auto justify-start border p-3" :class="editIconTheme === 'default' ? 'dbx-choice-selected' : ''" @click="setIconTheme('default')">
                     <div class="flex items-center gap-3 text-left w-full min-w-0">
-                      <img src="/icon-preview-default.png" alt="ogdeveloper" class="h-12 w-12 shrink-0" />
+                      <img src="/icon-preview-default.png" alt="OG Developer" class="h-12 w-12 shrink-0" />
                       <TooltipProvider>
                         <Tooltip>
                           <TooltipTrigger as-child>
@@ -3380,7 +3338,7 @@ onUnmounted(() => {
                   </Button>
                   <Button type="button" variant="outline" class="settings-choice-card h-auto justify-start border p-3" :class="editIconTheme === 'black' ? 'dbx-choice-selected' : ''" @click="setIconTheme('black')">
                     <div class="flex items-center gap-3 text-left w-full min-w-0">
-                      <img src="/icon-preview-black.png" alt="ogdeveloper" class="h-12 w-12 shrink-0" />
+                      <img src="/icon-preview-black.png" alt="OG Developer" class="h-12 w-12 shrink-0" />
                       <TooltipProvider>
                         <Tooltip>
                           <TooltipTrigger as-child>
@@ -3535,23 +3493,6 @@ onUnmounted(() => {
                     </p>
                   </div>
                   <Switch id="auto-calculate-total-rows" v-model="editAutoCalculateTotalRows" />
-                </div>
-              </div>
-
-              <Separator />
-
-              <div class="space-y-2">
-                <div class="flex items-center gap-2">
-                  <Label>{{ t("settings.toolbarTitle") }}</Label>
-                  <HelpTooltip :label="t('settings.toolbarTitle')" content-class="max-w-64">
-                    <p>{{ t("settings.toolbarHiddenHint") }}</p>
-                  </HelpTooltip>
-                </div>
-                <div class="grid grid-cols-3 gap-2 mt-2">
-                  <div v-for="item in toolbarVisibilityItems" :key="item.key" class="flex items-center gap-2">
-                    <Switch :id="`toolbar-${item.key}`" :model-value="(editToolbarItems as any)[item.key]" @update:model-value="(v: boolean) => ((editToolbarItems as any)[item.key] = v)" />
-                    <Label :for="`toolbar-${item.key}`" class="text-sm cursor-pointer">{{ getToolbarVisibilityItemLabel(item) }}</Label>
-                  </div>
                 </div>
               </div>
             </section>
@@ -4084,10 +4025,6 @@ onUnmounted(() => {
                   </div>
                 </div>
               </div>
-            </section>
-
-            <section v-else-if="activeSettingsTab === 'backups'" data-settings-search-id="backups" class="py-2">
-              <ScheduledDatabaseBackupSettings />
             </section>
 
             <section v-else-if="activeSettingsTab === 'shortcuts'" data-settings-search-id="shortcuts" :class="['flex flex-col gap-2 py-2', settingsSearchTargetClass('shortcuts')]">
@@ -4712,15 +4649,11 @@ onUnmounted(() => {
               </div>
             </section>
 
-            <section v-else-if="activeSettingsTab === 'tunnels'" data-settings-search-id="tunnels" :class="['flex flex-col gap-5 py-2', settingsSearchTargetClass('tunnels')]">
-              <TunnelProfileManager />
-            </section>
-
             <section v-else-if="activeSettingsTab === 'about'" data-settings-search-id="about" :class="['py-2', settingsSearchTargetClass('about')]">
               <div class="flex flex-col items-center gap-4 py-6 text-center">
-                <img src="/logo.png" alt="ogdeveloper" class="h-20 w-20" />
+                <img src="/logo.png" alt="OG Developer" class="h-20 w-20" />
                 <div class="space-y-1">
-                  <div class="text-lg font-semibold">ogdeveloper</div>
+                  <div class="text-lg font-semibold">OG Developer</div>
                   <div v-if="appVersion" class="font-mono text-sm text-muted-foreground">v{{ appVersion }}</div>
                 </div>
                 <p class="max-w-sm text-sm leading-6 text-muted-foreground">

@@ -3,7 +3,7 @@ title: PL/SQL Development
 description: PL/SQL-aware statement splitting, A-compatibility types, source reconstruction, DBMS_OUTPUT / RAISE NOTICE capture, and compile-error line mapping.
 ---
 
-og developer invests in the openGauss dialect details that make PL/SQL work feel native. This page covers the openGauss-specific behavior on top of the regular [Query Editor](/en/docs/query-editor).
+OG Developer invests in the openGauss dialect details that make PL/SQL work feel native. This page covers the openGauss-specific behavior on top of the regular [Query Editor](/en/docs/query-editor).
 
 ## PL/SQL-Aware Statement Splitting
 
@@ -22,7 +22,7 @@ The openGauss dialect adds the A-mode (Oracle-compatible) types on top of the na
 For packages, package bodies, and synonyms, the source is rebuilt from the openGauss catalogs:
 
 - `gs_source` holds the original `CREATE` text and is preferred when present
-- `gs_package` stores a normalized form; og developer reconstructs executable DDL from it (spec, body, and body with an initialization section) as a fallback
+- `gs_package` stores a normalized form; OG Developer reconstructs executable DDL from it (spec, body, and body with an initialization section) as a fallback
 - Reconstructed DDL is executable — edit the source and run it again to recompile without leaving the editor
 
 ## DBMS_OUTPUT and RAISE NOTICE Messages
@@ -31,7 +31,7 @@ For packages, package bodies, and synonyms, the source is rebuilt from the openG
 
 ## Compile-Error Line Mapping
 
-openGauss reports compile errors with `LINE n` positions (and often the full query text). og developer maps those positions back to editor lines, so a failed `CREATE PACKAGE` points at the offending line instead of a wall of text.
+openGauss reports compile errors with `LINE n` positions (and often the full query text). OG Developer maps those positions back to editor lines, so a failed `CREATE PACKAGE` points at the offending line instead of a wall of text.
 
 ## openGauss Object Tree
 

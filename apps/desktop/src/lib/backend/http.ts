@@ -853,8 +853,75 @@ export interface ObjectReferenceInfo {
   detail?: string;
 }
 
+export interface InvalidObjectInfo {
+  schema: string;
+  name: string;
+  objectType: string;
+  errorLine?: number;
+  errorPosition?: number;
+  errorMessage?: string;
+  source?: string;
+}
+
+export interface RecompileObjectResult {
+  schema: string;
+  name: string;
+  objectType: string;
+  success: boolean;
+  error?: string;
+  elapsedMs: number;
+}
+
+export interface ProfilerStatus {
+  available: boolean;
+  installed: boolean;
+  message?: string;
+}
+
+export interface ProfilerLineData {
+  lineNumber: number;
+  totalOccur: number;
+  totalTimeUs: number;
+  minTimeUs: number;
+  maxTimeUs: number;
+  avgTimeUs: number;
+  percentage: number;
+}
+
+export interface ProfilerUnitSummary {
+  unitName: string;
+  unitType: string;
+  unitOwner: string;
+  totalTimeUs: number;
+  lines: ProfilerLineData[];
+}
+
+export interface ProfilerRunResult {
+  runId: number;
+  runComment: string;
+  totalTimeMs: number;
+  units: ProfilerUnitSummary[];
+  executionOutput?: string;
+}
+
 export async function listObjectReferences(connectionId: string, database: string, schema: string, objectType: string, name: string, direction: string): Promise<ObjectReferenceInfo[]> {
   return get(`/api/schema/object-references?${qs({ connection_id: connectionId, database, schema, object_type_name: objectType, name, direction })}`);
+}
+
+export async function listInvalidObjects(connectionId: string, database: string, schema?: string): Promise<InvalidObjectInfo[]> {
+  return get(`/api/schema/invalid-objects?${qs({ connection_id: connectionId, database, schema })}`);
+}
+
+export async function recompileObject(connectionId: string, database: string, schema: string, objectName: string, objectType: string): Promise<RecompileObjectResult> {
+  return post("/api/schema/recompile-object", { connection_id: connectionId, database, schema, object_name: objectName, object_type: objectType });
+}
+
+export async function opengaussProfilerStatus(connectionId: string, database: string): Promise<ProfilerStatus> {
+  return get(`/api/schema/opengauss-profiler-status?${qs({ connection_id: connectionId, database })}`);
+}
+
+export async function opengaussProfilerRun(connectionId: string, database: string, schema: string | undefined, callSql: string, comment: string): Promise<ProfilerRunResult> {
+  return post("/api/schema/opengauss-profiler-run", { connection_id: connectionId, database, schema, call_sql: callSql, comment });
 }
 
 export async function listDialectDataTypes(dialectName: string): Promise<string[]> {
@@ -1818,6 +1885,10 @@ export interface SqlFileEntry {
 
 export async function listSqlFilesInFolder(_folderPath: string): Promise<SqlFileEntry[]> {
   throw new Error("Listing SQL files in a folder is only available in the desktop app");
+}
+
+export async function listFilesInFolder(_folderPath: string): Promise<SqlFileEntry[]> {
+  throw new Error("Listing files in a folder is only available in the desktop app");
 }
 
 // ---------------------------------------------------------------------------
@@ -3340,3 +3411,5 @@ export async function opengaussDebugCallResult(sessionId: string): Promise<strin
 
 export * from "@/lib/backend/mq-http";
 export * from "@/lib/backend/mqtt-http";
+export * from "@/lib/backend/git-http";
+export type * from "@/types/git";

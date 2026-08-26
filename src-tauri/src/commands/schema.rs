@@ -579,3 +579,63 @@ pub async fn list_object_references(
     )
     .await
 }
+
+#[tauri::command]
+pub async fn list_invalid_objects(
+    state: State<'_, Arc<AppState>>,
+    connection_id: String,
+    database: String,
+    schema: Option<String>,
+) -> Result<Vec<dbx_core::opengauss_maintenance::InvalidObjectInfo>, String> {
+    dbx_core::opengauss_maintenance::list_invalid_objects_core(&state, &connection_id, &database, schema.as_deref())
+        .await
+}
+
+#[tauri::command]
+pub async fn recompile_object(
+    state: State<'_, Arc<AppState>>,
+    connection_id: String,
+    database: String,
+    schema: String,
+    object_name: String,
+    object_type: String,
+) -> Result<dbx_core::opengauss_maintenance::RecompileObjectResult, String> {
+    dbx_core::opengauss_maintenance::recompile_object_core(
+        &state,
+        &connection_id,
+        &database,
+        &schema,
+        &object_name,
+        &object_type,
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn opengauss_profiler_status(
+    state: State<'_, Arc<AppState>>,
+    connection_id: String,
+    database: String,
+) -> Result<dbx_core::opengauss_profiler::ProfilerStatus, String> {
+    dbx_core::opengauss_profiler::check_profiler_status_core(&state, &connection_id, &database).await
+}
+
+#[tauri::command]
+pub async fn opengauss_profiler_run(
+    state: State<'_, Arc<AppState>>,
+    connection_id: String,
+    database: String,
+    schema: Option<String>,
+    call_sql: String,
+    comment: String,
+) -> Result<dbx_core::opengauss_profiler::ProfilerRunResult, String> {
+    dbx_core::opengauss_profiler::run_profiler_core(
+        &state,
+        &connection_id,
+        &database,
+        schema.as_deref(),
+        &call_sql,
+        &comment,
+    )
+    .await
+}

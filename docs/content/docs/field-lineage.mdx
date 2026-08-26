@@ -3,7 +3,7 @@ title: Field Lineage
 description: Analyze upstream, downstream, and potential column impact from foreign keys, view definitions, query history, and matching names.
 ---
 
-Field lineage helps answer where a column comes from, where it is used, and what a change might affect. DBX combines database metadata with local query history and labels evidence strength instead of treating every matching name as a confirmed dependency.
+Field lineage helps answer where a column comes from, where it is used, and what a change might affect. OG Developer combines database metadata with local query history and labels evidence strength instead of treating every matching name as a confirmed dependency.
 
 ## Open Lineage
 
@@ -33,13 +33,13 @@ Lineage loads foreign keys, view source, and related metadata according to datab
 
 ## Query History as Evidence
 
-DBX uses executed queries as supporting evidence, including:
+OG Developer uses executed queries as supporting evidence, including:
 
 - Fields that appear together in a `JOIN`
 - Target columns referenced in `WHERE`, `SELECT`, or expressions
 - Historical repair or reporting SQL that uses a matching field
 
-History only represents SQL executed or saved in DBX. It does not cover all application code, ETL, BI, or other clients.
+History only represents SQL executed or saved in OG Developer. It does not cover all application code, ETL, BI, or other clients.
 
 <Callout type="warn">Query history can contain sensitive table names, predicates, and literals. Review privacy before demonstrating lineage, exporting logs, or sharing screenshots.</Callout>
 
@@ -71,7 +71,7 @@ Start with primary keys, business identifiers, user IDs, or time columns and fol
 ## Support and Boundaries
 
 - Lineage requires foreign keys, view source, or parseable query history, so coverage varies by database
-- Without declared foreign keys, DBX can only provide view, history, and same-name clues
+- Without declared foreign keys, OG Developer can only provide view, history, and same-name clues
 - Results are not a strongly consistent data-governance graph and do not include every application, message flow, ETL, or BI system
 - Deleting history or clearing local data reduces the query-history source
 - Use the [openGauss connection guide](/en/docs/opengauss) for the supported engine surface

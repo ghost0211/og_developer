@@ -1607,9 +1607,82 @@ export const useQueryStore = defineStore("query", () => {
     return id;
   }
 
+  function openCommandWindow(connectionId: string, database?: string, schema?: string) {
+    const conn = useConnectionStore().getConfig(connectionId);
+    const dbName = database || conn?.database || "postgres";
+    const title = `Command (${conn?.name || "openGauss"})`;
+    const existing = tabs.value.find((tab) => tab.mode === "command" && tab.connectionId === connectionId && tab.database === dbName);
+    if (existing) {
+      switchTab(existing.id);
+      return existing.id;
+    }
+
+    const id = uuid();
+    const tab: QueryTab = {
+      id,
+      title,
+      customTitle: true,
+      connectionId,
+      database: dbName,
+      schema,
+      sql: "",
+      isExecuting: false,
+      isCancelling: false,
+      isExplaining: false,
+      mode: "command",
+    };
+    tabs.value.push(tab);
+    activeTabId.value = id;
+    return id;
+  }
+
+  // 命令窗口内切换连接：同步标签的绑定信息与标题，CommandWindow 监听
+  // connectionId 变化后重新建立会话。
+  function retargetCommandTab(tabId: string, connectionId: string) {
+    const tab = tabs.value.find((candidate) => candidate.id === tabId && candidate.mode === "command");
+    const conn = useConnectionStore().getConfig(connectionId);
+    if (!tab || !conn) return;
+    tab.connectionId = connectionId;
+    tab.database = conn.database || "postgres";
+    tab.schema = undefined;
+    tab.title = `Command (${conn.name || "openGauss"})`;
+  }
+
+  // 命令窗口内切换数据库：仅更新标签绑定，会话由连接承载，数据库作为查询参数生效。
+  function setCommandTabDatabase(tabId: string, database: string) {
+    const tab = tabs.value.find((candidate) => candidate.id === tabId && candidate.mode === "command");
+    const trimmed = database.trim();
+    if (!tab || !trimmed) return;
+    tab.database = trimmed;
+  }
+
+  function openSettingsTab() {
+    const existing = tabs.value.find((tab) => tab.mode === "settings");
+    if (existing) {
+      switchTab(existing.id);
+      return existing.id;
+    }
+
+    const id = uuid();
+    const tab: QueryTab = {
+      id,
+      title: t("settings.title"),
+      customTitle: true,
+      connectionId: "",
+      database: "",
+      sql: "",
+      isExecuting: false,
+      isCancelling: false,
+      isExplaining: false,
+      mode: "settings",
+    };
+    tabs.value.push(tab);
+    activeTabId.value = id;
+    return id;
+  }
+
   function switchTab(tabId: string) {
     activeTabId.value = tabId;
-    settingsStore.settingsPageActive = false;
   }
 
   function openUserAdmin(connectionId: string) {
@@ -5550,6 +5623,10 @@ export const useQueryStore = defineStore("query", () => {
     openRoutineTest,
     openRoutineDebug,
     openProgramWindow,
+    openCommandWindow,
+    retargetCommandTab,
+    setCommandTabDatabase,
+    openSettingsTab,
     openMongoGridFs,
     openMongoBucket,
     openUserAdmin,

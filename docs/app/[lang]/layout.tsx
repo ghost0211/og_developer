@@ -4,19 +4,19 @@ import type { Metadata, Viewport } from "next";
 import { RootProvider } from "fumadocs-ui/provider/next";
 import { StaticSearchDialog } from "@/components/StaticSearchDialog";
 import { i18nUI } from "@/lib/i18n";
-import { buildMetadata, DEFAULT_DESCRIPTION, getHtmlLang, SITE_NAME, SITE_URL } from "@/lib/metadata";
+import { buildMetadata, DEFAULT_DESCRIPTION, DEFAULT_DESCRIPTION_EN, getHtmlLang, SITE_NAME, SITE_URL } from "@/lib/metadata";
 import { buildSiteStructuredData } from "@/lib/structuredData";
 
 const LOCALE_MAP: Record<string, { locale: string; title: string; description: string }> = {
   en: {
     locale: "en_US",
-    title: "og developer — an openGauss-specific database development tool",
-    description: DEFAULT_DESCRIPTION,
+    title: "OG Developer — an openGauss-specific database development tool",
+    description: DEFAULT_DESCRIPTION_EN,
   },
   cn: {
     locale: "zh_CN",
-    title: "og developer — openGauss 专用数据库开发工具",
-    description: "openGauss 专用数据库开发工具：官方 JDBC 驱动内嵌、PL/SQL 调试器、DBMS_OUTPUT / RAISE NOTICE 捕获、包/同义词对象树。基于 dbx（Apache-2.0）的深度定制 fork。",
+    title: "OG Developer — openGauss 专用数据库开发工具",
+    description: DEFAULT_DESCRIPTION,
   },
 };
 
@@ -60,7 +60,7 @@ export const viewport: Viewport = {
 export default async function LangLayout({ params, children }: { params: Promise<{ lang: string }>; children: ReactNode }) {
   const { lang } = await params;
   const locale = lang === "cn" ? "cn" : "en";
-  const siteStructuredData = buildSiteStructuredData();
+  const siteStructuredData = buildSiteStructuredData(locale);
 
   return (
     <html lang={getHtmlLang(locale)} suppressHydrationWarning>

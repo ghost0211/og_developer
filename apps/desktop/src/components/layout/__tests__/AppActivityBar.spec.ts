@@ -10,7 +10,7 @@ describe("AppActivityBar", () => {
     expect(activityBarSource).toContain("props.activePanels.includes(panelId)");
     expect(appSource).toContain("const activeActivityPanels = computed<ActivityPanelId[]>");
     expect(appSource).toContain(':active-panels="activeActivityPanels"');
-    expect(appSource).toContain('if (activeToolPanel.value === "sqlFile") panels.push("files")');
+    expect(appSource).toContain('if (activeToolPanel.value === "sqlFile") panels.push("sqlFiles")');
   });
 
   it("keeps connections on the left and renders the active tool after the editor", () => {
@@ -24,7 +24,7 @@ describe("AppActivityBar", () => {
 
   it("localizes and labels all activity buttons", () => {
     expect(activityBarSource).toContain("useI18n");
-    for (const key of ["connections", "projectFiles", "sqlLibrary", "history", "ai", "settings", "theme"]) {
+    for (const key of ["connections", "projectFiles", "sqlFiles", "sqlLibrary", "history", "ai", "settings", "theme"]) {
       expect(activityBarSource).toContain(`t('activityBar.${key}')`);
     }
     expect(activityBarSource).not.toContain("数据库连接 (Connections)");

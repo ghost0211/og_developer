@@ -650,6 +650,10 @@ export async function listSqlFilesInFolder(folderPath: string): Promise<SqlFileE
   return invoke("list_sql_files_in_folder", { folderPath });
 }
 
+export async function listFilesInFolder(folderPath: string): Promise<SqlFileEntry[]> {
+  return invoke("list_files_in_folder", { folderPath });
+}
+
 // --- AI Conversations ---
 
 export interface AiChatMessage {
@@ -1635,8 +1639,75 @@ export interface ObjectReferenceInfo {
   detail?: string;
 }
 
+export interface InvalidObjectInfo {
+  schema: string;
+  name: string;
+  objectType: string;
+  errorLine?: number;
+  errorPosition?: number;
+  errorMessage?: string;
+  source?: string;
+}
+
+export interface RecompileObjectResult {
+  schema: string;
+  name: string;
+  objectType: string;
+  success: boolean;
+  error?: string;
+  elapsedMs: number;
+}
+
+export interface ProfilerStatus {
+  available: boolean;
+  installed: boolean;
+  message?: string;
+}
+
+export interface ProfilerLineData {
+  lineNumber: number;
+  totalOccur: number;
+  totalTimeUs: number;
+  minTimeUs: number;
+  maxTimeUs: number;
+  avgTimeUs: number;
+  percentage: number;
+}
+
+export interface ProfilerUnitSummary {
+  unitName: string;
+  unitType: string;
+  unitOwner: string;
+  totalTimeUs: number;
+  lines: ProfilerLineData[];
+}
+
+export interface ProfilerRunResult {
+  runId: number;
+  runComment: string;
+  totalTimeMs: number;
+  units: ProfilerUnitSummary[];
+  executionOutput?: string;
+}
+
 export async function listObjectReferences(connectionId: string, database: string, schema: string, objectType: string, name: string, direction: string): Promise<ObjectReferenceInfo[]> {
   return invoke("list_object_references", { connectionId, database, schema, objectType, name, direction });
+}
+
+export async function listInvalidObjects(connectionId: string, database: string, schema?: string): Promise<InvalidObjectInfo[]> {
+  return invoke("list_invalid_objects", { connectionId, database, schema });
+}
+
+export async function recompileObject(connectionId: string, database: string, schema: string, objectName: string, objectType: string): Promise<RecompileObjectResult> {
+  return invoke("recompile_object", { connectionId, database, schema, objectName, objectType });
+}
+
+export async function opengaussProfilerStatus(connectionId: string, database: string): Promise<ProfilerStatus> {
+  return invoke("opengauss_profiler_status", { connectionId, database });
+}
+
+export async function opengaussProfilerRun(connectionId: string, database: string, schema: string | undefined, callSql: string, comment: string): Promise<ProfilerRunResult> {
+  return invoke("opengauss_profiler_run", { connectionId, database, schema, callSql, comment });
 }
 
 export async function saveConnections(configs: ConnectionConfig[]): Promise<void> {
@@ -3855,3 +3926,5 @@ export async function exportQueryResultMarkdown(filePath: string, columns: strin
 export * from "@/lib/backend/mq-tauri";
 export * from "@/lib/backend/mqtt-tauri";
 export * from "@/lib/backend/nacos-tauri";
+export * from "@/lib/backend/git-tauri";
+export type * from "@/types/git";

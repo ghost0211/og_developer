@@ -276,7 +276,7 @@ public final class DbxJdbcPlugin {
             ? null
             : trimmed;
         if (result != null && error instanceof SQLException) {
-            // og developer: pgJDBC/openGauss drivers report the failing PL/SQL
+            // OG Developer: pgJDBC/openGauss drivers report the failing PL/SQL
             // block position via ServerErrorMessage (loaded reflectively — the
             // plugin stays driver-agnostic). Synthesize psql-style LINE context
             // so the editor can mark the exact line.
@@ -545,7 +545,7 @@ public final class DbxJdbcPlugin {
         T get() throws SQLException;
     }
 
-    // ogdeveloper: the official openGauss JDBC driver changed its entry class
+    // OG Developer: the official openGauss JDBC driver changed its entry class
     // between releases (6.0 ships org.postgresql.Driver, 7.0 ships
     // org.opengauss.Driver). When the configured class is absent from the
     // selected jars, try the known alternatives, then ServiceLoader discovery.
@@ -581,7 +581,7 @@ public final class DbxJdbcPlugin {
                 registeredDriverKey = driverKey;
                 return;
             } catch (ClassNotFoundException missingConfigured) {
-                // ogdeveloper: the official openGauss JDBC driver changed its entry
+                // OG Developer: the official openGauss JDBC driver changed its entry
                 // class between releases (6.0 ships org.postgresql.Driver, 7.0 ships
                 // org.opengauss.Driver). When the configured class is absent from the
                 // selected jars, try the known alternatives, then ServiceLoader
@@ -858,7 +858,7 @@ public final class DbxJdbcPlugin {
         return false;
     }
 
-    // og developer: RAISE NOTICE (and similar server notices) surface as JDBC
+    // OG Developer: RAISE NOTICE (and similar server notices) surface as JDBC
     // statement warnings. Read them right after execution, before the next
     // statement on this connection clears them.
     private static void appendStatementWarnings(Statement statement, ArrayNode messages) {
@@ -876,7 +876,7 @@ public final class DbxJdbcPlugin {
     private record ExecutedStatement(ResultSet resultSet, int updateCount) {
     }
 
-    // og developer: gms_output/dbms_output buffer drain for openGauss. The
+    // OG Developer: gms_output/dbms_output buffer drain for openGauss. The
     // buffer is session-scoped, so enable runs right after opening the
     // connection and the drain right after the user's statement on the same
     // connection. enable() is idempotent and does not purge buffered lines.

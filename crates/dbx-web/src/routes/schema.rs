@@ -683,3 +683,83 @@ pub async fn list_available_extensions(
         .map_err(AppError::from)?;
     Ok(Json(serde_json::to_value(result).map_err(|e| AppError::from(e.to_string()))?))
 }
+
+#[derive(Deserialize)]
+pub struct RecompileObjectRequest {
+    pub connection_id: String,
+    pub database: String,
+    pub schema: String,
+    pub object_name: String,
+    pub object_type: String,
+}
+
+#[derive(Deserialize)]
+pub struct ProfilerRunRequest {
+    pub connection_id: String,
+    pub database: String,
+    pub schema: Option<String>,
+    pub call_sql: String,
+    #[serde(default)]
+    pub comment: String,
+}
+
+pub async fn list_invalid_objects(
+    State(state): State<Arc<WebState>>,
+    Query(q): Query<SchemaQuery>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let database = q.database.as_deref().unwrap_or("");
+    let result = dbx_core::opengauss_maintenance::list_invalid_objects_core(
+        &state.app,
+        &q.connection_id,
+        database,
+        q.schema.as_deref(),
+    )
+    .await
+    .map_err(AppError::from)?;
+    Ok(Json(serde_json::to_value(result).map_err(|e| AppError::from(e.to_string()))?))
+}
+
+pub async fn recompile_object(
+    State(state): State<Arc<WebState>>,
+    Json(req): Json<RecompileObjectRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let result = dbx_core::opengauss_maintenance::recompile_object_core(
+        &state.app,
+        &req.connection_id,
+        &req.database,
+        &req.schema,
+        &req.object_name,
+        &req.object_type,
+    )
+    .await
+    .map_err(AppError::from)?;
+    Ok(Json(serde_json::to_value(result).map_err(|e| AppError::from(e.to_string()))?))
+}
+
+pub async fn opengauss_profiler_status(
+    State(state): State<Arc<WebState>>,
+    Query(q): Query<SchemaQuery>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let database = q.database.as_deref().unwrap_or("");
+    let result = dbx_core::opengauss_profiler::check_profiler_status_core(&state.app, &q.connection_id, database)
+        .await
+        .map_err(AppError::from)?;
+    Ok(Json(serde_json::to_value(result).map_err(|e| AppError::from(e.to_string()))?))
+}
+
+pub async fn opengauss_profiler_run(
+    State(state): State<Arc<WebState>>,
+    Json(req): Json<ProfilerRunRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let result = dbx_core::opengauss_profiler::run_profiler_core(
+        &state.app,
+        &req.connection_id,
+        &req.database,
+        req.schema.as_deref(),
+        &req.call_sql,
+        &req.comment,
+    )
+    .await
+    .map_err(AppError::from)?;
+    Ok(Json(serde_json::to_value(result).map_err(|e| AppError::from(e.to_string()))?))
+}

@@ -1,12 +1,12 @@
 ---
 title: Build From Source and Contribute
-description: Set up DBX from scratch, run the desktop app, make your first change, test it, and open a pull request.
+description: Set up OG Developer from scratch, run the desktop app, make your first change, test it, and open a pull request.
 ---
 
-This tutorial is for first-time DBX contributors. By the end, you will have:
+This tutorial is for first-time OG Developer contributors. By the end, you will have:
 
 1. Installed Node.js, pnpm, Rust, and native build dependencies
-2. Forked, cloned, and run DBX Desktop
+2. Forked, cloned, and run OG Developer Desktop
 3. Located the relevant code and completed a small change
 4. Run checks and tests that match the change
 5. Pushed a branch and opened a pull request
@@ -17,7 +17,7 @@ This tutorial is for first-time DBX contributors. By the end, you will have:
 
 ## 1. Choose and Claim an Issue
 
-Open [og developer Issues](https://github.com/ghost0211/og_developer/issues) and choose an issue that has no assignee and no active contributor in its comments. Good first contributions have one of these properties:
+Open [OG Developer Issues](https://github.com/ghost0211/og_developer/issues) and choose an issue that has no assignee and no active contributor in its comments. Good first contributions have one of these properties:
 
 - The reproduction steps and expected behavior are already clear
 - The scope is a small documentation, translation, or UI change
@@ -37,7 +37,7 @@ If you later cannot continue, post `/unclaim` as a standalone comment (`/unclaim
 
 ## 2. Install the Toolchain
 
-DBX Desktop uses Tauri, Vue, and Rust. The repository currently requires:
+OG Developer Desktop uses Tauri, Vue, and Rust. The repository currently requires:
 
 | Tool | Version |
 | --- | --- |
@@ -75,7 +75,7 @@ cargo --version
 
 ### Install Native Dependencies
 
-See the [official Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for complete platform details. DBX also uses ODBC development libraries.
+See the [official Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for complete platform details. OG Developer also uses ODBC development libraries.
 
 <Tabs groupId="contributing-platform" items={["macOS", "Ubuntu / Debian", "Windows"]}>
   <Tab value="macOS">
@@ -141,7 +141,7 @@ git rebase upstream/main
 git push origin main
 ```
 
-## 4. Run DBX for the First Time
+## 4. Run OG Developer for the First Time
 
 ### macOS and Linux
 
@@ -159,7 +159,7 @@ For a lightweight desktop build, keep DuckDB sidecar support while skipping the 
 make dev-fast
 ```
 
-Development builds can run alongside an installed og developer instance. Both use the same local DBX data, so connections and history are available in each window. Avoid changing the same connection, saved SQL, or global setting in both windows at once.
+Development builds can run alongside an installed OG Developer instance. Both use the same local OG Developer data, so connections and history are available in each window. Avoid changing the same connection, saved SQL, or global setting in both windows at once.
 
 ### Windows
 
@@ -178,13 +178,13 @@ pnpm tauri dev -- --no-default-features --features duckdb-sidecar
 
 ### Confirm the Environment Works
 
-A successful run opens the DBX desktop window without a compiler error in the terminal. Complete three quick checks:
+A successful run opens the OG Developer desktop window without a compiler error in the terminal. Complete three quick checks:
 
 1. Open Settings
 2. Create or open a local test connection
 3. Close and start the app again to confirm the setup is repeatable
 
-If port `1420` is already in use, stop the previous DBX/Vite development process and restart.
+If port `1420` is already in use, stop the previous OG Developer/Vite development process and restart.
 
 ## Local database test environments
 
@@ -290,7 +290,7 @@ Database behavior changes should be verified against a real database, not only m
 
 ### Path D: Change an Agent Driver
 
-Agents are separate processes that communicate with DBX through stdin/stdout JSON-RPC. Java/JDBC agents normally use JDK 21; native agents use Go or Rust. Read these first:
+Agents are separate processes that communicate with OG Developer through stdin/stdout JSON-RPC. Java/JDBC agents normally use JDK 21; native agents use Go or Rust. Read these first:
 
 - [`agents/README.md`](https://github.com/ghost0211/og_developer/blob/main/agents/README.md)
 - [`agents/docs/agent-authoring.md`](https://github.com/ghost0211/og_developer/blob/main/agents/docs/agent-authoring.md)
@@ -311,7 +311,7 @@ The Shadow JAR is written under:
 agents/drivers/<driver-module>/build/libs/
 ```
 
-A successful build does not mean the local DBX app is using the new code. DBX runs `.dbx/agents/drivers/<db_type>/agent.jar` under the user home directory, so back up and replace the runtime JAR:
+A successful build does not mean the local OG Developer app is using the new code. OG Developer runs `.dbx/agents/drivers/<db_type>/agent.jar` under the user home directory, so back up and replace the runtime JAR:
 
 <Tabs groupId="agent-runtime-replace" items={["macOS / Linux", "Windows PowerShell"]}>
   <Tab value="macOS / Linux">
@@ -332,7 +332,7 @@ A successful build does not mean the local DBX app is using the new code. DBX ru
   </Tab>
 </Tabs>
 
-Restart DBX or disconnect and reconnect the database so the old agent process exits and the new JAR is loaded. Repeat the issue's reproduction flow against the real database version.
+Restart OG Developer or disconnect and reconnect the database so the old agent process exits and the new JAR is loaded. Repeat the issue's reproduction flow against the real database version.
 
 #### When to Change `agents/versions.json`
 

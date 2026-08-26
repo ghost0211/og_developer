@@ -5,7 +5,7 @@ description: 导出数据库连接配置（AES-256-GCM 加密），安全地在�
 
 <Callout type="info">导出你的数据库连接配置（含加密密码），用 AES-256-GCM 加密保护，安全地在不同电脑之间迁移。</Callout>
 
-<Callout type="warn">这里导出的是 DBX 连接配置，不包含业务数据库的表结构或数据，也不是数据库备份。数据库内容请使用 [数据库导出](/cn/docs/database-export) 或 [数据库备份](/cn/docs/database-backup)。</Callout>
+<Callout type="warn">这里导出的是 OG Developer 连接配置，不包含业务数据库的表结构或数据。数据库内容请使用[数据库导出](/cn/docs/database-export)。</Callout>
 
 ## 导出
 
@@ -28,7 +28,7 @@ description: 导出数据库连接配置（AES-256-GCM 加密），安全地在�
 - 密码使用 **AES-256-GCM** 加密，密钥通过 **PBKDF2** 派生
 - 没有密码短语无法解密文件
 - 导出文件是标准 JSON 格式，可以通过 U 盘、网盘等方式传输
-- DBX 会把普通连接字段与数据库密码、SSH 密码、SSH 密钥密码、完整连接字符串等密钥信息分开存储；导出时只会在加密文件中重新组合。
+- OG Developer 会把普通连接字段与数据库密码、SSH 密码、SSH 密钥密码、完整连接字符串等密钥信息分开存储；导出时只会在加密文件中重新组合。
 - 请把导出口令当作密钥管理。任何人同时拿到导出文件和口令，都可以恢复其中的连接。
 
 ## 向后兼容

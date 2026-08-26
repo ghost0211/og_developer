@@ -2,7 +2,7 @@
 import { computed, ref, watch, nextTick, onUnmounted } from "vue";
 import type { CSSProperties } from "vue";
 import { useI18n } from "vue-i18n";
-import { X, Pin, ChevronDown, Table2, Code2, TableProperties, PencilRuler, KeyRound, Pencil, Package, Lock, Copy, AlertTriangle, Network, Minimize2, Maximize2, CalendarClock, Activity, Gauge, ShieldCheck, TerminalSquare, Bug, FileCode } from "@lucide/vue";
+import { X, Pin, ChevronDown, Table2, Code2, TableProperties, PencilRuler, KeyRound, Pencil, Package, Lock, Copy, AlertTriangle, Network, Minimize2, Maximize2, CalendarClock, Activity, Gauge, ShieldCheck, Terminal, TerminalSquare, Bug, FileCode, Settings } from "@lucide/vue";
 import CustomContextMenu, { type ContextMenuItem } from "@/components/ui/CustomContextMenu.vue";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -444,6 +444,11 @@ function tabColorStyle(tab: QueryTab) {
 
 function tabIconClass(tab: QueryTab) {
   if (tab.mode === "mq") return "";
+  if (tab.mode === "command") return "text-emerald-500";
+  if (tab.mode === "routine-test") return "text-primary";
+  if (tab.mode === "routine-debug") return "text-amber-500";
+  if (tab.mode === "program-window") return "text-blue-500";
+  if (tab.mode === "settings") return "text-muted-foreground";
   if (tab.mode === "objects") return "text-amber-500 dark:text-amber-400";
   if (tab.mode === "data" || tab.mode === "mongo" || tab.mode === "vector" || tab.mode === "redis" || tab.mode === "hbase" || tab.mode === "structure") return "text-emerald-600 dark:text-emerald-400";
   return "text-blue-600 dark:text-blue-400";
@@ -482,6 +487,11 @@ function tabMenuIcon(tab: QueryTab) {
   if (tab.mode === "structure") return PencilRuler;
   if (tab.mode === "dameng-jobs") return CalendarClock;
   if (tab.mode === "processlist") return Activity;
+  if (tab.mode === "command") return Terminal;
+  if (tab.mode === "routine-test") return TerminalSquare;
+  if (tab.mode === "routine-debug") return Bug;
+  if (tab.mode === "program-window") return FileCode;
+  if (tab.mode === "settings") return Settings;
   if (tab.mode === "mysql-dashboard" || tab.mode === "postgres-dashboard" || tab.mode === "nacos-dashboard") return Gauge;
   return Code2;
 }
@@ -623,10 +633,12 @@ function onOverflowItemKeydown(event: KeyboardEvent, tabId: string, kind: "regul
                       <PencilRuler v-else-if="tab.mode === 'structure'" class="h-3.5 w-3.5" />
                       <CalendarClock v-else-if="tab.mode === 'dameng-jobs'" class="h-3.5 w-3.5" />
                       <Activity v-else-if="tab.mode === 'processlist'" class="h-3.5 w-3.5" />
+                      <Terminal v-else-if="tab.mode === 'command'" class="h-3.5 w-3.5 text-emerald-500" />
                       <TerminalSquare v-else-if="tab.mode === 'routine-test'" class="h-3.5 w-3.5 text-primary" />
                       <Bug v-else-if="tab.mode === 'routine-debug'" class="h-3.5 w-3.5 text-amber-500" />
                       <FileCode v-else-if="tab.mode === 'program-window'" class="h-3.5 w-3.5 text-blue-500" />
                       <Gauge v-else-if="tab.mode === 'mysql-dashboard' || tab.mode === 'postgres-dashboard' || tab.mode === 'nacos-dashboard'" class="h-3.5 w-3.5" />
+                      <Settings v-else-if="tab.mode === 'settings'" class="h-3.5 w-3.5 text-muted-foreground" />
                       <Code2 v-else class="h-3.5 w-3.5" />
                     </span>
                     <input
@@ -666,7 +678,7 @@ function onOverflowItemKeydown(event: KeyboardEvent, tabId: string, kind: "regul
             </div>
           </CustomContextMenu>
 
-          <!-- Settings open in a modal dialog from the application menu, never as a tab. -->
+          <!-- Settings is represented by a regular singleton tab. -->
 
           <!-- Driver Store Tab -->
           <CustomContextMenu v-if="driverStoreOpen" :items="getSpecialRegularTabMenuItems()" v-slot="{ onContextMenu }">
@@ -792,10 +804,12 @@ function onOverflowItemKeydown(event: KeyboardEvent, tabId: string, kind: "regul
                       <PencilRuler v-else-if="tab.mode === 'structure'" class="h-3.5 w-3.5" />
                       <CalendarClock v-else-if="tab.mode === 'dameng-jobs'" class="h-3.5 w-3.5" />
                       <Activity v-else-if="tab.mode === 'processlist'" class="h-3.5 w-3.5" />
+                      <Terminal v-else-if="tab.mode === 'command'" class="h-3.5 w-3.5 text-emerald-500" />
                       <TerminalSquare v-else-if="tab.mode === 'routine-test'" class="h-3.5 w-3.5 text-primary" />
                       <Bug v-else-if="tab.mode === 'routine-debug'" class="h-3.5 w-3.5 text-amber-500" />
                       <FileCode v-else-if="tab.mode === 'program-window'" class="h-3.5 w-3.5 text-blue-500" />
                       <Gauge v-else-if="tab.mode === 'mysql-dashboard' || tab.mode === 'postgres-dashboard' || tab.mode === 'nacos-dashboard'" class="h-3.5 w-3.5" />
+                      <Settings v-else-if="tab.mode === 'settings'" class="h-3.5 w-3.5 text-muted-foreground" />
                       <Code2 v-else class="h-3.5 w-3.5" />
                     </span>
                     <input

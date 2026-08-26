@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// og developer — modified from upstream dbx (https://github.com/t8y2/dbx,
+// OG Developer — modified from upstream dbx (https://github.com/t8y2/dbx,
 // Apache-2.0, Copyright (c) dbx contributors) for openGauss support:
 // sidebar object capabilities extended with SYNONYM / PACKAGE / PACKAGE_BODY.
 // See NOTICE for the full list of modifications.

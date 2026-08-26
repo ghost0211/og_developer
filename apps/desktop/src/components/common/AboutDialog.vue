@@ -19,9 +19,9 @@ defineProps<{
         <DialogTitle>{{ t("about.title") }}</DialogTitle>
       </DialogHeader>
       <div class="flex flex-col items-center gap-4 py-4 text-center">
-        <img src="/logo.png" alt="ogdeveloper" class="h-20 w-20" />
+        <img src="/logo.png" alt="OG Developer" class="h-20 w-20" />
         <div class="space-y-1">
-          <div class="text-lg font-semibold">ogdeveloper</div>
+          <div class="text-lg font-semibold">OG Developer</div>
           <div v-if="appVersion" class="font-mono text-sm text-muted-foreground">v{{ appVersion }}</div>
         </div>
         <p class="max-w-sm text-sm leading-6 text-muted-foreground">

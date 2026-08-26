@@ -2,7 +2,7 @@
 
 <div align="center">
 
-# og developer
+# OG Developer
 
 **专门为 openGauss 打造的现代化数据库开发工具 —— 桌面端（Tauri）+ Web 端**
 
@@ -16,7 +16,7 @@
 
 ---
 
-## 💡 为什么有 og developer？
+## 💡 为什么有 OG Developer？
 
 通用数据库客户端（如 DBeaver、Navicat 或原版 dbx）虽然连接类型繁多，但面对 openGauss 时往往存在水土不服：
 - 默认连接受限于 SHA-256 密码加密协议；
@@ -25,7 +25,7 @@
 - 缺乏对 `dbe_pldebugger` 图形化调试与 `DBMS_OUTPUT` 输出流的完整支持；
 - 过程与包体内部的引用依赖关系难以分析。
 
-**og developer 反其道而行** —— 将连接类型白名单裁剪为仅保留 openGauss，全力解决上述痛点，对标 PL/SQL Developer 与 Oracle SQL Developer 的开发体验，做最懂 openGauss 的专用开发工具。
+**OG Developer 反其道而行** —— 将连接类型白名单裁剪为仅保留 openGauss，全力解决上述痛点，对标 PL/SQL Developer 与 Oracle SQL Developer 的开发体验，做最懂 openGauss 的专用开发工具。
 
 ---
 
@@ -56,7 +56,22 @@
   - **被引用方 (Referenced By / Used By)**：结合 `pg_depend` 与全库 PL 源码快速扫描，一键找出所有调用/依赖当前表、视图或函数的外部过程与包体。
   - **双入口呈现**：侧边栏对象树（展开 `引用` / `被引用` 子节点）与程序窗口（底部 `依赖关系` 专属面板）。
 
-### 5. 🎯 例程图形化执行与测试 (Routine Test Panel)
+### 5. ⏱️ PL/SQL 逐行性能剖析器 (PL/SQL Profiler)
+- **底层基于 openGauss `gms_profiler` 扩展**：
+  - **行级热力图与耗时分布**：自动捕获存储过程或包体每行代码的实际执行次数（Count）、总耗时（Total Time）、平均耗时（Avg Time）、最小/最大耗时；
+  - **性能热点直观定位**：按耗时占比进行热力条形高亮（<10% 绿色、10-30% 蓝色、30-60% 黄色、>60% 红色），毫秒级定位性能瓶颈代码行。
+
+### 6. 🔴 无效对象批量重编译中心 (Recompile Invalid Objects)
+- **数据库对象改动后的一键自愈**：
+  - **全库失效对象快速扫描**：基于 `dbe_pldeveloper.gs_source`（`status = 'f'`）与 `dbe_pldeveloper.gs_errors`，一键拉出所有编译报错的过程、函数、包规范与包体；
+  - **批量/单项安全重编译**：支持一键「全部重编译」或「重编译选中项」，实时呈现编译进度与报错详情，支持一键在程序窗口定位修复。
+
+### 7. 💻 交互式命令窗口 (Command Window)
+- **融合 IDE 便捷性与终端沉浸感的交互窗口**：
+  - **openGauss 原生元命令全面支持**：支持 `\d`（表结构）、`\dt`（表清单）、`\df`（函数/过程）、`\dv`（视图）、`\dn`（模式）、`\di`（索引）、`\ds`（序列）、`\du`（用户与角色）、`\c <dbname>`（切换数据库）、`\timing`（耗时切换）、`clear`（清屏）、`\?` / `help`（帮助）；
+  - **SQL*Plus / 常用运维命令兼容**：支持 `DESC table`、`SHOW ERRORS`、`SHOW USER` 以及标准 SQL 与 PL/SQL 块执行。
+
+### 8. 🎯 例程图形化执行与测试 (Routine Test Panel)
 - **参数智能推导**：自动提取存储过程与函数的入参、出参（OUT / INOUT）与默认值。
 - **OUT 参数结果集回显**：存储过程返回的 OUT 字段自动转为网格与结构化结果展示。
 - **DBMS_OUTPUT 捕获**：执行后自动拉取 `gms_output.get_lines`，呈现服务器端打印日志。
@@ -91,7 +106,7 @@
 
 - 详细修改清单与署名记录见 [NOTICE](NOTICE)。
 - 完整保留 dbx 原始 Git 提交历史，保证署名可追溯。
-- 产品名为 **og developer**，不声称获得 dbx 项目的官方背书。
+- 产品名为 **OG Developer**，不声称获得 dbx 项目的官方背书。
 - 本仓库主分支为 `main`，上游变更通过 `upstream` 远程分支保持同步。
 
 ---

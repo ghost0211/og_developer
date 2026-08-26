@@ -521,7 +521,7 @@ function buildEtcdExportFile(entries: api.KvKeySummary[], prefix: string, revisi
 }
 
 function exportFileFilter(format: EtcdExportFormat) {
-  return format === "json" ? { name: "ogdeveloper etcd Bundle", extensions: ["json"] } : format === "csv" ? { name: "CSV Table", extensions: ["csv"] } : { name: "Markdown", extensions: ["md"] };
+  return format === "json" ? { name: "OG Developer etcd Bundle", extensions: ["json"] } : format === "csv" ? { name: "CSV Table", extensions: ["csv"] } : { name: "Markdown", extensions: ["md"] };
 }
 
 function exportMimeType(format: EtcdExportFormat): string {
@@ -596,7 +596,7 @@ async function exportEtcdNodeScope(connectionId: string, request: KvExportScopeR
 function validateBundle(input: unknown): EtcdBundle {
   const candidate = input as Partial<EtcdBundle>;
   if (candidate.format !== "dbx-etcd-bundle" || candidate.version !== 1 || !Array.isArray(candidate.entries)) {
-    throw new Error("Unsupported etcd bundle. Expected ogdeveloper etcd bundle v1.");
+    throw new Error("Unsupported etcd bundle. Expected OG Developer etcd bundle v1.");
   }
   for (const entry of candidate.entries) {
     if (!entry || !["utf8", "base64"].includes(entry.key?.encoding) || !["utf8", "base64"].includes(entry.value?.encoding) || typeof entry.key.data !== "string" || typeof entry.value.data !== "string") {

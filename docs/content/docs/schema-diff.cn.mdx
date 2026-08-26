@@ -3,7 +3,7 @@ title: Schema 与数据对比
 description: 对比数据库结构或表数据，审查差异、类型映射、影响范围和同步 SQL，再部署到目标环境。
 ---
 
-DBX 提供两类对比工作流：
+OG Developer 提供两类对比工作流：
 
 - **Schema 对比**比较对象结构和 DDL，生成从源环境部署到目标环境的脚本
 - **数据对比**按关键字段比较一张或多张表的行，生成可选择的插入、更新和删除同步 SQL
@@ -36,7 +36,7 @@ DBX 提供两类对比工作流：
   <Step>
     ### 比较并筛选对象
 
-    DBX 读取两端元数据和 DDL，构建对象树，标记新增、删除、修改和依赖关系。选择真正需要部署的对象。
+    OG Developer 读取两端元数据和 DDL，构建对象树，标记新增、删除、修改和依赖关系。选择真正需要部署的对象。
 
   </Step>
   <Step>
@@ -119,7 +119,7 @@ DBX 提供两类对比工作流：
 
 ## 方言语义
 
-DBX 会尽量保留数据库专属语义，而不是把所有 DDL 转成通用格式，例如：
+OG Developer 会尽量保留数据库专属语义，而不是把所有 DDL 转成通用格式，例如：
 
 - PostgreSQL / openGauss 等的 Schema、序列、Owner、Rule 和索引特性
 - MySQL 兼容数据库的字符集、排序规则、自增和索引语法
@@ -148,7 +148,7 @@ DBX 会尽量保留数据库专属语义，而不是把所有 DDL 转成通用�
   <Step>
     ### 执行比较
 
-    DBX 读取两端数据并标记源端新增、目标端多余和字段修改。批量模式显示当前表、进度和单表失败原因。
+    OG Developer 读取两端数据并标记源端新增、目标端多余和字段修改。批量模式显示当前表、进度和单表失败原因。
 
   </Step>
   <Step>
@@ -160,7 +160,7 @@ DBX 会尽量保留数据库专属语义，而不是把所有 DDL 转成通用�
   <Step>
     ### 生成并执行同步 SQL
 
-    DBX 为目标数据库生成 `INSERT`、`UPDATE` 和 `DELETE`。确认语句、数量和目标后再执行。
+    OG Developer 为目标数据库生成 `INSERT`、`UPDATE` 和 `DELETE`。确认语句、数量和目标后再执行。
 
   </Step>
 </Steps>
@@ -199,8 +199,8 @@ DBX 会尽量保留数据库专属语义，而不是把所有 DDL 转成通用�
   <Card title="编辑单表结构" href="/cn/docs/table-structure">
     可视化修改字段、索引、外键和触发器。
   </Card>
-  <Card title="备份数据库" href="/cn/docs/database-backup">
-    在执行高风险同步前创建手动或定时逻辑备份。
+  <Card title="导出数据库" href="/cn/docs/database-export">
+    在执行高风险同步前创建可审阅的 SQL 导出。
   </Card>
   <Card title="数据传输" href="/cn/docs/data-transfer">
     当目标是迁移整表数据而不是逐行对比时使用。

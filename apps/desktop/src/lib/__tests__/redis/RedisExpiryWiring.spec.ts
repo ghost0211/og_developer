@@ -7,12 +7,7 @@ const browserSource = readFileSync(new URL("../../../components/redis/RedisKeyBr
 const viewerSource = readFileSync(new URL("../../../components/redis/RedisValueViewer.vue", import.meta.url), "utf8");
 const localeSources = {
   en: readFileSync(new URL("../../../i18n/locales/en.ts", import.meta.url), "utf8"),
-  es: readFileSync(new URL("../../../i18n/locales/es.ts", import.meta.url), "utf8"),
-  it: readFileSync(new URL("../../../i18n/locales/it.ts", import.meta.url), "utf8"),
-  ja: readFileSync(new URL("../../../i18n/locales/ja.ts", import.meta.url), "utf8"),
-  "pt-BR": readFileSync(new URL("../../../i18n/locales/pt-BR.ts", import.meta.url), "utf8"),
   "zh-CN": readFileSync(new URL("../../../i18n/locales/zh-CN.ts", import.meta.url), "utf8"),
-  "zh-TW": readFileSync(new URL("../../../i18n/locales/zh-TW.ts", import.meta.url), "utf8"),
 };
 
 function findFunction(source: string, name: string): ts.FunctionDeclaration {
@@ -153,12 +148,7 @@ describe("Redis expiry mode wiring", () => {
   it("uses the positive-seconds TTL placeholder in both expiration editors", () => {
     const obsoletePlaceholders = {
       en: "empty = no expiry",
-      es: "vacío = sin expiración",
-      it: "vuoto = senza scadenza",
-      ja: "空 = 期限なし",
-      "pt-BR": "vazio = sem expiração",
       "zh-CN": "留空表示永不过期",
-      "zh-TW": "留空表示永不過期",
     };
 
     for (const [locale, source] of Object.entries(localeSources)) {

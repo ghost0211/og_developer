@@ -5202,6 +5202,16 @@ function scrollCursorIntoView() {
   });
 }
 
+function focusLine(lineNumber: number) {
+  if (!view.value || !editorViewModule || !editorIsActive || !Number.isFinite(lineNumber)) return;
+  const line = view.value.state.doc.line(Math.max(1, Math.min(view.value.state.doc.lines, Math.floor(lineNumber))));
+  view.value.dispatch({
+    selection: { anchor: line.from },
+    effects: editorViewModule.EditorView.scrollIntoView(line.from, { y: "center" }),
+  });
+  view.value.focus();
+}
+
 function closeHoverOnContextMenu() {
   if (!view.value || !hoverCloseEffect) return;
   view.value.dispatch({ effects: hoverCloseEffect });
@@ -5211,6 +5221,7 @@ defineExpose({
   openSearch,
   openReplace,
   scrollCursorIntoView,
+  focusLine,
   requestExecute,
   requestExecuteCurrent,
   requestExecuteInNewResultTab,

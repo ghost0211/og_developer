@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useI18n } from "vue-i18n";
-import { FilePlus2, Plus, History, Download, Database, Search, ShieldCheck, Sparkles } from "@lucide/vue";
+import { FilePlus2, Plus, History, Download, Database, Search, ShieldCheck } from "@lucide/vue";
 import DatabaseIcon from "@/components/icons/DatabaseIcon.vue";
 import TruncatedTextTooltip from "@/components/ui/TruncatedTextTooltip.vue";
 import { connectionDriverLabel, connectionIconType, connectionRedactedNameLabel, connectionRedactedOptionSubtitle } from "@/lib/connection/connectionPresentation";
@@ -16,7 +16,7 @@ export interface WelcomeSavedSqlHistoryItem {
 }
 
 defineProps<{
-  connectionStats: { total: number; connected: number; types: number };
+  connectionStats: { total: number; connected: number };
   recentConnections: ConnectionConfig[];
   savedSqlHistoryItems: WelcomeSavedSqlHistoryItem[];
   appVersion: string;
@@ -43,7 +43,7 @@ function welcomeConnectionSubtitle(connection: ConnectionConfig): string {
 <template>
   <div class="min-w-0 flex-1 overflow-x-hidden overflow-y-auto bg-background">
     <div class="welcome-content mx-auto flex min-h-full w-full min-w-0 max-w-5xl flex-col justify-center gap-6 px-8 py-10">
-      <div class="welcome-stats-grid grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-3">
+      <div class="welcome-stats-grid grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
         <div class="min-w-0 overflow-hidden rounded-lg border bg-muted/20 px-4 py-3">
           <div class="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
             <Database class="h-3.5 w-3.5 shrink-0" /> <span class="min-w-0 truncate">{{ t("welcome.connections") }}</span>
@@ -55,12 +55,6 @@ function welcomeConnectionSubtitle(connection: ConnectionConfig): string {
             <ShieldCheck class="h-3.5 w-3.5 shrink-0" /> <span class="min-w-0 truncate">{{ t("welcome.connected") }}</span>
           </div>
           <div class="mt-2 text-2xl font-semibold">{{ connectionStats.connected }}</div>
-        </div>
-        <div class="min-w-0 overflow-hidden rounded-lg border bg-muted/20 px-4 py-3">
-          <div class="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
-            <Sparkles class="h-3.5 w-3.5 shrink-0" /> <span class="min-w-0 truncate">{{ t("welcome.databaseTypes") }}</span>
-          </div>
-          <div class="mt-2 text-2xl font-semibold">{{ connectionStats.types }}</div>
         </div>
       </div>
 
@@ -138,7 +132,7 @@ function welcomeConnectionSubtitle(connection: ConnectionConfig): string {
 
       <!-- Project Info -->
       <div class="mt-2 flex items-center justify-center gap-3 text-[11px] text-muted-foreground/60">
-        <span>ogdeveloper {{ appVersion ? "v" + appVersion : "" }}</span>
+        <span>OG Developer {{ appVersion ? "v" + appVersion : "" }}</span>
         <span>·</span>
         <a href="#" class="hover:text-foreground transition-colors" @click.prevent="emit('open-about')">{{ t("about.title") }}</a>
       </div>
@@ -153,7 +147,7 @@ function welcomeConnectionSubtitle(connection: ConnectionConfig): string {
 
 @media (min-width: 640px) {
   .welcome-stats-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
 }
 

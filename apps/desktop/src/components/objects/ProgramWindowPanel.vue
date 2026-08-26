@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import { AlertCircle, Braces, Bug, CheckCircle2, Code2, Copy, ExternalLink, Eye, FileCode, GitCompare, Layers, Loader2, Network, Package, Play, RefreshCw, RotateCcw, Sparkles, Table2, TerminalSquare, X } from "@lucide/vue";
+import { AlertCircle, Braces, Bug, CheckCircle2, Code2, Copy, ExternalLink, Eye, FileCode, Gauge, GitCompare, Layers, Loader2, Network, Package, Play, RefreshCw, RotateCcw, Sparkles, Table2, TerminalSquare, X } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
 import { Splitpanes, Pane } from "splitpanes";
 import "splitpanes/dist/splitpanes.css";
@@ -18,6 +18,7 @@ import { copyToClipboard } from "@/lib/common/clipboard";
 import { formatSqlForDisplay, sqlFormatDialectForDbType, type SqlFormatDialect } from "@/lib/sql/sqlFormatter";
 import { codeMirrorSqlDialect, effectiveDatabaseTypeForConnection } from "@/lib/database/jdbcDialect";
 import { buildEditableObjectSource, buildExecutableObjectSourceStatements, executeObjectSourceSave, formatObjectSourceSaveError } from "@/lib/table/objectSourceEditor";
+import { buildOpenGaussRoutineExecutionSql } from "@/lib/table/routineExecutionSql";
 import { loadObjectSourceWithRoutineFallback } from "@/lib/table/objectSourceLoad";
 import { parseSqlErrorLocation, type SqlErrorLocation } from "@/lib/sql/sqlDiagnostics";
 import { executeWithProductionSqlGuard } from "@/lib/database/productionExecutionGuard";
@@ -72,8 +73,13 @@ const packageSourcesLoaded = ref(false);
 
 // Bottom Splitpanes & Compilation Panel
 const showBottomPanel = ref(false);
-const bottomTab = ref<"errors" | "logs" | "diff" | "dependencies">("errors");
+const bottomTab = ref<"errors" | "logs" | "diff" | "dependencies" | "profiler">("errors");
 const splitpanesSize = ref(70);
+
+// Profiler state
+const profilerLoading = ref(false);
+const profilerResult = ref<api.ProfilerRunResult | null>(null);
+const profilerCallSql = ref("");
 
 // Dependencies state
 type ObjectReferenceInfo = Awaited<ReturnType<typeof api.listObjectReferences>>[number];
@@ -93,6 +99,7 @@ const compileErrors = ref<ParsedCompileError[]>([]);
 const compileLogs = ref<{ timestamp: string; level: "info" | "success" | "error"; text: string }[]>([]);
 
 // Editor state
+const editorRef = ref<InstanceType<typeof QueryEditor> | null>(null);
 let loadSerial = 0;
 
 // Database Dialects
@@ -439,6 +446,11 @@ function jumpToError(_err: ParsedCompileError) {
   // Jump editor to line
 }
 
+function jumpToLine(lineNumber: number) {
+  if (!Number.isFinite(lineNumber) || lineNumber < 1) return;
+  editorRef.value?.focusLine(Math.floor(lineNumber));
+}
+
 // Simple line-by-line diff
 interface DiffLine {
   type: "added" | "removed" | "same";
@@ -471,6 +483,56 @@ const diffLines = computed<DiffLine[]>(() => {
 });
 
 const isRoutine = computed(() => props.objectType === "PROCEDURE" || props.objectType === "FUNCTION" || resolvedObjectType.value === "PROCEDURE" || resolvedObjectType.value === "FUNCTION");
+
+// --- Profiler ---
+function routineRequiresProfilerArguments(): boolean {
+  const signature = props.signature?.trim() || "";
+  return signature.replace(/[()]/g, "").trim().length > 0;
+}
+
+function defaultProfilerCallSql(): string {
+  if (routineRequiresProfilerArguments()) return "";
+  return buildOpenGaussRoutineExecutionSql({
+    databaseType: resolvedDatabaseType.value,
+    schema: props.schema,
+    routineName: props.name,
+    parameters: [],
+    isFunction: resolvedObjectType.value === "FUNCTION",
+    functionReturn: null,
+  });
+}
+
+async function runProfiler() {
+  if (!props.connectionId || !props.database) return;
+  profilerLoading.value = true;
+  showBottomPanel.value = true;
+  bottomTab.value = "profiler";
+  try {
+    const callSql = profilerCallSql.value.trim() || defaultProfilerCallSql();
+    if (!callSql) {
+      toast("当前例程需要参数，请先填写要剖析的调用 SQL", 3500);
+      return;
+    }
+    const status = await api.opengaussProfilerStatus(props.connectionId, props.database);
+    if (!status.installed) {
+      toast(status.message || "gms_profiler 扩展未安装", 3500);
+      return;
+    }
+    const res = await api.opengaussProfilerRun(props.connectionId, props.database, props.schema, callSql, `Profile: ${props.name}`);
+    profilerResult.value = res;
+    toast(`性能剖析完成: 总耗时 ${Math.round(res.totalTimeMs)}ms`, 2000);
+  } catch (e: any) {
+    toast(`性能剖析提示: ${e?.message || String(e)}`, 3500);
+  } finally {
+    profilerLoading.value = false;
+  }
+}
+
+function formatUs(us: number): string {
+  if (us >= 1_000_000) return `${(us / 1_000_000).toFixed(2)} s`;
+  if (us >= 1_000) return `${(us / 1_000).toFixed(2)} ms`;
+  return `${us.toFixed(1)} µs`;
+}
 
 // --- Dependencies ---
 async function loadDependencies() {
@@ -544,6 +606,8 @@ function iconForType(type: string) {
 watch(
   () => [props.connectionId, props.database, props.catalog, props.schema, props.name, props.objectType] as const,
   () => {
+    profilerCallSql.value = "";
+    profilerResult.value = null;
     void loadSource();
   },
   { immediate: true },
@@ -574,6 +638,13 @@ watch(
         <Button v-if="isRoutine && isOpenGaussRoutine" variant="outline" size="sm" class="h-7 gap-1.5 px-2.5 font-medium hover:bg-muted" :title="'启动 PL/SQL 调试器 (F9)'" @click="openDebugWindow">
           <Bug class="h-3.5 w-3.5 text-amber-500" />
           <span>调试</span>
+        </Button>
+
+        <!-- Profiler (For openGauss Routines) -->
+        <Button v-if="isRoutine && isOpenGaussRoutine" variant="outline" size="sm" class="h-7 gap-1.5 px-2.5 font-medium hover:bg-muted" :disabled="profilerLoading || loading" :title="'逐行性能分析 (gms_profiler)'" @click="runProfiler">
+          <Loader2 v-if="profilerLoading" class="h-3.5 w-3.5 animate-spin text-purple-500" />
+          <Gauge v-else class="h-3.5 w-3.5 text-purple-500" />
+          <span>性能剖析</span>
         </Button>
 
         <div class="mx-1 h-4 w-px bg-border" />
@@ -706,6 +777,7 @@ watch(
 
           <QueryEditor
             v-else
+            ref="editorRef"
             v-model="currentActiveDraft"
             class="min-h-0 flex-1"
             :connection-id="props.connectionId"
@@ -746,6 +818,12 @@ watch(
                   <span v-if="referencesList.length + referencedByList.length > 0" class="ml-1.5 rounded-full bg-muted px-1.5 py-0.2 text-[10px] font-mono">
                     {{ referencesList.length + referencedByList.length }}
                   </span>
+                </TabsTrigger>
+
+                <!-- Profiler Tab -->
+                <TabsTrigger value="profiler" class="h-7 px-3 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm">
+                  <span>性能剖析 (Profiler)</span>
+                  <span v-if="profilerResult" class="ml-1.5 rounded-full bg-purple-500/10 text-purple-600 px-1.5 py-0.2 text-[10px] font-mono font-medium"> {{ Math.round(profilerResult.totalTimeMs) }}ms </span>
                 </TabsTrigger>
 
                 <!-- Compile Logs Tab -->
@@ -903,6 +981,91 @@ watch(
                       </div>
                     </div>
                   </div>
+                </div>
+              </div>
+            </TabsContent>
+
+            <!-- Tab 5: Profiler -->
+            <TabsContent value="profiler" class="m-0 flex-1 min-h-0 overflow-auto p-3 text-xs bg-background">
+              <div v-if="profilerLoading" class="flex h-full items-center justify-center text-muted-foreground gap-2">
+                <Loader2 class="h-5 w-5 animate-spin text-purple-500" />
+                <span>正在执行 gms_profiler 逐行剖析中...</span>
+              </div>
+
+              <div v-else-if="!profilerResult" class="flex flex-col h-full items-center justify-center p-8 gap-3 text-muted-foreground text-center">
+                <Gauge class="h-10 w-10 text-purple-500/80" />
+                <span class="font-semibold text-foreground text-sm">openGauss PL/SQL 逐行性能剖析器 (gms_profiler)</span>
+                <span class="text-xs max-w-md">在数据库内捕获存储过程或包体每行代码的实际执行次数、总耗时、平均耗时与热点占比，定位性能瓶颈。</span>
+                <textarea v-model="profilerCallSql" class="min-h-16 w-full max-w-xl resize-y rounded border bg-background px-2 py-1.5 text-left font-mono text-[11px] text-foreground outline-none focus:border-ring" :placeholder="defaultProfilerCallSql()" aria-label="性能剖析目标调用 SQL" />
+                <span class="max-w-xl text-[10px] text-muted-foreground">默认调用仅适用于无参例程；有必填参数时，请在上方调用 SQL 中补充参数。</span>
+                <Button size="sm" class="h-7 gap-1.5 bg-purple-600 hover:bg-purple-700 text-white font-medium shadow-sm" @click="runProfiler">
+                  <Play class="h-3 w-3 fill-current" />
+                  <span>启动性能剖析</span>
+                </Button>
+              </div>
+
+              <div v-else class="flex flex-col h-full gap-3">
+                <textarea v-model="profilerCallSql" class="min-h-14 w-full shrink-0 resize-y rounded border bg-background px-2 py-1.5 font-mono text-[11px] text-foreground outline-none focus:border-ring" :placeholder="defaultProfilerCallSql()" aria-label="性能剖析目标调用 SQL" />
+                <!-- Summary Strip -->
+                <div class="flex items-center justify-between p-2.5 rounded-md border bg-purple-500/5 border-purple-500/20 shrink-0">
+                  <div class="flex items-center gap-3">
+                    <Gauge class="h-4 w-4 text-purple-600 dark:text-purple-400" />
+                    <div>
+                      <span class="font-bold text-xs text-foreground">{{ profilerResult.runComment }}</span>
+                      <span class="text-muted-foreground text-[11px] ml-2">(Run #{{ profilerResult.runId }})</span>
+                    </div>
+                    <Badge variant="outline" class="font-mono text-[10px] border-purple-500/40 text-purple-600"> 总耗时: {{ profilerResult.totalTimeMs.toFixed(1) }} ms </Badge>
+                  </div>
+                  <Button variant="outline" size="sm" class="h-6 gap-1 px-2 text-xs" @click="runProfiler">
+                    <RotateCcw class="h-3 w-3 text-purple-500" />
+                    <span>重新剖析</span>
+                  </Button>
+                </div>
+
+                <!-- Units and Lines Table -->
+                <div class="flex-1 min-h-0 overflow-auto border rounded-md">
+                  <table class="w-full text-left text-xs border-collapse font-sans">
+                    <thead class="sticky top-0 bg-muted/90 backdrop-blur z-10 border-b text-muted-foreground font-medium select-none">
+                      <tr>
+                        <th class="py-2 px-3 w-[70px]">行号</th>
+                        <th class="py-2 px-3 w-[90px]">执行次数</th>
+                        <th class="py-2 px-3 w-[110px]">总耗时</th>
+                        <th class="py-2 px-3 w-[110px]">平均耗时</th>
+                        <th class="py-2 px-3 w-[130px]">最小/最大耗时</th>
+                        <th class="py-2 px-3">耗时占比 (Heatmap)</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y font-mono">
+                      <template v-for="unit in profilerResult.units" :key="unit.unitName">
+                        <tr class="bg-muted/40 font-bold font-sans text-[11px] text-foreground select-none">
+                          <td colspan="6" class="py-1.5 px-3">
+                            <span class="text-purple-600 mr-2">[{{ unit.unitType }}]</span>
+                            <span>{{ unit.unitOwner }}.{{ unit.unitName }}</span>
+                          </td>
+                        </tr>
+                        <tr
+                          v-for="line in unit.lines"
+                          :key="line.lineNumber"
+                          class="hover:bg-muted/30 transition-colors"
+                          :class="[line.percentage >= 60 ? 'bg-red-500/15 text-red-700 dark:text-red-300 font-semibold' : line.percentage >= 30 ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300' : line.percentage >= 10 ? 'bg-sky-500/10' : '']"
+                        >
+                          <td class="py-1.5 px-3 font-bold underline cursor-pointer" @click="jumpToLine(line.lineNumber)">Line {{ line.lineNumber }}</td>
+                          <td class="py-1.5 px-3 tabular-nums">{{ line.totalOccur }}</td>
+                          <td class="py-1.5 px-3 tabular-nums font-semibold">{{ formatUs(line.totalTimeUs) }}</td>
+                          <td class="py-1.5 px-3 tabular-nums text-muted-foreground">{{ formatUs(line.avgTimeUs) }}</td>
+                          <td class="py-1.5 px-3 tabular-nums text-muted-foreground text-[10px]">{{ formatUs(line.minTimeUs) }} / {{ formatUs(line.maxTimeUs) }}</td>
+                          <td class="py-1.5 px-3">
+                            <div class="flex items-center gap-2">
+                              <div class="flex-1 h-2 rounded-full bg-muted overflow-hidden max-w-[200px]">
+                                <div class="h-full rounded-full transition-all" :class="[line.percentage >= 60 ? 'bg-red-500' : line.percentage >= 30 ? 'bg-amber-500' : line.percentage >= 10 ? 'bg-sky-500' : 'bg-emerald-500']" :style="{ width: `${Math.min(100, Math.max(2, line.percentage))}%` }" />
+                              </div>
+                              <span class="text-[11px] tabular-nums font-bold">{{ line.percentage }}%</span>
+                            </div>
+                          </td>
+                        </tr>
+                      </template>
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </TabsContent>

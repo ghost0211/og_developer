@@ -10,6 +10,7 @@ const showDataCompareDialog = ref(false);
 const showSqlFileDialog = ref(false);
 const showDiagramDialog = ref(false);
 const showTableImportDialog = ref(false);
+const showInvalidObjectsDialog = ref(false);
 const showTableDataGenerateDialog = ref(false);
 const showFieldLineageDialog = ref(false);
 const showDatabaseSearchDialog = ref(false);
@@ -348,6 +349,7 @@ export function useDialogSources() {
     showSqlFileDialog,
     showDiagramDialog,
     showTableImportDialog,
+    showInvalidObjectsDialog,
     showTableDataGenerateDialog,
     showFieldLineageDialog,
     showDatabaseSearchDialog,

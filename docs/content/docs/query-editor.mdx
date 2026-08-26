@@ -1,9 +1,9 @@
 ---
 title: Query Editor
-description: Write, understand, parameterize, execute, analyze, and reuse SQL in DBX.
+description: Write, understand, parameterize, execute, analyze, and reuse SQL in OG Developer.
 ---
 
-The query editor is the SQL workspace in DBX. It combines dialect-aware highlighting and completion, semantic diagnostics, parameter input, execution progress, multiple results, execution plans, query history, the SQL library, and AI assistance in one tab.
+The query editor is the SQL workspace in OG Developer. It combines dialect-aware highlighting and completion, semantic diagnostics, parameter input, execution progress, multiple results, execution plans, query history, the SQL library, and AI assistance in one tab.
 
 ## Basic Workflow
 
@@ -48,7 +48,7 @@ The query editor is the SQL workspace in DBX. It combines dialect-aware highligh
 | Execute in a new result | `Cmd+\` | `Ctrl+\` |
 | Stop execution | Click the execution button after it changes to Stop | Click the execution button after it changes to Stop |
 
-When text is selected, DBX prioritizes the selection. Otherwise, the current-statement and execution-target settings determine the scope. Shortcuts can be changed under [Keyboard Shortcuts](/en/docs/keyboard-shortcuts).
+When text is selected, OG Developer prioritizes the selection. Otherwise, the current-statement and execution-target settings determine the scope. Shortcuts can be changed under [Keyboard Shortcuts](/en/docs/keyboard-shortcuts).
 
 Normal execution updates the active result. **Execute in a new result** preserves older results for comparison. Results can use horizontal tabs or a list view, and repeated executions can retain run history or pin important results.
 
@@ -81,7 +81,7 @@ Completion uses the active database dialect and metadata to suggest:
 
 Semantic diagnostics flag selected unresolved tables, columns, aliases, and SQL structures. They help catch mistakes early but do not guarantee that vendor extensions will be accepted or rejected; the server result remains authoritative.
 
-<Callout type="info">Refresh connection metadata after creating or changing objects. DBX caches and lazy-loads table structure to reduce repeated requests in large schemas.</Callout>
+<Callout type="info">Refresh connection metadata after creating or changing objects. OG Developer caches and lazy-loads table structure to reduce repeated requests in large schemas.</Callout>
 
 ## Table and Object Navigation
 
@@ -94,7 +94,7 @@ Navigation depends on SQL parsing and current metadata. Dynamic SQL, ambiguous n
 
 ## SQL Parameters and Variables
 
-Before execution, DBX can recognize common placeholders and open a parameter-input dialog:
+Before execution, OG Developer can recognize common placeholders and open a parameter-input dialog:
 
 | Syntax | Example |
 | --- | --- |
@@ -145,7 +145,7 @@ Query history stores executed SQL per connection with time and context. You can:
 
 | Method | Best for | Platform boundary |
 | --- | --- | --- |
-| SQL Library | Saving and searching reusable queries in folders inside DBX | Full local SQL Library management is available on Desktop; cloud-sync scope depends on settings |
+| SQL Library | Saving and searching reusable queries in folders inside OG Developer | Full local SQL Library management is available on Desktop; cloud-sync scope depends on settings |
 | External SQL Files | Sharing `.sql` files with a repository, script directory, or editor | Local file open/save and the file tree are Desktop capabilities |
 | Query tabs | Temporary analysis and unfinished drafts | Settings can restore all tabs, pinned tabs only, or none |
 

@@ -319,11 +319,10 @@ const { copyStructureAs, copyStructureDocText, copyStructurePreview, exportData,
   acceptedSelectionIds: () => acceptedSelectionIds,
 });
 
-const { openAllDatabasesExport, openDataCompare, openDatabaseExport, openDatabaseSearch, openDiagram, openFieldLineage, openScheduledBackups, openSchemaDiff, openSqlFileExecution, openStructureEditor, openTableImport, openTransfer } = useSidebarTreeToolRuntime({
+const { openAllDatabasesExport, openDataCompare, openDatabaseExport, openDatabaseSearch, openDiagram, openFieldLineage, openSchemaDiff, openSqlFileExecution, openStructureEditor, openTableImport, openTransfer } = useSidebarTreeToolRuntime({
   activeNode,
   connectionStore,
   queryStore,
-  settingsStore,
   tableChildObjectName: tableChildDropObjectName,
 });
 
@@ -4168,9 +4167,6 @@ function buildConnectionSidebarMenu(context: SidebarMenuFactoryContext): boolean
     }
     if (canExportAllDatabases.value) {
       items.push({ label: t("contextMenu.exportAllDatabases"), action: openAllDatabasesExport, icon: Upload });
-      if (isTauriRuntime()) {
-        items.push({ label: t("databaseBackup.title"), action: openScheduledBackups, icon: CalendarClock });
-      }
     }
     if (canCreateDatabase.value) {
       items.push({
@@ -4723,7 +4719,7 @@ function buildObjectSidebarMenu(context: SidebarMenuFactoryContext): boolean {
 
   // 8. Procedure / Function / Package
   if (node.type === "procedure" || node.type === "function") {
-    // ogdeveloper: graphical invocation for both procedures and functions.
+    // OG Developer: graphical invocation for both procedures and functions.
     items.push({ label: t("contextMenu.executeProcedure"), action: openProcedureExecution, icon: Play });
     const config = node.connectionId ? connectionStore.getConfig(node.connectionId) : undefined;
     const dbType = config ? effectiveDatabaseTypeForConnection(config) : undefined;

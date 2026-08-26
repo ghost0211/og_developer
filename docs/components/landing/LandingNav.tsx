@@ -74,7 +74,7 @@ export function LandingNav({ lang, active }: { lang: "en" | "cn"; active?: "home
       <div className="landing-nav-inner flex items-center justify-between max-w-[1180px] h-16 mx-auto px-7 max-[760px]:min-h-[60px] max-[760px]:h-auto max-[760px]:px-[18px] max-[760px]:py-2">
         <Link href={`/${lang}`} className="landing-nav-brand flex min-h-11 items-center gap-2.5 text-landing-ink text-2xl font-[820]" onClick={() => setMenuOpen(false)}>
           <img src="/logo.png" alt="" aria-hidden="true" width={28} height={28} />
-          <span>og developer</span>
+          <span>OG Developer</span>
         </Link>
         <div className="flex items-center gap-1">
           {navItems.map((item) => (

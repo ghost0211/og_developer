@@ -3,7 +3,7 @@ title: SQL Formatting
 description: Format a selection or the full editor with database-aware syntax, then manage the current formatter options and JSON config.
 ---
 
-DBX chooses a formatter dialect from the active connection and writes the result back to the query editor. When text is selected, only that range is formatted; otherwise DBX formats the entire editor.
+OG Developer chooses a formatter dialect from the active connection and writes the result back to the query editor. When text is selected, only that range is formatted; otherwise OG Developer formats the entire editor.
 
 Use the **Format SQL** toolbar button or the configurable formatting command documented under [Keyboard Shortcuts](/en/docs/keyboard-shortcuts).
 
@@ -13,7 +13,7 @@ Use the **Format SQL** toolbar button or the configurable formatting command doc
 
 ## Dialect Selection
 
-DBX currently uses dedicated formatter grammars for:
+OG Developer currently uses dedicated formatter grammars for:
 
 | Connection type | Formatter dialect |
 | --- | --- |
@@ -43,7 +43,7 @@ Open **Settings → SQL Formatter**. Form mode exposes:
 | Newline before semicolon | Places a statement-ending semicolon on a new line |
 | Parameter types | Recognizes positional, numbered, named, quoted, or custom-regex parameters |
 
-**Restore Defaults** restores the formatter settings defined by the current DBX build. Click **Apply** in the settings dialog to persist changes.
+**Restore Defaults** restores the formatter settings defined by the current OG Developer build. Click **Apply** in the settings dialog to persist changes.
 
 ## JSON Mode and Import / Export
 
@@ -71,7 +71,7 @@ JSON mode is useful for exact editing, copying, or moving formatter settings. Th
 }
 ```
 
-The JSON editor validates the draft continuously. DBX blocks apply or import when:
+The JSON editor validates the draft continuously. OG Developer blocks apply or import when:
 
 - the text is not valid JSON;
 - `version` is not `1`;
@@ -79,7 +79,7 @@ The JSON editor validates the draft continuously. DBX blocks apply or import whe
 - `options` contains an unknown field; or
 - a value is outside the range accepted by the current build.
 
-**Export Config** downloads `dbx-sql-formatter.json`. Import replaces only SQL formatter options; it does not change connections, editor shortcuts, or other DBX settings.
+**Export Config** downloads `dbx-sql-formatter.json`. Import replaces only SQL formatter options; it does not change connections, editor shortcuts, or other OG Developer settings.
 
 ## Parameter Recognition
 
@@ -101,7 +101,7 @@ Set `paramTypes` to `null` to use the formatter defaults. Configure additional p
 - `named` and `quoted` accept only `:`, `@`, and `$`.
 - Each `custom` item may contain only a non-empty, valid `regex`.
 
-DBX always adds recognition for `${name}` and `#{name}` variables so those templates do not cause formatter parse failures. A non-null legacy `params` option is no longer used for text substitution; configure `paramTypes` instead.
+OG Developer always adds recognition for `${name}` and `#{name}` variables so those templates do not cause formatter parse failures. A non-null legacy `params` option is no longer used for text substitution; configure `paramTypes` instead.
 
 <Cards>
   <Card title="Query Editor" href="/en/docs/query-editor">

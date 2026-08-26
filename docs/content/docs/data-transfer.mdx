@@ -5,7 +5,7 @@ description: Copy tables between connections, databases, schemas, or database en
 
 Data Transfer copies tables or collections from one source into another connection, database, or schema. Use it for environment migration, test data preparation, and one-off consolidation. It is not continuous replication, CDC, or bidirectional synchronization.
 
-<Callout type="warn">Cross-engine transfer passes through DBX field and type conversion. Target privileges, constraints, triggers, defaults, and engine semantics still determine the result. Rehearse important migrations and validate row counts and key fields afterward.</Callout>
+<Callout type="warn">Cross-engine transfer passes through OG Developer field and type conversion. Target privileges, constraints, triggers, defaults, and engine semantics still determine the result. Rehearse important migrations and validate row counts and key fields afterward.</Callout>
 
 ## Two Entry Points
 
@@ -27,7 +27,7 @@ After copying one or more tables in the object tree, paste them at a target loca
   <Step>
     ### Select the Source
 
-    Choose the source connection, catalog when applicable, database, and schema. DBX lists transferable base tables; MongoDB paths list collections.
+    Choose the source connection, catalog when applicable, database, and schema. OG Developer lists transferable base tables; MongoDB paths list collections.
 
   </Step>
   <Step>
@@ -71,7 +71,7 @@ If table creation is disabled, compatible target tables must already exist. Even
 
 ## PostgreSQL Structure and Ownership
 
-For PostgreSQL-to-PostgreSQL transfers with table creation enabled, DBX handles supported sequences, indexes, foreign keys, and selected schema-level objects and dependencies. If source owners do not exist on the target instance, DBX prompts you to:
+For PostgreSQL-to-PostgreSQL transfers with table creation enabled, OG Developer handles supported sequences, indexes, foreign keys, and selected schema-level objects and dependencies. If source owners do not exist on the target instance, OG Developer prompts you to:
 
 - Skip the affected ownership metadata
 - Reassign missing owners to the current target user
@@ -81,7 +81,7 @@ This is not a full replacement for `pg_dump` and `pg_restore`. Use native Postgr
 
 ## Failure Handling
 
-A multi-table task does not discard the entire queue after the first table failure. DBX records the failure, attempts later tables, and finishes either successfully or with a terminal error summary.
+A multi-table task does not discard the entire queue after the first table failure. OG Developer records the failure, attempts later tables, and finishes either successfully or with a terminal error summary.
 
 - Progress keeps per-table failure details
 - When failures exceed the display limit, the UI reports how many entries were omitted
@@ -92,7 +92,7 @@ As a result, a finished task does not necessarily mean every table succeeded. Ch
 
 ## Database Coverage
 
-DBX filters source and target connections through the driver capability manifest. The implementation includes SQL-to-SQL, MongoDB-to-MongoDB, and selected MongoDB/SQL conversion paths. Not every connectable database supports Data Transfer.
+OG Developer filters source and target connections through the driver capability manifest. The implementation includes SQL-to-SQL, MongoDB-to-MongoDB, and selected MongoDB/SQL conversion paths. Not every connectable database supports Data Transfer.
 
 Capabilities also vary by combination:
 

@@ -3,7 +3,7 @@ title: PL/SQL 调试器
 description: 基于 openGauss dbe_pldebugger API 的 PL/SQL 例程与匿名块图形调试。
 ---
 
-og developer 内置基于 openGauss `dbe_pldebugger` API 的图形调试器（openGauss 1.0 引入，5.1.0 起支持匿名块调试）。完整流程——`turn_on` → `attach` → 断点 → 单步 → 变量 → 调用栈 → 完成——已在 openGauss-lite 7.0.0-RC3 真机端到端验证。
+OG Developer 内置基于 openGauss `dbe_pldebugger` API 的图形调试器（openGauss 1.0 引入，5.1.0 起支持匿名块调试）。完整流程——`turn_on` → `attach` → 断点 → 单步 → 变量 → 调用栈 → 完成——已在 openGauss-lite 7.0.0-RC3 真机端到端验证。
 
 ## 工作原理
 
@@ -12,7 +12,7 @@ og developer 内置基于 openGauss `dbe_pldebugger` API 的图形调试器（op
 1. **调试会话** attach 到目标并控制执行（`attach`、`add_breakpoint`、`step`、`next`、`continue`、`finish`、`backtrace` 等）
 2. **被调会话**运行被调试的例程或匿名块
 
-og developer 替你管理两个会话，你只需要面对调试对话框。
+OG Developer 替你管理两个会话，你只需要面对调试对话框。
 
 ## 开始之前
 

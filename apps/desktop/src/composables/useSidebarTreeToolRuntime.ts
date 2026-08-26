@@ -1,7 +1,6 @@
 import type { ShallowRef } from "vue";
 import type { useConnectionStore } from "@/stores/connectionStore";
 import type { useQueryStore } from "@/stores/queryStore";
-import type { useSettingsStore } from "@/stores/settingsStore";
 import type { TreeNode } from "@/types/database";
 import { allDatabasesExportSourceForNode, databaseExportSourceForNode } from "@/lib/sidebar/sidebarExportRuntime";
 
@@ -9,12 +8,11 @@ interface SidebarTreeToolRuntimeOptions {
   activeNode: ShallowRef<TreeNode>;
   connectionStore: ReturnType<typeof useConnectionStore>;
   queryStore: ReturnType<typeof useQueryStore>;
-  settingsStore: ReturnType<typeof useSettingsStore>;
   tableChildObjectName: (node: TreeNode) => string;
 }
 
 export function useSidebarTreeToolRuntime(options: SidebarTreeToolRuntimeOptions) {
-  const { activeNode, connectionStore, queryStore, settingsStore } = options;
+  const { activeNode, connectionStore, queryStore } = options;
 
   function openTransfer() {
     if (!activeNode.value.connectionId) return;
@@ -81,10 +79,6 @@ export function useSidebarTreeToolRuntime(options: SidebarTreeToolRuntimeOptions
     connectionStore.databaseExportSource = allDatabasesExportSourceForNode(activeNode.value);
   }
 
-  function openScheduledBackups() {
-    settingsStore.requestSettingsNavigation("backups");
-  }
-
   function openTableImport() {
     const node = activeNode.value;
     if (!node.connectionId || !node.database) return;
@@ -136,7 +130,6 @@ export function useSidebarTreeToolRuntime(options: SidebarTreeToolRuntimeOptions
     openDatabaseSearch,
     openDiagram,
     openFieldLineage,
-    openScheduledBackups,
     openSchemaDiff,
     openSqlFileExecution,
     openStructureEditor,

@@ -25,7 +25,6 @@ const pageIcons: Record<string, keyof typeof icons> = {
   "table-import": "Upload",
   "sql-file": "FileCode2",
   "database-export": "Download",
-  "database-backup": "DatabaseBackup",
   "sql-snippets": "ScrollText",
   "ai-assistant": "Bot",
   cli: "Terminal",

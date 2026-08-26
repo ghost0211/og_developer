@@ -148,7 +148,7 @@ function returnsRoutineOutput(parameter: Pick<RoutineParameterValue, "mode">): b
 }
 
 // ---------------------------------------------------------------------------
-// ogdeveloper: openGauss graphical routine invocation (PL/SQL Developer style)
+// OG Developer: openGauss graphical routine invocation (PL/SQL Developer style)
 // ---------------------------------------------------------------------------
 
 /**

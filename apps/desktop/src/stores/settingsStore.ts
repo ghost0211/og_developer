@@ -1061,7 +1061,6 @@ export interface SettingsNavigationRequest {
 }
 
 export const useSettingsStore = defineStore("settings", () => {
-  const settingsPageActive = ref(false);
   const settingsNavigationRequest = ref<SettingsNavigationRequest | null>(null);
   const activeModel = ref<{ configId: string; modelId: string } | null>(null);
   const effortPreferences = ref<AiModelEffortPreference[]>([]);
@@ -1487,7 +1486,6 @@ export const useSettingsStore = defineStore("settings", () => {
   }
 
   return {
-    settingsPageActive,
     settingsNavigationRequest,
     requestSettingsNavigation,
     clearSettingsNavigationRequest,

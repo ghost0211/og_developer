@@ -1,5 +1,5 @@
--- ogdeveloper 图形化调用自测脚本（openGauss）
--- 用法：在 ogdeveloper 中对这些对象右键 → 执行/调试
+-- OG Developer 图形化调用自测脚本（openGauss）
+-- 用法：在 OG Developer 中对这些对象右键 → 执行/调试
 -- 覆盖：IN/OUT/INOUT/默认参数/函数/包/包内重载/错误场景/DBMS_OUTPUT
 -- 说明：DBMS_OUTPUT 输出在「官方 JDBC 驱动」连接模式下可见；
 --       原生协议模式下 openGauss 7.0-lite 会断开连接（已知限制）。

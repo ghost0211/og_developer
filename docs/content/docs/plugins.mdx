@@ -1,23 +1,23 @@
 ---
 title: JDBC Plugin
-description: Install the DBX JDBC plugin, import vendor JDBC driver JARs, and create JDBC connections.
+description: Install the OG Developer JDBC plugin, import vendor JDBC driver JARs, and create JDBC connections.
 ---
 
-DBX uses native Rust database drivers by default. JDBC is optional: install the JDBC plugin when you need to connect to a database that DBX does not support natively, or when you specifically need a vendor JDBC driver.
+OG Developer uses native Rust database drivers by default. JDBC is optional: install the JDBC plugin when you need to connect to a database that OG Developer does not support natively, or when you specifically need a vendor JDBC driver.
 
-<Callout type="info">The JDBC plugin is not bundled with the main DBX app, and it does not include vendor JDBC drivers. Install the DBX JDBC plugin first, then import the database vendor's JDBC driver JAR.</Callout>
+<Callout type="info">The JDBC plugin is not bundled with the main OG Developer app, and it does not include vendor JDBC drivers. Install the OG Developer JDBC plugin first, then import the database vendor's JDBC driver JAR.</Callout>
 
-<Callout type="warn">A successful JDBC connection does not imply every capability of a native DBX profile. Object trees, source definitions, structure editing, import, transfer, and admin views depend on JDBC metadata, the detected effective database type, and the driver capability manifest. Unknown engines run with generic JDBC capabilities.</Callout>
+<Callout type="warn">A successful JDBC connection does not imply every capability of a native OG Developer profile. Object trees, source definitions, structure editing, import, transfer, and admin views depend on JDBC metadata, the detected effective database type, and the driver capability manifest. Unknown engines run with generic JDBC capabilities.</Callout>
 
 Desktop imports JARs from the local machine. Docker/Web installs JARs and the plugin in the server data directory; browser-local paths are not directly readable by the server, and configuration migration does not carry driver files automatically.
 
 ## When to Use JDBC
 
-Prefer built-in DBX database types first, such as MySQL, PostgreSQL, SQLite, Redis, MongoDB, DuckDB, ClickHouse, SQL Server, Oracle, DM, and GaussDB.
+Prefer built-in OG Developer database types first, such as MySQL, PostgreSQL, SQLite, Redis, MongoDB, DuckDB, ClickHouse, SQL Server, Oracle, DM, and GaussDB.
 
 Use JDBC when:
 
-- The target database is not built into DBX
+- The target database is not built into OG Developer
 - The native driver does not cover a vendor-specific behavior
 - Your organization standardizes on a vendor JDBC driver
 - You want to connect to databases such as Dameng DM, H2, DB2, Snowflake, or SQLite through JDBC
@@ -26,7 +26,7 @@ Use JDBC when:
 
 | Item                   |         Required | Notes                                                                                  |
 | ---------------------- | ---------------: | -------------------------------------------------------------------------------------- |
-| DBX JDBC plugin        |              Yes | Installed from DBX settings; lets DBX call JDBC                                        |
+| OG Developer JDBC plugin        |              Yes | Installed from OG Developer settings; lets OG Developer call JDBC                                        |
 | Java Runtime           |              Yes | The local machine must be able to run `java`; Java 17 or newer is recommended          |
 | Vendor JDBC driver JAR |              Yes | For example PostgreSQL, MySQL, Dameng DM, Oracle, H2, SQLite, or another vendor driver |
 | JDBC URL               |              Yes | The URL usually contains host, port, database name, and parameters                     |
@@ -41,7 +41,7 @@ The JDBC plugin is a Java program, so your machine needs a Java runtime. After i
 java -version
 ```
 
-If the command is missing, install Java first. DBX checks `JAVA_HOME` first, then common system locations and `java` from `PATH`.
+If the command is missing, install Java first. OG Developer checks `JAVA_HOME` first, then common system locations and `java` from `PATH`.
 
 <Tabs groupId="java-install" items={['macOS', 'Windows', 'Linux']}>
   <Tab value="macOS">
@@ -55,7 +55,7 @@ If the command is missing, install Java first. DBX checks `JAVA_HOME` first, the
 
   </Tab>
   <Tab value="Windows">
-    Install Temurin, Oracle JDK, or Microsoft Build of OpenJDK. Restart DBX after installation and verify:
+    Install Temurin, Oracle JDK, or Microsoft Build of OpenJDK. Restart OG Developer after installation and verify:
 
     ```powershell
     java -version
@@ -78,25 +78,25 @@ If the command is missing, install Java first. DBX checks `JAVA_HOME` first, the
   </Tab>
 </Tabs>
 
-## Step 2: Install the DBX JDBC Plugin
+## Step 2: Install the OG Developer JDBC Plugin
 
-In DBX Desktop:
+In OG Developer Desktop:
 
 1. Open **Settings**
 2. Go to **JDBC Drivers**
 3. Click **Install JDBC Plugin**
 
-After installation, DBX shows a status like:
+After installation, OG Developer shows a status like:
 
 ```text
 Installed: v0.1.0
 ```
 
-The DBX JDBC plugin has its own version. It does not have to match the DBX app version. Updating DBX does not automatically install the JDBC plugin, and if you uninstall it manually, DBX will not reinstall it behind your back.
+The OG Developer JDBC plugin has its own version. It does not have to match the OG Developer app version. Updating OG Developer does not automatically install the JDBC plugin, and if you uninstall it manually, OG Developer will not reinstall it behind your back.
 
 ## Step 3: Download the Vendor JDBC Driver
 
-DBX does not download vendor JDBC drivers automatically. Download the `.jar` file from the database vendor website or a Maven repository.
+OG Developer does not download vendor JDBC drivers automatically. Download the `.jar` file from the database vendor website or a Maven repository.
 
 Common examples:
 
@@ -118,13 +118,13 @@ Common examples:
 
 ## Step 4: Import JDBC Driver JARs
 
-In DBX:
+In OG Developer:
 
 1. Open **Settings**
 2. Go to **JDBC Drivers**
 3. In the **JDBC driver JARs** section, choose the downloaded `.jar`
 
-You can also paste a local JAR path and import it. DBX copies imported JARs into the app data directory, and new JDBC connections can select them from the driver dropdown.
+You can also paste a local JAR path and import it. OG Developer copies imported JARs into the app data directory, and new JDBC connections can select them from the driver dropdown.
 
 Importing a driver only copies local files. It does not change your system Java installation, install database clients, or upload the driver anywhere.
 
@@ -147,9 +147,9 @@ Click **Test** after filling the form. If the test succeeds, click **Save** and 
 
 ## Example: Dameng DM
 
-DBX already has a built-in DM ODBC connection type. If you prefer the official Dameng JDBC driver, use the JDBC plugin.
+OG Developer already has a built-in DM ODBC connection type. If you prefer the official Dameng JDBC driver, use the JDBC plugin.
 
-1. Install the DBX JDBC plugin
+1. Install the OG Developer JDBC plugin
 2. Install Java
 3. Get the Dameng JDBC driver JAR from your DM installation directory or Maven repository, such as `DmJdbcDriver8.jar` or `DmJdbcDriver11.jar`
 4. Import the JAR in **Settings → JDBC Drivers**
@@ -170,7 +170,7 @@ For DM, entering `dm.jdbc.driver.DmDriver` is recommended so the connection does
 
 H2 is a good way to verify the JDBC workflow.
 
-1. Install the DBX JDBC plugin
+1. Install the OG Developer JDBC plugin
 2. Download the H2 JDBC driver JAR
 3. Import `h2-*.jar` in settings
 4. Create a new connection and choose **JDBC**
@@ -222,7 +222,7 @@ jdbc:postgresql://localhost:5432/postgres?sslmode=require
 
 ### JDBC plugin installation fails
 
-Check whether your network can access DBX GitHub Releases. DBX tries proxy URLs and the original GitHub URL, but public proxies can still be unavailable. Try another network if GitHub is blocked.
+Check whether your network can access OG Developer GitHub Releases. OG Developer tries proxy URLs and the original GitHub URL, but public proxies can still be unavailable. Try another network if GitHub is blocked.
 
 ### Java cannot be found
 
@@ -232,7 +232,7 @@ Verify in a terminal:
 java -version
 ```
 
-If the terminal works but DBX does not, restart DBX. On macOS, if Java is only installed under a Homebrew path, configure `JAVA_HOME`.
+If the terminal works but OG Developer does not, restart OG Developer. On macOS, if Java is only installed under a Homebrew path, configure `JAVA_HOME`.
 
 ### `No JDBC driver was discovered`
 
@@ -268,18 +268,18 @@ Enter one JAR path per line in the **Driver JARs** field, or import each require
 
 ## Uninstalling
 
-Click **Uninstall** in **Settings → JDBC Drivers**. DBX removes the JDBC plugin itself but keeps your imported vendor driver JARs, so you do not have to import them again if you reinstall the plugin later.
+Click **Uninstall** in **Settings → JDBC Drivers**. OG Developer removes the JDBC plugin itself but keeps your imported vendor driver JARs, so you do not have to import them again if you reinstall the plugin later.
 
 ## For Developers: Plugin Protocol
 
-DBX starts the plugin executable and exchanges JSON Lines requests and responses over stdin/stdout. After a connection is established, DBX reuses the same plugin process for queries and metadata requests on that connection.
+OG Developer starts the plugin executable and exchanges JSON Lines requests and responses over stdin/stdout. After a connection is established, OG Developer reuses the same plugin process for queries and metadata requests on that connection.
 
 The plugin directory must include `manifest.json`:
 
 ```json
 {
   "id": "jdbc",
-  "name": "DBX JDBC Plugin",
+  "name": "OG Developer JDBC Plugin",
   "version": "0.1.0",
   "protocol_version": 1,
   "description": "Adds JDBC driver support.",
@@ -295,7 +295,7 @@ The plugin directory must include `manifest.json`:
 }
 ```
 
-The current DBX app supports plugin protocol version `1`. DBX rejects a plugin whose manifest declares a different protocol version, and each plugin request has a 30 second timeout so a hung driver process does not block the app indefinitely.
+The current OG Developer app supports plugin protocol version `1`. OG Developer rejects a plugin whose manifest declares a different protocol version, and each plugin request has a 30 second timeout so a hung driver process does not block the app indefinitely.
 
 The initial protocol supports `testConnection`, `connect`, `executeQuery`, `listDatabases`, `listSchemas`, `listTables`, and `getColumns`.
 

@@ -28,6 +28,16 @@ describe("AppMenuBar", () => {
     expect(menuSource).not.toContain("settings-page");
   });
 
+  it("exposes the project and SQL file panel toggles in View", () => {
+    expect(menuSource).toContain("@select=\"emit('toggle-sql-file-panel')\"");
+    expect(menuSource).toContain("@select=\"emit('toggle-project-file-panel')\"");
+    expect(menuSource).toContain("@select=\"emit('toggle-git-panel')\"");
+  });
+
+  it("exposes the clone from git action in Project menu", () => {
+    expect(menuSource).toContain("@select=\"emit('clone-from-git')\"");
+  });
+
   it("exposes the safe run and transaction actions", () => {
     for (const event of ["execute-sql", "execute-current-statement", "explain-sql", "commit-transaction", "rollback-transaction", "toggle-auto-commit", "toggle-fullscreen"]) {
       expect(menuSource).toContain(`@select="emit('${event}'`);
@@ -43,7 +53,7 @@ describe("AppMenuBar", () => {
   });
 
   it("keeps the moved utilities in the Tools menu", () => {
-    for (const event of ["open-table-import", "open-database-export", "open-transfer", "open-sql-file", "open-schema-diff", "open-data-compare", "toggle-sql-library", "toggle-sql-file-panel"]) {
+    for (const event of ["open-sessions", "open-invalid-objects", "open-command-window", "open-table-import", "open-database-export", "open-transfer", "open-sql-file", "open-schema-diff", "open-data-compare", "toggle-sql-library", "toggle-sql-file-panel"]) {
       expect(menuSource).toContain(`@select="emit('${event}')"`);
     }
   });

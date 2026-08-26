@@ -1386,7 +1386,7 @@ export const useConnectionStore = defineStore("connection", () => {
     return config?.db_type === "informix" ? `${version}-informix-owner-v2` : version;
   }
 
-  // og developer: per-database sql_compatibility cache (datcompatibility is a
+  // OG Developer: per-database sql_compatibility cache (datcompatibility is a
   // per-database attribute; the connection-level database_info only covers the
   // default database). Populated lazily when database nodes expand.
   const databaseCompatModes = ref(new Map<string, string>());
@@ -5165,7 +5165,7 @@ export const useConnectionStore = defineStore("connection", () => {
     }
   }
 
-  // og developer: expands an openGauss package node with its subprograms
+  // OG Developer: expands an openGauss package node with its subprograms
   // (pg_proc.propackageid → gs_package). Children reuse function/procedure
   // node types so they render with the familiar icons.
   async function loadOpengaussPackageSubprograms(connectionId: string, database: string, packageName: string, schema: string | undefined, nodeId: string) {

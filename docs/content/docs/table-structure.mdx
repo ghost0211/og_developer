@@ -3,7 +3,7 @@ title: Table Structure Editor
 description: Inspect and edit columns, indexes, foreign keys, and triggers and review dialect-specific DDL before execution.
 ---
 
-The table structure editor keeps single-table metadata and a change draft in a persistent tab. DBX enables only operations that the active database capability can generate reliably and shows the final DDL before save.
+The table structure editor keeps single-table metadata and a change draft in a persistent tab. OG Developer enables only operations that the active database capability can generate reliably and shows the final DDL before save.
 
 ## Open the Editor
 
@@ -41,7 +41,7 @@ Depending on database capability, you can:
 Column reorder has two meanings:
 
 - MySQL and other databases with physical column-order DDL generate a real reorder
-- Some databases save only the local display order in DBX without changing physical structure
+- Some databases save only the local display order in OG Developer without changing physical structure
 
 New-table creation can use preset fields from settings for common primary keys, timestamps, or audit columns.
 
@@ -59,7 +59,7 @@ Foreign-key editing covers column mappings and update/delete actions. Trigger ed
 
 ## DDL Preview
 
-Edits do not immediately change the database. Before save, DBX generates highlighted dialect-specific SQL such as:
+Edits do not immediately change the database. Before save, OG Developer generates highlighted dialect-specific SQL such as:
 
 - `ALTER TABLE ... ADD/DROP/RENAME/MODIFY COLUMN`
 - Default, `NULL`, primary-key, and comment changes
@@ -95,7 +95,7 @@ Copy the complete DDL for code review or execution through a migration tool.
   <Step>
     ### Execute and refresh
 
-    Execute after review. Production scope enters production-write confirmation again, and DBX reloads structure after success.
+    Execute after review. Production scope enters production-write confirmation again, and OG Developer reloads structure after success.
 
   </Step>
 </Steps>
@@ -128,7 +128,7 @@ Do not assume that every DDL feature is editable because a database can connect.
 - Use the editor for focused, single-table changes
 - Put copied DDL into version control and review for larger migrations
 - Use [Schema Diff](/en/docs/schema-diff) to align environments
-- Use [Database Export](/en/docs/database-export) or [Scheduled Database Backups](/en/docs/database-backup) before risky changes
+- Use [Database Export](/en/docs/database-export) before risky changes
 - Combine [Field Lineage](/en/docs/field-lineage) with application-code search before changing important columns
 
 <Cards>

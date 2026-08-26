@@ -5,7 +5,7 @@ description: Export database connections with AES-256-GCM encrypted passwords. M
 
 <Callout type="info">Export your database connections with encrypted passwords (AES-256-GCM). Securely migrate between machines.</Callout>
 
-<Callout type="warn">This exports DBX connection configuration, not business database schema or data, and it is not a database backup. Use [Database Export](/en/docs/database-export) or [Database Backup](/en/docs/database-backup) for database contents.</Callout>
+<Callout type="warn">This exports OG Developer connection configuration, not business database schema or data. Use [Database Export](/en/docs/database-export) for database contents.</Callout>
 
 ## Export
 
@@ -28,7 +28,7 @@ description: Export database connections with AES-256-GCM encrypted passwords. M
 - Passwords are encrypted using **AES-256-GCM** with **PBKDF2** key derivation
 - Without the passphrase, the file cannot be decrypted
 - The export file is standard JSON, transferable via USB drive, cloud storage, etc.
-- DBX stores ordinary connection fields separately from secrets such as database passwords, SSH passwords, SSH key passphrases, and full connection strings; export brings them together only inside the encrypted export file.
+- OG Developer stores ordinary connection fields separately from secrets such as database passwords, SSH passwords, SSH key passphrases, and full connection strings; export brings them together only inside the encrypted export file.
 - Treat the passphrase like a secret. Anyone with both the export file and passphrase can restore the saved connections.
 
 ## Backward Compatibility

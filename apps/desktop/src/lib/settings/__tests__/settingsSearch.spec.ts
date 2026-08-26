@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { SETTINGS_SEARCH_DEFINITIONS, TOOLBAR_VISIBILITY_ITEMS, createShortcutSettingsSearchDefinitions, createToolbarVisibilitySettingsSearchDefinitions, resolveSettingsSearchEntries, searchSettings, type SettingsCategory, type SettingsSearchDefinition } from "@/lib/settings/settingsSearch";
+import { SETTINGS_SEARCH_DEFINITIONS, createShortcutSettingsSearchDefinitions, resolveSettingsSearchEntries, searchSettings, type SettingsCategory, type SettingsSearchDefinition } from "@/lib/settings/settingsSearch";
 
 const settingsDialogSource = readFileSync(new URL("../../../components/editor/EditorSettingsDialog.vue", import.meta.url), "utf8");
 
@@ -10,8 +10,6 @@ const categoryLabels = {
   appearance: "Appearance",
   navigation: "Navigation",
   data: "Data",
-  backups: "Backups",
-  tunnels: "Tunnels",
   shortcuts: "Shortcuts",
   snippets: "Snippets",
   ai: "AI",
@@ -89,16 +87,6 @@ describe("settings search", () => {
     ]);
   });
 
-  it("derives a search result for every toolbar visibility control", () => {
-    const definitions = createToolbarVisibilitySettingsSearchDefinitions();
-
-    expect(definitions).toHaveLength(TOOLBAR_VISIBILITY_ITEMS.length);
-    expect(definitions.map((definition) => definition.id)).toEqual(TOOLBAR_VISIBILITY_ITEMS.map((item) => `appearance-toolbar-${item.key}`));
-    expect(definitions).not.toContainEqual({ id: "appearance-toolbar-dataTransfer", category: "appearance", titleKey: "transfer.dataTransfer", targetId: "appearance" });
-    expect(definitions).not.toContainEqual({ id: "appearance-toolbar-sqlLibrary", category: "appearance", titleKey: "sqlLibrary.title", targetId: "appearance" });
-    expect(definitions).toContainEqual({ id: "appearance-toolbar-ai", category: "appearance", title: "AI", targetId: "appearance" });
-  });
-
   it("indexes the existing descriptions for fixed appearance controls", () => {
     const descriptionTranslations: Record<string, string> = {
       "settings.uiScale": "Interface scale",
@@ -122,7 +110,6 @@ describe("settings search", () => {
       { titleKey: "settings.confirmDangerousSqlExecution", category: "editor", targetId: "editor" },
       { titleKey: "settings.continueOnErrorOnBatch", category: "editor", targetId: "editor" },
       { titleKey: "settings.dataGridQuickEntry", category: "appearance", targetId: "appearance" },
-      { titleKey: "toolbar.theme", category: "appearance", targetId: "appearance" },
       { titleKey: "settings.sidebarObjectInfoMode", category: "navigation", targetId: "navigation" },
       { titleKey: "settings.insertSpaceAfterCompletion", category: "editor", targetId: "editor" },
       { titleKey: "settings.autoAliasTables", category: "editor", targetId: "editor" },

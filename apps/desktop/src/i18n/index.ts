@@ -3,24 +3,18 @@ import en from "./locales/en";
 import { safeLocalStorageGet, safeLocalStorageSet } from "@/lib/backend/safeStorage";
 import { isTauriRuntime } from "@/lib/backend/tauriRuntime";
 
-export type Locale = "en" | "es" | "it" | "ja" | "ko" | "pt-BR" | "zh-CN" | "zh-TW";
+export type Locale = "en" | "zh-CN";
 type LocaleMessages = Record<string, unknown>;
 type I18nGlobal = {
   locale: { value: Locale };
   setLocaleMessage: (locale: Locale, messages: LocaleMessages) => void;
 };
 
-const supportedLocales: Locale[] = ["en", "es", "it", "ja", "ko", "pt-BR", "zh-CN", "zh-TW"];
+const supportedLocales: Locale[] = ["en", "zh-CN"];
 const defaultLocale: Locale = "en";
 const loadedLocales = new Set<Locale>([defaultLocale]);
 const localeLoaders: Record<Exclude<Locale, "en">, () => Promise<{ default: LocaleMessages }>> = {
-  es: () => import("./locales/es"),
-  it: () => import("./locales/it"),
-  ja: () => import("./locales/ja"),
-  ko: () => import("./locales/ko"),
-  "pt-BR": () => import("./locales/pt-BR"),
   "zh-CN": () => import("./locales/zh-CN"),
-  "zh-TW": () => import("./locales/zh-TW"),
 };
 
 export function normalizeLocale(value: string | null): Locale | null {
@@ -33,18 +27,9 @@ export function normalizeLocale(value: string | null): Locale | null {
 export function localeFromLanguageTag(value: string | null | undefined): Locale | null {
   if (!value) return null;
   const normalized = value.replace("_", "-").toLowerCase();
-  if (normalized === "zh" || normalized.startsWith("zh-")) {
-    if (normalized.includes("hant") || normalized.startsWith("zh-tw") || normalized.startsWith("zh-hk") || normalized.startsWith("zh-mo")) {
-      return "zh-TW";
-    }
-    return "zh-CN";
-  }
+  // 只保留中英文：所有中文（含繁体地区）统一映射到简体中文，其余回退英文。
+  if (normalized === "zh" || normalized.startsWith("zh-")) return "zh-CN";
   if (normalized === "en" || normalized.startsWith("en-")) return "en";
-  if (normalized === "es" || normalized.startsWith("es-")) return "es";
-  if (normalized === "it" || normalized.startsWith("it-")) return "it";
-  if (normalized === "ja" || normalized.startsWith("ja-")) return "ja";
-  if (normalized === "ko" || normalized.startsWith("ko-")) return "ko";
-  if (normalized === "pt" || normalized.startsWith("pt-")) return "pt-BR";
   return null;
 }
 

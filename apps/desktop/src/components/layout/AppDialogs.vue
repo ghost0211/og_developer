@@ -12,6 +12,7 @@ const DataCompareDialog = defineAsyncComponent(() => import("@/components/diff/D
 const SqlFileExecutionDialog = defineAsyncComponent(() => import("@/components/sql-file/SqlFileExecutionDialog.vue"));
 const SchemaDiagramDialog = defineAsyncComponent(() => import("@/components/diagram/SchemaDiagramDialog.vue"));
 const TableImportDialog = defineAsyncComponent(() => import("@/components/import/TableImportDialog.vue"));
+const InvalidObjectsDialog = defineAsyncComponent(() => import("@/components/maintenance/InvalidObjectsDialog.vue"));
 const FieldLineageDialog = defineAsyncComponent(() => import("@/components/lineage/FieldLineageDialog.vue"));
 const ConfigPassphraseDialog = defineAsyncComponent(() => import("@/components/config/ConfigPassphraseDialog.vue"));
 const DatabaseSearchDialog = defineAsyncComponent(() => import("@/components/search/DatabaseSearchDialog.vue"));
@@ -35,6 +36,9 @@ const props = defineProps<{
   dangerSql: string;
   suppressDangerConfirm: boolean;
   activeDatabaseType?: DatabaseType;
+  activeConnectionId?: string;
+  activeDatabase?: string;
+  activeSchema?: string;
   showSqlParameterDialog: boolean;
   sqlParameterSourceSql: string;
   sqlParameterNames: SqlParameterDescriptor[];
@@ -53,7 +57,6 @@ const emit = defineEmits<{
   connectSucceeded: [name: string];
   connectFailed: [message: string];
   openDriverStore: [focus?: DriverStoreFocus];
-  openTunnelProfileSettings: [];
   openLineageTarget: [
     target: {
       connectionId: string;
@@ -140,7 +143,6 @@ watch(
     @connect-succeeded="emit('connectSucceeded', $event)"
     @connect-failed="emit('connectFailed', $event)"
     @open-driver-store="emit('openDriverStore', $event)"
-    @open-tunnel-profile-settings="emit('openTunnelProfileSettings')"
   />
   <DangerConfirmDialog
     v-if="showDangerDialog"
@@ -212,6 +214,7 @@ watch(
     :prefill-schema="dialogs.tableImportPrefillSchema.value"
     :prefill-table="dialogs.tableImportPrefillTable.value"
   />
+  <InvalidObjectsDialog v-if="dialogs.showInvalidObjectsDialog.value" v-model:open="dialogs.showInvalidObjectsDialog.value" :prefill-connection-id="activeConnectionId" :prefill-database="activeDatabase" :prefill-schema="activeSchema" />
   <DataGenerateDialog
     v-if="dialogs.showTableDataGenerateDialog.value"
     v-model:open="dialogs.showTableDataGenerateDialog.value"

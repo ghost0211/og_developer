@@ -1,12 +1,12 @@
 ---
 title: 从源码编译与参与贡献
-description: 从零搭建 DBX 开发环境，运行桌面版，完成第一次修改、测试并提交 Pull Request。
+description: 从零搭建 OG Developer 开发环境，运行桌面版，完成第一次修改、测试并提交 Pull Request。
 ---
 
-这是一份面向第一次参与 DBX 开发者的完整教程。跟着本页操作，你将完成：
+这是一份面向第一次参与 OG Developer 开发者的完整教程。跟着本页操作，你将完成：
 
 1. 准备 Node.js、pnpm、Rust 和系统编译依赖
-2. Fork、克隆并运行 DBX 桌面版
+2. Fork、克隆并运行 OG Developer 桌面版
 3. 找到要修改的代码并完成一次小改动
 4. 运行与改动范围匹配的检查和测试
 5. 推送分支并提交 Pull Request
@@ -17,7 +17,7 @@ description: 从零搭建 DBX 开发环境，运行桌面版，完成第一次�
 
 ## 1. 选择并认领任务
 
-打开 [og developer Issues](https://github.com/ghost0211/og_developer/issues)，选择一个尚未分配、评论中也没有人正在处理的 Issue。第一次贡献优先考虑：
+打开 [OG Developer Issues](https://github.com/ghost0211/og_developer/issues)，选择一个尚未分配、评论中也没有人正在处理的 Issue。第一次贡献优先考虑：
 
 - 复现步骤和预期行为已经写清楚的问题
 - 改动范围较小的文档、翻译或 UI 问题
@@ -37,7 +37,7 @@ description: 从零搭建 DBX 开发环境，运行桌面版，完成第一次�
 
 ## 2. 安装开发环境
 
-DBX 桌面版基于 Tauri、Vue 和 Rust。仓库当前要求：
+OG Developer 桌面版基于 Tauri、Vue 和 Rust。仓库当前要求：
 
 | 工具 | 版本 |
 | --- | --- |
@@ -75,7 +75,7 @@ cargo --version
 
 ### 安装系统依赖
 
-Tauri 的完整系统要求可以参考 [Tauri 官方前置依赖文档](https://v2.tauri.app/start/prerequisites/)。DBX 还需要 ODBC 开发库。
+Tauri 的完整系统要求可以参考 [Tauri 官方前置依赖文档](https://v2.tauri.app/start/prerequisites/)。OG Developer 还需要 ODBC 开发库。
 
 <Tabs groupId="contributing-platform" items={["macOS", "Ubuntu / Debian", "Windows"]}>
   <Tab value="macOS">
@@ -141,7 +141,7 @@ git rebase upstream/main
 git push origin main
 ```
 
-## 4. 第一次运行 DBX
+## 4. 第一次运行 OG Developer
 
 ### macOS 和 Linux
 
@@ -159,7 +159,7 @@ make
 make dev-fast
 ```
 
-开发版可以与已安装的 og developer 同时运行。两者使用同一份本地 DBX 数据，因此连接和历史记录会同时可用；请避免在两个窗口中同时修改同一个连接、收藏 SQL 或全局设置。
+开发版可以与已安装的 OG Developer 同时运行。两者使用同一份本地 OG Developer 数据，因此连接和历史记录会同时可用；请避免在两个窗口中同时修改同一个连接、收藏 SQL 或全局设置。
 
 ### Windows
 
@@ -178,13 +178,13 @@ pnpm tauri dev -- --no-default-features --features duckdb-sidecar
 
 ### 判断是否启动成功
 
-成功时会出现 DBX 桌面窗口，并且终端中没有编译错误。建议完成三个快速检查：
+成功时会出现 OG Developer 桌面窗口，并且终端中没有编译错误。建议完成三个快速检查：
 
 1. 打开设置页面
 2. 创建或打开一个本地测试连接
 3. 关闭窗口后再次启动，确认开发环境可重复运行
 
-如果端口 `1420` 已被占用，先关闭旧的 DBX/Vite 开发进程再重新启动。
+如果端口 `1420` 已被占用，先关闭旧的 OG Developer/Vite 开发进程再重新启动。
 
 ## 本地数据库测试环境
 
@@ -290,7 +290,7 @@ make cargo-test-fast
 
 ### 路线 D：修改 Agent 驱动
 
-Agent 是独立进程，通过 stdin/stdout JSON-RPC 与 DBX 通信。Java/JDBC Agent 通常使用 JDK 21；原生 Agent 使用 Go 或 Rust。开始前先阅读：
+Agent 是独立进程，通过 stdin/stdout JSON-RPC 与 OG Developer 通信。Java/JDBC Agent 通常使用 JDK 21；原生 Agent 使用 Go 或 Rust。开始前先阅读：
 
 - [`agents/README.zh-CN.md`](https://github.com/ghost0211/og_developer/blob/main/agents/README.zh-CN.md)
 - [`agents/docs/agent-authoring.zh-CN.md`](https://github.com/ghost0211/og_developer/blob/main/agents/docs/agent-authoring.zh-CN.md)
@@ -311,7 +311,7 @@ Shadow JAR 输出在：
 agents/drivers/<驱动模块名>/build/libs/
 ```
 
-仅仅构建成功还不代表本地 DBX 使用了新代码。DBX 运行时读取用户目录下 `.dbx/agents/drivers/<db_type>/agent.jar`，因此必须备份并替换运行时 JAR：
+仅仅构建成功还不代表本地 OG Developer 使用了新代码。OG Developer 运行时读取用户目录下 `.dbx/agents/drivers/<db_type>/agent.jar`，因此必须备份并替换运行时 JAR：
 
 <Tabs groupId="agent-runtime-replace" items={["macOS / Linux", "Windows PowerShell"]}>
   <Tab value="macOS / Linux">
@@ -332,7 +332,7 @@ agents/drivers/<驱动模块名>/build/libs/
   </Tab>
 </Tabs>
 
-替换后重启 DBX，或者断开并重新连接数据库，确保旧 Agent 进程退出并加载新 JAR。然后使用 Issue 对应的真实数据库版本重新执行复现步骤。
+替换后重启 OG Developer，或者断开并重新连接数据库，确保旧 Agent 进程退出并加载新 JAR。然后使用 Issue 对应的真实数据库版本重新执行复现步骤。
 
 #### `agents/versions.json` 什么时候修改
 

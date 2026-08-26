@@ -3,7 +3,7 @@ title: SQL File Execution
 description: Preview and execute one or more SQL files in order with per-file statistics, statement progress, and failure reporting.
 ---
 
-SQL File Execution runs initialization scripts, database exports, data patches, and migrations. DBX shows a truncated preview first, then executes files in selection order and statements in script order.
+SQL File Execution runs initialization scripts, database exports, data patches, and migrations. OG Developer shows a truncated preview first, then executes files in selection order and statements in script order.
 
 <Callout type="warn">SQL files can create, modify, or remove large amounts of data and schema. The preview is not the complete file and cannot prove a script is safe. Verify the target connection, database, file order, and source before execution.</Callout>
 
@@ -12,7 +12,7 @@ SQL File Execution runs initialization scripts, database exports, data patches, 
 | Runtime | File location and handling |
 | --- | --- |
 | Desktop | Selects one or more local `.sql` files directly and can display local filename or path information |
-| Docker/Web | Uploads browser-selected files into temporary DBX server storage; the UI shows the selected names instead of server UUID paths |
+| Docker/Web | Uploads browser-selected files into temporary OG Developer server storage; the UI shows the selected names instead of server UUID paths |
 
 In Docker/Web, reading and execution happen on the server. Temporary resources are released after the operation. The server cannot directly open arbitrary paths from the computer running the browser.
 
@@ -34,7 +34,7 @@ In Docker/Web, reading and execution happen on the server. Temporary resources a
   <Step>
     ### Select Connection and Database
 
-    A target database is normally required. When the script establishes database context itself, such as an earlier recognizable `USE`, DBX can allow execution without a preselected database on supported paths.
+    A target database is normally required. When the script establishes database context itself, such as an earlier recognizable `USE`, OG Developer can allow execution without a preselected database on supported paths.
 
   </Step>
   <Step>
@@ -64,7 +64,7 @@ This supports split initialization and restore scripts, but makes ordering signi
 
 ## Statement Splitting and Import Helpers
 
-DBX reads files as a stream and uses database-aware splitting instead of breaking at every semicolon:
+OG Developer reads files as a stream and uses database-aware splitting instead of breaking at every semicolon:
 
 - Semicolons inside strings, line comments, and block comments do not terminate a statement
 - PostgreSQL dollar-quoted function bodies remain intact
@@ -79,11 +79,11 @@ Database dialects and script generators vary widely. Test complex scripts first,
 
 ### Stop on Error
 
-The default ends the task after the first failed statement. DBX retains completed statistics, the failed statement summary, and the database error.
+The default ends the task after the first failed statement. OG Developer retains completed statistics, the failed statement summary, and the database error.
 
 ### Continue on Error
 
-When enabled, DBX records a failure and proceeds. Multi-file tasks also move to the next file and report success count, failure count, affected rows, and elapsed time for each file.
+When enabled, OG Developer records a failure and proceeds. Multi-file tasks also move to the next file and report success count, failure count, affected rows, and elapsed time for each file.
 
 <Callout type="info">Continue on error changes task control flow only. It does not repair transaction state. Some databases require an explicit rollback after a transaction error, so later statements may continue failing.</Callout>
 
@@ -106,16 +106,13 @@ Query execution support does not guarantee compatibility with every client scrip
 - Look for `DROP`, `TRUNCATE`, unqualified `UPDATE` / `DELETE`, privilege changes, or configuration changes
 - Decide whether continue-on-error could hide a critical failure
 - Check read-only and production protection on the target
-- Create a [Database Export](/en/docs/database-export) or [Database Backup](/en/docs/database-backup) first when appropriate
+- Create a [Database Export](/en/docs/database-export) first when appropriate
 
 ## Related Features
 
 <Cards>
   <Card title="Database Export" href="/en/docs/database-export">
     Generate structure, data, and object SQL files.
-  </Card>
-  <Card title="Database Backup" href="/en/docs/database-backup">
-    Schedule MySQL and PostgreSQL backups in Desktop.
   </Card>
   <Card title="Production Safety" href="/en/docs/production-safety">
     Understand pre-execution confirmation, read-only protection, and privilege boundaries.

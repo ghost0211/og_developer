@@ -1,4 +1,4 @@
-export type SettingsCategory = "editor" | "formatter" | "appearance" | "navigation" | "data" | "backups" | "tunnels" | "shortcuts" | "snippets" | "ai" | "mcp" | "security" | "about";
+export type SettingsCategory = "editor" | "formatter" | "appearance" | "navigation" | "data" | "shortcuts" | "snippets" | "ai" | "mcp" | "security" | "about";
 
 export interface SettingsSearchContext {
   isWeb: boolean;
@@ -29,34 +29,6 @@ export interface SettingsSearchEntry {
   shortcutId?: string;
 }
 export type Translate = (key: string) => string;
-
-type ToolbarVisibilityItemKey = "history" | "ai" | "theme";
-
-export type ToolbarVisibilityItem = { key: ToolbarVisibilityItemKey; titleKey: string; title?: never } | { key: ToolbarVisibilityItemKey; title: string; titleKey?: never };
-
-/**
- * The toolbar visibility controls and their search entries use this same list.
- * Keeping the labels here prevents a newly added toggle from being absent from
- * settings search.
- */
-export const TOOLBAR_VISIBILITY_ITEMS: readonly ToolbarVisibilityItem[] = [
-  { key: "history", titleKey: "history.title" },
-  { key: "ai", title: "AI" },
-  { key: "theme", titleKey: "toolbar.theme" },
-];
-
-export function toolbarVisibilityItemLabel(item: ToolbarVisibilityItem, translate: Translate): string {
-  return item.titleKey ? translate(item.titleKey) : (item.title ?? "");
-}
-
-export function createToolbarVisibilitySettingsSearchDefinitions(items: readonly ToolbarVisibilityItem[] = TOOLBAR_VISIBILITY_ITEMS): SettingsSearchDefinition[] {
-  return items.map((item) => ({
-    id: `appearance-toolbar-${item.key}`,
-    category: "appearance",
-    ...(item.titleKey ? { titleKey: item.titleKey } : { title: item.title }),
-    targetId: "appearance",
-  }));
-}
 
 const desktopOnly = (context: SettingsSearchContext) => !context.isWeb;
 const webOnly = (context: SettingsSearchContext) => context.isWeb;
@@ -121,7 +93,6 @@ export const SETTINGS_SEARCH_DEFINITIONS: readonly SettingsSearchDefinition[] = 
   { id: "formatter-dense-operators", category: "formatter", titleKey: "settings.sqlFormatterDenseOperators", targetId: "formatter" },
   { id: "formatter-newline-before-semicolon", category: "formatter", titleKey: "settings.sqlFormatterNewlineBeforeSemicolon", targetId: "formatter" },
   { id: "formatter-param-types", category: "formatter", titleKey: "settings.sqlFormatterParamTypes", targetId: "formatter" },
-  { id: "appearance-language", category: "appearance", titleKey: "settings.languageTitle", targetId: "appearance" },
   { id: "appearance-theme", category: "appearance", titleKey: "settings.theme", targetId: "appearance" },
   { id: "appearance-color-theme", category: "appearance", titleKey: "settings.colorTheme", targetId: "appearance" },
   { id: "appearance-ui-scale", category: "appearance", titleKey: "settings.uiScale", descriptionKey: "settings.uiScaleDescription", targetId: "appearance" },
@@ -155,8 +126,6 @@ export const SETTINGS_SEARCH_DEFINITIONS: readonly SettingsSearchDefinition[] = 
   { id: "appearance-infinite-scroll-limit", category: "appearance", titleKey: "settings.infiniteScrollMaxRows", descriptionKey: "settings.infiniteScrollMaxRowsDescription", targetId: "appearance" },
   { id: "appearance-auto-transpose", category: "appearance", titleKey: "settings.dataGridAutoTransposeSingleRow", descriptionKey: "settings.dataGridAutoTransposeSingleRowDescription", targetId: "appearance" },
   { id: "appearance-quick-entry", category: "appearance", titleKey: "settings.dataGridQuickEntry", descriptionKey: "settings.dataGridQuickEntryDescription", targetId: "appearance" },
-  { id: "appearance-toolbar", category: "appearance", titleKey: "settings.toolbarTitle", descriptionKey: "settings.toolbarHiddenHint", targetId: "appearance" },
-  ...createToolbarVisibilitySettingsSearchDefinitions(),
   { id: "data-datetime", category: "data", titleKey: "settings.dateTimeSection", targetId: "data" },
   { id: "data-datetime-display-format", category: "data", titleKey: "settings.globalDateTimeDisplayFormat", descriptionKey: "settings.globalDateTimeDisplayFormatDescription", targetId: "data" },
   { id: "data-datetime-export-format", category: "data", titleKey: "settings.globalDateTimeExportFormat", descriptionKey: "settings.globalDateTimeExportFormatDescription", targetId: "data" },
@@ -169,7 +138,6 @@ export const SETTINGS_SEARCH_DEFINITIONS: readonly SettingsSearchDefinition[] = 
   { id: "data-table-template", category: "data", titleKey: "settings.tableColumnTemplateFields", descriptionKey: "settings.tableColumnTemplateFieldsDescription", targetId: "table-column-templates" },
   { id: "data-duckdb", category: "data", titleKey: "settings.duckDbWorkerProcessIsolation", descriptionKey: "settings.duckDbWorkerProcessIsolationDescription", targetId: "data", visible: desktopOnly },
   { id: "data-duckdb-process-limit", category: "data", titleKey: "settings.duckDbWorkerMaxProcesses", descriptionKey: "settings.duckDbWorkerMaxProcessesDescription", targetId: "data", visible: desktopOnly },
-  { id: "tunnels", category: "tunnels", titleKey: "settings.tunnelsTab", targetId: "tunnels" },
   { id: "shortcuts", category: "shortcuts", titleKey: "settings.shortcutsTab", targetId: "shortcuts" },
   { id: "snippets", category: "snippets", titleKey: "settings.snippetsTab", descriptionKey: "settings.snippetsDescription", targetId: "snippets" },
   { id: "ai-config", category: "ai", titleKey: "ai.configList", targetId: "ai" },

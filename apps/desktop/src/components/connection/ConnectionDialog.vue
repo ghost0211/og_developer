@@ -1,6 +1,6 @@
 <!--
   SPDX-License-Identifier: Apache-2.0
-  og developer — modified from upstream dbx (https://github.com/t8y2/dbx,
+  OG Developer — modified from upstream dbx (https://github.com/t8y2/dbx,
   Apache-2.0, Copyright (c) dbx contributors) for openGauss support:
   connection type picker restricted to openGauss (ENABLED_DATABASE_TYPES
   whitelist; upstream code kept intact). See NOTICE for modifications.
@@ -29,7 +29,7 @@ import type { MqttConnectionConfig } from "@/types/mqtt";
 import type { NacosAdminConfig, NacosAuthConfig, NacosImplementation, NacosMetricsMode, NacosRNacosConsoleAuth, NacosVersionMode } from "@/types/nacos";
 import { CONNECTION_ATTEMPT_CANCELLED_MESSAGE, useConnectionStore } from "@/stores/connectionStore";
 import { useTunnelProfileStore } from "@/stores/tunnelProfileStore";
-import { detachTunnelProfileLayer, tunnelProfileReferenceLayer, tunnelProfileSummary } from "@/lib/connection/tunnelProfiles";
+import { detachTunnelProfileLayer, tunnelProfileSummary } from "@/lib/connection/tunnelProfiles";
 import { applySshConfigHostAliasPrefill as prefillSshConfigHostAlias } from "@/lib/connection/sshConfigHosts";
 import { canPersistConnectionTestResult, connectionEditDraftSyncAction } from "./connectionEditDraftSync";
 import { REDIS_SCAN_PAGE_SIZE_DEFAULT, REDIS_SCAN_PAGE_SIZE_MIN, REDIS_SCAN_PAGE_SIZE_MAX, REDIS_SCAN_PAGE_SIZE_OPTIONS } from "@/lib/redis/redisKeyPattern";
@@ -192,7 +192,6 @@ const emit = defineEmits<{
   connectStarted: [name: string];
   connectSucceeded: [name: string];
   connectFailed: [message: string];
-  openTunnelProfileSettings: [];
 }>();
 
 const store = useConnectionStore();
@@ -501,7 +500,7 @@ const opengaussDriverMode = computed<OpengaussConnectionMode>({
   },
 });
 const isOpengaussJdbcConnection = computed(() => opengaussDriverMode.value === "jdbc");
-// og developer: the bundled official driver is the default; the jar picker is
+// OG Developer: the bundled official driver is the default; the jar picker is
 // collapsed behind a "customize" toggle unless the connection already carries
 // explicit driver paths.
 const opengaussDriverCustomOpen = ref(false);
@@ -1766,7 +1765,7 @@ async function ensureRequiredGaussdbMJdbcRuntime(config: ConnectionConfig): Prom
   await api.installJdbcPlugin();
 }
 
-// og developer: JDBC mode auto-provisions everything. The JDBC plugin is
+// OG Developer: JDBC mode auto-provisions everything. The JDBC plugin is
 // installed on demand and, when no driver jar was picked manually, the
 // official opengauss-jdbc driver is fetched from Maven Central — this is
 // what makes the official driver effectively built in.
@@ -2374,31 +2373,7 @@ const selectedSshLayer = computed(() => (selectedTransportLayer.value?.type === 
 const selectedProxyLayer = computed(() => (selectedTransportLayer.value?.type === "proxy" ? selectedTransportLayer.value : null));
 const selectedHttpTunnelLayer = computed(() => (selectedTransportLayer.value?.type === "http_tunnel" ? selectedTransportLayer.value : null));
 
-const tunnelProfiles = computed(() => tunnelProfileStore.profiles);
 const selectedLayerProfileId = computed(() => selectedTransportLayer.value?.profile_id || "");
-const selectedLayerProfile = computed(() => tunnelProfileStore.profileById(selectedLayerProfileId.value));
-
-function tunnelProfileOptionLabel(profile: (typeof tunnelProfiles.value)[number]): string {
-  const summary = tunnelProfileSummary(profile);
-  if (!profile.name?.trim()) return summary || profile.id;
-  return summary ? `${profile.name} (${summary})` : profile.name;
-}
-
-function applyTunnelProfileSelection(value: unknown) {
-  const selected = selectedTransportLayer.value;
-  if (!selected) return;
-  if (!value || value === "custom") {
-    if (!selected.profile_id) return;
-    const detached = detachTunnelProfileLayer(selected, tunnelProfileStore.profileById(selected.profile_id));
-    form.value.transport_layers = transportLayers.value.map((layer) => (layer.id === selected.id ? detached : layer));
-  } else {
-    const profile = tunnelProfileStore.profileById(String(value));
-    if (!profile) return;
-    const stub = tunnelProfileReferenceLayer(profile, selected);
-    form.value.transport_layers = transportLayers.value.map((layer) => (layer.id === selected.id ? stub : layer));
-  }
-  resetTestState();
-}
 
 function transportLayerDefaultName(layer: TransportLayerConfig, index: number): string {
   if (layer.type === "proxy") return `Proxy ${index + 1}`;
@@ -2410,7 +2385,7 @@ function transportLayerDisplayName(layer: TransportLayerConfig, index: number): 
   if (layer.profile_id) {
     const profile = tunnelProfileStore.profileById(layer.profile_id);
     if (profile) return profile.name?.trim() || tunnelProfileSummary(profile) || transportLayerDefaultName(layer, index);
-    return layer.name?.trim() || t("connection.tunnelProfileMissingName");
+    return layer.name?.trim() || transportLayerDefaultName(layer, index);
   }
   const target = layer.type === "http_tunnel" ? layer.url?.trim() : layer.host?.trim();
   return layer.name?.trim() || target || transportLayerDefaultName(layer, index);
@@ -2418,7 +2393,7 @@ function transportLayerDisplayName(layer: TransportLayerConfig, index: number): 
 
 const transportPathSegments = computed(() => {
   const layers = transportLayers.value.filter((layer) => layer.enabled !== false);
-  return ["ogdeveloper", ...layers.map(transportLayerDisplayName), form.value.host || "Database"];
+  return ["OG Developer", ...layers.map(transportLayerDisplayName), form.value.host || "Database"];
 });
 
 function defaultDatabaseForProfile() {
@@ -2699,11 +2674,11 @@ assertCompleteDatabaseCategories(
   dbCategoryDefinitions.map((category) => category.optionValues),
 );
 
-// og developer is a dedicated openGauss tool: only openGauss is offered in
+// OG Developer is a dedicated openGauss tool: only openGauss is offered in
 // the connection picker. The full upstream dbx option set below is kept
 // intact for reference and can be re-enabled by widening this allowlist.
 const ENABLED_DATABASE_TYPES = new Set<string>(["opengauss"]);
-// og developer: with a single database type the picker step is skipped and
+// OG Developer: with a single database type the picker step is skipped and
 // new connections open directly on the openGauss form.
 const pickerAvailable = computed(() => ENABLED_DATABASE_TYPES.size > 1);
 
@@ -5097,10 +5072,25 @@ function onJdbcDriverSelect(id: any) {
   jdbcManualClasspathOpen.value = false;
 }
 
+function detachLoadedTunnelProfiles() {
+  // Do not interpret the initial empty profile list as "profile missing".
+  // Loading is asynchronous; detaching before it completes would replace a
+  // reference stub with empty defaults and lose the saved preset values.
+  if (!tunnelProfileStore.isLoaded) return;
+  const layers = form.value.transport_layers || [];
+  if (!layers.some((layer) => layer.profile_id)) return;
+  form.value.transport_layers = layers.map((layer) => (layer.profile_id ? detachTunnelProfileLayer(normalizeTransportLayer(layer), tunnelProfileStore.profileById(layer.profile_id)) : layer));
+}
+
 onMounted(async () => {
-  void tunnelProfileStore.init();
+  await tunnelProfileStore.init();
+  detachLoadedTunnelProfiles();
   unlistenAgentInstallProgress = await api.listenAgentInstallProgress(handleAgentInstallProgress);
 });
+
+// 隧道预设管理已移除：表单加载时（或预设列表异步就绪后）把引用了预设的
+// 传输层展开为自包含的内联配置，使其回到可编辑状态。
+watch([() => tunnelProfileStore.profiles, () => tunnelProfileStore.isLoaded, () => form.value.transport_layers], detachLoadedTunnelProfiles, { immediate: true });
 
 onUnmounted(() => {
   unlistenAgentInstallProgress?.();
@@ -7455,34 +7445,6 @@ function openExternalUrl(url: string) {
                   <div class="grid grid-cols-4 items-center gap-4">
                     <Label :class="connectionLabelSmallClass">{{ t("connection.sshHopName") }}</Label>
                     <Input v-model="selectedTransportLayer.name" class="col-span-3" :placeholder="t('connection.sshHopNamePlaceholder')" />
-                  </div>
-                  <div v-if="tunnelProfiles.length || selectedLayerProfileId" class="grid grid-cols-4 items-center gap-4">
-                    <Label :class="connectionLabelSmallClass">{{ t("connection.tunnelProfile") }}</Label>
-                    <div class="col-span-3 flex min-w-0 items-center gap-2">
-                      <Select :model-value="selectedLayerProfileId || 'custom'" @update:model-value="applyTunnelProfileSelection">
-                        <SelectTrigger class="h-9 min-w-0 flex-1">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="custom">{{ t("connection.tunnelProfileCustom") }}</SelectItem>
-                          <SelectItem v-for="profile in tunnelProfiles" :key="profile.id" :value="profile.id">{{ tunnelProfileOptionLabel(profile) }}</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <Button type="button" variant="outline" size="sm" class="shrink-0" @click="emit('openTunnelProfileSettings')">
-                        {{ t("connection.tunnelProfileManage") }}
-                      </Button>
-                    </div>
-                  </div>
-                  <div v-if="selectedLayerProfileId" class="grid grid-cols-4 items-start gap-4">
-                    <span />
-                    <div class="col-span-3 grid min-w-0 gap-1 rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-                      <template v-if="selectedLayerProfile">
-                        <span class="truncate font-medium text-foreground">{{ selectedLayerProfile.name || tunnelProfileSummary(selectedLayerProfile) }}</span>
-                        <span v-if="selectedLayerProfile.name && tunnelProfileSummary(selectedLayerProfile)" class="truncate">{{ tunnelProfileSummary(selectedLayerProfile) }}</span>
-                        <span>{{ t("connection.tunnelProfileManaged") }}</span>
-                      </template>
-                      <span v-else class="text-red-500">{{ t("connection.tunnelProfileMissing") }}</span>
-                    </div>
                   </div>
                   <div v-if="!selectedLayerProfileId" class="grid grid-cols-4 items-center gap-4">
                     <Label :class="connectionLabelSmallClass">Type</Label>

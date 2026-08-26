@@ -1,6 +1,6 @@
-# Windows 构建指南（og developer）
+# Windows 构建指南（OG Developer）
 
-本文档面向在 Windows 10/11 上构建 ogdeveloper 桌面安装包（`.msi` / `.exe`）。
+本文档面向在 Windows 10/11 上构建 OG Developer 桌面安装包（`.msi` / `.exe`）。
 
 ## 1. 环境清单（装完核对一遍）
 

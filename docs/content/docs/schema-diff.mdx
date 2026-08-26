@@ -3,7 +3,7 @@ title: Schema and Data Comparison
 description: Compare schemas or table data, review differences, type mappings, impact, and synchronization SQL, then deploy to a target environment.
 ---
 
-DBX provides two comparison workflows:
+OG Developer provides two comparison workflows:
 
 - **Schema Diff** compares objects and DDL and generates a deployment script from source to target
 - **Data Compare** compares rows in one or more tables by key columns and generates selectable insert, update, and delete SQL
@@ -36,7 +36,7 @@ Both treat the source as the desired state and the target as the environment to 
   <Step>
     ### Compare and select objects
 
-    DBX reads metadata and DDL, builds an object tree, and marks creations, deletions, modifications, and dependencies. Select the objects that should actually deploy.
+    OG Developer reads metadata and DDL, builds an object tree, and marks creations, deletions, modifications, and dependencies. Select the objects that should actually deploy.
 
   </Step>
   <Step>
@@ -119,7 +119,7 @@ The final deployment page repeats the target server, database, schema, database 
 
 ## Dialect Semantics
 
-DBX attempts to preserve database-specific semantics rather than normalizing everything to generic DDL, including:
+OG Developer attempts to preserve database-specific semantics rather than normalizing everything to generic DDL, including:
 
 - PostgreSQL/openGauss schemas, sequences, owners, rules, and index features
 - MySQL-compatible charset, collation, identity, and index syntax
@@ -148,7 +148,7 @@ Data Compare is separate from Schema Diff and compares rows between source and t
   <Step>
     ### Run comparison
 
-    DBX reads both sides and marks source-only, target-only, and changed rows. Batch mode shows current table, progress, and per-table failures.
+    OG Developer reads both sides and marks source-only, target-only, and changed rows. Batch mode shows current table, progress, and per-table failures.
 
   </Step>
   <Step>
@@ -160,7 +160,7 @@ Data Compare is separate from Schema Diff and compares rows between source and t
   <Step>
     ### Generate and execute synchronization SQL
 
-    DBX generates target-dialect `INSERT`, `UPDATE`, and `DELETE` statements. Review statement count and target before execution.
+    OG Developer generates target-dialect `INSERT`, `UPDATE`, and `DELETE` statements. Review statement count and target before execution.
 
   </Step>
 </Steps>
@@ -199,8 +199,8 @@ Delete synchronization is the highest-risk option. If target-local data is allow
   <Card title="Edit one table" href="/en/docs/table-structure">
     Edit columns, indexes, foreign keys, and triggers visually.
   </Card>
-  <Card title="Back up the database" href="/en/docs/database-backup">
-    Create manual or scheduled logical backups before risky synchronization.
+  <Card title="Export the database" href="/en/docs/database-export">
+    Create a reviewable SQL export before risky synchronization.
   </Card>
   <Card title="Transfer data" href="/en/docs/data-transfer">
     Use this when the goal is moving full tables rather than comparing rows.

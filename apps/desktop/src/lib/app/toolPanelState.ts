@@ -1,4 +1,4 @@
-export const TOOL_PANEL_IDS = ["ai", "history", "sqlLibrary", "sqlFile"] as const;
+export const TOOL_PANEL_IDS = ["ai", "history", "sqlLibrary", "sqlFile", "projectFile", "git"] as const;
 export type ToolPanelId = (typeof TOOL_PANEL_IDS)[number];
 export type ToolPanelState = Record<ToolPanelId, boolean>;
 
@@ -8,7 +8,7 @@ export interface ToolPanelSession {
 }
 
 function closedToolPanels(): ToolPanelState {
-  return { ai: false, history: false, sqlLibrary: false, sqlFile: false };
+  return { ai: false, history: false, sqlLibrary: false, sqlFile: false, projectFile: false, git: false };
 }
 
 export function createToolPanelSession(open: ToolPanelState, storedActive?: string | null): ToolPanelSession {

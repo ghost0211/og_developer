@@ -3,7 +3,7 @@ title: Table Import
 description: Use a guided workflow to import CSV, TSV, text, JSON, or Excel data into an existing table or create new tables in batches.
 ---
 
-Table Import writes file data into database tables. DBX parses and previews the source first, then asks you to review parsing options, the target, column mappings, and execution settings before any rows are written.
+Table Import writes file data into database tables. OG Developer parses and previews the source first, then asks you to review parsing options, the target, column mappings, and execution settings before any rows are written.
 
 <Callout type="warn">Import performs real database writes. Connection read-only protection blocks the operation, but database privileges remain the final boundary. Verify the target connection, target table, and backup plan before importing into production.</Callout>
 
@@ -14,7 +14,7 @@ Table Import writes file data into database tables. DBX parses and previews the 
 | Existing table | Loads target columns and maps source fields; supports append or truncate-then-import | Backfills, test data restoration, and sample data replacement |
 | Create new table | Infers column types from preview data and lets you edit the table name, column names, and types | Fast file-to-table workflows, spreadsheet migration, and multi-file imports |
 
-Create-table mode accepts multiple files at once. Excel workbooks are expanded into separate tasks per worksheet. DBX suggests a table name for each file or sheet and requires the final names to be unique. Tasks run sequentially and keep independent previews, mappings, and type settings.
+Create-table mode accepts multiple files at once. Excel workbooks are expanded into separate tasks per worksheet. OG Developer suggests a table name for each file or sheet and requires the final names to be unique. Tasks run sequentially and keep independent previews, mappings, and type settings.
 
 ## Supported Files
 
@@ -85,14 +85,14 @@ CSV, TSV, and delimited text support auto detection, UTF-8, GBK, UTF-16 LE, and 
 
 ## Mapping and Table Creation
 
-For existing tables, DBX first matches exact names, then normalized names. Normalization ignores case and differences in spaces, underscores, and hyphens.
+For existing tables, OG Developer first matches exact names, then normalized names. Normalization ignores case and differences in spaces, underscores, and hyphens.
 
 - Source columns can be skipped
 - A target column cannot be mapped more than once
 - At least one column must be mapped
 - Required unmapped columns need a default, auto-generated behavior, or nullable definition
 
-For new tables, source columns initially map to same-name targets and DBX suggests database-specific types from preview values. Suggestions are only a starting point; review dates, precision, long text, JSON, binary values, and engine-specific types before execution.
+For new tables, source columns initially map to same-name targets and OG Developer suggests database-specific types from preview values. Suggestions are only a starting point; review dates, precision, long text, JSON, binary values, and engine-specific types before execution.
 
 ## Modes and Batches
 
@@ -106,9 +106,9 @@ New-table and multi-file imports always use append because each target is create
 
 ## Database Coverage
 
-DBX exposes Table Import through the driver capability manifest. Only connections that implement column discovery, table creation or writing, and required type conversion enable the action. Specialized Redis, MongoDB, search, vector, message queue, and configuration-center workspaces use their own workflows instead of this relational table importer.
+OG Developer exposes Table Import through the driver capability manifest. Only connections that implement column discovery, table creation or writing, and required type conversion enable the action. Specialized Redis, MongoDB, search, vector, message queue, and configuration-center workspaces use their own workflows instead of this relational table importer.
 
-Being able to connect does not imply Table Import support. If the action is absent, check the database type, driver mode, and DBX version before treating it as a privilege problem.
+Being able to connect does not imply Table Import support. If the action is absent, check the database type, driver mode, and OG Developer version before treating it as a privilege problem.
 
 ## Failure and Cancellation
 

@@ -4,7 +4,6 @@ import { describe, expect, it } from "vitest";
 const dialogSource = readFileSync(new URL("../../../components/connection/ConnectionDialog.vue", import.meta.url), "utf8");
 const enSource = readFileSync(new URL("../../../i18n/locales/en.ts", import.meta.url), "utf8");
 const zhCnSource = readFileSync(new URL("../../../i18n/locales/zh-CN.ts", import.meta.url), "utf8");
-const fallbackLocaleSources = ["es", "it", "ja", "ko", "pt-BR", "zh-TW"].map((locale) => readFileSync(new URL(`../../../i18n/locales/${locale}.ts`, import.meta.url), "utf8"));
 
 describe("ZooKeeper connection dialog", () => {
   it("binds the existing Select component to the ZooKeeper auth_scheme helper", () => {
@@ -22,9 +21,6 @@ describe("ZooKeeper connection dialog", () => {
       expect(source).toContain("zookeeperAuthDigest:");
       expect(source).toContain("zookeeperAuthSaslDigest:");
       expect(source).toContain("zookeeperClusterInputHint:");
-    }
-    for (const source of fallbackLocaleSources) {
-      expect(source).toContain("withEnglishFallback");
     }
     expect(dialogSource).toContain('t("connection.zookeeperAuthMethod")');
     expect(dialogSource).toContain('t("connection.zookeeperClusterInputHint")');

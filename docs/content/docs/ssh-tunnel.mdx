@@ -3,13 +3,13 @@ title: Tunnel / Proxy
 description: Connect to private databases through SSH tunnels, HTTP tunnels, SOCKS5 proxies, or HTTP proxies.
 ---
 
-<Callout type="info">DBX can open connection layers for databases that are not directly reachable. Configure them from the connection dialog's **Tunnel / Proxy** tab.</Callout>
+<Callout type="info">OG Developer can open connection layers for databases that are not directly reachable. Configure them from the connection dialog's **Tunnel / Proxy** tab.</Callout>
 
 <Callout type="warning">
-  Tunnels run where the DBX backend runs. On Desktop, local paths and temporary listeners belong to your computer. In Docker/Web, paths, network egress, and temporary listeners belong to the server or container, not the computer running the browser.
+  Tunnels run where the OG Developer backend runs. On Desktop, local paths and temporary listeners belong to your computer. In Docker/Web, paths, network egress, and temporary listeners belong to the server or container, not the computer running the browser.
 </Callout>
 
-DBX supports three tunnel / proxy types:
+OG Developer supports three tunnel / proxy types:
 
 | Type        | Use When                                                                 |
 | ----------- | ------------------------------------------------------------------------ |
@@ -17,19 +17,13 @@ DBX supports three tunnel / proxy types:
 | Proxy       | Your network requires SOCKS5 or HTTP CONNECT proxy access.               |
 | HTTP tunnel | Only a web server can reach the database, and SSH/VPN is not available. |
 
-For network databases, DBX opens a temporary port in its current runtime and points the database driver at that port. The tunnel / proxy layer forwards protocol bytes to the real target. A connection may combine multiple transport layers, which DBX establishes in the order shown in the connection dialog.
+For network databases, OG Developer opens a temporary port in its current runtime and points the database driver at that port. The tunnel / proxy layer forwards protocol bytes to the real target. A connection may combine multiple transport layers, which OG Developer establishes in the order shown in the connection dialog.
 
-## Per-Connection and Shared Profiles
+## Per-Connection Configuration
 
-Configure a layer directly under a connection's **Tunnel / Proxy** tab, or create reusable profiles under **Settings → Tunnels**:
+Configure each layer directly under a connection's **Tunnel / Proxy** tab. Each connection stores its own tunnel/proxy layers, and the order shown in the connection dialog is the order used to establish the route.
 
-- Shared profiles support SSH, SOCKS5 / HTTP CONNECT proxies, and HTTP tunnels.
-- Multiple database connections can reference the same profile.
-- Editing a profile changes every referencing connection the next time it connects.
-- The SSH test verifies reachability and authentication. The proxy test performs a proxy handshake and may use an optional target `host:port`.
-- HTTP tunnels open lazily only when real target traffic starts, so there is no standalone HTTP-tunnel profile test.
-
-Detach a profile from an individual connection when that connection needs different credentials or a custom layer order.
+The SSH test verifies reachability and authentication. The proxy test performs a proxy handshake and may use an optional target `host:port`. HTTP tunnels open lazily only when real target traffic starts, so there is no standalone HTTP-tunnel test.
 
 ## SSH Tunnel
 
@@ -40,11 +34,11 @@ SSH tunnels are built in. You do not need to create a manual terminal port forwa
 | SSH Host        | Hostname or IP of the SSH server                                              |
 | SSH Port        | Port for SSH (default: 22)                                                    |
 | SSH User        | Username for SSH authentication                                               |
-| Connect Timeout | Maximum time DBX waits while opening the SSH connection; default is 5 seconds |
+| Connect Timeout | Maximum time OG Developer waits while opening the SSH connection; default is 5 seconds |
 
 <Tabs groupId="ssh-auth" items={['Private Key (Recommended)', 'Private Key + Password', 'Password', 'No Credential']}>
   <Tab value="Private Key (Recommended)">
-    Enter a private key file that the DBX backend can read, for example `~/.ssh/id_rsa` or `~/.ssh/id_ed25519`:
+    Enter a private key file that the OG Developer backend can read, for example `~/.ssh/id_rsa` or `~/.ssh/id_ed25519`:
 
     - **Key Path** — Desktop can browse local files. Web requires a server- or container-side path entered manually.
     - **Key Passphrase** — Enter the passphrase if your key is encrypted.
@@ -53,7 +47,7 @@ SSH tunnels are built in. You do not need to create a manual terminal port forwa
 
   </Tab>
   <Tab value="Private Key + Password">
-    Use a private key as the primary credential with password as a fallback. DBX tries key authentication first; if the server rejects the key and continues to offer password authentication, it automatically falls back to password authentication.
+    Use a private key as the primary credential with password as a fallback. OG Developer tries key authentication first; if the server rejects the key and continues to offer password authentication, it automatically falls back to password authentication.
 
     - **Key Path** — Browse and select your key file.
     - **Key Passphrase** — Enter the passphrase if your key is encrypted.
@@ -71,16 +65,16 @@ SSH tunnels are built in. You do not need to create a manual terminal port forwa
 
 ### Host-Key Verification
 
-DBX verifies the SSH host key before it sends a credential. Trusted keys come from the system `known_hosts` files and DBX's own `known_hosts` under the data directory:
+OG Developer verifies the SSH host key before it sends a credential. Trusted keys come from the system `known_hosts` files and OG Developer's own `known_hosts` under the data directory:
 
 - An unknown host prompts you to review and explicitly accept its fingerprint.
-- You can trust it for the current connection only or remember it in DBX's `known_hosts`.
-- DBX rejects a changed key for a previously known host.
+- You can trust it for the current connection only or remember it in OG Developer's `known_hosts`.
+- OG Developer rejects a changed key for a previously known host.
 - If the confirmation UI is unavailable, times out, or rejects the key, the connection fails without sending a password or private key.
 
 ### Expose Tunnel to LAN
 
-<Callout type="warn">LAN exposure changes the SSH listener from `127.0.0.1` to `0.0.0.0`. This expands the attack surface of the DBX runtime and should only be used on trusted networks with appropriate firewall rules.</Callout>
+<Callout type="warn">LAN exposure changes the SSH listener from `127.0.0.1` to `0.0.0.0`. This expands the attack surface of the OG Developer runtime and should only be used on trusted networks with appropriate firewall rules.</Callout>
 
 On Desktop, this may make the temporary port reachable through your computer. In Docker/Web, the listener is inside the server or container; external reachability still depends on published ports, container networking, and the host firewall.
 
@@ -88,7 +82,7 @@ On Desktop, this may make the temporary port reachable through your computer. In
 
 Use a proxy layer when your environment requires an outbound proxy instead of SSH.
 
-DBX supports:
+OG Developer supports:
 
 - SOCKS5 proxy
 - HTTP CONNECT proxy
@@ -98,7 +92,7 @@ A shared proxy profile may include an optional test target such as `mysql.intern
 
 ## HTTP Tunnel
 
-<Callout type="info">The feature is an HTTP tunnel. The script currently provided by DBX is `dbx_tunnel.php`, so the deployment artifact is PHP-specific, but the connection type in DBX is HTTP tunnel.</Callout>
+<Callout type="info">The feature is an HTTP tunnel. The script currently provided by OG Developer is `dbx_tunnel.php`, so the deployment artifact is PHP-specific, but the connection type in OG Developer is HTTP tunnel.</Callout>
 
 Use HTTP tunnel when the database is inside a private network, but a web server in that network can reach it. This matches environments where only HTTP/HTTPS is available and SSH tunnel permissions are too broad or unavailable.
 
@@ -110,13 +104,13 @@ Configure these environment variables on the PHP server:
 
 | Variable                         | Required | Description                                                                 |
 | -------------------------------- | -------- | --------------------------------------------------------------------------- |
-| `DBX_TUNNEL_TOKEN`               | Yes      | Shared token. Enter the same value in DBX.                                  |
+| `DBX_TUNNEL_TOKEN`               | Yes      | Shared token. Enter the same value in OG Developer.                                  |
 | `DBX_TUNNEL_ALLOWED_HOSTS`       | No       | Comma-separated target host allow-list. Strongly recommended.               |
 | `DBX_TUNNEL_DIR`                 | No       | Session queue directory. Defaults to a temp directory.                      |
 | `DBX_TUNNEL_MAX_SESSION_SECONDS` | No       | Maximum session lifetime. Defaults to `3600`.                               |
 | `DBX_TUNNEL_PHP`                 | No       | PHP CLI path used when PHP-FPM `fastcgi_finish_request` is not available.   |
 
-In DBX, add an **HTTP Tunnel** layer and fill:
+In OG Developer, add an **HTTP Tunnel** layer and fill:
 
 | Field             | Description                                                        |
 | ----------------- | ------------------------------------------------------------------ |
@@ -129,9 +123,9 @@ The database host and port should be the address as seen from the PHP server, no
 ### HTTP Tunnel Flow
 
 ```text
-DBX database driver
+OG Developer database driver
   -> 127.0.0.1:<local temporary port>
-  -> DBX HTTP tunnel client
+  -> OG Developer HTTP tunnel client
   -> HTTP POST requests
   -> dbx_tunnel.php on the web server
   -> TCP connection from PHP to the private database
@@ -140,15 +134,15 @@ DBX database driver
 
 The request protocol is short HTTP polling:
 
-1. DBX starts a TCP listener in its current runtime.
+1. OG Developer starts a TCP listener in its current runtime.
 2. The database driver connects to that local port.
-3. DBX sends `open` to `dbx_tunnel.php` with a session id, target host, target port, and connect timeout.
+3. OG Developer sends `open` to `dbx_tunnel.php` with a session id, target host, target port, and connect timeout.
 4. The PHP script validates the token and allow-list, then starts a worker that opens a TCP socket to the database.
 5. Bytes from the database driver are sent to the script with `write`.
-6. DBX polls the script with `read`; response bytes are written back to the local database driver connection.
-7. When the connection ends, DBX sends `close` and the PHP worker closes the database socket.
+6. OG Developer polls the script with `read`; response bytes are written back to the local database driver connection.
+7. When the connection ends, OG Developer sends `close` and the PHP worker closes the database socket.
 
-This does not require DBX Web and does not use WebSocket.
+This does not require OG Developer Web and does not use WebSocket.
 
 ### Security And Limits
 
@@ -164,7 +158,7 @@ This does not require DBX Web and does not use WebSocket.
 
 SQLite and Access connections are file-based and do not use tunnel / proxy layers. DuckDB usually uses a local file as well, so only configure tunnel / proxy layers when the selected driver profile uses a network endpoint.
 
-An Oracle TNS descriptor may contain multiple failover addresses. DBX does not rewrite that descriptor through one temporary endpoint, so TNS mode cannot be combined with SSH, proxy, or HTTP tunnel layers. Use Service Name or SID mode when a tunnel is required.
+An Oracle TNS descriptor may contain multiple failover addresses. OG Developer does not rewrite that descriptor through one temporary endpoint, so TNS mode cannot be combined with SSH, proxy, or HTTP tunnel layers. Use Service Name or SID mode when a tunnel is required.
 
 <Cards>
   <Card title="Create a Connection" href="/en/docs/getting-started">

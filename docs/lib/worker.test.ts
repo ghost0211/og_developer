@@ -8,7 +8,7 @@ test("signed OAuth payloads round-trip and reject tampering", async () => {
   assert.equal(await verifySignedPayload(`${signed}x`, "test-secret"), null);
 });
 
-test("OAuth return paths stay on the DBX origin", () => {
+test("OAuth return paths stay on the OG Developer origin", () => {
   assert.equal(sanitizeReturnTo("/cn/contributors"), "/cn/contributors");
   assert.equal(sanitizeReturnTo("//evil.example"), "/en/contributors");
   assert.equal(sanitizeReturnTo("https://evil.example"), "/en/contributors");

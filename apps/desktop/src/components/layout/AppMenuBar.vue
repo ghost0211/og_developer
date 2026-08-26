@@ -7,7 +7,6 @@ import {
   BookMarked,
   BookOpen,
   Bot,
-  CalendarClock,
   Check,
   Clipboard,
   ClipboardPaste,
@@ -22,6 +21,7 @@ import {
   FilePlus2,
   FolderOpen,
   FolderSearch,
+  GitBranch,
   GitCompareArrows,
   History,
   Info,
@@ -40,6 +40,7 @@ import {
   Sparkles,
   SunMoon,
   TableProperties,
+  Terminal,
   Undo2,
   Upload,
   X,
@@ -51,6 +52,7 @@ import { formatShortcutDisplay } from "@/lib/editor/shortcutDisplay";
 import type { ShortcutActionId } from "@/lib/editor/shortcutRegistry";
 import { useSettingsStore } from "@/stores/settingsStore";
 import type { SqlProject } from "@/stores/projectStore";
+import { isTauriRuntime } from "@/lib/backend/tauriRuntime";
 
 const props = defineProps<{
   hasConnections: boolean;
@@ -81,6 +83,7 @@ const emit = defineEmits<{
   "export-config": [];
   "create-project": [];
   "open-project": [];
+  "clone-from-git": [];
   "select-project": [projectId: string];
   undo: [];
   redo: [];
@@ -102,18 +105,21 @@ const emit = defineEmits<{
   "toggle-history": [];
   "toggle-sql-library": [];
   "toggle-sql-file-panel": [];
+  "toggle-project-file-panel": [];
+  "toggle-git-panel": [];
   "toggle-fullscreen": [];
   "search-files": [];
   "search-metadata": [];
   "search-objects": [];
   "open-sessions": [];
+  "open-invalid-objects": [];
+  "open-command-window": [];
   "open-table-import": [];
   "open-database-export": [];
   "open-transfer": [];
   "open-sql-file": [];
   "open-schema-diff": [];
   "open-data-compare": [];
-  "open-scheduled-backups": [];
   "quick-open": [];
   "search-table-data": [];
   "open-settings": [];
@@ -126,11 +132,17 @@ const emit = defineEmits<{
 
 const { t } = useI18n();
 const settingsStore = useSettingsStore();
+const isDesktop = isTauriRuntime();
 
 const isMacPlatform = computed(() => props.isMac || (typeof navigator !== "undefined" && /Mac|iPod|iPhone|iPad/.test(navigator.platform)));
 
 function shortcutLabel(action: ShortcutActionId): string {
   const shortcut = settingsStore.editorSettings.shortcuts[action];
+  return formatShortcutDisplay(shortcut, isMacPlatform.value ? "MacIntel" : "Win32");
+}
+
+// 剪切/复制/粘贴是原生编辑快捷键，不在可配置注册表中，固定展示。
+function nativeShortcutLabel(shortcut: string): string {
   return formatShortcutDisplay(shortcut, isMacPlatform.value ? "MacIntel" : "Win32");
 }
 
@@ -156,6 +168,10 @@ const shortcutClass = "ml-auto pl-5 text-[10px] font-mono text-muted-foreground/
           <FilePlus2 :class="menuIconClass" />
           <span>{{ t("toolbar.newQuery") }}</span>
           <span :class="shortcutClass">{{ shortcutLabel("newQuery") }}</span>
+        </DropdownMenuItem>
+        <DropdownMenuItem :disabled="!hasConnections" :class="menuItemClass" @select="emit('open-command-window')">
+          <Terminal :class="menuIconClass" class="text-emerald-500" />
+          <span>{{ t("commandWindow.title") }}</span>
         </DropdownMenuItem>
         <DropdownMenuItem :disabled="!hasActiveQuery" :class="menuItemClass" @select="emit('open-editor-sql-file')">
           <FolderOpen :class="menuIconClass" />
@@ -211,6 +227,10 @@ const shortcutClass = "ml-auto pl-5 text-[10px] font-mono text-muted-foreground/
           <FolderSearch :class="menuIconClass" />
           <span>{{ t("menus.openProject") }}</span>
         </DropdownMenuItem>
+        <DropdownMenuItem v-if="isDesktop" :class="menuItemClass" @select="emit('clone-from-git')">
+          <GitBranch :class="menuIconClass" />
+          <span>{{ t("menus.cloneFromGit") }}</span>
+        </DropdownMenuItem>
         <template v-if="projects.length">
           <DropdownMenuSeparator />
           <DropdownMenuLabel class="px-2 py-1 text-[10px] text-muted-foreground">{{ t("menus.recentProjects") }}</DropdownMenuLabel>
@@ -243,14 +263,17 @@ const shortcutClass = "ml-auto pl-5 text-[10px] font-mono text-muted-foreground/
         <DropdownMenuItem :disabled="!hasActiveQuery" :class="menuItemClass" @select="emit('cut')">
           <Scissors :class="menuIconClass" />
           <span>{{ t("menus.cut") }}</span>
+          <span :class="shortcutClass">{{ nativeShortcutLabel("Mod+X") }}</span>
         </DropdownMenuItem>
         <DropdownMenuItem :disabled="!hasActiveQuery" :class="menuItemClass" @select="emit('copy')">
           <Copy :class="menuIconClass" />
           <span>{{ t("menus.copy") }}</span>
+          <span :class="shortcutClass">{{ nativeShortcutLabel("Mod+C") }}</span>
         </DropdownMenuItem>
         <DropdownMenuItem :disabled="!hasActiveQuery" :class="menuItemClass" @select="emit('paste')">
           <ClipboardPaste :class="menuIconClass" />
           <span>{{ t("menus.paste") }}</span>
+          <span :class="shortcutClass">{{ nativeShortcutLabel("Mod+V") }}</span>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem :disabled="!hasActiveQuery" :class="menuItemClass" @select="emit('find')">
@@ -340,6 +363,14 @@ const shortcutClass = "ml-auto pl-5 text-[10px] font-mono text-muted-foreground/
           <FileCode :class="menuIconClass" />
           <span>{{ t("sqlFileTree.title") }}</span>
         </DropdownMenuItem>
+        <DropdownMenuItem :class="menuItemClass" @select="emit('toggle-project-file-panel')">
+          <FolderOpen :class="menuIconClass" />
+          <span>{{ t("projectFiles.title") }}</span>
+        </DropdownMenuItem>
+        <DropdownMenuItem v-if="isDesktop" :class="menuItemClass" @select="emit('toggle-git-panel')">
+          <GitBranch :class="menuIconClass" />
+          <span>{{ t("menus.gitPanel") }}</span>
+        </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuSub>
           <DropdownMenuSubTrigger :class="menuItemClass">
@@ -417,6 +448,10 @@ const shortcutClass = "ml-auto pl-5 text-[10px] font-mono text-muted-foreground/
           <Activity :class="menuIconClass" class="text-primary" />
           <span>{{ t("processList.title") }}</span>
         </DropdownMenuItem>
+        <DropdownMenuItem :disabled="!hasConnections" :class="menuItemClass" @select="emit('open-invalid-objects')">
+          <RotateCcw :class="menuIconClass" class="text-destructive" />
+          <span>{{ t("invalidObjects.title") }}...</span>
+        </DropdownMenuItem>
         <DropdownMenuItem :disabled="!hasConnections" :class="menuItemClass" @select="emit('open-table-import')">
           <Download :class="menuIconClass" />
           <span>{{ t("contextMenu.importData") }}...</span>
@@ -449,10 +484,6 @@ const shortcutClass = "ml-auto pl-5 text-[10px] font-mono text-muted-foreground/
         <DropdownMenuItem :class="menuItemClass" @select="emit('toggle-sql-file-panel')">
           <FileCode :class="menuIconClass" />
           <span>{{ t("sqlFileTree.title") }}</span>
-        </DropdownMenuItem>
-        <DropdownMenuItem :disabled="!hasConnections" :class="menuItemClass" @select="emit('open-scheduled-backups')">
-          <CalendarClock :class="menuIconClass" />
-          <span>{{ t("databaseBackup.title") }}</span>
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

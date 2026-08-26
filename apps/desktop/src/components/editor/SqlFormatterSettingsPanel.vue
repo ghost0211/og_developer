@@ -69,7 +69,7 @@ let lastValidity: boolean | null = null;
 
 const settings = computed(() => normalizeSqlFormatterSettings(props.modelValue));
 
-// ogdeveloper: live sample preview — tweak options and watch a real openGauss
+// OG Developer: live sample preview — tweak options and watch a real openGauss
 // snippet reformat, instead of imagining what a dropdown value means.
 const DEFAULT_FORMATTER_SAMPLE = `create or replace procedure emp_pkg.raise_salary(emp_id in integer, amount in numeric) as
 begin

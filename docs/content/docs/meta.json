@@ -1,5 +1,5 @@
 {
-  "title": "og developer Docs",
+  "title": "OG Developer Docs",
   "pages": [
     "---Introduction---",
     "getting-started",
@@ -17,7 +17,6 @@
     "table-import",
     "sql-file",
     "database-export",
-    "database-backup",
     "sql-snippets",
     "---PL/SQL Development---",
     "plsql-development",

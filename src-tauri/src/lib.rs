@@ -1161,7 +1161,7 @@ pub fn run() {
             state.set_duckdb_worker_max_processes(desktop_settings.duckdb_worker_max_processes);
             let state = Arc::new(state);
             app.manage(state.clone());
-            // og developer: seed the bundled openGauss JDBC driver into the
+            // OG Developer: seed the bundled openGauss JDBC driver into the
             // driver store on first run, then check Maven Central for a newer
             // release in the background (best-effort, offline-safe).
             {
@@ -1394,6 +1394,10 @@ pub fn run() {
             commands::schema::resolve_synonym_target,
             commands::schema::list_type_attributes,
             commands::schema::list_object_references,
+            commands::schema::list_invalid_objects,
+            commands::schema::recompile_object,
+            commands::schema::opengauss_profiler_status,
+            commands::schema::opengauss_profiler_run,
             commands::schema_diff::prepare_schema_diff,
             commands::schema_diff::generate_schema_sync_sql,
             commands::dialect_cmd::list_dialect_data_types,
@@ -1483,6 +1487,7 @@ pub fn run() {
             commands::external_sql::write_external_sql_file,
             commands::external_sql::save_external_sql_file,
             commands::list_sql_files::list_sql_files_in_folder,
+            commands::list_sql_files::list_files_in_folder,
             commands::external_db::pending_open_db_files,
             commands::keychain::read_keychain_password,
             commands::keychain::read_keychain_passwords,
@@ -1848,6 +1853,17 @@ pub fn run() {
             commands::tunnel_profiles::load_tunnel_profiles,
             commands::tunnel_profiles::save_tunnel_profiles,
             commands::tunnel_profiles::test_tunnel_profile,
+            commands::git::git_is_repo,
+            commands::git::git_clone,
+            commands::git::git_status,
+            commands::git::git_branches,
+            commands::git::git_checkout,
+            commands::git::git_stage,
+            commands::git::git_unstage,
+            commands::git::git_commit,
+            commands::git::git_pull,
+            commands::git::git_push,
+            commands::git::git_file_diff,
         ])
         .build(tauri::generate_context!())
         .inspect(|app| {

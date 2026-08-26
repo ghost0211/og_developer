@@ -3,7 +3,7 @@ title: Production and Write Safety
 description: Reduce database mistakes with read-only connections, production protection, SQL review, and AI limits.
 ---
 
-DBX separates write safety into independent layers: database privileges, connection read-only state, production protection, dangerous-operation confirmation, and AI execution rules. Together they reduce mistakes, but they do not replace database permissions, auditing, backups, or change approval.
+OG Developer separates write safety into independent layers: database privileges, connection read-only state, production protection, dangerous-operation confirmation, and AI execution rules. Together they reduce mistakes, but they do not replace database permissions, auditing, backups, or change approval.
 
 <Callout type="warn">No client-side safeguard replaces database permissions. Production systems should still use least-privilege accounts, database auditing, reliable backups, and team approval workflows.</Callout>
 
@@ -12,13 +12,13 @@ DBX separates write safety into independent layers: database privileges, connect
 | Layer | Purpose | Can a higher-level tool bypass it? |
 | --- | --- | --- |
 | Database account privileges | The database server ultimately decides which objects can be read, changed, or administered | No |
-| Connection read-only | Blocks recognizable writes in the DBX core query path and disables multiple mutation entry points | AI and the normal UI cannot widen it |
+| Connection read-only | Blocks recognizable writes in the OG Developer core query path and disables multiple mutation entry points | AI and the normal UI cannot widen it |
 | Production protection | Marks an entire connection or selected databases as production and requires a fresh confirmation for writes | Normal confirmation and Agent authorization cannot permanently skip it |
 | Dangerous SQL/command confirmation | Adds prompts or blocks for DDL, unbounded mutations, and similar operations | Controlled by its setting, but never widens read-only or production protection |
 
 ## Configure a Read-Only Connection
 
-Enable **Read-only connection** when creating or editing a connection. DBX carries the flag into core query execution and database-specific operations.
+Enable **Read-only connection** when creating or editing a connection. OG Developer carries the flag into core query execution and database-specific operations.
 
 Read-only connections are useful for:
 
@@ -26,7 +26,7 @@ Read-only connections are useful for:
 - Workflows that only need to browse schemas, rows, or monitoring data
 - Connections exposed to the AI assistant where no data changes should be possible
 
-Read-only protection is not only a hidden button. DBX rejects recognizable SQL writes in the core execution path, while database-specific operations and specialized workspaces recheck the connection state.
+Read-only protection is not only a hidden button. OG Developer rejects recognizable SQL writes in the core execution path, while database-specific operations and specialized workspaces recheck the connection state.
 
 <Callout type="info">Read-only enforcement still depends on classifying SQL or commands. The most reliable boundary is a database account that has no write permission.</Callout>
 
@@ -59,7 +59,7 @@ Read-only protection is not only a hidden button. DBX rejects recognizable SQL w
   </Step>
 </Steps>
 
-When production protection is active, the workbench shows a production indicator. If DBX detects that the active connection, active database, or explicit SQL target belongs to the protected scope and the operation mutates data or schema, it opens the shared confirmation dialog.
+When production protection is active, the workbench shows a production indicator. If OG Developer detects that the active connection, active database, or explicit SQL target belongs to the protected scope and the operation mutates data or schema, it opens the shared confirmation dialog.
 
 Every production write requires a new explicit decision. Confirmation is not persisted and cannot be skipped by disabling the normal dangerous-SQL prompt.
 
@@ -84,11 +84,11 @@ Ask mode generates, explains, optimizes, or repairs SQL. Model output is not exe
 
 Agent can execute reads based on user intent and can handle limited writes when policy permits. A write confirmation is scoped to the current target and operation.
 
-When the active database is protected as production, Agent does not receive autonomous write permission. DBX places the proposed SQL in the editor and requires manual confirmation through the production-write dialog.
+When the active database is protected as production, Agent does not receive autonomous write permission. OG Developer places the proposed SQL in the editor and requires manual confirmation through the production-write dialog.
 
 ## Dangerous SQL and Specialized Commands
 
-Outside production protection, DBX applies additional rules to selected high-risk operations:
+Outside production protection, OG Developer applies additional rules to selected high-risk operations:
 
 - The query editor can show a confirmation before dangerous SQL runs
 - The data grid, table structure, schema diff, and data generation flows show SQL first where possible
@@ -100,7 +100,7 @@ Outside production protection, DBX applies additional rules to selected high-ris
 | --- | --- |
 | Local development | Use a normal connection and keep dangerous-SQL confirmation enabled |
 | Test or staging | Use obvious connection names and colors and keep dangerous-SQL confirmation enabled |
-| Production read-only | Use a database read-only account plus DBX read-only and production protection |
+| Production read-only | Use a database read-only account plus OG Developer read-only and production protection |
 | Production changes | Use a separate least-privilege account, enable production protection, review SQL, and retain backups and approvals |
 | Shared Docker | Set a login password, persist `/app/data`, restrict network access, and use separate database privileges for each target |
 
@@ -108,8 +108,8 @@ Outside production protection, DBX applies additional rules to selected high-ris
 
 - SQL and command classification is conservative but cannot replace server-side privileges.
 - Stored procedures, vendor extensions, and dynamic SQL may have effects that cannot be determined from text alone.
-- Production protection covers operations initiated through DBX; other clients require their own permissions and auditing.
-- Config export migrates DBX settings and is not a backup of business databases.
+- Production protection covers operations initiated through OG Developer; other clients require their own permissions and auditing.
+- Config export migrates OG Developer settings and is not a backup of business databases.
 
 <Cards>
   <Card title="Create a safer connection" href="/en/docs/getting-started">

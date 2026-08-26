@@ -189,6 +189,10 @@ export const listExtensions = forward("listExtensions");
 export const resolveSynonymTarget = forward("resolveSynonymTarget");
 export const listTypeAttributes = forward("listTypeAttributes");
 export const listObjectReferences = forward("listObjectReferences");
+export const listInvalidObjects = forward("listInvalidObjects");
+export const recompileObject = forward("recompileObject");
+export const opengaussProfilerStatus = forward("opengaussProfilerStatus");
+export const opengaussProfilerRun = forward("opengaussProfilerRun");
 export const listAvailableExtensions = forward("listAvailableExtensions");
 export const prepareSchemaDiff = forward("prepareSchemaDiff");
 export const generateSchemaSyncSql = forward("generateSchemaSyncSql");
@@ -341,6 +345,7 @@ export const killSession = forward("killSession");
 export const writeExternalSqlFile = forward("writeExternalSqlFile");
 export const saveExternalSqlFile = forward("saveExternalSqlFile");
 export const listSqlFilesInFolder = forward("listSqlFilesInFolder");
+export const listFilesInFolder = forward("listFilesInFolder");
 
 // Nacos
 export const nacosTestConnection = forward("nacosTestConnection");
@@ -741,6 +746,18 @@ export type {
   QueryResultExportRequest,
   AgentEvent,
   SqlFileEntry,
+  InvalidObjectInfo,
+  RecompileObjectResult,
+  ProfilerStatus,
+  ProfilerLineData,
+  ProfilerUnitSummary,
+  ProfilerRunResult,
+  GitCloneRequest,
+  GitChangeStatus,
+  GitStatusEntry,
+  GitStatusInfo,
+  GitBranchInfo,
+  GitFileDiff,
 } from "@/lib/backend/tauri";
 
 // MQTT
@@ -752,3 +769,16 @@ export const mqttListTopics = forward("mqttListTopics");
 export const mqttGetTopicTree = forward("mqttGetTopicTree");
 export const mqttGetMessages = forward("mqttGetMessages");
 export const mqttClearMessages = forward("mqttClearMessages");
+
+// Git
+export const gitIsRepo = forward("gitIsRepo");
+export const gitClone = forward("gitClone");
+export const gitStatus = forward("gitStatus");
+export const gitBranches = forward("gitBranches");
+export const gitCheckout = forward("gitCheckout");
+export const gitStage = forward("gitStage");
+export const gitUnstage = forward("gitUnstage");
+export const gitCommit = forward("gitCommit");
+export const gitPull = forward("gitPull");
+export const gitPush = forward("gitPush");
+export const gitFileDiff = forward("gitFileDiff");

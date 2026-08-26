@@ -1,23 +1,23 @@
 ---
 title: JDBC 插件
-description: 安装 DBX JDBC 插件、导入数据库厂商驱动 JAR，并创建 JDBC 连接。
+description: 安装 OG Developer JDBC 插件、导入数据库厂商驱动 JAR，并创建 JDBC 连接。
 ---
 
-DBX 默认使用 Rust 原生数据库驱动。JDBC 是可选能力：当你需要连接 DBX 暂未内置支持的数据库，或希望使用数据库厂商提供的 JDBC 驱动时，可以安装 JDBC 插件。
+OG Developer 默认使用 Rust 原生数据库驱动。JDBC 是可选能力：当你需要连接 OG Developer 暂未内置支持的数据库，或希望使用数据库厂商提供的 JDBC 驱动时，可以安装 JDBC 插件。
 
-<Callout type="info">JDBC 插件不会打包进 DBX 主应用，也不包含任何数据库厂商的 JDBC 驱动。你需要先安装 DBX JDBC 插件，再导入对应数据库的 JDBC driver JAR。</Callout>
+<Callout type="info">JDBC 插件不会打包进 OG Developer 主应用，也不包含任何数据库厂商的 JDBC 驱动。你需要先安装 OG Developer JDBC 插件，再导入对应数据库的 JDBC driver JAR。</Callout>
 
-<Callout type="warn">“JDBC 能连接”不等于拥有原生 DBX profile 的全部能力。表树、对象源码、结构编辑、导入、传输和管理视图取决于 JDBC 元数据、识别出的实际数据库类型和驱动能力清单；未知数据库会按通用 JDBC 能力运行。</Callout>
+<Callout type="warn">“JDBC 能连接”不等于拥有原生 OG Developer profile 的全部能力。表树、对象源码、结构编辑、导入、传输和管理视图取决于 JDBC 元数据、识别出的实际数据库类型和驱动能力清单；未知数据库会按通用 JDBC 能力运行。</Callout>
 
 Desktop 导入的是本机 JAR；Docker/Web 中 JAR 和插件安装在服务器数据目录。浏览器电脑上的本地路径不能直接交给 Web 服务器使用，迁移配置时也不会自动携带驱动文件。
 
 ## 什么时候需要 JDBC
 
-优先使用 DBX 内置数据库类型，例如 MySQL、PostgreSQL、SQLite、Redis、MongoDB、DuckDB、ClickHouse、SQL Server、Oracle、DM、GaussDB 等。
+优先使用 OG Developer 内置数据库类型，例如 MySQL、PostgreSQL、SQLite、Redis、MongoDB、DuckDB、ClickHouse、SQL Server、Oracle、DM、GaussDB 等。
 
 以下情况再使用 JDBC：
 
-- 目标数据库不在 DBX 内置类型中
+- 目标数据库不在 OG Developer 内置类型中
 - 内置驱动无法满足某个厂商特性
 - 你的公司统一要求使用厂商 JDBC driver
 - 你想用 JDBC 连接达梦、H2、DB2、Snowflake、SQLite JDBC 等数据库
@@ -26,7 +26,7 @@ Desktop 导入的是本机 JAR；Docker/Web 中 JAR 和插件安装在服务器�
 
 | 项目                       |     是否必需 | 说明                                                        |
 | -------------------------- | -----------: | ----------------------------------------------------------- |
-| DBX JDBC 插件              |         必需 | 在 DBX 设置中一键安装，用来让 DBX 调用 JDBC                 |
+| OG Developer JDBC 插件              |         必需 | 在 OG Developer 设置中一键安装，用来让 OG Developer 调用 JDBC                 |
 | Java Runtime               |         必需 | 本机需要能运行 `java`；建议 Java 17 或更高版本              |
 | 数据库厂商 JDBC driver JAR |         必需 | 例如 PostgreSQL、MySQL、达梦、Oracle、H2、SQLite 等驱动 JAR |
 | JDBC URL                   |         必需 | JDBC URL 通常已经包含主机、端口、数据库名和参数             |
@@ -41,7 +41,7 @@ JDBC 插件是 Java 程序，需要本机有 Java runtime。安装后在终端�
 java -version
 ```
 
-如果系统提示找不到 `java`，需要先安装 Java。DBX 会优先使用 `JAVA_HOME`，其次尝试常见系统路径和 `PATH` 中的 `java`。
+如果系统提示找不到 `java`，需要先安装 Java。OG Developer 会优先使用 `JAVA_HOME`，其次尝试常见系统路径和 `PATH` 中的 `java`。
 
 <Tabs groupId="java-install" items={['macOS', 'Windows', 'Linux']}>
   <Tab value="macOS">
@@ -55,7 +55,7 @@ java -version
 
   </Tab>
   <Tab value="Windows">
-    安装 Temurin、Oracle JDK 或 Microsoft Build of OpenJDK。安装后重新打开 DBX，并确认命令行中可以运行：
+    安装 Temurin、Oracle JDK 或 Microsoft Build of OpenJDK。安装后重新打开 OG Developer，并确认命令行中可以运行：
 
     ```powershell
     java -version
@@ -78,9 +78,9 @@ java -version
   </Tab>
 </Tabs>
 
-## 第二步：安装 DBX JDBC 插件
+## 第二步：安装 OG Developer JDBC 插件
 
-在 DBX 桌面版中打开：
+在 OG Developer 桌面版中打开：
 
 1. **设置**
 2. **JDBC 驱动**
@@ -92,11 +92,11 @@ java -version
 已安装：v0.1.0
 ```
 
-DBX JDBC 插件有自己的版本号，不会强制跟 DBX 主应用版本一致。主应用更新后不会自动安装 JDBC 插件；如果你手动卸载过，后续更新也不会自动装回来。
+OG Developer JDBC 插件有自己的版本号，不会强制跟 OG Developer 主应用版本一致。主应用更新后不会自动安装 JDBC 插件；如果你手动卸载过，后续更新也不会自动装回来。
 
 ## 第三步：下载数据库厂商 JDBC 驱动
 
-DBX 不会自动下载数据库厂商驱动。你需要从数据库官网或 Maven 仓库下载对应的 `.jar` 文件。
+OG Developer 不会自动下载数据库厂商驱动。你需要从数据库官网或 Maven 仓库下载对应的 `.jar` 文件。
 
 常见驱动示例：
 
@@ -118,13 +118,13 @@ DBX 不会自动下载数据库厂商驱动。你需要从数据库官网或 Mav
 
 ## 第四步：导入 JDBC 驱动 JAR
 
-在 DBX 中打开：
+在 OG Developer 中打开：
 
 1. **设置**
 2. **JDBC 驱动**
 3. 在 **JDBC 驱动 JAR** 区域点击导入按钮，选择下载好的 `.jar`
 
-也可以直接粘贴本机 JAR 路径，然后点击导入。导入后，JAR 会复制到 DBX 的应用数据目录中，之后新建 JDBC 连接时可以从下拉框选择它。
+也可以直接粘贴本机 JAR 路径，然后点击导入。导入后，JAR 会复制到 OG Developer 的应用数据目录中，之后新建 JDBC 连接时可以从下拉框选择它。
 
 导入驱动只复制文件，不会修改系统 Java、不安装数据库客户端，也不会把驱动上传到远端。
 
@@ -147,9 +147,9 @@ JDBC URL 通常已经包含主机、端口和数据库名，因此 JDBC 表单�
 
 ## 示例：连接达梦 DM
 
-DBX 已经内置 DM ODBC 连接类型。如果你更想使用达梦官方 JDBC 驱动，可以走 JDBC 插件。
+OG Developer 已经内置 DM ODBC 连接类型。如果你更想使用达梦官方 JDBC 驱动，可以走 JDBC 插件。
 
-1. 安装 DBX JDBC 插件
+1. 安装 OG Developer JDBC 插件
 2. 安装 Java
 3. 从达梦安装目录或 Maven 仓库获取达梦 JDBC driver JAR，例如 `DmJdbcDriver8.jar` 或 `DmJdbcDriver11.jar`
 4. 在 **设置 → JDBC 驱动** 中导入该 JAR
@@ -170,7 +170,7 @@ DBX 已经内置 DM ODBC 连接类型。如果你更想使用达梦官方 JDBC �
 
 H2 很适合验证 JDBC 流程。
 
-1. 安装 DBX JDBC 插件
+1. 安装 OG Developer JDBC 插件
 2. 下载 H2 JDBC driver JAR
 3. 在设置中导入 `h2-*.jar`
 4. 新建连接，选择 **JDBC**
@@ -222,7 +222,7 @@ jdbc:postgresql://localhost:5432/postgres?sslmode=require
 
 ### 安装 JDBC 插件失败
 
-检查网络是否能访问 DBX 的 GitHub Release。DBX 会尝试代理地址和 GitHub 原始地址，但代理站也可能不稳定。如果公司网络限制 GitHub，请换网络后重试。
+检查网络是否能访问 OG Developer 的 GitHub Release。OG Developer 会尝试代理地址和 GitHub 原始地址，但代理站也可能不稳定。如果公司网络限制 GitHub，请换网络后重试。
 
 ### 提示找不到 Java
 
@@ -232,7 +232,7 @@ jdbc:postgresql://localhost:5432/postgres?sslmode=require
 java -version
 ```
 
-如果终端可用但 DBX 不可用，重启 DBX。macOS 上如果 Java 只安装在 Homebrew 路径，也可以配置 `JAVA_HOME`。
+如果终端可用但 OG Developer 不可用，重启 OG Developer。macOS 上如果 Java 只安装在 Homebrew 路径，也可以配置 `JAVA_HOME`。
 
 ### 提示 `No JDBC driver was discovered`
 
@@ -268,18 +268,18 @@ JDBC 元数据依赖数据库驱动和账号权限。检查：
 
 ## 卸载插件
 
-在 **设置 → JDBC 驱动** 中点击 **卸载**。卸载会移除 DBX JDBC 插件本体，但会保留你已经导入的数据库厂商 driver JAR，避免下次重新安装插件时还要重新导入。
+在 **设置 → JDBC 驱动** 中点击 **卸载**。卸载会移除 OG Developer JDBC 插件本体，但会保留你已经导入的数据库厂商 driver JAR，避免下次重新安装插件时还要重新导入。
 
 ## 给开发者：插件协议
 
-DBX 会启动插件可执行文件，并通过 stdin/stdout 发送 JSON Lines 请求与响应。连接建立后，DBX 会复用同一个插件进程处理该连接上的查询和元数据请求。
+OG Developer 会启动插件可执行文件，并通过 stdin/stdout 发送 JSON Lines 请求与响应。连接建立后，OG Developer 会复用同一个插件进程处理该连接上的查询和元数据请求。
 
 插件目录需要包含 `manifest.json`：
 
 ```json
 {
   "id": "jdbc",
-  "name": "DBX JDBC Plugin",
+  "name": "OG Developer JDBC Plugin",
   "version": "0.1.0",
   "protocol_version": 1,
   "description": "Adds JDBC driver support.",
@@ -295,7 +295,7 @@ DBX 会启动插件可执行文件，并通过 stdin/stdout 发送 JSON Lines �
 }
 ```
 
-当前 DBX 主应用支持插件协议版本 `1`。如果插件 manifest 声明了不同协议版本，DBX 会拒绝加载；每次插件请求也有 30 秒超时，避免驱动进程卡住后无限阻塞应用。
+当前 OG Developer 主应用支持插件协议版本 `1`。如果插件 manifest 声明了不同协议版本，OG Developer 会拒绝加载；每次插件请求也有 30 秒超时，避免驱动进程卡住后无限阻塞应用。
 
 第一版协议支持 `testConnection`、`connect`、`executeQuery`、`listDatabases`、`listSchemas`、`listTables` 和 `getColumns`。
 

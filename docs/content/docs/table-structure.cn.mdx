@@ -3,7 +3,7 @@ title: 表结构编辑器
 description: 可视化查看和修改字段、索引、外键与触发器，并在执行前审查数据库方言对应的 DDL。
 ---
 
-表结构编辑器把单表元数据和变更草稿放在持久化标签页中。DBX 会根据数据库 capability 只开放能够可靠生成的操作，并在保存前展示最终 DDL。
+表结构编辑器把单表元数据和变更草稿放在持久化标签页中。OG Developer 会根据数据库 capability 只开放能够可靠生成的操作，并在保存前展示最终 DDL。
 
 ## 打开方式
 
@@ -41,7 +41,7 @@ description: 可视化查看和修改字段、索引、外键与触发器，并�
 列重排有两种语义：
 
 - MySQL 等支持物理列顺序的数据库会生成真正的顺序变更 DDL
-- 部分数据库只在 DBX 中保存本地显示顺序，不修改数据库物理结构
+- 部分数据库只在 OG Developer 中保存本地显示顺序，不修改数据库物理结构
 
 创建新表时，可以使用设置中的预设字段快速加入常见主键、时间戳或审计字段。
 
@@ -59,7 +59,7 @@ description: 可视化查看和修改字段、索引、外键与触发器，并�
 
 ## DDL 预览
 
-编辑不会立即写入数据库。保存前，DBX 会根据当前方言生成并高亮：
+编辑不会立即写入数据库。保存前，OG Developer 会根据当前方言生成并高亮：
 
 - `ALTER TABLE ... ADD/DROP/RENAME/MODIFY COLUMN`
 - 默认值、`NULL`、主键和注释变更
@@ -128,7 +128,7 @@ description: 可视化查看和修改字段、索引、外键与触发器，并�
 - 小范围单表修改可以直接使用编辑器
 - 大规模迁移把复制的 DDL 纳入版本控制和 Review
 - 多环境对齐使用 [Schema 对比](/cn/docs/schema-diff)
-- 高风险操作前使用 [数据库导出](/cn/docs/database-export) 或 [定时数据库备份](/cn/docs/database-backup)
+- 高风险操作前使用 [数据库导出](/cn/docs/database-export)
 - 修改字段前结合 [字段血缘](/cn/docs/field-lineage) 和应用代码搜索评估影响
 
 <Cards>

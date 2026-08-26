@@ -3,7 +3,7 @@ import { safeLocalStorageGet, safeLocalStorageRemove, safeLocalStorageSet } from
 import { uuid } from "@/lib/common/utils";
 
 /**
- * ogdeveloper: 项目（工作区）— a named local directory used as the default
+ * OG Developer: 项目（工作区）— a named local directory used as the default
  * root for file search, queries, scripts, and bound database connections.
  */
 export interface SqlProject {

@@ -34,7 +34,7 @@ export function createLatestRequestGuard() {
 }
 
 export function changelogLangFromLocale(locale: string): ChangelogLang {
-  return locale === "zh-CN" || locale === "zh-TW" ? "cn" : "en";
+  return locale === "zh-CN" ? "cn" : "en";
 }
 
 export function changelogWebsiteUrl(lang: ChangelogLang): string {

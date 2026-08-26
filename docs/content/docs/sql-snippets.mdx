@@ -11,15 +11,15 @@ Open **Settings → Snippets**. Each snippet contains:
 
 | Field | Purpose |
 | --- | --- |
-| Label | Name shown in the completion list. DBX uses the prefix when the label is empty. |
+| Label | Name shown in the completion list. OG Developer uses the prefix when the label is empty. |
 | Prefix | Text that matches the completion candidate. It is required and must be unique in the current snippet list. |
 | Status | Enables or disables the snippet without deleting it. |
 | SQL Body | Template inserted into the editor when you accept the completion. |
 
-You can add, edit, enable, disable, or delete snippets. **Restore Defaults** replaces the current draft with DBX's built-in snippets; click **Apply** in the settings dialog to persist your changes.
+You can add, edit, enable, disable, or delete snippets. **Restore Defaults** replaces the current draft with OG Developer's built-in snippets; click **Apply** in the settings dialog to persist your changes.
 
 <Callout type="info">
-  DBX includes common snippets such as `sel`, `ins`, `upd`, `cte`, and `join`. Some built-in templates adapt to the active database, for example by choosing the appropriate row-limit or `ALTER TABLE` syntax. Custom snippets are inserted exactly as written.
+  OG Developer includes common snippets such as `sel`, `ins`, `upd`, `cte`, and `join`. Some built-in templates adapt to the active database, for example by choosing the appropriate row-limit or `ALTER TABLE` syntax. Custom snippets are inserted exactly as written.
 </Callout>
 
 ## Expand a Snippet
@@ -33,7 +33,7 @@ If no candidate appears, confirm that the snippet is enabled, the prefix matches
 
 ## Placeholder Syntax
 
-DBX uses CodeMirror snippet syntax:
+OG Developer uses CodeMirror snippet syntax:
 
 | Syntax | Purpose |
 | --- | --- |
@@ -64,9 +64,9 @@ GROUP BY ${1:column};
 
 ## Storage, Sync, and Safety
 
-Snippets are editor settings stored in the current DBX runtime. [Connection Config Migration](/en/docs/config-export) only moves database connections and does not include snippets.
+Snippets are editor settings stored in the current OG Developer runtime. [Connection Config Migration](/en/docs/config-export) only moves database connections and does not include snippets.
 
-A snippet only generates SQL; it does not bypass database permissions or DBX production protection. Review the fully expanded statement before running templates that contain writes or DDL, and follow the [Production Safety](/en/docs/production-safety) guidance.
+A snippet only generates SQL; it does not bypass database permissions or OG Developer production protection. Review the fully expanded statement before running templates that contain writes or DDL, and follow the [Production Safety](/en/docs/production-safety) guidance.
 
 <Cards>
   <Card title="Query Editor" href="/en/docs/query-editor">

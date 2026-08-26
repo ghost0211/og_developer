@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 
 export const SITE_URL = "https://github.com/ghost0211/og_developer";
-export const SITE_NAME = "og developer";
-export const DEFAULT_DESCRIPTION =
-  "openGauss 专用数据库开发工具：官方 JDBC 驱动内嵌、PL/SQL 调试器、DBMS_OUTPUT / RAISE NOTICE 捕获、包/同义词对象树。基于 dbx（Apache-2.0）的深度定制 fork。";
+export const SITE_NAME = "OG Developer";
+export const DEFAULT_DESCRIPTION = "openGauss 专用数据库开发工具：官方 JDBC 驱动内嵌、PL/SQL 调试器、DBMS_OUTPUT / RAISE NOTICE 捕获、包/同义词对象树。基于 dbx（Apache-2.0）的深度定制 fork。";
+export const DEFAULT_DESCRIPTION_EN = "An openGauss-specific database development tool: bundled official JDBC driver, PL/SQL debugger, DBMS_OUTPUT / RAISE NOTICE capture, and package/synonym object tree. A deep-customized fork of dbx (Apache-2.0).";
 export const DEFAULT_OG_IMAGE = "/logo.png";
 
 const LOCALE_MAP: Record<string, string> = {

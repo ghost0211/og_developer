@@ -3,15 +3,15 @@ title: 驱动管理
 description: 管理内置驱动、原生 Agent 和 JDBC Agent，配置 JRE 版本并处理驱动更新。
 ---
 
-DBX 使用混合驱动架构：内置 Rust 驱动、独立原生 Agent，以及 Java/JDBC Agent。
+OG Developer 使用混合驱动架构：内置 Rust 驱动、独立原生 Agent，以及 Java/JDBC Agent。
 
 ## 驱动架构
 
 | 驱动类型     | 工作方式                    | 适用场景                                                                                                                                    |
 | ------------ | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| 原生（内置） | Rust 驱动编译进 DBX         | MySQL、PostgreSQL、SQLite、SQL Server、Redis、MongoDB、ClickHouse 等                                                                       |
-| 原生 Agent / 外部驱动 | DBX 管理的 Go/Rust 独立进程或 sidecar | Oracle、KingBase、虚谷 XuguDB、DuckDB，以及 RabbitMQ 等需要独立运行时的连接 |
-| JDBC Agent   | DBX 管理的 Java 子进程      | 需要 JDBC 的数据库：GaussDB、openGauss、DM、HighGo、Vastbase、UXDB、Trino、Hive、DB2、Informix、Neo4j、TDengine、YashanDB、GoldenDB、Kylin、SunDB 等 |
+| 原生（内置） | Rust 驱动编译进 OG Developer         | MySQL、PostgreSQL、SQLite、SQL Server、Redis、MongoDB、ClickHouse 等                                                                       |
+| 原生 Agent / 外部驱动 | OG Developer 管理的 Go/Rust 独立进程或 sidecar | Oracle、KingBase、虚谷 XuguDB、DuckDB，以及 RabbitMQ 等需要独立运行时的连接 |
+| JDBC Agent   | OG Developer 管理的 Java 子进程      | 需要 JDBC 的数据库：GaussDB、openGauss、DM、HighGo、Vastbase、UXDB、Trino、Hive、DB2、Informix、Neo4j、TDengine、YashanDB、GoldenDB、Kylin、SunDB 等 |
 
 <Callout type="info">内置驱动可直接使用；原生 Agent/sidecar 需要对应平台文件，JDBC Agent 还需要 JRE。连接对话框会提示缺少的组件，但安装是否自动完成取决于网络、平台、驱动许可和当前设置。</Callout>
 
@@ -41,7 +41,7 @@ DBX 使用混合驱动架构：内置 Rust 驱动、独立原生 Agent，以及 
   <Step>
     ### 点击安装
 
-    DBX 会下载原生 Agent 可执行文件或 JDBC Agent JAR，以及所需运行时。下载过程中显示进度。
+    OG Developer 会下载原生 Agent 可执行文件或 JDBC Agent JAR，以及所需运行时。下载过程中显示进度。
   </Step>
   <Step>
     ### 创建连接
@@ -52,16 +52,16 @@ DBX 使用混合驱动架构：内置 Rust 驱动、独立原生 Agent，以及 
 
 ## JRE 管理
 
-JDBC Agent 驱动需要 Java 运行环境。DBX 内置 JRE 管理：
+JDBC Agent 驱动需要 Java 运行环境。OG Developer 内置 JRE 管理：
 
-- **系统 JRE**：DBX 可使用系统上已有的 Java 安装
-- **托管 JRE**：DBX 可下载并管理自己的 JRE，与系统 Java 隔离
+- **系统 JRE**：OG Developer 可使用系统上已有的 Java 安装
+- **托管 JRE**：OG Developer 可下载并管理自己的 JRE，与系统 Java 隔离
 - **多 JRE 支持**：不同驱动可按需使用不同 JRE 版本
 - **重新安装**：如托管 JRE 损坏，可从驱动商店重新安装
 
 ## 驱动更新
 
-DBX 会定期检查驱动更新：
+OG Developer 会定期检查驱动更新：
 
 - 有新版本时，驱动商店标签页上会显示更新角标
 - 点击**升级全部驱动**一次性更新所有已安装的驱动
@@ -75,9 +75,9 @@ RabbitMQ 等消息队列 Agent 还可能同时使用业务协议和管理 API。
 
 ## 离线驱动导入
 
-对于无法访问互联网的环境，DBX 支持离线驱动安装：
+对于无法访问互联网的环境，OG Developer 支持离线驱动安装：
 
-1. 从另一台机器下载与目标操作系统和 CPU 架构匹配的 DBX 离线驱动 ZIP 包
+1. 从另一台机器下载与目标操作系统和 CPU 架构匹配的 OG Developer 离线驱动 ZIP 包
 2. 将其传输到离线机器
 3. 在驱动商店中使用**从 ZIP 导入**安装驱动包
 
@@ -91,11 +91,11 @@ RabbitMQ 等消息队列 Agent 还可能同时使用业务协议和管理 API。
 
 Windows x64 下载 `dbx-agent-kingbase-<version>-windows-x64.zip`，Windows ARM64 下载 `dbx-agent-kingbase-<version>-windows-aarch64.zip`，然后在驱动管理中选择**导入离线包**。请勿导入 Linux 或 macOS 包。
 
-ZIP 内包含版本信息和对应平台的原生 Agent。DBX 会将其安装为 `%USERPROFILE%\.dbx\agents\drivers\kingbase\agent.exe`，不需要手动解除浏览器下载文件的阻止状态或复制文件。
+ZIP 内包含版本信息和对应平台的原生 Agent。OG Developer 会将其安装为 `%USERPROFILE%\.dbx\agents\drivers\kingbase\agent.exe`，不需要手动解除浏览器下载文件的阻止状态或复制文件。
 
 ## 插件更新
 
-对于由 [JDBC 插件](/cn/docs/plugins)支持的数据库，当有新插件版本可用时，DBX 会显示更新通知。插件更新遵循与内置 Agent 驱动相同的安装流程。
+对于由 [JDBC 插件](/cn/docs/plugins)支持的数据库，当有新插件版本可用时，OG Developer 会显示更新通知。插件更新遵循与内置 Agent 驱动相同的安装流程。
 
 ## 故障排除
 

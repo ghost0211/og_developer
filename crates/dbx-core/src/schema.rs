@@ -6090,7 +6090,7 @@ pub async fn list_extensions_core(
 /// Obtain a PostgreSQL metadata pool for openGauss family connections: the
 /// native wire pool directly, or the native-fallback pool for the official
 /// JDBC (ExternalDriver) mode, which does not expose these catalogs.
-async fn opengauss_metadata_postgres_pool(
+pub(crate) async fn opengauss_metadata_postgres_pool(
     state: &AppState,
     connection_id: &str,
     database: &str,

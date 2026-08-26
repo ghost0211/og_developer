@@ -41,7 +41,7 @@ export async function saveQueryResultArchiveFile(fileName: string, bytes: Uint8A
   const [{ save }, { writeFile }] = await Promise.all([import("@tauri-apps/plugin-dialog"), import("@tauri-apps/plugin-fs")]);
   const path = await save({
     defaultPath: fileName,
-    filters: [{ name: "ogdeveloper Result Archive", extensions: ARCHIVE_EXTENSIONS }],
+    filters: [{ name: "OG Developer Result Archive", extensions: ARCHIVE_EXTENSIONS }],
   });
   if (!path) return undefined;
   await writeFile(path, bytes);
@@ -54,7 +54,7 @@ export async function openQueryResultArchiveFile(): Promise<Uint8Array | undefin
   const [{ open }, { readFile }] = await Promise.all([import("@tauri-apps/plugin-dialog"), import("@tauri-apps/plugin-fs")]);
   const selected = await open({
     multiple: false,
-    filters: [{ name: "ogdeveloper Result Archive", extensions: ARCHIVE_EXTENSIONS }],
+    filters: [{ name: "OG Developer Result Archive", extensions: ARCHIVE_EXTENSIONS }],
   });
   const path = Array.isArray(selected) ? selected[0] : selected;
   if (!path) return undefined;

@@ -3,7 +3,7 @@ title: PL/SQL Debugger
 description: Graphical debugging of PL/SQL routines and anonymous blocks with the openGauss dbe_pldebugger API.
 ---
 
-og developer ships a graphical debugger for PL/SQL routines and anonymous blocks, built on the openGauss `dbe_pldebugger` API (available since openGauss 1.0; anonymous-block debugging since 5.1.0). The full flow — `turn_on` → `attach` → breakpoints → stepping → variables → call stack → finish — has been verified end-to-end against openGauss-lite 7.0.0-RC3.
+OG Developer ships a graphical debugger for PL/SQL routines and anonymous blocks, built on the openGauss `dbe_pldebugger` API (available since openGauss 1.0; anonymous-block debugging since 5.1.0). The full flow — `turn_on` → `attach` → breakpoints → stepping → variables → call stack → finish — has been verified end-to-end against openGauss-lite 7.0.0-RC3.
 
 ## How It Works
 
@@ -12,7 +12,7 @@ The debugger uses the two-session model required by `dbe_pldebugger`:
 1. The **debugging session** attaches to the target and controls execution (`attach`, `add_breakpoint`, `step`, `next`, `continue`, `finish`, `backtrace`, …)
 2. The **executed session** runs the routine or anonymous block being debugged
 
-og developer manages both sessions for you — you only see the debug dialog.
+OG Developer manages both sessions for you — you only see the debug dialog.
 
 ## Before You Start
 

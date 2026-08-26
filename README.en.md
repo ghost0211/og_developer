@@ -2,7 +2,7 @@
 
 <div align="center">
 
-# og developer
+# OG Developer
 
 **An openGauss-specific database development tool — Desktop (Tauri) + Web.**
 
@@ -17,9 +17,9 @@ done to the extreme.
 
 ---
 
-## Why og developer
+## Why OG Developer
 
-dbx supports 70+ databases; og developer goes the other way — it strips the
+dbx supports 70+ databases; OG Developer goes the other way — it strips the
 entry surface down to **openGauss only** and invests all effort in:
 
 - **openGauss dialect depth**: PL/SQL-aware statement splitting, A-compatibility
@@ -72,7 +72,7 @@ type whitelist is the only entry cut — relaxing it restores all other database
 - Schema browser, table structure editing, extension management, data transfer
   and other general database-tool capabilities.
 
-### General capabilities added by og developer
+### General capabilities added by OG Developer
 
 The following are NOT inherited from dbx — they were built in this repository:
 
@@ -97,7 +97,7 @@ This repository is a **derivative fork of [dbx](https://github.com/t8y2/dbx)**
 
 - All modifications relative to upstream are listed in [NOTICE](NOTICE).
 - The full git history of dbx is preserved for complete attribution.
-- The product is named "og developer" and does not claim any endorsement by,
+- The product is named "OG Developer" and does not claim any endorsement by,
   or affiliation with, the dbx project.
 
 ### Branches

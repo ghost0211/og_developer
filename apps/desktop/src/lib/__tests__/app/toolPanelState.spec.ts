@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createToolPanelSession, setToolPanelOpen, toggleToolPanelSession, type ToolPanelState } from "@/lib/app/toolPanelState";
 
-const closed = (): ToolPanelState => ({ ai: false, history: false, sqlLibrary: false, sqlFile: false });
+const closed = (): ToolPanelState => ({ ai: false, history: false, sqlLibrary: false, sqlFile: false, projectFile: false, git: false });
 
 describe("toolPanelState", () => {
   it("opens one tool", () => {

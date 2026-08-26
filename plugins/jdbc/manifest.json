@@ -1,9 +1,9 @@
 {
   "id": "jdbc",
-  "name": "ogdeveloper JDBC Plugin",
+  "name": "OG Developer JDBC Plugin",
   "version": "0.1.28",
   "protocol_version": 1,
-  "description": "Adds JDBC driver support to ogdeveloper.",
+  "description": "Adds JDBC driver support to OG Developer.",
   "executable": "bin/dbx-jdbc-plugin",
   "drivers": [
     {

@@ -1,7 +1,7 @@
-import { DEFAULT_DESCRIPTION, SITE_NAME, SITE_URL } from "./metadata";
+import { DEFAULT_DESCRIPTION, DEFAULT_DESCRIPTION_EN, SITE_NAME, SITE_URL } from "./metadata";
 
 const localizedDescription = {
-  en: "An openGauss-specific database development tool, a deep-customized fork of dbx (Apache-2.0): official JDBC driver, PL/SQL debugger, DBMS_OUTPUT / RAISE NOTICE capture, and package/synonym object tree.",
+  en: DEFAULT_DESCRIPTION_EN,
   cn: DEFAULT_DESCRIPTION,
 } as const;
 
@@ -14,20 +14,16 @@ const localizedFeatureList = {
     "Package, synonym, type, and job object tree with invalid-object badges",
     "sql_compatibility (A/B/C/PG/M) awareness",
   ],
-  cn: [
-    "内嵌官方 openGauss JDBC 驱动，完整支持 SHA-256 认证",
-    "PL/SQL 感知的语句切分与 A 兼容模式类型",
-    "基于 dbe_pldebugger 的图形化 PL/SQL 调试器",
-    "JDBC 与原生协议双路捕获 DBMS_OUTPUT / RAISE NOTICE",
-    "包、同义词、类型、作业对象树，含无效对象标记",
-    "sql_compatibility（A/B/C/PG/M）兼容模式感知",
-  ],
+  cn: ["内嵌官方 openGauss JDBC 驱动，完整支持 SHA-256 认证", "PL/SQL 感知的语句切分与 A 兼容模式类型", "基于 dbe_pldebugger 的图形化 PL/SQL 调试器", "JDBC 与原生协议双路捕获 DBMS_OUTPUT / RAISE NOTICE", "包、同义词、类型、作业对象树，含无效对象标记", "sql_compatibility（A/B/C/PG/M）兼容模式感知"],
 } as const;
 
 const REPO_URL = "https://github.com/ghost0211/og_developer";
 const LICENSE_URL = `${REPO_URL}/blob/main/LICENSE`;
 
-export function buildSiteStructuredData() {
+export function buildSiteStructuredData(lang: "en" | "cn" = "en") {
+  const description = localizedDescription[lang];
+  const language = lang === "cn" ? "zh-CN" : "en";
+
   return [
     {
       "@context": "https://schema.org",
@@ -35,8 +31,8 @@ export function buildSiteStructuredData() {
       "@id": `${SITE_URL}/#website`,
       name: SITE_NAME,
       url: SITE_URL,
-      description: DEFAULT_DESCRIPTION,
-      inLanguage: ["en", "zh-CN"],
+      description,
+      inLanguage: language,
     },
     {
       "@context": "https://schema.org",
@@ -44,7 +40,7 @@ export function buildSiteStructuredData() {
       "@id": `${SITE_URL}/#organization`,
       name: SITE_NAME,
       url: SITE_URL,
-      description: DEFAULT_DESCRIPTION,
+      description,
       logo: `${SITE_URL}/logo.png`,
       sameAs: [REPO_URL],
     },

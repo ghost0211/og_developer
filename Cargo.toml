@@ -17,7 +17,7 @@ pageant = { path = "vendor/pageant" }
 # bundled Fixed Runtime path explicitly so Windows 7 does not fall back to an
 # unavailable system Runtime.
 wry = { path = "vendor/wry" }
-# ogdeveloper: vendored gaussdb fork with NOTICE forwarding (RAISE NOTICE capture
+# OG Developer: vendored gaussdb fork with NOTICE forwarding (RAISE NOTICE capture
 # for the native wire driver). See vendor/tokio-postgres-gaussdb/.
 tokio-postgres = { path = "vendor/tokio-postgres-gaussdb/tokio-postgres" }
 postgres-types = { path = "vendor/tokio-postgres-gaussdb/postgres-types" }

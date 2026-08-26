@@ -100,6 +100,8 @@ const DamengJobAdmin = defineAsyncComponent(() => import("@/components/admin/Dam
 const RoutineTestPanel = defineAsyncComponent(() => import("@/components/objects/RoutineTestPanel.vue"));
 const RoutineDebugPanel = defineAsyncComponent(() => import("@/components/debug/RoutineDebugPanel.vue"));
 const ProgramWindowPanel = defineAsyncComponent(() => import("@/components/objects/ProgramWindowPanel.vue"));
+const CommandWindow = defineAsyncComponent(() => import("@/components/command/CommandWindow.vue"));
+const EditorSettingsPage = defineAsyncComponent(() => import("@/components/editor/EditorSettingsDialog.vue"));
 const ExplainPlanViewer = defineAsyncComponent(() => import("@/components/explain/ExplainPlanViewer.vue"));
 const QueryChart = defineAsyncComponent(() => import("@/components/chart/QueryChart.vue"));
 import { useQueryStore } from "@/stores/queryStore";
@@ -172,6 +174,10 @@ const props = defineProps<{
   selectedSql: string;
   cursorPos: number;
   blockDangerousRedisCommands: boolean;
+  appVersion?: string;
+  settingsInitialTab?: string;
+  settingsInitialSection?: string;
+  settingsNavigationRequestId?: number;
 }>();
 
 const emit = defineEmits<{
@@ -2198,6 +2204,19 @@ defineExpose({ focusSearch, refreshData, refreshQueryEditorCompletionCache, hand
           :signature="activeTab.programWindow.signature"
           :relation-name="activeTab.programWindow.relationName"
         />
+      </div>
+    </template>
+
+    <!-- Command Window mode: interactive terminal & meta commands (openGauss / PL/SQL Developer style) -->
+    <template v-else-if="activeTab.mode === 'command'">
+      <div class="min-h-0 flex-1">
+        <CommandWindow :key="activeTab.id" :tab-id="activeTab.id" :connection-id="activeTab.connectionId" :database="activeTab.database" :schema="activeTab.schema" :database-type="activeEffectiveDatabaseType" />
+      </div>
+    </template>
+
+    <template v-else-if="activeTab.mode === 'settings'">
+      <div class="min-h-0 flex-1">
+        <EditorSettingsPage variant="page" :initial-tab="settingsInitialTab" :initial-section="settingsInitialSection" :navigation-request-id="settingsNavigationRequestId" :app-version="appVersion" @update:open="(open: boolean) => !open && queryStore.closeTab(activeTab.id)" />
       </div>
     </template>
 

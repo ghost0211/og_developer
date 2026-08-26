@@ -1050,7 +1050,9 @@ export interface QueryTab {
     | "postgres-dashboard"
     | "routine-test"
     | "routine-debug"
-    | "program-window";
+    | "program-window"
+    | "command"
+    | "settings";
   /** Ephemeral navigation intent; it is consumed by HBaseBrowser and is not persisted. */
   hbaseCreateTableOnOpen?: boolean;
   /** Routine test window (PL/SQL Developer style graphical call page). */

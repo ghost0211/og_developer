@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
-import { BookMarked, Bot, Database, FolderOpen, History, Moon, Settings, Sun, SunMoon } from "@lucide/vue";
+import { BookMarked, Bot, Database, FolderOpen, FolderTree, GitBranch, History, Moon, Settings, Sun, SunMoon } from "@lucide/vue";
 import LightTooltip from "@/components/ui/LightTooltip.vue";
 import type { AppThemeMode } from "@/lib/app/appTheme";
 import { isSystemAppThemeMode } from "@/lib/app/appTheme";
+import { isTauriRuntime } from "@/lib/backend/tauriRuntime";
 
-export type ActivityPanelId = "connections" | "files" | "library" | "history" | "ai";
+export type ActivityPanelId = "connections" | "files" | "sqlFiles" | "library" | "git" | "history" | "ai";
 
 const props = defineProps<{
   activePanels: ActivityPanelId[];
@@ -24,6 +25,7 @@ const emit = defineEmits<{
 }>();
 
 const { t } = useI18n();
+const isDesktop = isTauriRuntime();
 
 const themeIcon = computed(() => {
   if (isSystemAppThemeMode(props.themeMode)) return SunMoon;
@@ -74,7 +76,37 @@ function handlePanelClick(panelId: ActivityPanelId) {
         </button>
       </LightTooltip>
 
-      <!-- 3. SQL Library -->
+      <!-- 3. SQL Files -->
+      <LightTooltip :text="t('activityBar.sqlFiles')" side="right" :delay="150" :close-delay="0" nowrap>
+        <button
+          type="button"
+          class="relative flex items-center justify-center w-9 h-9 rounded-lg transition-all"
+          :class="[isPanelActive('sqlFiles') ? 'bg-background text-primary shadow-sm ring-1 ring-border/80' : 'text-muted-foreground hover:bg-muted/80 hover:text-foreground']"
+          :aria-label="t('activityBar.sqlFiles')"
+          :aria-pressed="isPanelActive('sqlFiles')"
+          @click="handlePanelClick('sqlFiles')"
+        >
+          <span v-if="isPanelActive('sqlFiles')" class="absolute -left-1 w-1 h-5 rounded-r bg-primary shadow-sm" />
+          <FolderTree class="h-4 w-4" />
+        </button>
+      </LightTooltip>
+
+      <!-- 4. Source Control (Git) -->
+      <LightTooltip v-if="isDesktop" :text="t('activityBar.git')" side="right" :delay="150" :close-delay="0" nowrap>
+        <button
+          type="button"
+          class="relative flex items-center justify-center w-9 h-9 rounded-lg transition-all"
+          :class="[isPanelActive('git') ? 'bg-background text-primary shadow-sm ring-1 ring-border/80' : 'text-muted-foreground hover:bg-muted/80 hover:text-foreground']"
+          :aria-label="t('activityBar.git')"
+          :aria-pressed="isPanelActive('git')"
+          @click="handlePanelClick('git')"
+        >
+          <span v-if="isPanelActive('git')" class="absolute -left-1 w-1 h-5 rounded-r bg-primary shadow-sm" />
+          <GitBranch class="h-4 w-4" />
+        </button>
+      </LightTooltip>
+
+      <!-- 5. SQL Library -->
       <LightTooltip :text="t('activityBar.sqlLibrary')" side="right" :delay="150" :close-delay="0" nowrap>
         <button
           type="button"
@@ -89,7 +121,7 @@ function handlePanelClick(panelId: ActivityPanelId) {
         </button>
       </LightTooltip>
 
-      <!-- 4. Query History -->
+      <!-- 5. Query History -->
       <LightTooltip v-if="showHistory" :text="t('activityBar.history')" side="right" :delay="150" :close-delay="0" nowrap>
         <button
           type="button"
@@ -104,7 +136,7 @@ function handlePanelClick(panelId: ActivityPanelId) {
         </button>
       </LightTooltip>
 
-      <!-- 5. AI Assistant -->
+      <!-- 6. AI Assistant -->
       <LightTooltip v-if="showAi" :text="t('activityBar.ai')" side="right" :delay="150" :close-delay="0" nowrap>
         <button
           type="button"

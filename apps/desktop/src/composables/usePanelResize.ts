@@ -7,6 +7,8 @@ export function usePanelResize() {
   const historyWidth = ref(Number(safeLocalStorageGet("dbx-history-width")) || 288);
   const sqlLibraryWidth = ref(Number(safeLocalStorageGet("dbx-sql-library-width")) || 288);
   const sqlFilePanelWidth = ref(Number(safeLocalStorageGet("dbx-sql-file-panel-width")) || 288);
+  const projectFilePanelWidth = ref(Number(safeLocalStorageGet("dbx-project-file-panel-width")) || 288);
+  const gitPanelWidth = ref(Number(safeLocalStorageGet("dbx-git-panel-width")) || 288);
 
   function startPanelResize(widthRef: Ref<number>, storageKey: string, direction: "left" | "right") {
     return (e: MouseEvent) => {
@@ -35,6 +37,8 @@ export function usePanelResize() {
   const startHistoryResize = startPanelResize(historyWidth, "dbx-history-width", "left");
   const startSqlLibraryResize = startPanelResize(sqlLibraryWidth, "dbx-sql-library-width", "left");
   const startSqlFilePanelResize = startPanelResize(sqlFilePanelWidth, "dbx-sql-file-panel-width", "left");
+  const startProjectFilePanelResize = startPanelResize(projectFilePanelWidth, "dbx-project-file-panel-width", "left");
+  const startGitPanelResize = startPanelResize(gitPanelWidth, "dbx-git-panel-width", "left");
 
   return {
     sidebarWidth,
@@ -42,10 +46,14 @@ export function usePanelResize() {
     historyWidth,
     sqlLibraryWidth,
     sqlFilePanelWidth,
+    projectFilePanelWidth,
+    gitPanelWidth,
     startSidebarResize,
     startAiPanelResize,
     startHistoryResize,
     startSqlLibraryResize,
     startSqlFilePanelResize,
+    startProjectFilePanelResize,
+    startGitPanelResize,
   };
 }

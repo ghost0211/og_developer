@@ -20,6 +20,7 @@ import { useSettingsStore } from "@/stores/settingsStore";
 import { createToolPanelSession, setToolPanelOpen as setToolPanelSessionOpen, toggleToolPanelSession, TOOL_PANEL_IDS, type ToolPanelId, type ToolPanelState } from "@/lib/app/toolPanelState";
 import { useSavedSqlStore } from "@/stores/savedSqlStore";
 import { usePromptTemplateStore } from "@/stores/promptTemplateStore";
+import { useGitStore } from "@/stores/gitStore";
 import { useToast } from "@/composables/useToast";
 import { useTheme } from "@/composables/useTheme";
 import { useFileDrop } from "@/composables/useFileDrop";
@@ -32,7 +33,6 @@ import { useDataGridActions } from "@/composables/useDataGridActions";
 import { useTauriEvents } from "@/composables/useTauriEvents";
 import { useCloseActionPrompt, type AppCloseAction, type AppCloseRequestOptions } from "@/composables/useCloseActionPrompt";
 import { useVisibilityChange } from "@/composables/useVisibilityChange";
-import { useScheduledDatabaseBackups } from "@/composables/useScheduledDatabaseBackups";
 import { shouldDrawDesktopWindowFrame, useWindowControls } from "@/composables/useWindowControls";
 import { createOpenTabsRestorationBarrier, initializeDesktopOpenTabs, type OpenTabsRestorationBarrier } from "@/lib/app/openTabsStartup";
 import { useSaveSqlFolderSelection } from "@/composables/useSaveSqlFolderSelection";
@@ -116,8 +116,11 @@ const AiAssistant = defineAsyncComponent(() => import("@/components/editor/AiAss
 const QueryHistory = defineAsyncComponent(() => import("@/components/editor/QueryHistory.vue"));
 const SqlLibraryPanel = defineAsyncComponent(() => import("@/components/layout/SqlLibraryPanel.vue"));
 const SqlFilePanel = defineAsyncComponent(() => import("@/components/layout/SqlFilePanel.vue"));
+const ProjectFilesPanel = defineAsyncComponent(() => import("@/components/layout/ProjectFilesPanel.vue"));
+const GitPanel = defineAsyncComponent(() => import("@/components/layout/GitPanel.vue"));
+const GitCloneDialog = defineAsyncComponent(() => import("@/components/git/GitCloneDialog.vue"));
+const GitDiffDialog = defineAsyncComponent(() => import("@/components/git/GitDiffDialog.vue"));
 const AboutDialog = defineAsyncComponent(() => import("@/components/common/AboutDialog.vue"));
-const EditorSettingsPage = defineAsyncComponent(() => import("@/components/editor/EditorSettingsDialog.vue"));
 const LoginPage = defineAsyncComponent(() => import("@/components/auth/LoginPage.vue"));
 const QuickOpenDialog = defineAsyncComponent(() => import("@/components/quick-open/QuickOpenDialog.vue"));
 const ProjectDialog = defineAsyncComponent(() => import("@/components/projects/ProjectDialog.vue"));
@@ -137,6 +140,7 @@ const queryStore = useQueryStore();
 const settingsStore = useSettingsStore();
 const savedSqlStore = useSavedSqlStore();
 const promptTemplateStore = usePromptTemplateStore();
+const gitStore = useGitStore();
 connectionStore.setBeforeConnectHandler((config) => ensureJdbcxRuntimeDrivers(config, api).then(() => undefined));
 const { message: toastMessage, visible: toastVisible, toast } = useToast();
 const { isDark, themeMode, applyTheme, setThemeMode } = useTheme();
@@ -152,13 +156,11 @@ const setupRequired = ref(false);
 const showConnectionDialog = ref(false);
 const connectionDialogPrefill = ref<ConnectionDeepLinkDraft | null>(null);
 const connectionDialogInitialTab = ref<ConfigTab | undefined>(undefined);
-const settingsDialogOpen = ref(false);
 const settingsInitialTab = ref("appearance");
 const settingsInitialSection = ref<string | undefined>(undefined);
 const settingsNavigationRequestId = ref(0);
 const showQueryEditorDdlDialog = ref(false);
 const showQueryEditorObjectSourceDialog = ref(false);
-const settingsReturnSurface = ref<"query" | "welcome">("welcome");
 const showQuickOpen = ref(false);
 const projectStore = useProjectStore();
 watch(
@@ -175,17 +177,23 @@ const showHistory = ref(safeLocalStorageGet("dbx-history-panel-open") === "true"
 const showAiPanel = ref(safeLocalStorageGet("dbx-ai-panel-open") === "true");
 const showSqlLibraryPanel = ref(safeLocalStorageGet("dbx-sql-library-open") === "true");
 const showSqlFilePanel = ref(safeLocalStorageGet("dbx-sql-file-panel-open") === "true");
+const showProjectFilePanel = ref(safeLocalStorageGet("dbx-project-file-panel-open") === "true");
+const showGitPanel = ref(safeLocalStorageGet("dbx-git-panel-open") === "true");
 const toolPanelRefs: Record<ToolPanelId, typeof showAiPanel> = {
   ai: showAiPanel,
   history: showHistory,
   sqlLibrary: showSqlLibraryPanel,
   sqlFile: showSqlFilePanel,
+  projectFile: showProjectFilePanel,
+  git: showGitPanel,
 };
 const toolPanelStorageKeys: Record<ToolPanelId, string> = {
   ai: "dbx-ai-panel-open",
   history: "dbx-history-panel-open",
   sqlLibrary: "dbx-sql-library-open",
   sqlFile: "dbx-sql-file-panel-open",
+  projectFile: "dbx-project-file-panel-open",
+  git: "dbx-git-panel-open",
 };
 const sidebarOpen = ref(safeLocalStorageGet("dbx-sidebar-open") !== "false");
 const storedActiveToolPanel = safeLocalStorageGet("dbx-active-tool-panel");
@@ -197,7 +205,8 @@ for (const panelId of TOOL_PANEL_IDS) {
 safeLocalStorageSet("dbx-active-tool-panel", initialToolPanelSession.active ?? "");
 const activeToolPanel = ref<ToolPanelId | null>(initialToolPanelSession.active);
 const aiPanelReady = ref(false);
-const { sidebarWidth, aiPanelWidth, historyWidth, sqlLibraryWidth, sqlFilePanelWidth, startSidebarResize, startAiPanelResize, startHistoryResize, startSqlLibraryResize, startSqlFilePanelResize } = usePanelResize();
+const { sidebarWidth, aiPanelWidth, historyWidth, sqlLibraryWidth, sqlFilePanelWidth, projectFilePanelWidth, gitPanelWidth, startSidebarResize, startAiPanelResize, startHistoryResize, startSqlLibraryResize, startSqlFilePanelResize, startProjectFilePanelResize, startGitPanelResize } =
+  usePanelResize();
 const aiAssistantRef = ref<AiAssistantHandle | null>(null);
 const appSidebarRef = ref<InstanceType<typeof AppSidebar> | null>(null);
 const appTabBarRef = ref<InstanceType<typeof AppTabBar> | null>(null);
@@ -381,7 +390,6 @@ const { setupTauriListeners, cleanupTauriListeners } = useTauriEvents({
 });
 const { performCloseAction, setupCloseActionPromptListener, cleanupCloseActionPromptListener } = useCloseActionPrompt({ requestClose: requestAppClose });
 useVisibilityChange();
-useScheduledDatabaseBackups({ scheduler: true });
 
 const appVersion = ref("");
 const isClassicLayout = computed(() => settingsStore.editorSettings.appLayout === "classic");
@@ -389,10 +397,7 @@ function openSettings(initialTab = "appearance", initialSection?: string) {
   settingsInitialTab.value = initialTab;
   settingsInitialSection.value = initialSection;
   settingsNavigationRequestId.value += 1;
-  if (!settingsStore.settingsPageActive) {
-    settingsReturnSurface.value = activeTab.value ? "query" : "welcome";
-  }
-  activateSettingsPage();
+  queryStore.openSettingsTab();
 }
 
 watch(
@@ -403,16 +408,6 @@ watch(
     settingsStore.clearSettingsNavigationRequest(request.id);
   },
 );
-
-function activateSettingsPage() {
-  settingsDialogOpen.value = true;
-  settingsStore.settingsPageActive = true;
-}
-
-function closeSettingsPage(_options: { restoreReturnSurface?: boolean } = {}) {
-  settingsDialogOpen.value = false;
-  settingsStore.settingsPageActive = false;
-}
 const hasSqlFileConnections = computed(() => connectionStore.connections.some((c) => supportsSqlFileExecution(c.db_type)));
 const queryEditorDdlDatabaseType = computed(() => {
   if (!queryEditorDdlTarget.value?.connectionId) return undefined;
@@ -430,7 +425,6 @@ const queryEditorObjectSourceFormatDialect = computed(() => sqlFormatDialectForD
 const connectionStats = computed(() => ({
   total: connectionStore.connections.length,
   connected: connectionStore.connectedIds.size,
-  types: new Set(connectionStore.connections.map((c) => c.driver_profile || c.db_type)).size,
 }));
 const recentConnections = computed(() => connectionStore.connections.slice(0, 5));
 const savedSqlHistoryItems = computed(() => {
@@ -548,7 +542,6 @@ watch(
       );
     }
     if (id) newQueryContextSource.value = "tab";
-    if (id && settingsDialogOpen.value) closeSettingsPage({ restoreReturnSurface: false });
     selectedSql.value = "";
     cursorPos.value = activeTab.value?.editorSelection?.head ?? 0;
     activeOutputView.value = "result";
@@ -560,13 +553,6 @@ watch(
   () => connectionStore.selectedTreeNodeId,
   (id) => {
     if (id) newQueryContextSource.value = "sidebar";
-  },
-);
-
-watch(
-  () => settingsStore.settingsPageActive,
-  (active) => {
-    if (!active && settingsDialogOpen.value) closeSettingsPage({ restoreReturnSurface: false });
   },
 );
 
@@ -799,6 +785,9 @@ async function saveExternalSqlPath(tab: QueryTab, options: { closeAfterSave?: bo
     rememberExternalSqlFileTarget(tab.externalSqlPath, { connectionId: tab.connectionId, database: tab.database });
     queryStore.markTabClean(tab);
     toast(t("savedSql.saved"), 2000);
+    if (gitStore.isRepo) {
+      void gitStore.refresh();
+    }
     if (options.closeAfterSave) queryStore.closeTab(tab.id, { force: true });
     return true;
   } catch (e: any) {
@@ -944,8 +933,10 @@ function cycleThemeMode() {
 const activeActivityPanels = computed<ActivityPanelId[]>(() => {
   const panels: ActivityPanelId[] = [];
   if (sidebarOpen.value) panels.push("connections");
-  if (activeToolPanel.value === "sqlFile") panels.push("files");
+  if (activeToolPanel.value === "projectFile") panels.push("files");
+  if (activeToolPanel.value === "sqlFile") panels.push("sqlFiles");
   if (activeToolPanel.value === "sqlLibrary") panels.push("library");
+  if (activeToolPanel.value === "git") panels.push("git");
   if (activeToolPanel.value === "history") panels.push("history");
   if (activeToolPanel.value === "ai") panels.push("ai");
   return panels;
@@ -955,9 +946,13 @@ function handleActivityPanelToggle(panelId: ActivityPanelId) {
   if (panelId === "connections") {
     setSidebarOpen(!sidebarOpen.value);
   } else if (panelId === "files") {
+    toggleToolPanel("projectFile");
+  } else if (panelId === "sqlFiles") {
     toggleToolPanel("sqlFile");
   } else if (panelId === "library") {
     toggleToolPanel("sqlLibrary");
+  } else if (panelId === "git") {
+    toggleToolPanel("git");
   } else if (panelId === "history") {
     toggleToolPanel("history");
   } else if (panelId === "ai") {
@@ -2063,10 +2058,6 @@ function dispatchBeforeTabSwitch(tabId: string) {
 }
 
 function closeActiveTab() {
-  if (settingsDialogOpen.value) {
-    closeSettingsPage();
-    return;
-  }
   if (queryStore.activeTabId) queryStore.closeTab(queryStore.activeTabId);
 }
 
@@ -2078,8 +2069,6 @@ function activateQueryTab(tabId: string): boolean {
   if (!queryStore.tabs.some((tab) => tab.id === tabId)) return false;
   dispatchBeforeTabSwitch(tabId);
   queryStore.activeTabId = tabId;
-  if (settingsDialogOpen.value) closeSettingsPage({ restoreReturnSurface: false });
-  else settingsStore.settingsPageActive = false;
   return true;
 }
 
@@ -2452,6 +2441,7 @@ onUnmounted(() => {
           @export-config="dialogs.onExportClick()"
           @create-project="onMenuCreateProject"
           @open-project="onMenuOpenProject"
+          @clone-from-git="gitStore.openCloneDialog"
           @select-project="onMenuSelectProject"
           @undo="dispatchEditorMenuAction('undo')"
           @redo="dispatchEditorMenuAction('redo')"
@@ -2474,6 +2464,8 @@ onUnmounted(() => {
           @toggle-history="toggleToolPanel('history')"
           @toggle-sql-library="toggleToolPanel('sqlLibrary')"
           @toggle-sql-file-panel="toggleToolPanel('sqlFile')"
+          @toggle-project-file-panel="toggleToolPanel('projectFile')"
+          @toggle-git-panel="toggleToolPanel('git')"
           @open-settings="(tab?: string) => openSettings(tab ?? 'appearance')"
           @set-theme-mode="setThemeMode"
           @search-files="openMenuSearch('files')"
@@ -2491,13 +2483,21 @@ onUnmounted(() => {
               }
             }
           "
+          @open-invalid-objects="dialogs.showInvalidObjectsDialog.value = true"
+          @open-command-window="
+            () => {
+              const targetId = activeTab?.connectionId || connectionStore.activeConnectionId || [...connectionStore.connectedIds][0] || connectionStore.connections[0]?.id;
+              if (targetId) {
+                queryStore.openCommandWindow(targetId, activeTab?.database, activeTab?.schema);
+              }
+            }
+          "
           @open-table-import="void openTableImportFromMenu()"
           @open-database-export="dialogs.showDatabaseExportDialog.value = true"
           @open-transfer="dialogs.showTransferDialog.value = true"
           @open-sql-file="dialogs.showSqlFileDialog.value = true"
           @open-schema-diff="dialogs.showSchemaDiffDialog.value = true"
           @open-data-compare="dialogs.showDataCompareDialog.value = true"
-          @open-scheduled-backups="openSettings('backups')"
           @open-shortcuts="openSettings('shortcuts')"
           @open-docs="openDocs"
           @export-debug-logs="downloadDebugLogs"
@@ -2534,15 +2534,7 @@ onUnmounted(() => {
 
             <div :class="isClassicLayout ? 'flex-1 min-w-0 overflow-hidden' : 'flex-1 min-w-0 overflow-hidden rounded-md border border-border/80 bg-background'">
               <div class="h-full flex flex-col min-w-0">
-                <AppTabBar
-                  ref="appTabBarRef"
-                  @activate-tab="settingsStore.settingsPageActive = false"
-                  @save-tab="handleSaveTab"
-                  @discard-tab-close="handleDiscardPendingTabClose"
-                  @save-all-tab-close="handleSaveAllPendingTabClose"
-                  @discard-all-tab-close="handleDiscardAllPendingTabClose"
-                  @cancel-tab-close="cancelPendingAppClose"
-                />
+                <AppTabBar ref="appTabBarRef" @save-tab="handleSaveTab" @discard-tab-close="handleDiscardPendingTabClose" @save-all-tab-close="handleSaveAllPendingTabClose" @discard-all-tab-close="handleDiscardAllPendingTabClose" @cancel-tab-close="cancelPendingAppClose" />
                 <div v-if="activeTab" class="flex flex-col flex-1 min-h-0">
                   <EditorToolbar
                     v-if="activeTab.mode === 'query' && !isPreviewTab(activeTab)"
@@ -2596,6 +2588,10 @@ onUnmounted(() => {
                       :selected-sql="selectedSql"
                       :cursor-pos="cursorPos"
                       :block-dangerous-redis-commands="blockDangerousRedisCommands"
+                      :app-version="appVersion"
+                      :settings-initial-tab="settingsInitialTab"
+                      :settings-initial-section="settingsInitialSection"
+                      :settings-navigation-request-id="settingsNavigationRequestId"
                       @update:active-output-view="activeOutputView = $event"
                       @fix-with-ai="fixWithAi"
                       @send-selection-to-ai="sendSelectionToAi"
@@ -2728,6 +2724,20 @@ onUnmounted(() => {
                 <SqlFilePanel @close="closeToolPanel('sqlFile')" />
               </div>
             </div>
+
+            <div v-if="activeToolPanel === 'projectFile'" :class="isClassicLayout ? 'h-full shrink-0 relative z-30 isolate bg-background' : 'h-full shrink-0 relative z-30 isolate rounded-md border border-border/80 bg-background'" :style="{ width: projectFilePanelWidth + 'px' }">
+              <div class="panel-resize-handle panel-resize-handle--left" @mousedown="startProjectFilePanelResize" />
+              <div class="h-full min-h-0 overflow-hidden rounded-[inherit]">
+                <ProjectFilesPanel @close="closeToolPanel('projectFile')" @create-project="onMenuCreateProject" />
+              </div>
+            </div>
+
+            <div v-if="activeToolPanel === 'git'" :class="isClassicLayout ? 'h-full shrink-0 relative z-30 isolate bg-background' : 'h-full shrink-0 relative z-30 isolate rounded-md border border-border/80 bg-background'" :style="{ width: gitPanelWidth + 'px' }">
+              <div class="panel-resize-handle panel-resize-handle--left" @mousedown="startGitPanelResize" />
+              <div class="h-full min-h-0 overflow-hidden rounded-[inherit]">
+                <GitPanel @close="closeToolPanel('git')" @create-project="onMenuCreateProject" />
+              </div>
+            </div>
           </div>
         </div>
 
@@ -2750,6 +2760,9 @@ onUnmounted(() => {
           :danger-sql="dangerSql"
           :suppress-danger-confirm="suppressDangerConfirm"
           :active-database-type="activeConnection?.db_type"
+          :active-connection-id="activeTab?.connectionId || connectionStore.activeConnectionId || undefined"
+          :active-database="activeTab?.database || activeConnection?.database || undefined"
+          :active-schema="activeTab?.schema || undefined"
           :show-sql-parameter-dialog="showSqlParameterDialog"
           :sql-parameter-source-sql="sqlParameterSourceSql"
           :sql-parameter-names="sqlParameterNames"
@@ -2773,24 +2786,12 @@ onUnmounted(() => {
               )
           "
           @open-driver-store="setConnectionDialogOpen(false)"
-          @open-tunnel-profile-settings="
-            setConnectionDialogOpen(false);
-            openSettings('tunnels');
-          "
           @open-lineage-target="openLineageTarget"
           @open-database-search-target="openDatabaseSearchTarget"
           @open-diagram-target="openDiagramTarget"
         />
-        <EditorSettingsPage
-          v-if="settingsDialogOpen"
-          variant="dialog"
-          :open="settingsDialogOpen"
-          :initial-tab="settingsInitialTab"
-          :initial-section="settingsInitialSection"
-          :navigation-request-id="settingsNavigationRequestId"
-          :app-version="appVersion"
-          @update:open="(open: boolean) => (open ? activateSettingsPage() : closeSettingsPage())"
-        />
+        <GitCloneDialog :open="gitStore.cloneDialogOpen" @update:open="gitStore.cloneDialogOpen = $event" @cloned="toggleToolPanel('projectFile')" />
+        <GitDiffDialog />
         <QuickOpenDialog :open="showQuickOpen" @update:open="showQuickOpen = $event" @select="handleQuickOpenSelect" />
         <ProjectDialog :open="projectDialog.open" :mode="projectDialog.mode" @update:open="projectDialog.open = $event" @create="onCreateProject" @select="onMenuSelectProject" />
         <SessionsDialog :open="sessionsDialogOpen" @update:open="sessionsDialogOpen = $event" />
