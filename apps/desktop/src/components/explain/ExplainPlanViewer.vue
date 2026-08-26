@@ -59,7 +59,7 @@ const nodeCount = computed(() => (props.plan ? flattenExplainPlanNodes(props.pla
 // EXPLAIN ANALYZE on Postgres, SET STATISTICS XML on SQL Server.
 const measuredRowsLabel = computed(() => {
   const databaseType = props.plan?.databaseType;
-  if (databaseType !== "postgres" && databaseType !== "sqlserver") return undefined;
+  if (databaseType !== "postgres" && databaseType !== "opengauss" && databaseType !== "gaussdb" && databaseType !== "sqlserver") return undefined;
   if (!flattenExplainPlanNodes(props.plan!.nodes).some((node) => extractActualRows(node) !== undefined)) return undefined;
   return databaseType === "sqlserver" ? "ACTUAL" : "ANALYZE";
 });

@@ -17,24 +17,24 @@ export interface ExplainPlanNode {
 }
 
 export interface ParsedExplainPlan {
-  databaseType: "mysql" | "postgres" | "dameng" | "questdb" | "oracle" | "sqlserver";
+  databaseType: "mysql" | "postgres" | "opengauss" | "gaussdb" | "dameng" | "questdb" | "oracle" | "sqlserver";
   raw: unknown;
   nodes: ExplainPlanNode[];
 }
 
 export type BuildExplainSqlResult = { ok: true; sql: string } | { ok: false; reason: "unsupported" | "empty" | "unsafe" };
 
-const SUPPORTED_EXPLAIN_TYPES = new Set<DatabaseType>(["mysql", "postgres", "dameng", "questdb", "oracle", "sqlserver"]);
-export function supportsExplainPlan(databaseType?: DatabaseType): databaseType is "mysql" | "postgres" | "dameng" | "questdb" | "oracle" | "sqlserver" {
+const SUPPORTED_EXPLAIN_TYPES = new Set<DatabaseType>(["mysql", "postgres", "opengauss", "gaussdb", "dameng", "questdb", "oracle", "sqlserver"]);
+export function supportsExplainPlan(databaseType?: DatabaseType): databaseType is "mysql" | "postgres" | "opengauss" | "gaussdb" | "dameng" | "questdb" | "oracle" | "sqlserver" {
   return !!databaseType && supportsDatabaseFeature(databaseType, "sqlExplain") && SUPPORTED_EXPLAIN_TYPES.has(databaseType);
 }
 
-/** `analyze` is honored by PostgreSQL only; every other engine ignores it server-side. */
+/** `analyze` is honored by PostgreSQL-compatible engines; every other engine ignores it server-side. */
 export function buildExplainSql(databaseType: DatabaseType | undefined, sql: string, format: "json" | "standard" = "json", analyze?: boolean): Promise<BuildExplainSqlResult> {
   return api.buildExplainSql({ databaseType, sql, format, analyze }) as Promise<BuildExplainSqlResult>;
 }
 
-export function parseExplainResult(databaseType: "mysql" | "postgres" | "dameng" | "questdb" | "sqlserver", result: QueryResult): ParsedExplainPlan {
+export function parseExplainResult(databaseType: "mysql" | "postgres" | "opengauss" | "gaussdb" | "dameng" | "questdb" | "sqlserver", result: QueryResult): ParsedExplainPlan {
   if (databaseType === "dameng") {
     return parseDamengExplain(result);
   } else if (databaseType === "questdb") {
@@ -43,7 +43,7 @@ export function parseExplainResult(databaseType: "mysql" | "postgres" | "dameng"
     return parseSqlServerExplain(result);
   }
   const raw = parseExplainCell(result.rows[0]?.[0]);
-  const nodes = databaseType === "postgres" ? parsePostgresExplain(raw) : parseMysqlExplain(raw);
+  const nodes = databaseType === "postgres" || databaseType === "opengauss" || databaseType === "gaussdb" ? parsePostgresExplain(raw) : parseMysqlExplain(raw);
   return { databaseType, raw, nodes };
 }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { flattenExplainPlanNodes, parseExplainResult } from "@/lib/diagram/explainPlan";
+import { flattenExplainPlanNodes, parseExplainResult, supportsExplainPlan } from "@/lib/diagram/explainPlan";
 import { extractActualRows } from "@/lib/diagram/planCanvas";
 import type { QueryResult } from "@/types/database";
 
@@ -137,5 +137,21 @@ describe("PostgreSQL plain EXPLAIN parsing", () => {
     expect(extractActualRows(root)).toBeUndefined();
     expect(root.cost).toBe("0..18000");
     expect(root.rows).toBe("1200000");
+  });
+});
+
+describe("openGauss EXPLAIN support and parsing", () => {
+  it("declares support for openGauss and GaussDB explain plans", () => {
+    expect(supportsExplainPlan("opengauss")).toBe(true);
+    expect(supportsExplainPlan("gaussdb")).toBe(true);
+  });
+
+  it.each(["opengauss", "gaussdb"] as const)("parses %s JSON explain plan using shared postgres parser", (databaseType) => {
+    const parsed = parseExplainResult(databaseType, explainResult(ANALYZE_PLAN));
+    expect(parsed.databaseType).toBe(databaseType);
+    expect(parsed.nodes).toHaveLength(1);
+    const nodes = flattenExplainPlanNodes(parsed.nodes);
+    expect(nodes).toHaveLength(4);
+    expect(nodes[0].nodeType).toBe("Sort");
   });
 });

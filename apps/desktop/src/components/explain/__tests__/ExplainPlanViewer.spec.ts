@@ -30,7 +30,7 @@ describe("ExplainPlanViewer canvas view", () => {
   it("derives the measured-rows chip from parsed nodes, not the raw plan text", () => {
     expect(viewerSource).toContain('import { extractActualRows } from "@/lib/diagram/planCanvas";');
     expect(viewerSource).toContain("const measuredRowsLabel = computed(() => {");
-    expect(viewerSource).toContain('if (databaseType !== "postgres" && databaseType !== "sqlserver") return undefined;');
+    expect(viewerSource).toContain('if (databaseType !== "postgres" && databaseType !== "opengauss" && databaseType !== "gaussdb" && databaseType !== "sqlserver") return undefined;');
     expect(viewerSource).toContain("if (!flattenExplainPlanNodes(props.plan!.nodes).some((node) => extractActualRows(node) !== undefined)) return undefined;");
     expect(viewerSource).toContain('return databaseType === "sqlserver" ? "ACTUAL" : "ANALYZE";');
     expect(viewerSource).toContain('<span v-if="measuredRowsLabel"');

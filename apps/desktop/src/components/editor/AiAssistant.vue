@@ -84,6 +84,7 @@ import { decodeSelectableDatabaseValue, encodeSelectableDatabaseValue, formatDat
 import { normalizeSqliteNamespace } from "@/lib/database/sqliteNamespace";
 import { isQueryExecutionErrorResult } from "@/lib/query/queryResultError";
 import { isSchemaAware } from "@/lib/database/databaseCapabilities";
+import { effectiveDatabaseTypeForConnection } from "@/lib/database/jdbcDialect";
 import ExplainPlanViewer from "@/components/explain/ExplainPlanViewer.vue";
 import { parseExplainResult, parseOracleExplainText, type ParsedExplainPlan } from "@/lib/diagram/explainPlan";
 import { copyToClipboard } from "@/lib/common/clipboard";
@@ -1030,7 +1031,7 @@ function parseExplainFromData(explainData: unknown, dbType: string): ParsedExpla
     return parseOracleExplainText(explainData);
   }
   if (!explainData || typeof explainData !== "object") return undefined;
-  const supportedTypes = ["mysql", "postgres", "dameng", "questdb"] as const;
+  const supportedTypes = ["mysql", "postgres", "opengauss", "gaussdb", "dameng", "questdb"] as const;
   if (!supportedTypes.includes(dbType as (typeof supportedTypes)[number])) return undefined;
   try {
     return parseExplainResult(dbType as (typeof supportedTypes)[number], explainData as import("@/types/database").QueryResult);
@@ -2350,7 +2351,7 @@ async function openExternalUrl(url: string) {
                         {{ t("explain.title") }}
                       </Button>
                       <div v-if="step.toolName === 'explain_query' && step.explainData && connection?.db_type" class="mb-1">
-                        <ExplainPlanViewer :plan="parseExplainFromData(step.explainData, connection.db_type)" class="max-h-64" />
+                        <ExplainPlanViewer :plan="parseExplainFromData(step.explainData, effectiveDatabaseTypeForConnection(connection) ?? connection.db_type)" class="max-h-64" />
                       </div>
                       <div v-else-if="step.isError && step.toolResult" class="text-[10px] text-red-600 dark:text-red-400">{{ step.toolResult }}</div>
                       <div v-else-if="step.toolResult" class="max-h-48 overflow-auto text-[10px] text-muted-foreground whitespace-pre-wrap">{{ step.toolResult }}</div>

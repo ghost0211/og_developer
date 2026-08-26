@@ -17,6 +17,7 @@ import { connectionDisplayName } from "@/lib/tabs/tabPresentation";
 import { useConnectionGroupLabel } from "@/composables/useConnectionGroupLabel";
 import { isSingleDatabase, supportsClearableQuerySchema, supportsSqlInListPaste, supportsTransaction as supportsTransactionFeature } from "@/lib/database/databaseCapabilities";
 import { connectionIsDorisFamilyCatalogCapable } from "@/lib/database/databaseFeatureSupport";
+import { effectiveDatabaseTypeForConnection } from "@/lib/database/jdbcDialect";
 import { hexToRgba } from "@/lib/common/color";
 import { productionContextForDatabase } from "@/lib/database/productionSafety";
 import type { QueryTab, ConnectionConfig } from "@/types/database";
@@ -118,15 +119,15 @@ const supportsTransaction = computed(() => supportsTransactionFeature(props.acti
 const hasDefaultDatabaseOption = computed(() => activeDatabaseOptions.value.includes(""));
 const schemaDatabaseKey = computed(() => props.activeTab.database || (isSingleDb.value ? "_" : ""));
 const saveTooltip = computed(() => (props.activeTab.objectSource ? t("objects.saveSource") : t("toolbar.saveSql")));
-// DM calls it autotrace, Postgres EXPLAIN ANALYZE, SQL Server the actual execution
+// DM calls it autotrace, Postgres/openGauss EXPLAIN ANALYZE, SQL Server the actual execution
 // plan (SET STATISTICS XML); all three execute the statement.
 const supportsExplainAnalyze = computed(() => {
-  const dbType = props.activeConnection?.db_type;
-  return dbType === "dameng" || dbType === "postgres" || dbType === "sqlserver";
+  const dbType = effectiveDatabaseTypeForConnection(props.activeConnection);
+  return dbType === "dameng" || dbType === "postgres" || dbType === "opengauss" || dbType === "gaussdb" || dbType === "sqlserver";
 });
 const explainAnalyzeTooltip = computed(() => {
-  const dbType = props.activeConnection?.db_type;
-  if (dbType === "postgres") return t("toolbar.explainAnalyze");
+  const dbType = effectiveDatabaseTypeForConnection(props.activeConnection);
+  if (dbType === "postgres" || dbType === "opengauss" || dbType === "gaussdb") return t("toolbar.explainAnalyze");
   if (dbType === "sqlserver") return t("toolbar.actualPlan");
   return t("toolbar.autotrace");
 });

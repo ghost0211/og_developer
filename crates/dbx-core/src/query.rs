@@ -617,13 +617,15 @@ fn validate_query_execution_mode(
     if options.execution_mode != QueryExecutionMode::PostgresReadOnlyTransaction {
         return Ok(());
     }
-    if db_type != Some(DatabaseType::Postgres) {
-        return Err("PostgreSQL read-only transaction mode requires a PostgreSQL connection".to_string());
+    if !matches!(db_type, Some(DatabaseType::Postgres | DatabaseType::OpenGauss | DatabaseType::Gaussdb)) {
+        return Err(
+            "PostgreSQL-compatible read-only transaction mode requires a PostgreSQL-family connection".to_string()
+        );
     }
     if options.client_session_id.as_deref().is_none_or(|session_id| session_id.trim().is_empty()) {
-        return Err("PostgreSQL read-only transaction mode requires an isolated client session".to_string());
+        return Err("PostgreSQL-compatible read-only transaction mode requires an isolated client session".to_string());
     }
-    if crate::sql::split_sql_statements_for_database(sql, DatabaseType::Postgres).len() != 1 {
+    if crate::sql::split_sql_statements_for_database(sql, db_type.unwrap_or(DatabaseType::Postgres)).len() != 1 {
         return Err("PostgreSQL read-only transaction mode requires exactly one statement".to_string());
     }
     Ok(())
@@ -4452,7 +4454,7 @@ for line in sys.stdin:
     }
 
     #[test]
-    fn postgres_read_only_transaction_requires_postgres_and_isolated_session() {
+    fn postgres_family_read_only_transaction_requires_isolated_session() {
         let mut options = QueryExecutionOptions {
             execution_mode: QueryExecutionMode::PostgresReadOnlyTransaction,
             ..Default::default()
@@ -4463,6 +4465,8 @@ for line in sys.stdin:
 
         options.client_session_id = Some("tab:explain:execution".to_string());
         assert_eq!(validate_query_execution_mode(Some(DatabaseType::Postgres), "SELECT 1", &options), Ok(()));
+        assert_eq!(validate_query_execution_mode(Some(DatabaseType::OpenGauss), "SELECT 1", &options), Ok(()));
+        assert_eq!(validate_query_execution_mode(Some(DatabaseType::Gaussdb), "SELECT 1", &options), Ok(()));
         assert!(validate_query_execution_mode(Some(DatabaseType::Postgres), "SELECT 1; SELECT 2", &options).is_err());
     }
 

@@ -59,8 +59,10 @@ pub fn build_explain_sql(options: ExplainSqlOptions) -> ExplainSqlBuildResult {
     }
     if options.analyze == Some(true)
         && options.database_type.is_some_and(|database_type| {
-            matches!(database_type, DatabaseType::Postgres | DatabaseType::SqlServer)
-                && is_write_sql_for_database(&source, database_type)
+            matches!(
+                database_type,
+                DatabaseType::Postgres | DatabaseType::OpenGauss | DatabaseType::Gaussdb | DatabaseType::SqlServer
+            ) && is_write_sql_for_database(&source, database_type)
         })
     {
         return explain_err("unsafe");
@@ -72,10 +74,12 @@ pub fn build_explain_sql(options: ExplainSqlOptions) -> ExplainSqlBuildResult {
     let sql = match options.database_type {
         // ANALYZE executes the statement; is_safe_explain_sql has already limited
         // the source to SELECT/WITH/TABLE/VALUES. MongoDb shares the plain arm only.
-        Some(DatabaseType::Postgres) if options.analyze == Some(true) => {
+        Some(DatabaseType::Postgres | DatabaseType::OpenGauss | DatabaseType::Gaussdb)
+            if options.analyze == Some(true) =>
+        {
             format!("EXPLAIN (ANALYZE, FORMAT JSON) {source}")
         }
-        Some(DatabaseType::Postgres | DatabaseType::MongoDb) => {
+        Some(DatabaseType::Postgres | DatabaseType::OpenGauss | DatabaseType::Gaussdb | DatabaseType::MongoDb) => {
             format!("EXPLAIN (FORMAT JSON) {source}")
         }
         Some(DatabaseType::Dameng | DatabaseType::Questdb) => {
@@ -124,6 +128,8 @@ pub fn supports_explain_plan(database_type: Option<DatabaseType>) -> bool {
         Some(
             DatabaseType::Mysql
                 | DatabaseType::Postgres
+                | DatabaseType::OpenGauss
+                | DatabaseType::Gaussdb
                 | DatabaseType::Questdb
                 | DatabaseType::Dameng
                 | DatabaseType::Oracle
@@ -928,6 +934,39 @@ mod tests {
                 assert_eq!(analyzed.reason, Some("unsupported".to_string()));
             }
         }
+    }
+
+    #[test]
+    fn builds_opengauss_explain_sql() {
+        let plain = build_explain_sql(ExplainSqlOptions {
+            database_type: Some(DatabaseType::OpenGauss),
+            format: None,
+            analyze: None,
+            sql: "SELECT * FROM test_t".to_string(),
+        });
+        assert_eq!(
+            plain,
+            ExplainSqlBuildResult {
+                ok: true,
+                sql: Some("EXPLAIN (FORMAT JSON) SELECT * FROM test_t".to_string()),
+                reason: None,
+            }
+        );
+
+        let analyzed = build_explain_sql(ExplainSqlOptions {
+            database_type: Some(DatabaseType::OpenGauss),
+            format: None,
+            analyze: Some(true),
+            sql: "SELECT * FROM test_t".to_string(),
+        });
+        assert_eq!(
+            analyzed,
+            ExplainSqlBuildResult {
+                ok: true,
+                sql: Some("EXPLAIN (ANALYZE, FORMAT JSON) SELECT * FROM test_t".to_string()),
+                reason: None,
+            }
+        );
     }
 
     #[test]

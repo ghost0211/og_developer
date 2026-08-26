@@ -42,7 +42,7 @@ import { dataTabExecutionDatabase } from "@/lib/table/dataTabExecutionDatabase";
 import { tableOpenPageLimit } from "@/lib/table/tableOpenPageLimit";
 import { getCachedTableMetadata, loadTableIndexes, loadTableMetadata, type TableMetadataRequest } from "@/lib/metadata/tableMetadataCache";
 import { buildTableSelectSql, quoteTableDataIdentifier } from "@/lib/table/tableSelectSql";
-import { connectionObjectTreeNodeSchema, connectionQueryExecutionSchema, connectionUsesDatabaseObjectTreeMode, effectiveDatabaseTypeForConnection, metadataSchemaForConnection } from "@/lib/database/jdbcDialect";
+import { connectionObjectTreeNodeSchema, connectionQueryExecutionSchema, connectionUsesDatabaseObjectTreeMode, effectiveDatabaseTypeForConnection, gaussdbConnectionMode, metadataSchemaForConnection, opengaussConnectionMode } from "@/lib/database/jdbcDialect";
 import { frontendQueryTimeoutSecsForSql, queryTimeoutSecsForConnection } from "@/lib/sql/queryTimeout";
 import { queryResultNameFromPreamble, queryResultSourceLabel } from "@/lib/sql/queryResultSource";
 import { beginDataGridNativeSelectionBlock, finishDataGridNativeSelectionBlock } from "@/lib/dataGrid/dataGridNativeSelection";
@@ -4503,10 +4503,11 @@ export const useQueryStore = defineStore("query", () => {
     return producedResult;
   }
 
-  async function explainTabSql(id: string, sql: string, databaseType?: DatabaseType, explainMode?: string) {
+  async function explainTabSql(id: string, sql: string, requestedDatabaseType?: DatabaseType, explainMode?: string) {
     const tab = tabs.value.find((t) => t.id === id);
     if (!tab) return { ok: false as const, reason: "empty" as const };
     const conn = useConnectionStore().getConfig(tab.connectionId);
+    const databaseType = requestedDatabaseType === undefined || requestedDatabaseType === conn?.db_type ? (effectiveDatabaseTypeForConnection(conn) ?? requestedDatabaseType) : requestedDatabaseType;
     const queryTimeoutSecs = queryTimeoutSecsForConnection(conn);
     const executionId = uuid();
 
@@ -4799,7 +4800,13 @@ export const useQueryStore = defineStore("query", () => {
       return { ok: true as const, sql: built.sql };
     }
 
-    const postgresAnalyze = databaseType === "postgres" && explainMode === "autotrace";
+    const isPostgresFamily = databaseType === "postgres" || databaseType === "opengauss" || databaseType === "gaussdb";
+    const postgresAnalyze = isPostgresFamily && explainMode === "autotrace";
+    // External JDBC plugins execute each request independently and do not expose
+    // the native checkout/rollback wrapper. Keep EXPLAIN ANALYZE enabled there,
+    // but only request the native read-only transaction mode for native pools.
+    const usesExternalJdbc = conn?.db_type === "jdbc" || opengaussConnectionMode(conn) === "jdbc" || gaussdbConnectionMode(conn) === "m-jdbc";
+    const useReadOnlyTransaction = postgresAnalyze && !usesExternalJdbc;
     const built = postgresAnalyze ? await buildExplainSql(databaseType, sql, "json", true) : await buildExplainSql(databaseType, sql);
     if (!built.ok) {
       tab.explainPlan = undefined;
@@ -4810,18 +4817,19 @@ export const useQueryStore = defineStore("query", () => {
     }
 
     tab.explainSql = built.sql;
-    const clientSessionId = postgresAnalyze ? `${tabClientSessionId(tab, "explain")}:${executionId}` : tabClientSessionId(tab, "explain");
-    if (postgresAnalyze) tab.explainClientSessionId = clientSessionId;
+    const clientSessionId = useReadOnlyTransaction ? `${tabClientSessionId(tab, "explain")}:${executionId}` : tabClientSessionId(tab, "explain");
+    if (useReadOnlyTransaction) tab.explainClientSessionId = clientSessionId;
     try {
       const result = await api.executeQuery(tab.connectionId, tab.database, built.sql, tab.schema, executionId, {
         clientSessionId,
         catalog: tab.catalog,
         timeoutSecs: queryTimeoutSecs,
-        executionMode: postgresAnalyze ? "postgres_read_only_transaction" : undefined,
+        executionMode: useReadOnlyTransaction ? "postgres_read_only_transaction" : undefined,
       });
       const current = tabs.value.find((t) => t.id === id);
       if (current?.explainExecutionId === executionId) {
-        current.explainPlan = parseExplainResult(databaseType as "mysql" | "postgres", result);
+        const explainParserDatabaseType = databaseType === "opengauss" || databaseType === "gaussdb" ? databaseType : "postgres";
+        current.explainPlan = parseExplainResult(isPostgresFamily ? explainParserDatabaseType : (databaseType as "mysql"), result);
         current.explainError = undefined;
       }
     } catch (e: any) {
@@ -4838,7 +4846,7 @@ export const useQueryStore = defineStore("query", () => {
       }
       if (current?.explainClientSessionId === clientSessionId) current.explainClientSessionId = undefined;
       const closePromise = closeClientSessionId(tab.connectionId, tab.database, clientSessionId, tab.catalog, { tabId: tab.id, explainExecutionId: executionId });
-      if (postgresAnalyze) await closePromise;
+      if (useReadOnlyTransaction) await closePromise;
       else void closePromise;
     }
     return { ok: true as const, sql: built.sql };

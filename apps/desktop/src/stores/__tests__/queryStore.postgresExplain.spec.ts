@@ -151,4 +151,19 @@ describe("queryStore PostgreSQL EXPLAIN ANALYZE", () => {
 
     expect(mocks.buildExplainSql).toHaveBeenCalledWith("questdb", SOURCE_SQL);
   });
+
+  it("resolves an openGauss JDBC profile before building and parsing the plan", async () => {
+    mocks.getConfig.mockReturnValue({ id: "pg-1", name: "openGauss JDBC", db_type: "opengauss", driver_profile: "opengauss-jdbc" });
+    mocks.buildExplainSql.mockResolvedValue({ ok: true, sql: "EXPLAIN (ANALYZE, FORMAT JSON) SELECT * FROM orders" });
+
+    const { useQueryStore } = await import("@/stores/queryStore");
+    const store = useQueryStore();
+    const tabId = store.createTab("pg-1", "shop", "Query", "query", "public");
+    await store.explainTabSql(tabId, SOURCE_SQL, "opengauss", "autotrace");
+
+    expect(mocks.buildExplainSql).toHaveBeenCalledWith("opengauss", SOURCE_SQL, "json", true);
+    expect(mocks.executeQuery.mock.calls[0][5]).toMatchObject({ clientSessionId: `${tabId}:explain` });
+    expect(mocks.executeQuery.mock.calls[0][5].executionMode).toBeUndefined();
+    expect(mocks.parseExplainResult).toHaveBeenCalledWith("opengauss", expect.anything());
+  });
 });
