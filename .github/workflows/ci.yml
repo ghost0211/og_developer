@@ -280,6 +280,9 @@ jobs:
       # sccache cannot reuse Cargo incremental artifacts, so avoid generating them in CI.
       CARGO_INCREMENTAL: "0"
       RUSTC_WRAPPER: sccache
+      # The full-feature workspace test build far exceeds the default runner disk;
+      # skip debug info to keep LLVM outputs small.
+      RUSTFLAGS: -C debuginfo=0
       # The fast lane skips only system font discovery while retaining the other default capabilities.
       RUST_FEATURE_MODE: ${{ github.event_name == 'pull_request' && needs.changes.outputs.rust_full != 'true' && 'fast' || 'full' }}
       RUST_FAST_FEATURES: dbx/duckdb-sidecar,dbx/mq-admin,dbx/sqlite-sqlcipher,dbx-core/duckdb-sidecar,dbx-core/mq-admin,dbx-core/sqlite-sqlcipher,dbx-web/duckdb-sidecar,dbx-web/mq-admin,dbx-web/sqlite-sqlcipher
@@ -288,6 +291,13 @@ jobs:
       SCCACHE_GHA_ENABLED: ${{ secrets.SCCACHE_S3_BUCKET == '' && 'true' || 'false' }}
     steps:
       - uses: actions/checkout@v5
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/powershell /usr/share/swift
+          docker system prune -af || true
+          sudo apt-get clean
+          df -h /
 
       - name: Install system dependencies
         run: |
