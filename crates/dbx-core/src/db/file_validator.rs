@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Component, Path};
 
 use crate::path_utils::expand_tilde;
 
@@ -7,6 +7,7 @@ use crate::path_utils::expand_tilde;
 /// Performs comprehensive checks including:
 /// - Empty path validation
 /// - Null character detection
+/// - Path traversal detection
 /// - File existence (for local paths)
 /// - File type validation (must be a file, not directory)
 /// - Network path detection (skips validation for network paths)
@@ -34,6 +35,11 @@ where
 
     let expanded = expand_tilde(path);
     let path_obj = Path::new(&expanded);
+
+    // Check for path traversal attempts
+    if path_obj.components().any(|c| matches!(c, Component::ParentDir)) {
+        return Err(format!("Path traversal not allowed: {}", path));
+    }
 
     // For non-network paths, perform file system checks
     if !is_network_path(path) {
@@ -81,6 +87,13 @@ mod tests {
     fn test_network_path_skips_validation() {
         let result = validate_file_path("//network/path/nonexistent.db", is_network_path_test);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_path_traversal() {
+        let result = validate_file_path("../../../etc/passwd", is_network_path_test);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("traversal"));
     }
 
     #[test]
