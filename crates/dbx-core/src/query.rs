@@ -464,13 +464,14 @@ async fn guard_gms_output_capture_outcome(
 }
 
 fn external_driver_query_params(
-    _config: &ConnectionConfig,
+    config: &ConnectionConfig,
     database: &str,
     schema: Option<&str>,
     sql: &str,
     max_rows: Option<usize>,
 ) -> serde_json::Value {
     serde_json::json!({
+        "connection": config,
         "sql": sql,
         "database": database,
         "schema": schema,
@@ -479,11 +480,12 @@ fn external_driver_query_params(
 }
 
 fn external_driver_fetch_query_page_params(
-    _config: &ConnectionConfig,
+    config: &ConnectionConfig,
     session_id: &str,
     page_size: usize,
 ) -> serde_json::Value {
     serde_json::json!({
+        "connection": config,
         "sessionId": session_id,
         "pageSize": page_size,
     })
@@ -739,12 +741,12 @@ pub async fn close_query_session(
     let Some(pool) = pool else {
         return Ok(());
     };
-    if let PoolKind::ExternalDriver { session, .. } = pool {
+    if let PoolKind::ExternalDriver { config, session, .. } = pool {
+        let config = config.clone();
         let session = session.clone();
         drop(connections);
-        let _ = session
-            .invoke::<serde_json::Value>("closeQuerySession", serde_json::json!({ "sessionId": session_id }))
-            .await;
+        let params = external_driver_fetch_query_page_params(config.as_ref(), session_id, 1);
+        let _ = session.invoke::<serde_json::Value>("closeQuerySession", params).await;
     }
     Ok(())
 }
@@ -906,13 +908,15 @@ pub async fn execute_multi_core_with_options_for_client_and_progress_typed(
             }
             (results, None::<PoolErrorAction>)
         }
-        PoolKind::ExternalDriver { session, .. } => {
+        PoolKind::ExternalDriver { config, session, .. } => {
+            let config = config.clone();
             let session = session.clone();
             let stmts = statements.to_vec();
             drop(connections);
             let mut results = Vec::new();
             for (i, stmt) in stmts.into_iter().enumerate() {
-                let res = session.invoke::<db::QueryResult>("executeQuery", serde_json::json!({ "sql": stmt })).await;
+                let params = external_driver_query_params(config.as_ref(), database, schema, &stmt, options.max_rows);
+                let res = session.invoke::<db::QueryResult>("executeQuery", params).await;
                 match res {
                     Ok(r) => results.push(ExecuteMultiResult::success_with_index(r, i)),
                     Err(e) => {
@@ -1088,13 +1092,19 @@ pub async fn execute_statements_in_transaction_on_pool_typed(
             conn.execute("COMMIT", &[]).await.map_err(|e| QueryExecutionError::Legacy(e.to_string()))?;
             Ok(empty_query_result(0))
         }
-        PoolKind::ExternalDriver { session, .. } => {
+        PoolKind::ExternalDriver { config, session, .. } => {
+            let config = config.clone();
             let session = session.clone();
             drop(connections);
             let res = session
                 .invoke::<db::QueryResult>(
                     "executeTransaction",
-                    serde_json::json!({ "statements": statements, "database": database, "schema": schema }),
+                    serde_json::json!({
+                        "connection": config.as_ref(),
+                        "statements": statements,
+                        "database": database,
+                        "schema": schema,
+                    }),
                 )
                 .await;
             res.map_err(QueryExecutionError::Legacy)
@@ -1312,9 +1322,55 @@ pub async fn rollback_manual_transaction(state: &AppState, txn_session_id: &str)
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
     fn test_is_write_sql_basic() {
         assert!(crate::query_execution_sql::is_write_sql("INSERT INTO t VALUES (1)"));
         assert!(!crate::query_execution_sql::is_write_sql("SELECT 1"));
+    }
+
+    #[test]
+    fn test_external_driver_query_params_includes_connection() {
+        let config: ConnectionConfig = serde_json::from_value(serde_json::json!({
+            "id": "conn-1",
+            "name": "JDBC Conn",
+            "db_type": "opengauss",
+            "host": "localhost",
+            "port": 5432,
+            "username": "user",
+            "password": "pwd",
+            "database": "postgres"
+        }))
+        .unwrap();
+
+        let params = external_driver_query_params(&config, "postgres", Some("public"), "SELECT 1", Some(100));
+        assert!(params.get("connection").is_some(), "params must contain 'connection'");
+        assert_eq!(params["connection"]["id"], "conn-1");
+        assert_eq!(params["sql"], "SELECT 1");
+        assert_eq!(params["database"], "postgres");
+        assert_eq!(params["schema"], "public");
+        assert_eq!(params["maxRows"], 100);
+    }
+
+    #[test]
+    fn test_external_driver_fetch_query_page_params_includes_connection() {
+        let config: ConnectionConfig = serde_json::from_value(serde_json::json!({
+            "id": "conn-1",
+            "name": "JDBC Conn",
+            "db_type": "opengauss",
+            "host": "localhost",
+            "port": 5432,
+            "username": "user",
+            "password": "pwd",
+            "database": "postgres"
+        }))
+        .unwrap();
+
+        let params = external_driver_fetch_query_page_params(&config, "session-123", 500);
+        assert!(params.get("connection").is_some(), "params must contain 'connection'");
+        assert_eq!(params["connection"]["id"], "conn-1");
+        assert_eq!(params["sessionId"], "session-123");
+        assert_eq!(params["pageSize"], 500);
     }
 }

@@ -787,13 +787,15 @@ pub async fn execute_on_pool_with_max_rows(
             drop(connections);
             db::postgres::execute_query_with_max_rows(&p, sql, max_rows).await
         }
-        PoolKind::ExternalDriver { session, .. } => {
+        PoolKind::ExternalDriver { config, session, .. } => {
+            let config = config.clone();
             let session = session.clone();
             drop(connections);
             session
                 .invoke::<db::QueryResult>(
                     "executeQuery",
                     serde_json::json!({
+                        "connection": config.as_ref(),
                         "sql": sql,
                         "maxRows": max_rows,
                     }),
@@ -827,13 +829,15 @@ pub async fn get_columns_for_transfer(
             drop(connections);
             db::postgres::get_columns(&p, &schema, &table).await
         }
-        PoolKind::ExternalDriver { session, .. } => {
+        PoolKind::ExternalDriver { config, session, .. } => {
+            let config = config.clone();
             let session = session.clone();
             drop(connections);
             session
                 .invoke::<Vec<db::ColumnInfo>>(
                     "getColumns",
                     serde_json::json!({
+                        "connection": config.as_ref(),
                         "database": database,
                         "schema": schema,
                         "table": table,

@@ -27,13 +27,14 @@ pub async fn get_agent_explain_info_core(
     let connections = state.connections.read().await;
     let pool = connections.get(connection_id).ok_or_else(|| "Connection not found".to_string())?;
     match pool {
-        PoolKind::ExternalDriver { session, .. } => {
-            let timeout_secs = {
-                let configs = state.configs.read().await;
-                configs.get(connection_id).ok_or_else(|| "Connection config not found".to_string())?.query_timeout_secs
-            };
+        PoolKind::ExternalDriver { config, session, .. } => {
+            let config = config.clone();
+            let session = session.clone();
+            drop(connections);
+            let timeout_secs = config.query_timeout_secs;
 
             let params = serde_json::json!({
+                "connection": config.as_ref(),
                 "sql": sql,
                 "database": database.unwrap_or_default(),
                 "schema": schema.unwrap_or_default(),

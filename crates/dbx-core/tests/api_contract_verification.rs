@@ -397,3 +397,292 @@ fn sql_risk_json_representation() {
     assert_eq!(serde_json::to_value(SqlRisk::Ddl).unwrap(), "Ddl");
     assert_eq!(serde_json::to_value(SqlRisk::Transaction).unwrap(), "Transaction");
 }
+
+// ============================================================================
+// ExternalDriver JSON-RPC contract verification
+// ============================================================================
+
+#[cfg(unix)]
+#[tokio::test]
+async fn external_driver_schema_and_query_contract_includes_connection() {
+    use dbx_core::connection::{AppState, PoolKind};
+    use dbx_core::models::connection::ConnectionConfig;
+    use dbx_core::plugins::{PluginDriverManifest, PluginManifest, PluginRegistry, PluginRuntimeEnv};
+    use dbx_core::query::{execute_sql_statement, QueryExecutionOptions};
+    use dbx_core::schema::{get_columns_core, list_databases_core, list_schemas_core, list_tables_core};
+    use dbx_core::storage::Storage;
+    use std::os::unix::fs::PermissionsExt;
+    use std::sync::Arc;
+
+    let dir = std::env::temp_dir().join(format!("dbx-contract-test-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let executable = dir.join("plugin.sh");
+    let calls = dir.join("calls.log");
+    let script = format!(
+        r#"#!/bin/sh
+CALLS='{}'
+while IFS= read -r line; do
+  printf '%s\n' "$line" >> "$CALLS"
+  id=$(printf '%s' "$line" | sed -E 's/.*"id":([0-9]+).*/\1/')
+  method=$(printf '%s' "$line" | sed -E 's/.*"method":"([^"]+)".*/\1/')
+  case "$method" in
+    connect)
+      printf '{{"jsonrpc":"2.0","id":%s,"result":{{"ok":true}}}}\n' "$id"
+      ;;
+    listDatabases)
+      printf '{{"jsonrpc":"2.0","id":%s,"result":[{{"name":"postgres"}}]}}\n' "$id"
+      ;;
+    listSchemas)
+      printf '{{"jsonrpc":"2.0","id":%s,"result":["public"]}}\n' "$id"
+      ;;
+    listSchemaInfos)
+      printf '{{"jsonrpc":"2.0","id":%s,"result":[{{"name":"public","comment":null}}]}}\n' "$id"
+      ;;
+    listDataTypes)
+      printf '{{"jsonrpc":"2.0","id":%s,"result":["int4","text"]}}\n' "$id"
+      ;;
+    listTables)
+      printf '{{"jsonrpc":"2.0","id":%s,"result":[{{"name":"t1","table_type":"BASE TABLE"}}]}}\n' "$id"
+      ;;
+    listObjects)
+      printf '{{"jsonrpc":"2.0","id":%s,"result":[{{"name":"t1","object_type":"TABLE","schema":"public"}}]}}\n' "$id"
+      ;;
+    listObjectStatistics)
+      printf '{{"jsonrpc":"2.0","id":%s,"result":[]}}\n' "$id"
+      ;;
+    getColumns)
+      printf '{{"jsonrpc":"2.0","id":%s,"result":[{{"name":"id","data_type":"integer","is_nullable":false,"column_default":null,"is_primary_key":false}}]}}\n' "$id"
+      ;;
+    listIndexes)
+      printf '{{"jsonrpc":"2.0","id":%s,"result":[]}}\n' "$id"
+      ;;
+    listForeignKeys)
+      printf '{{"jsonrpc":"2.0","id":%s,"result":[]}}\n' "$id"
+      ;;
+    listTriggers)
+      printf '{{"jsonrpc":"2.0","id":%s,"result":[]}}\n' "$id"
+      ;;
+    listFunctions)
+      printf '{{"jsonrpc":"2.0","id":%s,"result":[]}}\n' "$id"
+      ;;
+    listSequences)
+      printf '{{"jsonrpc":"2.0","id":%s,"result":[]}}\n' "$id"
+      ;;
+    getTableDdl)
+      printf '{{"jsonrpc":"2.0","id":%s,"result":"CREATE TABLE public.t1 (id integer);"}}\n' "$id"
+      ;;
+    getObjectSource)
+      printf '{{"jsonrpc":"2.0","id":%s,"result":"SELECT 1;"}}\n' "$id"
+      ;;
+    getExplainInfo)
+      printf '{{"jsonrpc":"2.0","id":%s,"result":{{"plan":"Seq Scan on t1"}}}}\n' "$id"
+      ;;
+    executeQuery)
+      printf '{{"jsonrpc":"2.0","id":%s,"result":{{"columns":["val"],"column_types":["text"],"rows":[["hello"]],"affected_rows":0,"execution_time_ms":0}}}}\n' "$id"
+      ;;
+    *)
+      printf '{{"jsonrpc":"2.0","id":%s,"result":null}}\n' "$id"
+      ;;
+  esac
+done
+"#,
+        calls.display()
+    );
+    std::fs::write(&executable, script).unwrap();
+    let mut permissions = std::fs::metadata(&executable).unwrap().permissions();
+    permissions.set_mode(0o755);
+    std::fs::set_permissions(&executable, permissions).unwrap();
+
+    let manifest = PluginManifest {
+        id: "jdbc".to_string(),
+        name: "JDBC".to_string(),
+        version: "test".to_string(),
+        protocol_version: 1,
+        description: String::new(),
+        executable: Some("plugin.sh".to_string()),
+        drivers: vec![PluginDriverManifest {
+            id: "jdbc".to_string(),
+            label: "JDBC".to_string(),
+            kind: "external".to_string(),
+            database_type: Some("jdbc".to_string()),
+        }],
+    };
+
+    let plugins_dir = dir.join("plugins");
+    let plugin_jdbc_dir = plugins_dir.join("jdbc");
+    std::fs::create_dir_all(&plugin_jdbc_dir).unwrap();
+    std::fs::write(plugin_jdbc_dir.join("manifest.json"), serde_json::to_string(&manifest).unwrap()).unwrap();
+    std::fs::copy(&executable, plugin_jdbc_dir.join("plugin.sh")).unwrap();
+
+    let pm = PluginRegistry::new(plugins_dir.clone());
+    let session =
+        pm.start_driver_session_with_env("jdbc", PluginRuntimeEnv::default()).await.expect("start mock session");
+
+    let storage = Storage::open(&dir.join("storage.db")).await.unwrap();
+    let state = AppState::new_with_plugin_dir(storage, plugins_dir);
+
+    let config: ConnectionConfig = serde_json::from_value(serde_json::json!({
+        "id": "conn-contract-1",
+        "name": "Test JDBC",
+        "db_type": "opengauss",
+        "driver_profile": "opengauss-jdbc",
+        "host": "127.0.0.1",
+        "port": 5432,
+        "username": "gaussdb",
+        "password": "password",
+        "database": "postgres",
+        "query_timeout_secs": 30
+    }))
+    .unwrap();
+
+    state.configs.write().await.insert(config.id.clone(), config.clone());
+    state.connections.write().await.insert(
+        config.id.clone(),
+        PoolKind::ExternalDriver {
+            driver_id: "jdbc".to_string(),
+            config: Arc::new(config.clone()),
+            session: session.clone(),
+        },
+    );
+    state.connections.write().await.insert(
+        format!("{}:postgres", config.id),
+        PoolKind::ExternalDriver {
+            driver_id: "jdbc".to_string(),
+            config: Arc::new(config.clone()),
+            session: session.clone(),
+        },
+    );
+
+    // 1. Verify list_databases_core sends "connection"
+    let dbs = list_databases_core(&state, &config.id).await.expect("list_databases_core succeeds");
+    assert_eq!(dbs.len(), 1);
+    assert_eq!(dbs[0].name, "postgres");
+
+    // 2. Verify list_schemas_core sends "connection"
+    let schemas = list_schemas_core(&state, &config.id, "postgres").await.expect("list_schemas_core succeeds");
+    assert_eq!(schemas, vec!["public".to_string()]);
+
+    // 3. Verify list_schema_infos_core sends "connection"
+    let schema_infos = dbx_core::schema::list_schema_infos_core(&state, &config.id, "postgres", None)
+        .await
+        .expect("list_schema_infos_core succeeds");
+    assert_eq!(schema_infos.len(), 1);
+
+    // 4. Verify list_data_types_core sends "connection"
+    let types = dbx_core::schema::list_data_types_core(&state, &config.id, "postgres", "public", None)
+        .await
+        .expect("list_data_types_core succeeds");
+    assert_eq!(types.len(), 2);
+
+    // 5. Verify list_tables_core sends "connection"
+    let tables = list_tables_core(&state, &config.id, "postgres", "public", None, None, None, None, None)
+        .await
+        .expect("list_tables_core succeeds");
+    assert_eq!(tables.len(), 1);
+    assert_eq!(tables[0].name, "t1");
+
+    // 6. Verify list_objects_core sends "connection"
+    let objs =
+        dbx_core::schema::list_objects_core(&state, &config.id, "postgres", "public", None, None, None, None, None)
+            .await
+            .expect("list_objects_core succeeds");
+    assert_eq!(objs.len(), 1);
+
+    // 7. Verify get_columns_core sends "connection"
+    let cols =
+        get_columns_core(&state, &config.id, "postgres", "public", "t1").await.expect("get_columns_core succeeds");
+    assert_eq!(cols.len(), 1);
+    assert_eq!(cols[0].name, "id");
+
+    // 8. Verify list_indexes_core sends "connection"
+    let idxs = dbx_core::schema::list_indexes_core(&state, &config.id, "postgres", "public", "t1", None)
+        .await
+        .expect("list_indexes_core succeeds");
+    assert!(idxs.is_empty());
+
+    // 9. Verify list_foreign_keys_core sends "connection"
+    let fks = dbx_core::schema::list_foreign_keys_core(&state, &config.id, "postgres", "public", "t1", None)
+        .await
+        .expect("list_foreign_keys_core succeeds");
+    assert!(fks.is_empty());
+
+    // 10. Verify list_triggers_core sends "connection"
+    let trigs = dbx_core::schema::list_triggers_core(&state, &config.id, "postgres", "public", "t1", None)
+        .await
+        .expect("list_triggers_core succeeds");
+    assert!(trigs.is_empty());
+
+    // 11. Verify list_functions_core sends "connection"
+    let fns = dbx_core::schema::list_functions_core(&state, &config.id, "postgres", "public")
+        .await
+        .expect("list_functions_core succeeds");
+    assert!(fns.is_empty());
+
+    // 12. Verify list_sequences_core sends "connection"
+    let seqs = dbx_core::schema::list_sequences_core(&state, &config.id, "postgres", "public")
+        .await
+        .expect("list_sequences_core succeeds");
+    assert!(seqs.is_empty());
+
+    // 13. Verify get_table_ddl_core sends "connection"
+    let ddl = dbx_core::schema::get_table_ddl_core(&state, &config.id, "postgres", "public", "t1", None)
+        .await
+        .expect("get_table_ddl_core succeeds");
+    assert!(ddl.contains("CREATE TABLE"));
+
+    // 14. Verify get_object_source_core sends "connection"
+    let src = dbx_core::schema::get_object_source_core(
+        &state,
+        &config.id,
+        "postgres",
+        "public",
+        "v1",
+        &dbx_core::types::ObjectSourceKind::View,
+        None,
+        None,
+    )
+    .await
+    .expect("get_object_source_core succeeds");
+    assert_eq!(src.source, "SELECT 1;");
+
+    // 15. Verify get_agent_explain_info_core sends "connection"
+    let plan = dbx_core::agent_explain::get_agent_explain_info_core(
+        &state,
+        &config.id,
+        Some("postgres"),
+        Some("public"),
+        "SELECT * FROM t1",
+        Some("explain"),
+    )
+    .await
+    .expect("get_agent_explain_info_core succeeds");
+    assert_eq!(plan, "Seq Scan on t1");
+
+    // 16. Verify execute_sql_statement sends "connection"
+    let res =
+        execute_sql_statement(&state, &config.id, "postgres", "SELECT 1", None, None, QueryExecutionOptions::default())
+            .await
+            .expect("execute_sql_statement succeeds");
+    assert_eq!(res.rows.len(), 1);
+
+    // Read logged JSON-RPC requests
+    let logged = std::fs::read_to_string(&calls).expect("read calls log");
+    let lines: Vec<&str> = logged.lines().collect();
+    assert!(lines.len() >= 16, "Expected at least 16 RPC calls, got {}", lines.len());
+
+    for line in lines {
+        let val: serde_json::Value = serde_json::from_str(line).unwrap();
+        let method = val.get("method").and_then(|m| m.as_str()).unwrap();
+        let params = val.get("params").expect("params must be present");
+        let conn =
+            params.get("connection").unwrap_or_else(|| panic!("method {method} params must contain 'connection'"));
+        assert!(conn.is_object(), "method {method} 'connection' must be an object");
+        assert_eq!(
+            conn.get("id").and_then(|i| i.as_str()),
+            Some("conn-contract-1"),
+            "method {method} connection id must match"
+        );
+    }
+
+    let _ = std::fs::remove_dir_all(&dir);
+}

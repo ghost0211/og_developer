@@ -52,6 +52,16 @@ fn pg_ident(value: &str) -> String {
     format!("\"{}\"", value.replace('"', "\"\""))
 }
 
+fn agent_metadata_timeout(config: Option<&ConnectionConfig>) -> Option<std::time::Duration> {
+    let Some(config) = config else {
+        return Some(std::time::Duration::from_secs(60));
+    };
+    match config.effective_query_timeout_secs() {
+        0 => None,
+        seconds => Some(std::time::Duration::from_secs(seconds.max(60))),
+    }
+}
+
 async fn get_schema_pool(state: &AppState, connection_id: &str, database: &str) -> Result<PoolKind, String> {
     let pool_key =
         state.get_or_create_pool(connection_id, if database.trim().is_empty() { None } else { Some(database) }).await?;
@@ -88,8 +98,14 @@ pub async fn list_databases_core(state: &AppState, connection_id: &str) -> Resul
     let pool = get_schema_pool(state, connection_id, "").await?;
     match pool {
         PoolKind::Postgres(p) => db::postgres::list_databases(&p).await,
-        PoolKind::ExternalDriver { session, .. } => {
-            session.invoke::<Vec<db::DatabaseInfo>>("listDatabases", serde_json::json!({})).await
+        PoolKind::ExternalDriver { config, session, .. } => {
+            session
+                .invoke_with_timeout::<Vec<db::DatabaseInfo>>(
+                    "listDatabases",
+                    serde_json::json!({ "connection": config.as_ref() }),
+                    agent_metadata_timeout(Some(config.as_ref())),
+                )
+                .await
         }
     }
 }
@@ -253,8 +269,14 @@ pub async fn list_schemas_core_with_visible_filter(
     let pool = get_schema_pool(state, connection_id, database).await?;
     match pool {
         PoolKind::Postgres(p) => db::postgres::list_schemas(&p).await,
-        PoolKind::ExternalDriver { session, .. } => {
-            session.invoke::<Vec<String>>("listSchemas", serde_json::json!({ "database": database })).await
+        PoolKind::ExternalDriver { config, session, .. } => {
+            session
+                .invoke_with_timeout::<Vec<String>>(
+                    "listSchemas",
+                    serde_json::json!({ "connection": config.as_ref(), "database": database }),
+                    agent_metadata_timeout(Some(config.as_ref())),
+                )
+                .await
         }
     }
 }
@@ -268,8 +290,14 @@ pub async fn list_schema_infos_core(
     let pool = get_schema_pool(state, connection_id, database).await?;
     match pool {
         PoolKind::Postgres(p) => db::postgres::list_schema_infos(&p).await,
-        PoolKind::ExternalDriver { session, .. } => {
-            session.invoke::<Vec<db::SchemaInfo>>("listSchemaInfos", serde_json::json!({ "database": database })).await
+        PoolKind::ExternalDriver { config, session, .. } => {
+            session
+                .invoke_with_timeout::<Vec<db::SchemaInfo>>(
+                    "listSchemaInfos",
+                    serde_json::json!({ "connection": config.as_ref(), "database": database }),
+                    agent_metadata_timeout(Some(config.as_ref())),
+                )
+                .await
         }
     }
 }
@@ -296,9 +324,13 @@ pub async fn list_data_types_core(
                 .filter_map(|v| v.as_str().map(str::to_string))
                 .collect())
         }
-        PoolKind::ExternalDriver { session, .. } => {
+        PoolKind::ExternalDriver { config, session, .. } => {
             session
-                .invoke::<Vec<String>>("listDataTypes", serde_json::json!({ "database": database, "schema": schema }))
+                .invoke_with_timeout::<Vec<String>>(
+                    "listDataTypes",
+                    serde_json::json!({ "connection": config.as_ref(), "database": database, "schema": schema }),
+                    agent_metadata_timeout(Some(config.as_ref())),
+                )
                 .await
         }
     }
@@ -318,11 +350,12 @@ pub async fn list_tables_core(
     let pool = get_schema_pool(state, connection_id, database).await?;
     let tables = match pool {
         PoolKind::Postgres(p) => db::postgres::list_tables(&p, schema).await?,
-        PoolKind::ExternalDriver { session, .. } => {
+        PoolKind::ExternalDriver { config, session, .. } => {
             session
-                .invoke::<Vec<db::TableInfo>>(
+                .invoke_with_timeout::<Vec<db::TableInfo>>(
                     "listTables",
-                    serde_json::json!({ "database": database, "schema": schema }),
+                    serde_json::json!({ "connection": config.as_ref(), "database": database, "schema": schema }),
+                    agent_metadata_timeout(Some(config.as_ref())),
                 )
                 .await?
         }
@@ -376,11 +409,12 @@ pub async fn list_objects_core(
     let pool = get_schema_pool(state, connection_id, database).await?;
     match pool {
         PoolKind::Postgres(p) => db::postgres::list_objects(&p, schema).await,
-        PoolKind::ExternalDriver { session, .. } => {
+        PoolKind::ExternalDriver { config, session, .. } => {
             session
-                .invoke::<Vec<db::ObjectInfo>>(
+                .invoke_with_timeout::<Vec<db::ObjectInfo>>(
                     "listObjects",
-                    serde_json::json!({ "database": database, "schema": schema }),
+                    serde_json::json!({ "connection": config.as_ref(), "database": database, "schema": schema }),
+                    agent_metadata_timeout(Some(config.as_ref())),
                 )
                 .await
         }
@@ -397,11 +431,12 @@ pub async fn list_object_statistics_core(
     let pool = get_schema_pool(state, connection_id, database).await?;
     match pool {
         PoolKind::Postgres(p) => db::postgres::list_object_statistics(&p, schema).await,
-        PoolKind::ExternalDriver { session, .. } => {
+        PoolKind::ExternalDriver { config, session, .. } => {
             session
-                .invoke::<Vec<ObjectStatisticsInfo>>(
+                .invoke_with_timeout::<Vec<ObjectStatisticsInfo>>(
                     "listObjectStatistics",
-                    serde_json::json!({ "database": database, "schema": schema }),
+                    serde_json::json!({ "connection": config.as_ref(), "database": database, "schema": schema }),
+                    agent_metadata_timeout(Some(config.as_ref())),
                 )
                 .await
         }
@@ -418,11 +453,12 @@ pub async fn list_completion_objects_core(
     let pool = get_schema_pool(state, connection_id, database).await?;
     match pool {
         PoolKind::Postgres(p) => db::postgres::list_objects(&p, schema).await,
-        PoolKind::ExternalDriver { session, .. } => {
+        PoolKind::ExternalDriver { config, session, .. } => {
             session
-                .invoke::<Vec<db::ObjectInfo>>(
+                .invoke_with_timeout::<Vec<db::ObjectInfo>>(
                     "listObjects",
-                    serde_json::json!({ "database": database, "schema": schema }),
+                    serde_json::json!({ "connection": config.as_ref(), "database": database, "schema": schema }),
+                    agent_metadata_timeout(Some(config.as_ref())),
                 )
                 .await
         }
@@ -458,11 +494,12 @@ pub async fn get_columns_core_for_session(
     let pool = get_schema_session_pool(state, connection_id, database, client_session_id).await?;
     match pool {
         PoolKind::Postgres(p) => db::postgres::get_columns(&p, schema, table).await,
-        PoolKind::ExternalDriver { session, .. } => {
+        PoolKind::ExternalDriver { config, session, .. } => {
             session
-                .invoke::<Vec<db::ColumnInfo>>(
+                .invoke_with_timeout::<Vec<db::ColumnInfo>>(
                     "getColumns",
-                    serde_json::json!({ "database": database, "schema": schema, "table": table }),
+                    serde_json::json!({ "connection": config.as_ref(), "database": database, "schema": schema, "table": table }),
+                    agent_metadata_timeout(Some(config.as_ref())),
                 )
                 .await
         }
@@ -503,11 +540,12 @@ pub async fn list_indexes_core_for_session(
     let pool = get_schema_session_pool(state, connection_id, database, client_session_id).await?;
     match pool {
         PoolKind::Postgres(p) => db::postgres::list_indexes(&p, schema, table).await,
-        PoolKind::ExternalDriver { session, .. } => {
+        PoolKind::ExternalDriver { config, session, .. } => {
             session
-                .invoke::<Vec<db::IndexInfo>>(
+                .invoke_with_timeout::<Vec<db::IndexInfo>>(
                     "listIndexes",
-                    serde_json::json!({ "database": database, "schema": schema, "table": table }),
+                    serde_json::json!({ "connection": config.as_ref(), "database": database, "schema": schema, "table": table }),
+                    agent_metadata_timeout(Some(config.as_ref())),
                 )
                 .await
         }
@@ -537,11 +575,12 @@ pub async fn list_foreign_keys_core_for_session(
     let pool = get_schema_session_pool(state, connection_id, database, client_session_id).await?;
     match pool {
         PoolKind::Postgres(p) => db::postgres::list_foreign_keys(&p, schema, table).await,
-        PoolKind::ExternalDriver { session, .. } => {
+        PoolKind::ExternalDriver { config, session, .. } => {
             session
-                .invoke::<Vec<db::ForeignKeyInfo>>(
+                .invoke_with_timeout::<Vec<db::ForeignKeyInfo>>(
                     "listForeignKeys",
-                    serde_json::json!({ "database": database, "schema": schema, "table": table }),
+                    serde_json::json!({ "connection": config.as_ref(), "database": database, "schema": schema, "table": table }),
+                    agent_metadata_timeout(Some(config.as_ref())),
                 )
                 .await
         }
@@ -559,11 +598,12 @@ pub async fn list_triggers_core(
     let pool = get_schema_pool(state, connection_id, database).await?;
     match pool {
         PoolKind::Postgres(p) => db::postgres::list_triggers(&p, schema, table).await,
-        PoolKind::ExternalDriver { session, .. } => {
+        PoolKind::ExternalDriver { config, session, .. } => {
             session
-                .invoke::<Vec<db::TriggerInfo>>(
+                .invoke_with_timeout::<Vec<db::TriggerInfo>>(
                     "listTriggers",
-                    serde_json::json!({ "database": database, "schema": schema, "table": table }),
+                    serde_json::json!({ "connection": config.as_ref(), "database": database, "schema": schema, "table": table }),
+                    agent_metadata_timeout(Some(config.as_ref())),
                 )
                 .await
         }
@@ -612,11 +652,12 @@ pub async fn list_functions_core(
     let pool = get_schema_pool(state, connection_id, database).await?;
     match pool {
         PoolKind::Postgres(p) => db::postgres::list_functions(&p, schema).await,
-        PoolKind::ExternalDriver { session, .. } => {
+        PoolKind::ExternalDriver { config, session, .. } => {
             session
-                .invoke::<Vec<db::FunctionInfo>>(
+                .invoke_with_timeout::<Vec<db::FunctionInfo>>(
                     "listFunctions",
-                    serde_json::json!({ "database": database, "schema": schema }),
+                    serde_json::json!({ "connection": config.as_ref(), "database": database, "schema": schema }),
+                    agent_metadata_timeout(Some(config.as_ref())),
                 )
                 .await
         }
@@ -646,11 +687,12 @@ pub async fn list_sequences_core(
     let pool = get_schema_pool(state, connection_id, database).await?;
     match pool {
         PoolKind::Postgres(p) => db::postgres::list_sequences(&p, schema, true).await,
-        PoolKind::ExternalDriver { session, .. } => {
+        PoolKind::ExternalDriver { config, session, .. } => {
             session
-                .invoke::<Vec<db::SequenceInfo>>(
+                .invoke_with_timeout::<Vec<db::SequenceInfo>>(
                     "listSequences",
-                    serde_json::json!({ "database": database, "schema": schema }),
+                    serde_json::json!({ "connection": config.as_ref(), "database": database, "schema": schema }),
+                    agent_metadata_timeout(Some(config.as_ref())),
                 )
                 .await
         }
@@ -750,11 +792,12 @@ pub async fn get_table_ddl_core(
     let pool = get_schema_pool(state, connection_id, database).await?;
     match pool {
         PoolKind::Postgres(p) => opengauss_table_ddl(&p, schema, table).await,
-        PoolKind::ExternalDriver { session, .. } => {
+        PoolKind::ExternalDriver { config, session, .. } => {
             session
-                .invoke::<String>(
+                .invoke_with_timeout::<String>(
                     "getTableDdl",
-                    serde_json::json!({ "database": database, "schema": schema, "table": table }),
+                    serde_json::json!({ "connection": config.as_ref(), "database": database, "schema": schema, "table": table }),
+                    agent_metadata_timeout(Some(config.as_ref())),
                 )
                 .await
         }
@@ -785,8 +828,20 @@ pub async fn get_object_source_core(
     let pool = get_schema_pool(state, connection_id, database).await?;
     let source = match pool {
         PoolKind::Postgres(p) => postgres_object_source(&p, schema, name, kind).await?,
-        PoolKind::ExternalDriver { session, .. } => {
-            session.invoke::<String>("getObjectSource", serde_json::json!({ "database": database, "schema": schema, "name": name, "kind": format!("{kind:?}") })).await?
+        PoolKind::ExternalDriver { config, session, .. } => {
+            session
+                .invoke_with_timeout::<String>(
+                    "getObjectSource",
+                    serde_json::json!({
+                        "connection": config.as_ref(),
+                        "database": database,
+                        "schema": schema,
+                        "name": name,
+                        "kind": format!("{kind:?}")
+                    }),
+                    agent_metadata_timeout(Some(config.as_ref())),
+                )
+                .await?
         }
     };
 
@@ -905,5 +960,33 @@ mod tests {
         assert!(table_name_filter_matches("users", Some(&filter)));
         assert!(table_name_filter_matches("USER_LOGS", Some(&filter)));
         assert!(!table_name_filter_matches("orders", Some(&filter)));
+    }
+
+    #[test]
+    fn test_agent_metadata_timeout_defaults_and_honors_longer_config() {
+        assert_eq!(agent_metadata_timeout(None), Some(std::time::Duration::from_secs(60)));
+
+        let mut config: ConnectionConfig = serde_json::from_value(serde_json::json!({
+            "id": "c1",
+            "name": "c1",
+            "db_type": "opengauss",
+            "host": "localhost",
+            "port": 5432,
+            "username": "u",
+            "password": "p",
+            "query_timeout_secs": 10
+        }))
+        .unwrap();
+
+        // Under 60s clamps to 60s
+        assert_eq!(agent_metadata_timeout(Some(&config)), Some(std::time::Duration::from_secs(60)));
+
+        // Over 60s uses configured value
+        config.query_timeout_secs = 120;
+        assert_eq!(agent_metadata_timeout(Some(&config)), Some(std::time::Duration::from_secs(120)));
+
+        // 0 means no timeout (None)
+        config.query_timeout_secs = 0;
+        assert_eq!(agent_metadata_timeout(Some(&config)), None);
     }
 }
