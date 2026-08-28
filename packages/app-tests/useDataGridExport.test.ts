@@ -273,58 +273,6 @@ beforeEach(() => {
   });
 });
 
-test("copy row JSON expands nested JSON strings", async () => {
-  const contextCell = ref({ rowId: 1, rowIndex: 0, col: 0 });
-  const jsonString = '{"endingBalance":{"beginningBalance":"0","endingBalance":"20000","endingDate":"2024-10-30"},"financeChargeInfo":null,"interestChargeInfo":null,"Line":[]}';
-  const row = {
-    id: 1,
-    data: ["67218700e884ae1f527640b6", jsonString, "draft"],
-    isNew: false,
-    isDeleted: false,
-    isDirtyCol: [false, false, false],
-    status: "",
-  };
-  const composable = useDataGridExport({
-    columns: computed(() => ["_id", "data", "status"]),
-    displayItems: computed(() => [row]),
-    sql: computed(() => undefined),
-    tableMeta: computed(() => undefined),
-    databaseType: computed(() => "mongodb"),
-    connectionId: computed(() => "conn-1"),
-    database: computed(() => "db"),
-    context: computed(() => "results"),
-    sourceColumns: computed(() => undefined),
-    columnTypes: computed(() => undefined),
-    whereInput: computed(() => undefined),
-    orderBy: computed(() => undefined),
-    exportBatchSize: computed(() => 1000),
-    hasCellSelection: computed(() => false),
-    selectedCells: computed(() => ({ columns: [], rows: [] })),
-    selectedRange: computed(() => null),
-    contextCell,
-    getRowItem: () => row,
-    selectedRowIds: ref(new Set<number>()),
-    hasRowSelection: computed(() => false),
-  });
-
-  await composable.copyRow();
-
-  assert.equal(clipboardMock.copyToClipboard.mock.calls.length, 1);
-  assert.deepEqual(JSON.parse(clipboardMock.copyToClipboard.mock.calls[0][0]), {
-    _id: "67218700e884ae1f527640b6",
-    data: {
-      endingBalance: {
-        beginningBalance: "0",
-        endingBalance: "20000",
-        endingDate: "2024-10-30",
-      },
-      financeChargeInfo: null,
-      interestChargeInfo: null,
-      Line: [],
-    },
-    status: "draft",
-  });
-});
 
 test("copy row JSON keeps nested JSON strings for non-MongoDB rows", async () => {
   const contextCell = ref({ rowId: 1, rowIndex: 0, col: 0 });
@@ -397,23 +345,6 @@ test("full query result CSV export streams through the backend without loading a
   assert.equal(exportProgressState.value.filePath, apiMock.startQueryResultExport.mock.calls[0][0].filePath);
 });
 
-test("MongoDB full query result CSV export uses the full-result fallback", async () => {
-  const { composable, fullExportResult, queryResultExportRequest } = buildExportHarness({ databaseType: "mongodb" });
-  fullExportResult.mockResolvedValueOnce({
-    columns: ["_id", "name"],
-    rows: [["1", "Ada"]],
-    affected_rows: 1,
-    execution_time_ms: 1,
-  });
-
-  await composable.exportCsv();
-
-  assert.equal(queryResultExportRequest.mock.calls.length, 0);
-  assert.equal(apiMock.startQueryResultExport.mock.calls.length, 0);
-  assert.equal(fullExportResult.mock.calls.length, 1);
-  assert.deepEqual(apiMock.exportQueryResultCsv.mock.calls[0][1], ["_id", "name"]);
-  assert.deepEqual(apiMock.exportQueryResultCsv.mock.calls[0][2], [["1", "Ada"]]);
-});
 
 test("streaming query result export translates streaming unsupported error before the toast", async () => {
   const rawMessage = "Streaming export is unsupported for this query. Simplify it or use a supported driver.";

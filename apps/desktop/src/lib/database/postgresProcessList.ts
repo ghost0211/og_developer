@@ -1,13 +1,10 @@
 import type { QueryResult } from "@/types/database";
-import { isMissingKingbaseSysFunction, isMissingKingbaseSysRelation } from "@/lib/database/kingbaseCatalogCompatibility";
 
 /**
- * PostgreSQL "current activity / process list" helpers. Pure and framework-free
- * so they can be unit-tested in isolation; the generic panel component wires them
- * to the SQL bridge and the production-safety guard via the driver registry.
- *
- * The MySQL family lives in `./mysqlProcessList`; the generic, engine-agnostic
- * bits (coordinator, interval clamping, session counting) are shared from there.
+ * PostgreSQL / openGauss "current activity / process list" helpers. Pure and
+ * framework-free so they can be unit-tested in isolation; the generic panel
+ * component wires them to the SQL bridge and the production-safety guard via
+ * the driver registry.
  */
 
 /**
@@ -53,27 +50,6 @@ export const OPENGAUSS_PROCESS_LIST_SQL = `SELECT pid,
        query
 FROM pg_catalog.pg_stat_activity
 ORDER BY time DESC NULLS LAST`;
-
-/**
- * KingbaseES uses sys_catalog. Numeric epoch subtraction works in both MySQL
- * and Oracle modes despite their different datetime subtraction rules.
- */
-export const KINGBASE_PROCESS_LIST_SQL = `SELECT pid,
-       usename AS "user",
-       datname AS db,
-       coalesce(CAST(client_addr AS VARCHAR), client_hostname, 'local') AS client,
-       application_name AS app,
-       state,
-       coalesce(nullif(concat_ws(':', wait_event_type, wait_event), ''), '') AS wait,
-       CAST(floor(
-         extract(epoch FROM CAST(CURRENT_TIMESTAMP AS TIMESTAMP))
-         - extract(epoch FROM CAST(coalesce(query_start, xact_start, backend_start) AS TIMESTAMP))
-       ) AS BIGINT) AS time,
-       query
-FROM sys_catalog.sys_stat_activity
-ORDER BY time DESC NULLS LAST`;
-
-export const KINGBASE_PG_PROCESS_LIST_SQL = KINGBASE_PROCESS_LIST_SQL.replace("sys_catalog.sys_stat_activity", "pg_catalog.pg_stat_activity");
 
 /** Query for detecting active lock blocking chains */
 export const PG_BLOCKING_LOCKS_SQL = `SELECT
@@ -135,8 +111,6 @@ export const OPENGAUSS_LOCKS_SQL = PG_LOCKS_SQL;
 /** Scalar query that returns the viewer's own backend pid. */
 export const PG_OWN_SESSION_SQL = "SELECT pg_backend_pid()";
 export const OPENGAUSS_OWN_SESSION_SQL = "SELECT pg_backend_pid()";
-export const KINGBASE_OWN_SESSION_SQL = "SELECT sys_backend_pid()";
-export const KINGBASE_PG_OWN_SESSION_SQL = "SELECT pg_backend_pid()";
 
 export interface BlockingLockRow {
   blockedPid: number;
@@ -322,36 +296,8 @@ export function buildPgCancelSql(pid: number): string {
   return `SELECT pg_cancel_backend(${pid})`;
 }
 
-export function buildKingbaseKillSql(pid: number): string {
-  validateBackendPid(pid);
-  return `SELECT sys_terminate_backend(${pid})`;
-}
-
-export function buildKingbaseCancelSql(pid: number): string {
-  validateBackendPid(pid);
-  return `SELECT sys_cancel_backend(${pid})`;
-}
-
-export function buildKingbasePgKillSql(pid: number): string {
-  validateBackendPid(pid);
-  return `SELECT pg_terminate_backend(${pid})`;
-}
-
-export function buildKingbasePgCancelSql(pid: number): string {
-  validateBackendPid(pid);
-  return `SELECT pg_cancel_backend(${pid})`;
-}
-
 /** Return an error when PostgreSQL declines to terminate the target backend. */
 export function pgKillResultError(results: QueryResult[]): string | null {
-  return backendKillResultError(results, "pg_terminate_backend");
-}
-
-export function kingbaseKillResultError(results: QueryResult[]): string | null {
-  return backendKillResultError(results, "sys_terminate_backend");
-}
-
-export function kingbasePgKillResultError(results: QueryResult[]): string | null {
   return backendKillResultError(results, "pg_terminate_backend");
 }
 
@@ -368,16 +314,4 @@ export function isPgProcessListCompatibilityError(error: unknown): boolean {
   if (code === "42703") return true;
   const message = error instanceof Error ? error.message : String(error);
   return /(?:wait_event_type|wait_event).*(?:does not exist|42703)|(?:does not exist|42703).*(?:wait_event_type|wait_event)/i.test(message);
-}
-
-export function isKingbaseProcessListCatalogCompatibilityError(error: unknown): boolean {
-  return isMissingKingbaseSysRelation(error, ["sys_catalog.sys_stat_activity"]);
-}
-
-export function isKingbaseOwnSessionCatalogCompatibilityError(error: unknown): boolean {
-  return isMissingKingbaseSysFunction(error, ["sys_backend_pid"]);
-}
-
-export function isKingbaseTerminateCatalogCompatibilityError(error: unknown): boolean {
-  return isMissingKingbaseSysFunction(error, ["sys_terminate_backend"]);
 }

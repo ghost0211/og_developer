@@ -204,13 +204,8 @@ async function fetchDbVersion(connectionId: string, database: string, schema: st
     switch (dbType) {
       case "postgres":
       case "opengauss":
+      case "jdbc":
         sql = "SELECT version()";
-        break;
-      case "mysql":
-        sql = "SELECT VERSION()";
-        break;
-      case "sqlite":
-        sql = "SELECT sqlite_version()";
         break;
       default:
         return;

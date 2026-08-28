@@ -12,14 +12,6 @@ pub struct LoginRateLimit {
     pub locked_until: Option<std::time::Instant>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct NacosImportContext {
-    pub owner_session: Option<String>,
-    pub connection_id: String,
-    pub target_namespace: String,
-    pub plan_hash: String,
-}
-
 pub struct WebState {
     pub app: Arc<AppState>,
     pub data_dir: PathBuf,
@@ -31,7 +23,6 @@ pub struct WebState {
     pub transfer_progress_channels: RwLock<HashMap<String, Arc<TransferProgressChannel>>>,
     pub table_import_channels: RwLock<HashMap<String, watch::Sender<String>>>,
     pub sql_file_executions: RwLock<HashMap<String, CancellationToken>>,
-    pub nacos_imports: RwLock<HashMap<String, NacosImportContext>>,
     pub login_rate_limit: Mutex<LoginRateLimit>,
     /// Table export temp files: export_id -> (file_path, format)
     pub export_files: RwLock<HashMap<String, (String, String)>>,
@@ -57,7 +48,6 @@ impl WebState {
             transfer_progress_channels: RwLock::new(HashMap::new()),
             table_import_channels: RwLock::new(HashMap::new()),
             sql_file_executions: RwLock::new(HashMap::new()),
-            nacos_imports: RwLock::new(HashMap::new()),
             login_rate_limit: Mutex::new(LoginRateLimit { fail_count: 0, locked_until: None }),
             export_files: RwLock::new(HashMap::new()),
             ssh_prompts: Arc::new(crate::ssh_prompt::SshPromptHub::new()),

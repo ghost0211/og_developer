@@ -39,10 +39,6 @@ export interface SavedOpenTab {
   whereInput?: string;
   pinned?: boolean;
   mode?: QueryTab["mode"];
-  mqTenant?: string;
-  mqInitialTab?: QueryTab["mqInitialTab"];
-  nacosNamespace?: string;
-  nacosNamespaceName?: string;
   structureTableName?: string;
   objectBrowser?: QueryTab["objectBrowser"];
   objectSource?: QueryTab["objectSource"];
@@ -50,7 +46,6 @@ export interface SavedOpenTab {
   routineDebug?: QueryTab["routineDebug"];
   programWindow?: QueryTab["programWindow"];
   tableMeta?: QueryTab["tableMeta"];
-  mongoEditTarget?: QueryTab["mongoEditTarget"];
   resultEvicted?: boolean;
   resultCacheKey?: string;
   resultRuns?: SavedQueryResultRun[];
@@ -115,10 +110,6 @@ export function serializeOpenTabs(tabs: QueryTab[]): SavedOpenTab[] {
     ...(tab.whereInput !== undefined ? { whereInput: tab.whereInput } : {}),
     pinned: tab.pinned,
     mode: tab.mode,
-    ...(tab.mqTenant !== undefined ? { mqTenant: tab.mqTenant } : {}),
-    ...(tab.mqInitialTab !== undefined ? { mqInitialTab: tab.mqInitialTab } : {}),
-    ...(tab.nacosNamespace !== undefined ? { nacosNamespace: tab.nacosNamespace } : {}),
-    ...(tab.nacosNamespaceName !== undefined ? { nacosNamespaceName: tab.nacosNamespaceName } : {}),
     ...(tab.structureTableName !== undefined ? { structureTableName: tab.structureTableName } : {}),
     objectBrowser: tab.objectBrowser,
     objectSource: tab.objectSource,
@@ -126,7 +117,6 @@ export function serializeOpenTabs(tabs: QueryTab[]): SavedOpenTab[] {
     ...(tab.routineDebug ? { routineDebug: { ...tab.routineDebug, restored: undefined } } : {}),
     ...(tab.programWindow !== undefined ? { programWindow: tab.programWindow } : {}),
     tableMeta: tab.tableMeta,
-    ...(tab.mongoEditTarget !== undefined ? { mongoEditTarget: tab.mongoEditTarget } : {}),
     ...(tab.mode !== "data" && tab.resultEvicted ? { resultEvicted: true } : {}),
     ...(tab.mode !== "data" && tab.resultEvicted && tab.resultCacheKey !== undefined ? { resultCacheKey: tab.resultCacheKey } : {}),
     ...(tab.mode === "query" && tab.resultRuns?.length

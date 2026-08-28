@@ -2,53 +2,29 @@ import { defineStore } from "pinia";
 import { uuid } from "@/lib/common/utils";
 import { computed, markRaw, onScopeDispose, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import type { BatchSqlExecution, ConnectionConfig, DatabaseType, IndexInfo, ObjectBrowserViewport, ObjectSourceKind, QueryResult, QueryTab, TableInfoTab, TableStructureEditorTarget } from "@/types/database";
+import type { BatchSqlExecution, ConnectionConfig, DatabaseType, ObjectBrowserViewport, ObjectSourceKind, QueryResult, QueryTab, TableInfoTab, TableStructureEditorTarget } from "@/types/database";
 import { orderPinnedFirst } from "@/lib/app/pinnedItems";
 import { canCancelQueryExecution } from "@/lib/sql/queryExecutionState";
-import { buildExplainSql, parseExplainResult, parseDamengExplainText, parseOracleExplainText, sqlServerExplainResult, type BuildExplainSqlResult } from "@/lib/diagram/explainPlan";
-import { mysqlExplainCompatibilityHint } from "@/lib/diagram/mysqlExplainCompatibility";
+import { buildExplainSql, parseExplainResult } from "@/lib/diagram/explainPlan";
 import { allEditableColumnsWriteable, allPrimaryKeysPresent, analyzeEditableQueryEditability, resolveMetadataColumnName, sourceColumnsForResult, type EditableQueryInfo, type EditableQuerySource } from "@/lib/sql/sqlAnalysis";
 import { buildQueryWithHiddenPrimaryKeys, hiddenResultColumnIndexes, type HiddenPrimaryKeyProjection } from "@/lib/sql/editableQueryHiddenKeys";
 import { ACTIVE_TAB_STORAGE_KEY, OPEN_TABS_STORAGE_KEY, restoreOpenTabsPayload, restoreOpenTabsState, serializeOpenTabs } from "@/lib/app/openTabsPersistence";
-import {
-  evaluateMongoAggregateSafety,
-  evaluateMongoWriteSafety,
-  mongoCollectionStatsToQueryResult,
-  mongoCountToQueryResult,
-  mongoDistinctToQueryResult,
-  mongoCreateIndexToQueryResult,
-  mongoDocumentsToQueryResult,
-  describeMongoCommandParseFailure,
-  mongoDroppedIndexesToQueryResult,
-  mongoFindLogicalTotal,
-  mongoIndexesToQueryResult,
-  planMongoFindPagination,
-  mongoUseToQueryResult,
-  mongoVersionToQueryResult,
-  mongoWriteToQueryResult,
-  splitMongoCommandRanges,
-  type MongoAggregateSafetyOptions,
-} from "@/lib/mongo/mongoShellCommand";
-import { refreshLoadedMongoIndexes } from "@/lib/mongo/mongoIndexMetadata";
-import { redisCommandResultToQueryResult } from "@/lib/redis/redisQueryResult";
-import { nextRedisCommandDb } from "@/lib/redis/redisCommandSession";
-import { isRedisMutatingCommand } from "@/lib/redis/redisCommandTable";
 import { usesAgentCursorForQuery } from "@/lib/database/databaseDriverManifest";
 import { supportsClearableQuerySchema } from "@/lib/database/databaseFeatureSupport";
-import { canUseKeylessRowPredicate, DBX_ROWID_COLUMN, editablePrimaryKeys, usesSyntheticRowIdKey } from "@/lib/table/tableEditing";
+import { canUseKeylessRowPredicate, editablePrimaryKeys } from "@/lib/table/tableEditing";
 import { TABLE_DATA_EXPORT_PAGE_SIZE } from "@/lib/table/tableDataExport";
 import { tableMetaForDataTab } from "@/lib/table/tableDataTabMeta";
 import { dataTabExecutionDatabase } from "@/lib/table/dataTabExecutionDatabase";
 import { tableOpenPageLimit } from "@/lib/table/tableOpenPageLimit";
-import { getCachedTableMetadata, loadTableIndexes, loadTableMetadata, type TableMetadataRequest } from "@/lib/metadata/tableMetadataCache";
+import { getCachedTableMetadata, loadTableMetadata, type TableMetadataRequest } from "@/lib/metadata/tableMetadataCache";
 import { buildTableSelectSql, quoteTableDataIdentifier } from "@/lib/table/tableSelectSql";
-import { connectionObjectTreeNodeSchema, connectionQueryExecutionSchema, connectionUsesDatabaseObjectTreeMode, effectiveDatabaseTypeForConnection, gaussdbConnectionMode, metadataSchemaForConnection, opengaussConnectionMode } from "@/lib/database/jdbcDialect";
+import { connectionObjectTreeNodeSchema, connectionQueryExecutionSchema, connectionUsesDatabaseObjectTreeMode, effectiveDatabaseTypeForConnection, metadataSchemaForConnection, opengaussConnectionMode } from "@/lib/database/jdbcDialect";
 import { frontendQueryTimeoutSecsForSql, queryTimeoutSecsForConnection } from "@/lib/sql/queryTimeout";
 import { queryResultNameFromPreamble, queryResultSourceLabel } from "@/lib/sql/queryResultSource";
 import { beginDataGridNativeSelectionBlock, finishDataGridNativeSelectionBlock } from "@/lib/dataGrid/dataGridNativeSelection";
 import { simpleDataGridOrderByReferencesMissingColumn, sortDataGridRowIndexes, type DataGridSortDirection } from "@/lib/dataGrid/dataGridSort";
-import { MAX_RESULT_PAGE_SIZE, normalizeResultPageSize } from "@/lib/dataGrid/paginationPageSize";
-import { elasticsearchRestRequestRanges, executableStatementRanges, splitSqlStatementRanges } from "@/lib/sql/sqlStatementRanges";
+import { MAX_RESULT_PAGE_SIZE } from "@/lib/dataGrid/paginationPageSize";
+import { splitSqlStatementRanges } from "@/lib/sql/sqlStatementRanges";
 import { externalSqlFileDisplayTitles, normalizeExternalSqlPath } from "@/lib/sql/sqlFileOpen";
 import { clearDataGridPendingSnapshotsForTab } from "@/composables/useDataGridEditor";
 import { buildTabResultSnapshot, deleteTabResultSnapshot, pruneTabResultSnapshots, readTabResultSnapshot, tabResultCacheKey, writeTabResultSnapshot } from "@/lib/tabs/tabResultCache";
@@ -63,7 +39,7 @@ import { useSavedSqlStore } from "@/stores/savedSqlStore";
 import { useExportTracker } from "@/composables/useExportTracker";
 import { recordQueryCancellationLatency, resourceLifecycleDiagnostics } from "@/lib/diagnostics/resourceLifecycleDiagnostics";
 import { appendDebugLog } from "@/lib/backend/debugLog";
-import { BackendErrorException, formatError, normalizeBackendError, type BackendError } from "@/lib/backend/errorUtils";
+import { BackendErrorException, normalizeBackendError, type BackendError } from "@/lib/backend/errorUtils";
 import { createSavedSqlEditorPosition, initSavedSqlEditorPositions, restoreSavedSqlEditorPosition, saveSavedSqlEditorPosition } from "@/lib/app/savedSqlEditorPosition";
 import { ensureSqlExtension } from "@/lib/savedSql/savedSqlFileName";
 import { resolveSavedSqlExecutionTarget, savedSqlExecutionTargetFromTab, type SavedSqlExecutionTarget, type SavedSqlOpenTargetMode } from "@/lib/savedSql/savedSqlExecutionTarget";
@@ -73,18 +49,12 @@ import type { SavedSqlFile } from "@/types/database";
 import i18n from "@/i18n";
 import { translateBackendError } from "@/i18n/backend-errors";
 
-const ORACLE_LIKE_METADATA_TYPES = new Set<string>(["oracle", "dameng", "oceanbase-oracle"]);
-const HIDDEN_QUERY_KEY_DATABASE_TYPES = new Set<DatabaseType>(["mysql", "postgres", "sqlserver", "oracle"]);
-const QUERY_RESULT_EXPORT_UNSUPPORTED_ERROR = "Streaming export is unsupported for this query. Simplify it or use a supported driver.";
+const HIDDEN_QUERY_KEY_DATABASE_TYPES = new Set<DatabaseType>(["opengauss", "postgres", "jdbc"]);
 const BACKGROUND_CLIENT_SESSION_SUFFIXES = ["count", "explain", "export"] as const;
 const CANCEL_QUERY_TIMEOUT_MS = 10_000;
 const CANCEL_ACK_SETTLE_TIMEOUT_MS = 2_000;
 const SAVED_SQL_EDITOR_POSITION_PERSIST_DELAY_MS = 500;
 type CloseConfirmContext = "tab" | "batch" | "app";
-
-function hasHiddenPhysicalRowKey(databaseType: DatabaseType | undefined, hiddenPrimaryKeys: HiddenPrimaryKeyProjection[]): boolean {
-  return hiddenPrimaryKeys.some((projection) => !usesSyntheticRowIdKey(databaseType, [projection.sourceName]));
-}
 
 function cloneTabDraft<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
@@ -146,8 +116,6 @@ function droppedTableObjectSchemaCandidates(target: DroppedTableObjectTarget): S
 
 function markQueryResultRowsRaw(result: QueryResult): QueryResult {
   markRaw(result.rows);
-  if (result.mongo_documents) markRaw(result.mongo_documents);
-  if (result.mongo_copy_documents) markRaw(result.mongo_copy_documents);
   return result;
 }
 
@@ -197,8 +165,6 @@ export function appendQueryResultSegment(previous: QueryResult, segment: QueryRe
     rows: [...previous.rows, ...segment.rows.slice(0, appendedRowCount)],
     spatial_columns: spatial_columns.length > 0 ? spatial_columns : undefined,
     spatial_values: appendParallelValues(previous.spatial_values, segment.spatial_values),
-    mongo_documents: appendParallelValues(previous.mongo_documents, segment.mongo_documents),
-    mongo_copy_documents: appendParallelValues(previous.mongo_copy_documents, segment.mongo_copy_documents),
     execution_time_ms: (previous.execution_time_ms ?? 0) + (segment.execution_time_ms ?? 0),
     has_more: previous.rows.length + appendedRowCount >= maxRows ? false : segment.has_more,
   });
@@ -209,8 +175,6 @@ function markQueryResultRunsRowsRaw(resultRuns: NonNullable<QueryTab["resultRuns
     if (run.result) markQueryResultRowsRaw(run.result);
     if (run.results) markQueryResultsRowsRaw(run.results);
     if (run.resultLocalSortOriginalRows) markRaw(run.resultLocalSortOriginalRows);
-    if (run.resultLocalSortOriginalMongoDocuments) markRaw(run.resultLocalSortOriginalMongoDocuments);
-    if (run.resultLocalSortOriginalMongoCopyDocuments) markRaw(run.resultLocalSortOriginalMongoCopyDocuments);
   }
   return resultRuns;
 }
@@ -236,7 +200,6 @@ function annotateQueryResultSources(results: QueryResult[], sql: string, databas
   return results;
 }
 
-const NON_STREAMING_BATCH_DATABASE_TYPES = new Set<DatabaseType>(["sqlserver", "turso", "cloudflare-d1"]);
 const liveBatchSqlExecutions = new WeakMap<QueryTab, BatchSqlExecution>();
 
 function cloneBatchSqlExecution(batch: BatchSqlExecution | undefined): BatchSqlExecution | undefined {
@@ -256,7 +219,6 @@ function clearLiveBatchSqlExecution(tab: QueryTab, executionId: string) {
 function createBatchSqlExecution(executionId: string, editorSql: string, submittedSql: string, databaseType: DatabaseType | undefined, sourceOffset: number | undefined): BatchSqlExecution | undefined {
   const statements = splitSqlStatementRanges(submittedSql, databaseType);
   if (statements.length === 0) return undefined;
-  if (statements.length > 1 && databaseType && NON_STREAMING_BATCH_DATABASE_TYPES.has(databaseType)) return undefined;
   const offset = sourceOffset ?? 0;
   return {
     executionId,
@@ -360,50 +322,6 @@ function finishBatchSqlExecution(tab: QueryTab, executionId: string, cancelled: 
   batch.finishedAt = Date.now();
 }
 
-function sqlStatementWithoutLeadingComments(statement: string | undefined): string {
-  let remaining = statement?.trimStart() ?? "";
-  while (remaining) {
-    if (remaining.startsWith("--")) {
-      const newline = remaining.indexOf("\n");
-      remaining = newline < 0 ? "" : remaining.slice(newline + 1).trimStart();
-      continue;
-    }
-    if (remaining.startsWith("/*")) {
-      const end = remaining.indexOf("*/", 2);
-      if (end < 0) return "";
-      remaining = remaining.slice(end + 2).trimStart();
-      continue;
-    }
-    break;
-  }
-  return remaining;
-}
-
-function isOracleCurrentSchemaStatement(statement: string | undefined): boolean {
-  return /^ALTER\s+SESSION\s+SET\s+CURRENT_SCHEMA\s*=/i.test(sqlStatementWithoutLeadingComments(statement));
-}
-
-function isSapHanaSetSchemaStatement(statement: string | undefined): boolean {
-  return /^SET\s+SCHEMA\s+(?:"(?:[^"]|"")*"|[A-Za-z_][\w$#]*)\s*;?\s*$/i.test(sqlStatementWithoutLeadingComments(statement));
-}
-
-function sqlServerUseDatabaseFromStatement(statement: string | undefined): string | undefined {
-  const match = /^USE\s+(?:\[((?:[^\]]|\]\])*)\]|"((?:[^"]|"")*)"|([A-Za-z_][\w@$#]*))\s*;?\s*$/i.exec(sqlStatementWithoutLeadingComments(statement));
-  if (!match) return undefined;
-  if (match[1] !== undefined) return match[1].replaceAll("]]", "]");
-  if (match[2] !== undefined) return match[2].replaceAll('""', '"');
-  return match[3];
-}
-
-function isSqlServerBatchErrorResult(result: QueryResult): boolean {
-  return result.execution_error === true;
-}
-
-function sapHanaCurrentSchemaFromResult(result: QueryResult): string | undefined {
-  const schema = result.rows[0]?.[0];
-  return typeof schema === "string" && schema.trim() ? schema.trim() : undefined;
-}
-
 function annotateQueryResultSource(result: QueryResult, sourceStatement: string, database?: string, databaseType?: DatabaseType, sourceRange?: { from: number; to: number }): QueryResult {
   result.sourceStatement = sourceStatement;
   if (sourceRange) {
@@ -413,14 +331,6 @@ function annotateQueryResultSource(result: QueryResult, sourceStatement: string,
   const label = databaseType ? queryResultSourceLabel(sourceStatement, { database, databaseType }) : undefined;
   if (label) result.sourceLabel = label;
   return result;
-}
-
-function elasticsearchHttpErrorStatus(result: QueryResult): number | undefined {
-  const statusIndex = result.columns.findIndex((column) => column.toLowerCase() === "status");
-  if (statusIndex < 0) return undefined;
-  const value = result.rows[0]?.[statusIndex];
-  const status = typeof value === "number" ? value : typeof value === "string" ? Number(value) : Number.NaN;
-  return Number.isInteger(status) && status >= 400 ? status : undefined;
 }
 
 function displayedQueryMetadataSql(tab: QueryTab, fallbackSql: string): string {
@@ -457,27 +367,12 @@ async function withCancelQueryTimeout<T>(promise: Promise<T>): Promise<T> {
   }
 }
 
-function normalizeOracleLikeMetadataIdentifier(dbType: string, identifier: string | undefined, quoted?: boolean) {
-  if (!identifier || quoted || !ORACLE_LIKE_METADATA_TYPES.has(dbType)) return identifier;
-  return identifier.toUpperCase();
+function normalizeOracleLikeMetadataIdentifier(_dbType: string, identifier: string | undefined, _quoted?: boolean) {
+  return identifier;
 }
 
-function normalizeOracleLikeQueryAnalysis(dbType: string, analysis: EditableQueryInfo, schema: string | undefined, tableName: string): EditableQueryInfo {
-  if (!ORACLE_LIKE_METADATA_TYPES.has(dbType)) return analysis;
-  return {
-    ...analysis,
-    schema,
-    tableName,
-    sources: analysis.sources?.map((source) => ({
-      ...source,
-      schema: normalizeOracleLikeMetadataIdentifier(dbType, source.schema, source.schemaQuoted),
-      tableName: normalizeOracleLikeMetadataIdentifier(dbType, source.tableName, source.tableNameQuoted)!,
-    })),
-    columns: analysis.columns.map((column) => ({
-      ...column,
-      sourceName: normalizeOracleLikeMetadataIdentifier(dbType, column.sourceName, column.sourceNameQuoted),
-    })),
-  };
+function normalizeOracleLikeQueryAnalysis(_dbType: string, analysis: EditableQueryInfo, _schema: string | undefined, _tableName: string): EditableQueryInfo {
+  return analysis;
 }
 
 function editableQuerySources(analysis: EditableQueryInfo): EditableQuerySource[] {
@@ -694,21 +589,6 @@ export const useQueryStore = defineStore("query", () => {
     appendDebugLog(level, `[DBX][executeTabSql:${event}]`, details);
   }
 
-  async function refreshLoadedMongoIndexesAfterMutation(connectionId: string, database: string, collection: string, traceId: string) {
-    const connStore = useConnectionStore();
-    try {
-      await refreshLoadedMongoIndexes(connStore, { connectionId, database, collection });
-    } catch (error) {
-      queryExecutionLog("warn", "mongo-indexes:refresh-failed", {
-        traceId,
-        connectionId,
-        database,
-        collection,
-        error: formatError(error),
-      });
-    }
-  }
-
   async function closeResultSession(tab: QueryTab | undefined, preserveSessionId?: string, throwOnError = false) {
     const sessionId = tab?.resultSessionId ?? tab?.result?.session_id;
     if (!tab || !sessionId || sessionId === preserveSessionId) return;
@@ -808,8 +688,6 @@ export const useQueryStore = defineStore("query", () => {
     tab.batchSqlExecution = undefined;
     tab.resultEditorFingerprint = undefined;
     tab.resultLocalSortOriginalRows = undefined;
-    tab.resultLocalSortOriginalMongoDocuments = undefined;
-    tab.resultLocalSortOriginalMongoCopyDocuments = undefined;
     tab.resultSortMode = undefined;
     tab.resultSessionId = undefined;
     tab.resultAccessedAt = undefined;
@@ -817,7 +695,6 @@ export const useQueryStore = defineStore("query", () => {
     tab.queryAnalysis = undefined;
     tab.querySourceColumns = undefined;
     tab.queryEditabilityReason = undefined;
-    tab.mongoEditTarget = undefined;
     if (tab.mode === "query") tab.tableMeta = undefined;
     tab.resultEvicted = options.evicted ? true : undefined;
     tab.resultCacheState = options.evicted ? tab.resultCacheState : undefined;
@@ -825,25 +702,6 @@ export const useQueryStore = defineStore("query", () => {
       if (tab.resultCacheKey && !options.preserveCacheSnapshot) void deleteTabResultSnapshot(tab.resultCacheKey);
       tab.resultCacheKey = undefined;
     }
-  }
-
-  function clearResultNavigationState(tab: QueryTab) {
-    tab.resultSortedSql = undefined;
-    tab.resultSortColumn = undefined;
-    tab.resultSortColumnIndex = undefined;
-    tab.resultSortDirection = undefined;
-    tab.resultSortMode = undefined;
-    tab.resultLocalSortOriginalRows = undefined;
-    tab.resultLocalSortOriginalMongoDocuments = undefined;
-    tab.resultLocalSortOriginalMongoCopyDocuments = undefined;
-    tab.orderByInput = undefined;
-    tab.resultPageSql = undefined;
-    tab.resultPageLimit = undefined;
-    tab.resultPageOffset = undefined;
-    tab.resultCountSql = undefined;
-    tab.resultTotalRowCount = undefined;
-    tab.resultTotalRowCountLoading = false;
-    tab.resultSessionId = undefined;
   }
 
   function clearResultRunSnapshots(tab: QueryTab) {
@@ -856,14 +714,11 @@ export const useQueryStore = defineStore("query", () => {
     run.result = undefined;
     run.results = undefined;
     run.resultLocalSortOriginalRows = undefined;
-    run.resultLocalSortOriginalMongoDocuments = undefined;
-    run.resultLocalSortOriginalMongoCopyDocuments = undefined;
     run.resultSessionId = undefined;
     run.resultEstimatedBytes = undefined;
     run.queryAnalysis = undefined;
     run.querySourceColumns = undefined;
     run.queryEditabilityReason = undefined;
-    run.mongoEditTarget = undefined;
     run.tableMeta = undefined;
     run.resultEvicted = options.evicted ? true : undefined;
     run.resultCacheState = options.evicted ? "disk" : undefined;
@@ -884,8 +739,6 @@ export const useQueryStore = defineStore("query", () => {
     tab.resultSortDirection = run.resultSortDirection;
     tab.resultSortMode = run.resultSortMode;
     tab.resultLocalSortOriginalRows = run.resultLocalSortOriginalRows;
-    tab.resultLocalSortOriginalMongoDocuments = run.resultLocalSortOriginalMongoDocuments;
-    tab.resultLocalSortOriginalMongoCopyDocuments = run.resultLocalSortOriginalMongoCopyDocuments;
     tab.orderByInput = run.orderByInput;
     tab.resultPageSql = run.resultPageSql;
     tab.resultPageLimit = run.resultPageLimit;
@@ -902,7 +755,6 @@ export const useQueryStore = defineStore("query", () => {
     tab.queryAnalysis = run.queryAnalysis;
     tab.querySourceColumns = run.querySourceColumns;
     tab.queryEditabilityReason = run.queryEditabilityReason;
-    tab.mongoEditTarget = run.mongoEditTarget;
     tab.tableMeta = run.tableMeta;
     touchResult(tab, Date.now(), { reuseEstimatedBytes: true });
   }
@@ -1049,8 +901,6 @@ export const useQueryStore = defineStore("query", () => {
       resultSortDirection: tab.resultSortDirection,
       resultSortMode: tab.resultSortMode,
       resultLocalSortOriginalRows: tab.resultLocalSortOriginalRows,
-      resultLocalSortOriginalMongoDocuments: tab.resultLocalSortOriginalMongoDocuments,
-      resultLocalSortOriginalMongoCopyDocuments: tab.resultLocalSortOriginalMongoCopyDocuments,
       orderByInput: tab.orderByInput,
       resultPageSql: tab.resultPageSql,
       resultPageLimit: tab.resultPageLimit,
@@ -1067,7 +917,6 @@ export const useQueryStore = defineStore("query", () => {
       queryAnalysis: tab.queryAnalysis,
       querySourceColumns: tab.querySourceColumns,
       queryEditabilityReason: tab.queryEditabilityReason,
-      mongoEditTarget: tab.mongoEditTarget,
       tableMeta: tab.tableMeta,
     };
     void persistResultRun(tab, run);
@@ -1109,8 +958,6 @@ export const useQueryStore = defineStore("query", () => {
       resultSortDirection: tab.resultSortDirection,
       resultSortMode: tab.resultSortMode,
       resultLocalSortOriginalRows: tab.resultLocalSortOriginalRows,
-      resultLocalSortOriginalMongoDocuments: tab.resultLocalSortOriginalMongoDocuments,
-      resultLocalSortOriginalMongoCopyDocuments: tab.resultLocalSortOriginalMongoCopyDocuments,
       orderByInput: tab.orderByInput,
       resultPageSql: tab.resultPageSql,
       resultPageLimit: tab.resultPageLimit,
@@ -1127,7 +974,6 @@ export const useQueryStore = defineStore("query", () => {
       queryAnalysis: tab.queryAnalysis,
       querySourceColumns: tab.querySourceColumns,
       queryEditabilityReason: tab.queryEditabilityReason,
-      mongoEditTarget: tab.mongoEditTarget,
       tableMeta: tab.tableMeta,
     };
     void persistResultRun(tab, run);
@@ -1161,19 +1007,13 @@ export const useQueryStore = defineStore("query", () => {
 
     if (!tab.resultLocalSortOriginalRows) {
       tab.resultLocalSortOriginalRows = tab.result.rows.slice();
-      tab.resultLocalSortOriginalMongoDocuments = tab.result.mongo_documents?.slice();
-      tab.resultLocalSortOriginalMongoCopyDocuments = tab.result.mongo_copy_documents?.slice();
     }
 
     const originalRows = tab.resultLocalSortOriginalRows;
     const columnType = tab.result.column_types?.[columnIndex];
     const rowIndexes = direction ? sortDataGridRowIndexes(originalRows, columnIndex, direction, columnType) : originalRows.map((_, index) => index);
     const rows = rowIndexes.map((index) => originalRows[index]!);
-    const originalMongoDocuments = tab.resultLocalSortOriginalMongoDocuments;
-    const mongo_documents = originalMongoDocuments ? rowIndexes.map((index) => originalMongoDocuments[index]) : undefined;
-    const originalMongoCopyDocuments = tab.resultLocalSortOriginalMongoCopyDocuments;
-    const mongo_copy_documents = originalMongoCopyDocuments ? rowIndexes.map((index) => originalMongoCopyDocuments[index]) : undefined;
-    assignDisplayedResult(tab, { ...tab.result, rows, mongo_documents, mongo_copy_documents });
+    assignDisplayedResult(tab, { ...tab.result, rows });
 
     tab.resultSortColumn = direction ? column : undefined;
     tab.resultSortColumnIndex = direction ? columnIndex : undefined;
@@ -1182,8 +1022,6 @@ export const useQueryStore = defineStore("query", () => {
     tab.resultSortedSql = undefined;
     if (!direction) {
       tab.resultLocalSortOriginalRows = undefined;
-      tab.resultLocalSortOriginalMongoDocuments = undefined;
-      tab.resultLocalSortOriginalMongoCopyDocuments = undefined;
     }
 
     // 本地排序只是重排既有行/文档，字节规模不变，可复用估算值
@@ -1303,7 +1141,6 @@ export const useQueryStore = defineStore("query", () => {
       objectBrowser: t.objectBrowser,
       objectSource: t.objectSource,
       tableMeta: t.tableMeta,
-      mongoEditTarget: t.mongoEditTarget,
       resultEvicted: t.resultEvicted,
       resultCacheKey: t.resultCacheKey,
     })),
@@ -1735,31 +1572,6 @@ export const useQueryStore = defineStore("query", () => {
     return id;
   }
 
-  function openMysqlDashboard(connectionId: string) {
-    const existing = tabs.value.find((tab) => tab.mode === "mysql-dashboard" && tab.connectionId === connectionId);
-    if (existing) {
-      switchTab(existing.id);
-      return existing.id;
-    }
-
-    const conn = useConnectionStore().getConfig(connectionId);
-    const id = uuid();
-    const tab: QueryTab = {
-      id,
-      title: conn?.name ? `${conn.name} - ${t("serverDashboard.title")}` : t("serverDashboard.title"),
-      connectionId,
-      database: conn?.database || "",
-      sql: "",
-      isExecuting: false,
-      isCancelling: false,
-      isExplaining: false,
-      mode: "mysql-dashboard",
-    };
-    tabs.value.push(tab);
-    activeTabId.value = id;
-    return id;
-  }
-
   function openPostgresDashboard(connectionId: string) {
     const existing = tabs.value.find((tab) => tab.mode === "postgres-dashboard" && tab.connectionId === connectionId);
     if (existing) {
@@ -1783,213 +1595,6 @@ export const useQueryStore = defineStore("query", () => {
     tabs.value.push(tab);
     activeTabId.value = id;
     return id;
-  }
-
-  function openNacosDashboard(connectionId: string) {
-    const existing = tabs.value.find((tab) => tab.mode === "nacos-dashboard" && tab.connectionId === connectionId);
-    if (existing) {
-      switchTab(existing.id);
-      return existing.id;
-    }
-
-    const conn = useConnectionStore().getConfig(connectionId);
-    const id = uuid();
-    const tab: QueryTab = {
-      id,
-      title: conn?.name ? `${conn.name} - ${t("serverDashboard.title")}` : t("serverDashboard.title"),
-      connectionId,
-      database: conn?.database || "",
-      sql: "",
-      isExecuting: false,
-      isCancelling: false,
-      isExplaining: false,
-      mode: "nacos-dashboard",
-    };
-    tabs.value.push(tab);
-    activeTabId.value = id;
-    return id;
-  }
-
-  function openDamengJobAdmin(connectionId: string) {
-    const existing = tabs.value.find((tab) => tab.mode === "dameng-jobs" && tab.connectionId === connectionId);
-    if (existing) {
-      switchTab(existing.id);
-      return existing.id;
-    }
-
-    const conn = useConnectionStore().getConfig(connectionId);
-    const id = uuid();
-    const tab: QueryTab = {
-      id,
-      title: t("damengJobAdmin.title"),
-      connectionId,
-      database: conn?.database || "",
-      sql: "",
-      isExecuting: false,
-      isCancelling: false,
-      isExplaining: false,
-      mode: "dameng-jobs",
-    };
-    tabs.value.push(tab);
-    activeTabId.value = id;
-    return id;
-  }
-
-  function openMongoBucket(connectionId: string, database: string, bucketName: string) {
-    const title = `${database}.${bucketName}`;
-    const existing = tabs.value.find((tab) => tab.mode === "mongo-bucket" && tab.connectionId === connectionId && tab.database === database && tab.mongoBucket?.bucketName === bucketName);
-    if (existing) {
-      switchTab(existing.id);
-      return existing.id;
-    }
-
-    const id = uuid();
-    const tab: QueryTab = {
-      id,
-      title,
-      connectionId,
-      database,
-      sql: bucketName,
-      isExecuting: false,
-      isCancelling: false,
-      isExplaining: false,
-      mode: "mongo-bucket",
-      mongoBucket: {
-        bucketName,
-      },
-    };
-    tabs.value.push(tab);
-    activeTabId.value = id;
-    return id;
-  }
-
-  function openMongoGridFs(connectionId: string, database: string) {
-    const existing = tabs.value.find((tab) => tab.mode === "mongo-gridfs" && tab.connectionId === connectionId && tab.database === database);
-    if (existing) {
-      switchTab(existing.id);
-      return existing.id;
-    }
-
-    const id = uuid();
-    const tab: QueryTab = {
-      id,
-      title: "GridFS",
-      connectionId,
-      database,
-      sql: "",
-      isExecuting: false,
-      isCancelling: false,
-      isExplaining: false,
-      mode: "mongo-gridfs",
-    };
-    tabs.value.push(tab);
-    activeTabId.value = id;
-    return id;
-  }
-
-  function openMqAdmin(connectionId: string, target?: { tenant?: string; initialTab?: QueryTab["mqInitialTab"] }) {
-    const existing = tabs.value.find((tab) => tab.mode === "mq" && tab.connectionId === connectionId);
-    if (existing) {
-      if (target?.tenant) existing.mqTenant = target.tenant;
-      if (target?.initialTab) existing.mqInitialTab = target.initialTab;
-      switchTab(existing.id);
-      return existing.id;
-    }
-
-    const conn = useConnectionStore().getConfig(connectionId);
-    const id = uuid();
-    const tab: QueryTab = {
-      id,
-      title: `${conn?.name || "Message Queue"} Admin`,
-      connectionId,
-      database: conn?.database || "",
-      sql: "",
-      isExecuting: false,
-      isCancelling: false,
-      isExplaining: false,
-      mode: "mq",
-      mqTenant: target?.tenant,
-      mqInitialTab: target?.initialTab,
-    };
-    tabs.value.push(tab);
-    activeTabId.value = id;
-    return id;
-  }
-
-  function openNacosAdmin(connectionId: string, target?: { namespace?: string; namespaceName?: string; dataId?: string; group?: string; keyword?: string }) {
-    const namespace = target?.namespace ?? "";
-    const namespaceName = target?.namespaceName || (namespace ? namespace : "public");
-    const existing = tabs.value.find((tab) => tab.mode === "nacos" && tab.connectionId === connectionId && (tab.nacosNamespace || "") === namespace);
-    if (existing) {
-      existing.nacosNamespaceName = namespaceName;
-      if (target?.dataId) {
-        existing.nacosTargetDataId = target.dataId;
-        existing.nacosTargetGroup = target.group || "DEFAULT_GROUP";
-        existing.nacosTargetKeyword = target.keyword;
-        existing.nacosTargetRequestId = (existing.nacosTargetRequestId ?? 0) + 1;
-      }
-      if (!existing.customTitle) existing.title = `${useConnectionStore().getConfig(connectionId)?.name || "Nacos"}:${namespaceName}`;
-      switchTab(existing.id);
-      return existing.id;
-    }
-
-    const conn = useConnectionStore().getConfig(connectionId);
-    const id = uuid();
-    const tab: QueryTab = {
-      id,
-      title: `${conn?.name || "Nacos"}:${namespaceName}`,
-      connectionId,
-      database: conn?.database || "",
-      sql: "",
-      isExecuting: false,
-      isCancelling: false,
-      isExplaining: false,
-      mode: "nacos",
-      nacosNamespace: namespace,
-      nacosNamespaceName: namespaceName,
-      nacosTargetDataId: target?.dataId,
-      nacosTargetGroup: target?.group,
-      nacosTargetKeyword: target?.keyword,
-      nacosTargetRequestId: target?.dataId ? 1 : undefined,
-    };
-    tabs.value.push(tab);
-    activeTabId.value = id;
-    return id;
-  }
-
-  function openMqttAdmin(connectionId: string, target?: { initialTopic?: string }) {
-    const existing = tabs.value.find((tab) => tab.mode === "mqtt" && tab.connectionId === connectionId);
-    if (existing) {
-      if (target?.initialTopic) existing.mqttInitialTopic = target.initialTopic;
-      switchTab(existing.id);
-      return existing.id;
-    }
-
-    const conn = useConnectionStore().getConfig(connectionId);
-    const id = uuid();
-    const tab: QueryTab = {
-      id,
-      title: `${conn?.name || "MQTT"} Console`,
-      connectionId,
-      database: conn?.database || "",
-      sql: "",
-      isExecuting: false,
-      isCancelling: false,
-      isExplaining: false,
-      mode: "mqtt",
-      mqttInitialTopic: target?.initialTopic,
-    };
-    tabs.value.push(tab);
-    activeTabId.value = id;
-    return id;
-  }
-
-  function clearNacosNavigationTarget(connectionId: string, namespace: string, requestId?: number) {
-    const tab = tabs.value.find((candidate) => candidate.mode === "nacos" && candidate.connectionId === connectionId && (candidate.nacosNamespace || "") === namespace);
-    if (!tab || (requestId !== undefined && tab.nacosTargetRequestId !== requestId)) return;
-    tab.nacosTargetDataId = undefined;
-    tab.nacosTargetGroup = undefined;
-    tab.nacosTargetKeyword = undefined;
   }
 
   function applyTableStructureInitialTab(tab: QueryTab, initialTab?: TableInfoTab, initialTarget?: TableStructureEditorTarget) {
@@ -2419,8 +2024,6 @@ export const useQueryStore = defineStore("query", () => {
       resultSortDirection: undefined,
       resultSortMode: undefined,
       resultLocalSortOriginalRows: undefined,
-      resultLocalSortOriginalMongoDocuments: undefined,
-      resultLocalSortOriginalMongoCopyDocuments: undefined,
       orderByInput: undefined,
       resultPageSql: undefined,
       resultPageLimit: undefined,
@@ -2449,10 +2052,6 @@ export const useQueryStore = defineStore("query", () => {
       isExplaining: false,
       explainExecutionId: undefined,
       mode: original.mode,
-      mqTenant: original.mqTenant,
-      mqInitialTab: original.mqInitialTab,
-      nacosNamespace: original.nacosNamespace,
-      nacosNamespaceName: original.nacosNamespaceName,
       structureTableName: original.structureTableName,
       structureDraft: original.structureDraft ? cloneTabDraft(original.structureDraft) : undefined,
       objectBrowser: original.objectBrowser ? { ...original.objectBrowser } : undefined,
@@ -2505,10 +2104,6 @@ export const useQueryStore = defineStore("query", () => {
   function tabMatchesDroppedTableObject(tab: QueryTab, target: DroppedTableObjectTarget): boolean {
     if (tab.connectionId !== target.connectionId || tab.database !== target.database) return false;
     const targetSchemas = droppedTableObjectSchemaCandidates(target);
-
-    if ((target.objectType ?? "TABLE") === "TABLE" && tab.mode === "hbase") {
-      return tab.sql === target.name;
-    }
 
     if (tab.mode === "data") {
       const tableMeta = tableMetaForDataTab(tab);
@@ -2571,7 +2166,7 @@ export const useQueryStore = defineStore("query", () => {
         catalog: tableMeta.catalog,
         columns: tableMeta.columns.map((column) => column.name),
         primaryKeys,
-        includeRowId: usesSyntheticRowIdKey(effectiveDbType, primaryKeys, tableMeta.tableType),
+        includeRowId: false,
         whereInput: tab.whereInput,
         orderBy,
         limit,
@@ -2986,8 +2581,6 @@ export const useQueryStore = defineStore("query", () => {
       tab.resultSortMode = undefined;
       tab.resultSortedSql = undefined;
       tab.resultLocalSortOriginalRows = undefined;
-      tab.resultLocalSortOriginalMongoDocuments = undefined;
-      tab.resultLocalSortOriginalMongoCopyDocuments = undefined;
     }
     if (simpleOrderMissing) tab.orderByInput = undefined;
     return true;
@@ -3148,7 +2741,6 @@ export const useQueryStore = defineStore("query", () => {
     tab.queryAnalysis = patch.queryAnalysis;
     tab.querySourceColumns = patch.querySourceColumns;
     tab.queryEditabilityReason = patch.queryEditabilityReason;
-    tab.mongoEditTarget = undefined;
     tab.tableMeta = patch.tableMeta;
   }
 
@@ -3171,7 +2763,7 @@ export const useQueryStore = defineStore("query", () => {
     // Oracle-family connection databases are service names, not schemas. When
     // the query does not qualify a schema, let the driver resolve the current
     // login user's schema instead of looking up metadata under the service name.
-    const resolvedSchema = (dbType === "sqlserver" && !source.schema) || (ORACLE_LIKE_METADATA_TYPES.has(dbType) && !schema) ? "" : metadataSchemaForConnection(conn, metadataDatabase, schema || undefined);
+    const resolvedSchema = dbType === "sqlserver" && !source.schema ? "" : metadataSchemaForConnection(conn, metadataDatabase, schema || undefined);
     const metadataSchema = normalizeOracleLikeMetadataIdentifier(dbType, resolvedSchema || undefined, source.schema ? source.schemaQuoted : false) || "";
     const metadataTableName = normalizeOracleLikeMetadataIdentifier(dbType, source.tableName, source.tableNameQuoted)!;
     const metadataCatalog = normalizeOracleLikeMetadataIdentifier(dbType, source.catalog, source.catalogQuoted);
@@ -3250,18 +2842,6 @@ export const useQueryStore = defineStore("query", () => {
     return primaryKeys.filter((primaryKey) => !selectedColumns.has(primaryKey));
   }
 
-  async function oracleRowIdIsSafeForQuery(tab: QueryTab, loaded: LoadedEditableSource): Promise<boolean> {
-    const knownType = loaded.tableMeta.tableType?.trim().toUpperCase();
-    if (knownType) return knownType === "TABLE";
-    const objects = await api.listObjects(tab.connectionId!, loaded.tableMeta.database ?? tab.database, loaded.tableMeta.schema ?? "", ["TABLE", "VIEW", "MATERIALIZED_VIEW"], loaded.tableMeta.tableName, 20, 0, loaded.tableMeta.catalog);
-    const matching = objects.find((object) => object.name.toLowerCase() === loaded.tableMeta.tableName.toLowerCase());
-    return matching?.object_type.trim().toUpperCase() === "TABLE";
-  }
-
-  function primaryKeyIndex(indexes: IndexInfo[]): IndexInfo | undefined {
-    return indexes.find((index) => !index.filter && index.columns.length > 0 && index.is_primary);
-  }
-
   function buildHiddenPrimaryKeyPreparation(sql: string, databaseType: DatabaseType, loaded: LoadedEditableSource, primaryKeys: string[], declaredPrimaryKeys: string[], traceId: string, elapsed: () => string): EditableQueryExecutionPreparation {
     const unchanged = { sql, metadataSql: sql, hiddenPrimaryKeys: [] };
     const metadataAnalysis = expandStarProjectionColumnsForSource(bindColumnsForSource(databaseType, loaded.analysis, loaded.source, loaded.tableMeta.columns), loaded.source, loaded.tableMeta.columns);
@@ -3276,7 +2856,7 @@ export const useQueryStore = defineStore("query", () => {
       databaseType,
       primaryKeys: missingPrimaryKeys,
       existingResultNames: metadataAnalysis.selectStar ? loaded.tableMeta.columns.map((column) => column.name) : metadataAnalysis.columns.map((column) => column.resultName),
-      sourceExpressions: databaseType === "oracle" && missingPrimaryKeys.includes(DBX_ROWID_COLUMN) ? { [DBX_ROWID_COLUMN]: "ROWIDTOCHAR(ROWID)" } : undefined,
+      sourceExpressions: undefined,
     });
     if (!rewritten) return unchanged;
     queryExecutionLog("info", "hidden-primary-keys", {
@@ -3298,37 +2878,17 @@ export const useQueryStore = defineStore("query", () => {
       const analysis = editability.analysis;
       const sources = editableQuerySources(analysis);
       if (sources.length !== 1 || analysis.distinct) return unchanged;
-      // Whole-source projections already include declared primary keys. Only
-      // Oracle needs preflight metadata here to add ROWID for a keyless table.
-      if (databaseType !== "oracle" && projectsAllColumnsForSource(analysis, sources[0]!.key)) return unchanged;
+      // Whole-source projections already include declared primary keys.
+      if (projectsAllColumnsForSource(analysis, sources[0]!.key)) return unchanged;
 
       const target = resolveEditableSourceMetadataTarget(tab, analysis, sources[0]!, conn, databaseType, executionDatabase);
       const cached = getCachedTableMetadata(target.request);
       let loaded = cached ? loadedEditableSourceFromMetadata(target, cached.metadata) : undefined;
-      if (!cached && databaseType === "oracle") {
-        // Oracle column discovery can be slow. A star projection over a table
-        // with a declared primary key already returns the complete row identity,
-        // so SQL can start while the full metadata needed for editing loads.
-        const fullMetadataPromise = loadTableMetadata({
-          ...target.request,
-          traceLogger: (event) => queryExecutionLog("debug", "metadata:table-trace", { sourceTraceId: traceId, ...event }),
-        });
-        void fullMetadataPromise.catch((error) => queryExecutionLog("warn", "metadata:table-prefetch:failed", { traceId, error, elapsed: elapsed() }));
-        const indexes = await loadTableIndexes(target.request);
-        if (primaryKeyIndex(indexes) && projectsAllColumnsForSource(target.analysis, target.source.key)) {
-          return unchanged;
-        }
-        loaded = loadedEditableSourceFromMetadata(target, (await fullMetadataPromise).metadata);
-      }
 
       loaded ??= await loadEditableQuerySource(tab, analysis, sources[0]!, conn, databaseType, executionDatabase, traceId, elapsed);
       if (loaded.tableMeta.columns.length === 0) return unchanged;
       if (loaded.tableMeta.tableType?.toUpperCase().includes("VIEW")) return unchanged;
       const declaredPrimaryKeys = loaded.tableMeta.columns.filter((column) => column.is_primary_key).map((column) => column.name);
-      // Oracle base tables without declared keys use the same ROWID identity as
-      // table-data tabs. Confirm the object is a base table because selecting
-      // ROWID from a view can fail with ORA-01445.
-      if (databaseType === "oracle" && declaredPrimaryKeys.length === 0 && !(await oracleRowIdIsSafeForQuery(tab, loaded))) return unchanged;
       const primaryKeys = editablePrimaryKeys(databaseType, loaded.tableMeta.columns, loaded.tableMeta.tableType);
       return buildHiddenPrimaryKeyPreparation(sql, databaseType, loaded, primaryKeys, declaredPrimaryKeys, traceId, elapsed);
     } catch (error) {
@@ -3339,7 +2899,7 @@ export const useQueryStore = defineStore("query", () => {
     }
   }
 
-  async function buildQueryMetadataPatch(tab: QueryTab, sql: string, executionDatabase: string, traceId?: string, elapsed?: () => string, hiddenPrimaryKeys: HiddenPrimaryKeyProjection[] = []): Promise<QueryMetadataPatch | undefined> {
+  async function buildQueryMetadataPatch(tab: QueryTab, sql: string, executionDatabase: string, traceId?: string, elapsed?: () => string): Promise<QueryMetadataPatch | undefined> {
     if (tab.mode !== "query") return;
     if (!tab.result || !tab.result.columns.length) {
       return {
@@ -3413,13 +2973,8 @@ export const useQueryStore = defineStore("query", () => {
       if (loadedSources.length === 1) {
         const loaded = loadedSources[0]!;
         const metadataAnalysis = expandStarProjectionColumnsForSource(bindColumnsForSource(dbType, loaded.analysis, loaded.source, loaded.tableMeta.columns, allSourceColumns), loaded.source, loaded.tableMeta.columns);
-        const syntheticRowIdProjection = hiddenPrimaryKeys.find((projection) => projection.sourceName.toUpperCase() === DBX_ROWID_COLUMN);
-        const primaryKeys = loaded.tableMeta.primaryKeys.length === 0 && syntheticRowIdProjection ? [DBX_ROWID_COLUMN] : loaded.tableMeta.primaryKeys;
+        const primaryKeys = loaded.tableMeta.primaryKeys;
         const sourceColumns = sourceColumnsForResult(metadataAnalysis, tab.result.columns, loaded.source.key);
-        if (sourceColumns && syntheticRowIdProjection) {
-          const resultIndex = tab.result.columns.findIndex((column) => column.toLowerCase() === syntheticRowIdProjection.alias.toLowerCase());
-          if (resultIndex >= 0) sourceColumns[resultIndex] = DBX_ROWID_COLUMN;
-        }
         if (primaryKeys.length === 0 && !canUseKeylessRowPredicate(dbType as DatabaseType, primaryKeys)) {
           return {
             queryAnalysis: undefined,
@@ -3429,7 +2984,7 @@ export const useQueryStore = defineStore("query", () => {
           };
         }
 
-        const primaryKeysPresent = syntheticRowIdProjection ? sourceColumns?.some((column) => column?.toUpperCase() === DBX_ROWID_COLUMN) === true : primaryKeysPresentForSource(dbType, primaryKeys, tab.result.columns, metadataAnalysis, loaded.source.key, loaded.tableMeta.columns);
+        const primaryKeysPresent = primaryKeysPresentForSource(dbType, primaryKeys, tab.result.columns, metadataAnalysis, loaded.source.key, loaded.tableMeta.columns);
         if (!primaryKeysPresent) {
           return {
             queryAnalysis: undefined,
@@ -3497,13 +3052,13 @@ export const useQueryStore = defineStore("query", () => {
     }
   }
 
-  function analyzeQueryMetadataInBackground(tabId: string, sql: string, result: QueryResult, executionDatabase: string, traceId: string, elapsed: () => string, databaseType: DatabaseType | undefined, hiddenPrimaryKeys: HiddenPrimaryKeyProjection[] = []) {
+  function analyzeQueryMetadataInBackground(tabId: string, sql: string, result: QueryResult, executionDatabase: string, traceId: string, elapsed: () => string, hiddenPrimaryKeys: HiddenPrimaryKeyProjection[] = []) {
     void (async () => {
       const tab = tabs.value.find((t) => t.id === tabId);
       if (!tab || tab.result !== result) return;
       queryExecutionLog("info", "metadata:start", { traceId, elapsed: elapsed() });
-      const patch = await buildQueryMetadataPatch(tab, sql, executionDatabase, traceId, elapsed, hiddenPrimaryKeys);
-      if (patch?.queryAnalysis && hasHiddenPhysicalRowKey(databaseType, hiddenPrimaryKeys)) {
+      const patch = await buildQueryMetadataPatch(tab, sql, executionDatabase, traceId, elapsed);
+      if (patch?.queryAnalysis && hiddenPrimaryKeys.length > 0) {
         patch.queryAnalysis = { ...patch.queryAnalysis, allowInsert: false };
       }
       const current = tabs.value.find((t) => t.id === tabId);
@@ -3619,12 +3174,10 @@ export const useQueryStore = defineStore("query", () => {
       };
       pagination?: { limit: number; offset: number; sessionId?: string };
       appendResult?: { maxRows: number };
-      mongoSafety?: MongoAggregateSafetyOptions;
       preserveResultDuringExecution?: boolean;
       preserveTotalRowCountDuringExecution?: boolean;
       preserveActiveResultIndex?: boolean;
       replaceActiveResultInGroup?: boolean;
-      skipRedisSafetyCheck?: boolean;
       sourceOffset?: number;
       sourceTraceId?: string;
       skipEnsureConnected?: boolean;
@@ -3655,8 +3208,6 @@ export const useQueryStore = defineStore("query", () => {
     const previousDisplayedSql = tab.resultBaseSql ?? tab.lastExecutedSql ?? tab.sql;
     tab.lastExecutedSql = sql;
     tab.resultLocalSortOriginalRows = undefined;
-    tab.resultLocalSortOriginalMongoDocuments = undefined;
-    tab.resultLocalSortOriginalMongoCopyDocuments = undefined;
     if (openInNewResultTab && tab.result && !tab.activeResultRunId) {
       captureDisplayedResultRun(tab, previousDisplayedSql);
     }
@@ -3700,24 +3251,14 @@ export const useQueryStore = defineStore("query", () => {
     try {
       await waitForTabSessionReset(id);
       const connStore = useConnectionStore();
-      let conn = connStore.getConfig(tab.connectionId);
-      const parsedMongoCommands = conn?.db_type === "mongodb" ? splitMongoCommandRanges(sql) : undefined;
-      let mongoCommands = parsedMongoCommands ?? [];
-      const mongoNeedsConnection = mongoCommands.some(({ command }) => command.kind !== "use");
-
       if (options?.skipEnsureConnected) {
         queryExecutionLog("info", "ensure-connected:skip", { traceId, elapsed: elapsed(), reason: "caller" });
-      } else if (conn?.db_type === "mongodb" && mongoCommands.length > 0 && !mongoNeedsConnection) {
-        queryExecutionLog("info", "ensure-connected:skip", { traceId, elapsed: elapsed(), reason: "mongo-use-only" });
       } else {
         queryExecutionLog("info", "ensure-connected:start", { traceId, elapsed: elapsed() });
         await connStore.ensureConnected(tab.connectionId);
         queryExecutionLog("info", "ensure-connected:done", { traceId, elapsed: elapsed() });
       }
-      conn = connStore.getConfig(tab.connectionId);
-      if (parsedMongoCommands === undefined && conn?.db_type === "mongodb") {
-        mongoCommands = splitMongoCommandRanges(sql);
-      }
+      const conn = connStore.getConfig(tab.connectionId);
       const effectiveDbType = effectiveDatabaseTypeForConnection(conn);
       const executionDatabase = dataTabExecutionDatabase(conn, tab.database, tab.mode === "data" ? tab.tableMeta?.catalog : tab.catalog);
       const useAgentCursor = usesAgentCursorForQuery(conn?.db_type);
@@ -3729,476 +3270,6 @@ export const useQueryStore = defineStore("query", () => {
       queryExecutionLog("info", "previous-session-close:start", { traceId, elapsed: elapsed() });
       await previousResultSessionClose;
       queryExecutionLog("info", "previous-session-close:done", { traceId, elapsed: elapsed() });
-
-      // Redis command execution — split multi-line input into individual commands
-      if (conn?.db_type === "redis") {
-        await connStore.ensureConnected(tab.connectionId);
-        let currentDb = Number(tab.database) || 0;
-        const commands = sql
-          .split("\n")
-          .map((line) => line.trim())
-          .filter((line) => line.length > 0);
-        if (commands.length === 0) return false;
-        queryExecutionLog("info", "redis:start", { traceId, db: currentDb, commandCount: commands.length, sqlLength: sql.length });
-
-        const allResults: QueryResult[] = [];
-        const commandRanges = executableStatementRanges(sql, "redis");
-        const skipSafety = options?.skipRedisSafetyCheck;
-        let hadMutatingCommand = false;
-        for (const [commandIndex, command] of commands.entries()) {
-          const commandRange = commandRanges[commandIndex];
-          const sourceRange = commandRange && options?.sourceOffset !== undefined ? { from: options.sourceOffset + commandRange.from, to: options.sourceOffset + commandRange.to } : undefined;
-          try {
-            const result = await api.redisExecuteCommand(tab.connectionId, currentDb, command, skipSafety);
-            allResults.push(markQueryResultRowsRaw(annotateQueryResultSource(redisCommandResultToQueryResult(result.value, performance.now() - startedAt, result.command), command, undefined, undefined, sourceRange)));
-            // Track db switches from SELECT N so later commands in the same batch run on the right db.
-            currentDb = nextRedisCommandDb(currentDb, command, result.value);
-            // Write commands (SET/DEL/...) mutate the key set — drop the cached key-name completion
-            // for the db this command ran on so the next autocomplete fetch reflects the new keys.
-            if (isRedisMutatingCommand(command)) {
-              hadMutatingCommand = true;
-              connStore.invalidateCompletionCache(tab.connectionId, String(currentDb));
-            }
-          } catch (e: any) {
-            allResults.push(annotateQueryResultSource(toErrorResult(e), command, undefined, undefined, sourceRange));
-          }
-        }
-        queryExecutionLog("info", "redis:done", { traceId, commandCount: commands.length, elapsed: elapsed() });
-
-        const current = tabs.value.find((t) => t.id === id);
-        if (current?.executionId === executionId) {
-          if (openInNewResultTab && current.isCancelling && restorePendingResultRun(current, executionId)) return false;
-          if (allResults.length > 1) {
-            const activeResultIndex = allResults.findIndex((result) => !isQueryExecutionErrorResult(result));
-            const resultIndex = preservedResultIndex(allResults, current.activeResultIndex, options?.preserveActiveResultIndex) ?? (activeResultIndex >= 0 ? activeResultIndex : 0);
-            current.results = allResults;
-            current.activeResultIndex = resultIndex;
-            current.result = allResults[resultIndex];
-          } else {
-            current.results = undefined;
-            current.activeResultIndex = undefined;
-            current.result = allResults[0];
-          }
-          producedResult = current.result !== undefined;
-          touchResult(current);
-          current.queryAnalysis = undefined;
-          current.querySourceColumns = undefined;
-          current.queryEditabilityReason = undefined;
-          current.mongoEditTarget = undefined;
-          current.tableMeta = undefined;
-          current.resultBaseSql = options?.resultBaseSql ?? sql;
-          current.resultSortedSql = options?.resultSortedSql;
-          syncDisplayedResultRun(current, options?.resultBaseSql ?? sql, openInNewResultTab);
-          // Reflect db switches from SELECT N in the tab so the toolbar dropdown, tab title and
-          // sidebar stay in sync with the command's effective db.
-          if (current.database !== String(currentDb)) {
-            current.database = String(currentDb);
-          }
-        }
-        // Refresh the sidebar db key counts (INFO keyspace) when at least one command in
-        // this batch mutated the key set, so `dbN (count)` stays accurate without a manual
-        // refresh. Fire-and-forget: never block result display.
-        if (hadMutatingCommand) {
-          void connStore.refreshRedisDbKeyCounts(tab.connectionId);
-        }
-        return producedResult;
-      }
-
-      if (conn?.db_type === "mongodb" && mongoCommands.length === 0 && sql.trim()) {
-        // Avoid falling through to the SQL executor, which only returns the generic
-        // "Use MongoDB-specific commands" rejection and hides parse/syntax details.
-        throw new Error(describeMongoCommandParseFailure(sql));
-      }
-
-      if (mongoCommands.length > 0) {
-        queryExecutionLog("info", "mongo:start", { traceId, commandCount: mongoCommands.length, sqlLength: sql.length });
-
-        const allResults: QueryResult[] = [];
-        // Track the effective db as we walk the batch so later commands observe
-        // earlier `use ...` statements in the same editor selection.
-        let currentDatabase = tab.database;
-        let mongoEditTarget: QueryTab["mongoEditTarget"] | undefined;
-        let mongoFindPageState: { pageLimit: number; pageOffset: number; total: number; totalIsExact: boolean } | undefined;
-
-        for (const parsedCommand of mongoCommands) {
-          let mongoCommand = parsedCommand.command;
-          const sourceStatement = parsedCommand.text;
-          const sourceRange = options?.sourceOffset === undefined ? undefined : { from: options.sourceOffset + parsedCommand.from, to: options.sourceOffset + parsedCommand.to };
-          const commandStartedAt = performance.now();
-          const annotateMongoResult = (result: QueryResult): QueryResult => {
-            const annotated = annotateQueryResultSource(result, sourceStatement, undefined, undefined, sourceRange);
-            if ("collection" in mongoCommand) {
-              annotated.sourceLabel = currentDatabase ? `${currentDatabase}.${mongoCommand.collection}` : mongoCommand.collection;
-            }
-            return annotated;
-          };
-          try {
-            // The frontend parser remains responsible for editor ranges, while
-            // dbx-core is authoritative for command semantics at execution time.
-            mongoCommand = await api.mongoParseShellCommand(sourceStatement);
-            switch (mongoCommand.kind) {
-              case "find": {
-                queryExecutionLog("info", "mongo-find:start", { traceId, collection: mongoCommand.collection, database: currentDatabase });
-                const pagePlan = planMongoFindPagination(sourceStatement, mongoCommand, options?.pagination?.offset ?? 0, normalizeResultPageSize(options?.pagination?.limit ?? settingsStore.editorSettings.pageSize));
-                if (!pagePlan) throw new Error(describeMongoCommandParseFailure(sourceStatement));
-                // A stale request can point past an explicit .limit() bound. Keep
-                // the backend call bounded so limit(0) cannot become unbounded.
-                const result = await api.mongoFindDocuments(tab.connectionId, currentDatabase, mongoCommand.collection, pagePlan.requestSkip, Math.max(1, pagePlan.requestLimit), mongoCommand.filter, mongoCommand.projection, mongoCommand.sort, mongoCommand.collation, executionId);
-                const documents = pagePlan.requestLimit === 0 ? [] : result.documents;
-                const extendedDocuments = pagePlan.requestLimit === 0 ? [] : result.extended_documents;
-                const totalIsExact = result.total_is_exact !== false;
-                const reportedTotal = mongoFindLogicalTotal(result.total, pagePlan);
-                const loadedLowerBound = pagePlan.pageOffset + documents.length;
-                const total = totalIsExact ? reportedTotal : Math.max(reportedTotal, loadedLowerBound);
-                const hasMore = totalIsExact ? loadedLowerBound < total : pagePlan.requestLimit > 0 && documents.length >= pagePlan.requestLimit && (pagePlan.logicalLimit === undefined || loadedLowerBound < pagePlan.logicalLimit);
-                const queryResult = markQueryResultRowsRaw(annotateMongoResult(mongoDocumentsToQueryResult(documents, performance.now() - commandStartedAt, total, extendedDocuments, totalIsExact)));
-                queryResult.truncated = hasMore;
-                queryResult.has_more = hasMore;
-                allResults.push(queryResult);
-                if (mongoCommands.length === 1) {
-                  mongoFindPageState = { pageLimit: pagePlan.pageLimit, pageOffset: pagePlan.pageOffset, total, totalIsExact };
-                }
-                mongoEditTarget = mongoCommands.length === 1 && !mongoCommand.projection && queryResult.columns.includes("_id") ? { collection: mongoCommand.collection, idColumn: "_id" } : undefined;
-                queryExecutionLog("info", "mongo-find:done", {
-                  traceId,
-                  collection: mongoCommand.collection,
-                  database: currentDatabase,
-                  rowCount: result.documents.length,
-                  total: result.total,
-                  elapsed: elapsed(),
-                });
-                break;
-              }
-              case "findOne": {
-                queryExecutionLog("info", "mongo-find-one:start", { traceId, collection: mongoCommand.collection, database: currentDatabase });
-                const result = await api.mongoFindOne(tab.connectionId, currentDatabase, mongoCommand.collection, mongoCommand.filter, mongoCommand.projection, mongoCommand.options, executionId);
-                const queryResult = markQueryResultRowsRaw(annotateMongoResult(mongoDocumentsToQueryResult(result.documents, performance.now() - commandStartedAt, result.total, result.extended_documents, result.total_is_exact !== false)));
-                allResults.push(queryResult);
-                mongoEditTarget = mongoCommands.length === 1 && !mongoCommand.projection && queryResult.columns.includes("_id") ? { collection: mongoCommand.collection, idColumn: "_id" } : undefined;
-                queryExecutionLog("info", "mongo-find-one:done", {
-                  traceId,
-                  collection: mongoCommand.collection,
-                  database: currentDatabase,
-                  rowCount: result.documents.length,
-                  elapsed: elapsed(),
-                });
-                break;
-              }
-              case "version": {
-                queryExecutionLog("info", "mongo-version:start", { traceId, database: currentDatabase });
-                const version = await api.mongoServerVersion(tab.connectionId, currentDatabase, executionId);
-                allResults.push(markQueryResultRowsRaw(annotateMongoResult(mongoVersionToQueryResult(version, performance.now() - commandStartedAt))));
-                mongoEditTarget = undefined;
-                queryExecutionLog("info", "mongo-version:done", {
-                  traceId,
-                  database: currentDatabase,
-                  version,
-                  elapsed: elapsed(),
-                });
-                break;
-              }
-              case "countDocuments": {
-                queryExecutionLog("info", "mongo-count:start", { traceId, collection: mongoCommand.collection, database: currentDatabase });
-                const total = await api.mongoCountDocuments(tab.connectionId, currentDatabase, mongoCommand.collection, mongoCommand.filter, mongoCommand.mode, executionId);
-                allResults.push(markQueryResultRowsRaw(annotateMongoResult(mongoCountToQueryResult(total, performance.now() - commandStartedAt))));
-                mongoEditTarget = undefined;
-                queryExecutionLog("info", "mongo-count:done", {
-                  traceId,
-                  collection: mongoCommand.collection,
-                  database: currentDatabase,
-                  total,
-                  elapsed: elapsed(),
-                });
-                break;
-              }
-              case "aggregate": {
-                if (options?.mongoSafety) {
-                  const safety = evaluateMongoAggregateSafety(mongoCommand, options.mongoSafety);
-                  if (!safety.allowed) throw new Error(safety.reason);
-                }
-                queryExecutionLog("info", "mongo-aggregate:start", { traceId, collection: mongoCommand.collection, database: currentDatabase });
-                const aggregateMaxRows = normalizeResultPageSize(pageLimit ?? options?.pagination?.limit ?? settingsStore.editorSettings.pageSize);
-                const result = await api.mongoAggregateDocuments(tab.connectionId, currentDatabase, mongoCommand.collection, mongoCommand.pipeline, aggregateMaxRows, mongoCommand.options, executionId);
-                allResults.push(markQueryResultRowsRaw(annotateMongoResult(mongoDocumentsToQueryResult(result.documents, performance.now() - commandStartedAt, result.total, result.extended_documents, result.total_is_exact !== false))));
-                mongoEditTarget = undefined;
-                queryExecutionLog("info", "mongo-aggregate:done", {
-                  traceId,
-                  collection: mongoCommand.collection,
-                  database: currentDatabase,
-                  rowCount: result.documents.length,
-                  total: result.total,
-                  elapsed: elapsed(),
-                });
-                break;
-              }
-              case "distinct": {
-                queryExecutionLog("info", "mongo-distinct:start", { traceId, collection: mongoCommand.collection, database: currentDatabase, field: mongoCommand.field });
-                const result = await api.mongoDistinct(tab.connectionId, currentDatabase, mongoCommand.collection, mongoCommand.field, mongoCommand.filter, executionId);
-                allResults.push(markQueryResultRowsRaw(annotateMongoResult(mongoDistinctToQueryResult(mongoCommand.field, result.documents, performance.now() - commandStartedAt))));
-                mongoEditTarget = undefined;
-                queryExecutionLog("info", "mongo-distinct:done", {
-                  traceId,
-                  collection: mongoCommand.collection,
-                  database: currentDatabase,
-                  field: mongoCommand.field,
-                  valueCount: result.documents.length,
-                  elapsed: elapsed(),
-                });
-                break;
-              }
-              case "getIndexes": {
-                queryExecutionLog("info", "mongo-indexes:start", { traceId, collection: mongoCommand.collection, database: currentDatabase });
-                const indexes = await api.listIndexes(tab.connectionId, currentDatabase, "", mongoCommand.collection);
-                allResults.push(markQueryResultRowsRaw(annotateMongoResult(mongoIndexesToQueryResult(indexes, performance.now() - commandStartedAt))));
-                mongoEditTarget = undefined;
-                queryExecutionLog("info", "mongo-indexes:done", {
-                  traceId,
-                  collection: mongoCommand.collection,
-                  database: currentDatabase,
-                  indexCount: indexes.length,
-                  elapsed: elapsed(),
-                });
-                break;
-              }
-              case "collectionStats": {
-                queryExecutionLog("info", "mongo-collection-stats:start", {
-                  traceId,
-                  collection: mongoCommand.collection,
-                  metric: mongoCommand.metric,
-                  database: currentDatabase,
-                });
-                const stats = await api.mongoCollectionStats(tab.connectionId, currentDatabase, mongoCommand.collection, mongoCommand.scale, executionId);
-                allResults.push(markQueryResultRowsRaw(annotateMongoResult(mongoCollectionStatsToQueryResult(mongoCommand.metric, stats as unknown as Record<string, unknown>, performance.now() - commandStartedAt))));
-                mongoEditTarget = undefined;
-                queryExecutionLog("info", "mongo-collection-stats:done", {
-                  traceId,
-                  collection: mongoCommand.collection,
-                  metric: mongoCommand.metric,
-                  database: currentDatabase,
-                  elapsed: elapsed(),
-                });
-                break;
-              }
-              case "findOneAndUpdate":
-              case "findOneAndReplace":
-              case "findOneAndDelete": {
-                if (options?.mongoSafety) {
-                  const safety = evaluateMongoWriteSafety(mongoCommand, options.mongoSafety);
-                  if (!safety.allowed) throw new Error(safety.reason);
-                }
-                queryExecutionLog("info", "mongo-find-and-modify:start", {
-                  traceId,
-                  kind: mongoCommand.kind,
-                  collection: mongoCommand.collection,
-                  database: currentDatabase,
-                });
-                const result =
-                  mongoCommand.kind === "findOneAndUpdate"
-                    ? await api.mongoFindOneAndUpdate(tab.connectionId, currentDatabase, mongoCommand.collection, mongoCommand.filter, mongoCommand.update, mongoCommand.options)
-                    : mongoCommand.kind === "findOneAndReplace"
-                      ? await api.mongoFindOneAndReplace(tab.connectionId, currentDatabase, mongoCommand.collection, mongoCommand.filter, mongoCommand.replacement, mongoCommand.options)
-                      : await api.mongoFindOneAndDelete(tab.connectionId, currentDatabase, mongoCommand.collection, mongoCommand.filter, mongoCommand.options);
-                allResults.push(markQueryResultRowsRaw(annotateMongoResult(mongoDocumentsToQueryResult(result.documents, performance.now() - commandStartedAt, result.total, result.extended_documents, result.total_is_exact !== false))));
-                mongoEditTarget = undefined;
-                queryExecutionLog("info", "mongo-find-and-modify:done", {
-                  traceId,
-                  kind: mongoCommand.kind,
-                  collection: mongoCommand.collection,
-                  database: currentDatabase,
-                  rowCount: result.documents.length,
-                  elapsed: elapsed(),
-                });
-                break;
-              }
-              case "insert":
-              case "update":
-              case "delete":
-              case "createIndex":
-              case "dropIndex":
-              case "dropIndexes":
-              case "dropCollection": {
-                if (options?.mongoSafety) {
-                  const safety = evaluateMongoWriteSafety(mongoCommand, options.mongoSafety);
-                  if (!safety.allowed) throw new Error(safety.reason);
-                }
-                queryExecutionLog("info", "mongo-write:start", {
-                  traceId,
-                  database: currentDatabase,
-                  kind: mongoCommand.kind,
-                  collection: mongoCommand.collection,
-                });
-                mongoEditTarget = undefined;
-                if (mongoCommand.kind === "insert") {
-                  const result = await api.mongoInsertDocuments(tab.connectionId, currentDatabase, mongoCommand.collection, mongoCommand.docsJson);
-                  allResults.push(markQueryResultRowsRaw(annotateMongoResult(mongoWriteToQueryResult(result.affected_rows, performance.now() - commandStartedAt))));
-                } else if (mongoCommand.kind === "update") {
-                  const result = await api.mongoUpdateDocuments(tab.connectionId, currentDatabase, mongoCommand.collection, mongoCommand.filter, mongoCommand.update, mongoCommand.many, mongoCommand.options);
-                  allResults.push(markQueryResultRowsRaw(annotateMongoResult(mongoWriteToQueryResult(result.affected_rows, performance.now() - commandStartedAt))));
-                } else if (mongoCommand.kind === "createIndex") {
-                  const result = await api.mongoCreateIndex(tab.connectionId, currentDatabase, mongoCommand.collection, mongoCommand.keys, mongoCommand.options);
-                  allResults.push(markQueryResultRowsRaw(annotateMongoResult(mongoCreateIndexToQueryResult(result.name, performance.now() - commandStartedAt))));
-                } else if (mongoCommand.kind === "dropIndex" || mongoCommand.kind === "dropIndexes") {
-                  try {
-                    const result = await api.mongoDropIndexes(tab.connectionId, currentDatabase, mongoCommand.collection, mongoCommand.kind === "dropIndex" ? mongoCommand.index : mongoCommand.indexes, mongoCommand.kind === "dropIndex");
-                    allResults.push(markQueryResultRowsRaw(annotateMongoResult(mongoDroppedIndexesToQueryResult(result.dropped_names, performance.now() - commandStartedAt, result.failures))));
-                  } finally {
-                    await refreshLoadedMongoIndexesAfterMutation(tab.connectionId, currentDatabase, mongoCommand.collection, traceId);
-                  }
-                } else if (mongoCommand.kind === "dropCollection") {
-                  await api.mongoDropCollection(tab.connectionId, currentDatabase, mongoCommand.collection);
-                  allResults.push(markQueryResultRowsRaw(annotateMongoResult(mongoWriteToQueryResult(1, performance.now() - commandStartedAt))));
-                } else {
-                  const result = await api.mongoDeleteDocuments(tab.connectionId, currentDatabase, mongoCommand.collection, mongoCommand.filter, mongoCommand.many);
-                  allResults.push(markQueryResultRowsRaw(annotateMongoResult(mongoWriteToQueryResult(result.affected_rows, performance.now() - commandStartedAt))));
-                }
-                queryExecutionLog("info", "mongo-write:done", {
-                  traceId,
-                  database: currentDatabase,
-                  kind: mongoCommand.kind,
-                  collection: mongoCommand.collection,
-                  elapsed: elapsed(),
-                });
-                break;
-              }
-              case "use": {
-                currentDatabase = mongoCommand.database;
-                allResults.push(markQueryResultRowsRaw(annotateMongoResult(mongoUseToQueryResult(currentDatabase, performance.now() - commandStartedAt))));
-                mongoEditTarget = undefined;
-                queryExecutionLog("info", "mongo-use:done", {
-                  traceId,
-                  database: currentDatabase,
-                  elapsed: elapsed(),
-                });
-                break;
-              }
-            }
-          } catch (error: any) {
-            // Surface per-command failures inline and continue collecting results
-            // for the rest of the batch, matching the grouped-result UX.
-            allResults.push(annotateMongoResult(toErrorResult(error)));
-            mongoEditTarget = undefined;
-          }
-        }
-
-        queryExecutionLog("info", "mongo:done", {
-          traceId,
-          database: currentDatabase,
-          commandCount: mongoCommands.length,
-          elapsed: elapsed(),
-        });
-
-        const current = tabs.value.find((t) => t.id === id);
-        if (current?.executionId === executionId) {
-          if (openInNewResultTab && current.isCancelling && restorePendingResultRun(current, executionId)) return false;
-          const activeGroupIndex = current.activeResultIndex;
-          const activeGroupResults = current.results;
-          const findPageState = mongoFindPageState;
-          const shouldAppendResult = !!findPageState && !!options?.appendResult && !!current.result && allResults.length === 1;
-          const shouldReplaceActiveResultInGroup = options?.replaceActiveResultInGroup === true && allResults.length === 1 && Array.isArray(activeGroupResults) && typeof activeGroupIndex === "number" && activeGroupIndex >= 0 && activeGroupIndex < activeGroupResults.length;
-          if (shouldAppendResult) {
-            if (findPageState!.pageOffset !== current.result!.rows.length) {
-              throw new Error("Ignoring a stale MongoDB result segment whose offset no longer matches the loaded rows");
-            }
-            const appendedResult = appendQueryResultSegment(current.result!, allResults[0]!, options!.appendResult!.maxRows);
-            if (Array.isArray(activeGroupResults) && typeof activeGroupIndex === "number" && activeGroupIndex >= 0 && activeGroupIndex < activeGroupResults.length) {
-              current.results = activeGroupResults.slice();
-              current.results[activeGroupIndex] = appendedResult;
-            }
-            current.result = appendedResult;
-          } else if (shouldReplaceActiveResultInGroup) {
-            current.results = activeGroupResults.slice();
-            current.results[activeGroupIndex] = allResults[0];
-            current.result = allResults[0];
-          } else if (allResults.length > 1) {
-            // Open grouped output on the first non-error result when possible so
-            // mixed success/error batches land on the most useful table first.
-            const activeResultIndex = allResults.findIndex((result) => !isQueryExecutionErrorResult(result));
-            const resultIndex = preservedResultIndex(allResults, current.activeResultIndex, options?.preserveActiveResultIndex) ?? (activeResultIndex >= 0 ? activeResultIndex : 0);
-            current.results = allResults;
-            current.activeResultIndex = resultIndex;
-            current.result = allResults[resultIndex];
-          } else {
-            current.results = undefined;
-            current.activeResultIndex = undefined;
-            current.result = allResults[0];
-          }
-          producedResult = current.result !== undefined;
-          touchResult(current);
-          current.queryAnalysis = undefined;
-          current.querySourceColumns = undefined;
-          current.queryEditabilityReason = undefined;
-          current.mongoEditTarget = mongoCommands.length === 1 ? mongoEditTarget : undefined;
-          current.tableMeta = undefined;
-          current.resultBaseSql = shouldReplaceActiveResultInGroup ? (current.resultBaseSql ?? options?.resultBaseSql ?? sql) : (options?.resultBaseSql ?? sql);
-          current.resultSortedSql = options?.resultSortedSql;
-          current.resultPageSql = undefined;
-          current.resultPageLimit = mongoFindPageState?.pageLimit;
-          current.resultPageOffset = shouldAppendResult ? (current.resultPageOffset ?? 0) : mongoFindPageState?.pageOffset;
-          current.resultCountSql = undefined;
-          current.resultSessionId = undefined;
-          current.resultTotalRowCount = mongoFindPageState?.totalIsExact ? mongoFindPageState.total : undefined;
-          current.resultTotalRowCountLoading = false;
-          syncDisplayedResultRun(current, current.resultBaseSql ?? options?.resultBaseSql ?? sql, openInNewResultTab);
-          if (current.database !== currentDatabase) current.database = currentDatabase;
-        }
-        return producedResult;
-      }
-
-      const elasticsearchRequests = elasticsearchRestRequestRanges(sqlToExecute, effectiveDbType);
-      if (elasticsearchRequests.length > 0) {
-        console.info("[DBX][executeTabSql:elasticsearch-rest-batch:start]", {
-          traceId,
-          requestCount: elasticsearchRequests.length,
-          sql,
-        });
-        const allResults: QueryResult[] = [];
-        const continueOnError = settingsStore.editorSettings.continueOnErrorOnBatch;
-        for (const request of elasticsearchRequests) {
-          const current = tabs.value.find((item) => item.id === id);
-          if (current?.executionId !== executionId) break;
-          const sourceRange = options?.sourceOffset === undefined ? undefined : { from: options.sourceOffset + request.from, to: options.sourceOffset + request.to };
-          try {
-            const result = await api.executeQuery(tab.connectionId, executionDatabase, request.sql, undefined, executionId, {
-              timeoutSecs: queryTimeoutSecs,
-            });
-            allResults.push(markQueryResultRowsRaw(annotateQueryResultSource(result, request.sql, tab.database || conn?.database, effectiveDbType, sourceRange)));
-            if (elasticsearchHttpErrorStatus(result) !== undefined && !continueOnError) break;
-          } catch (error) {
-            const latest = tabs.value.find((item) => item.id === id);
-            if (latest?.executionId !== executionId) break;
-            allResults.push(annotateQueryResultSource(toErrorResult(error), request.sql, tab.database || conn?.database, effectiveDbType, sourceRange));
-            if (!continueOnError) break;
-          }
-        }
-
-        console.info("[DBX][executeTabSql:elasticsearch-rest-batch:done]", {
-          traceId,
-          requestCount: elasticsearchRequests.length,
-          resultCount: allResults.length,
-          elapsed: elapsed(),
-        });
-        const current = tabs.value.find((item) => item.id === id);
-        if (current?.executionId === executionId && openInNewResultTab && current.isCancelling && restorePendingResultRun(current, executionId)) return false;
-        if (current?.executionId === executionId && allResults.length > 0) {
-          clearResultNavigationState(current);
-          const errorResultIndex = allResults.findIndex((result) => isQueryExecutionErrorResult(result) || elasticsearchHttpErrorStatus(result) !== undefined);
-          const resultIndex = errorResultIndex >= 0 ? errorResultIndex : 0;
-          current.results = allResults.length > 1 ? allResults : undefined;
-          current.activeResultIndex = allResults.length > 1 ? resultIndex : undefined;
-          current.result = allResults[resultIndex];
-          producedResult = current.result !== undefined;
-          touchResult(current);
-          current.queryAnalysis = undefined;
-          current.querySourceColumns = undefined;
-          current.queryEditabilityReason = undefined;
-          current.mongoEditTarget = undefined;
-          current.tableMeta = undefined;
-          current.resultBaseSql = options?.resultBaseSql ?? sql;
-          current.resultSortedSql = undefined;
-          syncDisplayedResultRun(current, current.resultBaseSql, openInNewResultTab);
-        }
-        return producedResult;
-      }
 
       if (tab.mode === "query") {
         const prepared = await prepareEditableQueryExecution(tab, sqlToExecute, conn, effectiveDbType, executionDatabase, traceId, elapsed);
@@ -4321,9 +3392,6 @@ export const useQueryStore = defineStore("query", () => {
       const annotatedResults = annotateQueryResultSources(markQueryResultsRowsRaw(await withFrontendQueryTimeout(executionPromise, frontendTimeoutSecs, t("editor.queryTimeoutError", { seconds: frontendTimeoutSecs }))), queryBaseSql, sourceLabelDatabase, effectiveDbType, options?.sourceOffset);
       reconcileBatchSqlResults(tab, executionId, annotatedResults);
       const results = annotatedResults;
-      const successfulOracleSchemaChanges = effectiveDbType === "oracle" ? results.filter((result) => result.execution_error !== true && isOracleCurrentSchemaStatement(result.sourceStatement)).length : 0;
-      const successfulSapHanaSchemaChanges = effectiveDbType === "saphana" ? results.filter((result) => result.execution_error !== true && isSapHanaSetSchemaStatement(result.sourceStatement)).length : 0;
-      const sqlServerUseDatabase = effectiveDbType === "sqlserver" && !results.some(isSqlServerBatchErrorResult) ? sqlServerUseDatabaseFromStatement(sql) : undefined;
       if (hiddenPrimaryKeys.length > 0 && results.length === 1) {
         const hiddenIndexes = hiddenResultColumnIndexes(results[0]!.columns, hiddenPrimaryKeys);
         if (hiddenIndexes.length > 0) results[0]!.hidden_column_indexes = hiddenIndexes;
@@ -4338,34 +3406,9 @@ export const useQueryStore = defineStore("query", () => {
         columnCounts: results.map((result) => result.columns.length),
         elapsed: elapsed(),
       });
-      let resolvedSapHanaSchema: string | undefined;
-      if (successfulSapHanaSchemaChanges > 0 && tabs.value.find((item) => item.id === id)?.executionId === executionId) {
-        try {
-          const schemaResult = await api.executeQuery(tab.connectionId, executionDatabase, "SELECT CURRENT_SCHEMA FROM DUMMY", undefined, executionId, {
-            clientSessionId: tabClientSessionId(tab),
-            timeoutSecs: queryTimeoutSecs,
-          });
-          resolvedSapHanaSchema = sapHanaCurrentSchemaFromResult(schemaResult);
-        } catch (error) {
-          console.warn("[DBX] Failed to resolve SAP HANA CURRENT_SCHEMA", error);
-        }
-      }
       const current = tabs.value.find((t) => t.id === id);
       if (current?.executionId === executionId) {
         if (openInNewResultTab && current.isCancelling && restorePendingResultRun(current, executionId)) return false;
-        if (successfulOracleSchemaChanges > 0) {
-          current.completionContextVersion = (current.completionContextVersion ?? 0) + successfulOracleSchemaChanges;
-        }
-        if (resolvedSapHanaSchema) {
-          current.schema = resolvedSapHanaSchema;
-          current.completionContextVersion = (current.completionContextVersion ?? 0) + successfulSapHanaSchemaChanges;
-        }
-        if (sqlServerUseDatabase && current.database !== sqlServerUseDatabase) {
-          rollbackTabTransaction(current);
-          void closeClientConnectionSession(current);
-          current.database = sqlServerUseDatabase;
-          current.schema = undefined;
-        }
         const activeGroupIndex = current.activeResultIndex;
         const activeGroupResults = current.results;
         const shouldAppendResult = !!options?.appendResult && !!current.result;
@@ -4477,7 +3520,7 @@ export const useQueryStore = defineStore("query", () => {
           elapsed: elapsed(),
         });
         if (current.mode === "query" && current.result) {
-          analyzeQueryMetadataInBackground(id, displayedQueryMetadataSql(current, queryMetadataSql), current.result, executionDatabase, traceId, elapsed, effectiveDbType, hiddenPrimaryKeys);
+          analyzeQueryMetadataInBackground(id, displayedQueryMetadataSql(current, queryMetadataSql), current.result, executionDatabase, traceId, elapsed, hiddenPrimaryKeys);
         }
       } else {
         queryExecutionLog("warn", "stale-result", {
@@ -4528,7 +3571,6 @@ export const useQueryStore = defineStore("query", () => {
         current.queryAnalysis = undefined;
         current.querySourceColumns = undefined;
         current.queryEditabilityReason = undefined;
-        current.mongoEditTarget = undefined;
         if (current.mode !== "data") current.tableMeta = undefined;
         current.resultBaseSql = shouldReplaceActiveResultInGroup ? (current.resultBaseSql ?? queryBaseSql) : queryBaseSql;
         current.resultSortedSql = resultSortedSql;
@@ -4604,281 +3646,11 @@ export const useQueryStore = defineStore("query", () => {
       return { ok: false as const, reason: tab.explainError };
     }
 
-    // DM and Oracle agents expose native text plans. DM also supports autotrace.
-    if (databaseType === "dameng" || databaseType === "oracle") {
-      let explainSql = sql;
-      if (databaseType === "oracle") {
-        const built = await buildExplainSql(databaseType, sql);
-        if (!built.ok) {
-          tab.isExplaining = false;
-          tab.explainExecutionId = undefined;
-          tab.explainPlan = undefined;
-          tab.explainError = built.reason;
-          return built;
-        }
-        explainSql = built.sql;
-      }
-
-      // Autotrace executes the SQL, so keep its stricter safety check.
-      if (databaseType === "dameng" && explainMode === "autotrace") {
-        const DANGER_RE = /^\s*(DROP|DELETE|TRUNCATE|ALTER|UPDATE|MERGE|REPLACE)\b/i;
-        const cleaned = sql
-          .replace(/\/\*[\s\S]*?\*\//g, " ")
-          .replace(/--.*$/gm, " ")
-          .replace(/#.*$/gm, " ");
-        if (cleaned.split(";").some((stmt) => DANGER_RE.test(stmt))) {
-          tab.isExplaining = false;
-          tab.explainExecutionId = undefined;
-          return { ok: false as const, reason: "unsafe" as const };
-        }
-      }
-      try {
-        const mode = databaseType === "dameng" && explainMode === "autotrace" ? "autotrace" : "explain";
-        const planText = (await api.getExplainInfo(tab.connectionId, tab.database, tab.schema, sql, mode)) as string | undefined;
-        const current = tabs.value.find((t) => t.id === id);
-        if (current?.explainExecutionId === executionId) {
-          if (planText && planText.length > 0) {
-            current.explainPlan = databaseType === "oracle" ? parseOracleExplainText(planText) : parseDamengExplainText(planText);
-            current.explainSql = explainSql;
-            current.explainError = undefined;
-          } else {
-            current.explainPlan = undefined;
-            current.explainError = "No explain plan returned";
-          }
-        }
-      } catch (e: any) {
-        const current = tabs.value.find((t) => t.id === id);
-        if (current?.explainExecutionId === executionId) {
-          current.explainPlan = undefined;
-          // Backend rejections contain the real ORA/Agent diagnostic; only successful empty responses use the generic empty-plan message.
-          current.explainError = formatError(e);
-        }
-      } finally {
-        const current = tabs.value.find((t) => t.id === id);
-        if (current?.explainExecutionId === executionId) {
-          current.isExplaining = false;
-          current.explainExecutionId = undefined;
-        }
-      }
-      return { ok: true as const, sql: explainSql };
-    }
-
-    if (databaseType === "mysql") {
-      let tableBuilt: BuildExplainSqlResult;
-      let jsonBuilt: BuildExplainSqlResult;
-      try {
-        [tableBuilt, jsonBuilt] = await Promise.all([buildExplainSql(databaseType, sql, "standard"), buildExplainSql(databaseType, sql, "json")]);
-      } catch (e: any) {
-        const current = tabs.value.find((t) => t.id === id);
-        if (current?.explainExecutionId === executionId) {
-          current.isExplaining = false;
-          current.explainExecutionId = undefined;
-          current.explainError = String(e?.message || e);
-        }
-        return { ok: true as const, sql: "" };
-      }
-      if (tabs.value.find((t) => t.id === id)?.explainExecutionId !== executionId) {
-        return { ok: true as const, sql: jsonBuilt.ok ? jsonBuilt.sql : "" };
-      }
-      if (!tableBuilt.ok || !jsonBuilt.ok) {
-        const failed = !tableBuilt.ok ? tableBuilt : jsonBuilt;
-        const reason = !tableBuilt.ok ? tableBuilt.reason : !jsonBuilt.ok ? jsonBuilt.reason : "unsupported";
-        const current = tabs.value.find((t) => t.id === id);
-        if (current?.explainExecutionId === executionId) {
-          current.isExplaining = false;
-          current.explainExecutionId = undefined;
-          current.explainError = reason;
-        }
-        return failed;
-      }
-
-      let tableSql = tableBuilt.sql;
-      let jsonSupportedByServer: boolean | undefined;
-      tab.explainTableSql = tableSql;
-      tab.explainSql = undefined;
-      // Keep the two EXPLAIN statements on the same one-connection MySQL session.
-      const clientSessionId = `${tabClientSessionId(tab, "explain")}:${executionId}`;
-      tab.explainClientSessionId = clientSessionId;
-      try {
-        let tableResult: QueryResult | undefined;
-        let tableError: unknown;
-        try {
-          tableResult = await api.executeQuery(tab.connectionId, tab.database, tableSql, tab.schema, executionId, {
-            clientSessionId,
-            catalog: tab.catalog,
-            timeoutSecs: queryTimeoutSecs,
-          });
-        } catch (error: unknown) {
-          const compatibility = mysqlExplainCompatibilityHint(error, tableSql);
-          jsonSupportedByServer = compatibility?.supportsJson;
-          if (compatibility?.fallbackSql && tabs.value.find((t) => t.id === id)?.explainExecutionId === executionId) {
-            tableSql = compatibility.fallbackSql;
-            tab.explainTableSql = tableSql;
-            try {
-              tableResult = await api.executeQuery(tab.connectionId, tab.database, tableSql, tab.schema, executionId, {
-                clientSessionId,
-                catalog: tab.catalog,
-                timeoutSecs: queryTimeoutSecs,
-              });
-            } catch (fallbackError: unknown) {
-              tableError = fallbackError;
-            }
-          } else {
-            tableError = error;
-          }
-        }
-        const current = tabs.value.find((t) => t.id === id);
-        if (current?.explainExecutionId === executionId) {
-          if (tableResult) {
-            current.explainTableResult = markQueryResultRowsRaw(tableResult);
-            current.explainTableError = undefined;
-          } else if (tableError !== undefined) {
-            current.explainTableResult = undefined;
-            current.explainTableError = formatError(tableError);
-          }
-        }
-
-        // A canceled or superseded standard request must not start a fallback or JSON request.
-        if (tabs.value.find((t) => t.id === id)?.explainExecutionId !== executionId) {
-          return { ok: true as const, sql: tableSql };
-        }
-
-        // ADB MySQL advertises its accepted formats in the first error; avoid a second known-invalid request.
-        if (jsonSupportedByServer === false) {
-          const latest = tabs.value.find((t) => t.id === id);
-          if (latest?.explainExecutionId === executionId) {
-            latest.explainPlan = undefined;
-            latest.explainError = latest.explainTableResult ? undefined : latest.explainTableError;
-          }
-          return { ok: true as const, sql: tableSql };
-        }
-
-        try {
-          const latest = tabs.value.find((t) => t.id === id);
-          if (latest?.explainExecutionId === executionId) latest.explainSql = jsonBuilt.sql;
-          const jsonResult = await api.executeQuery(tab.connectionId, tab.database, jsonBuilt.sql, tab.schema, executionId, {
-            clientSessionId,
-            catalog: tab.catalog,
-            timeoutSecs: queryTimeoutSecs,
-          });
-          const current = tabs.value.find((t) => t.id === id);
-          if (current?.explainExecutionId === executionId) {
-            current.explainPlan = parseExplainResult("mysql", jsonResult);
-            current.explainError = undefined;
-          }
-        } catch (e: any) {
-          const latest = tabs.value.find((t) => t.id === id);
-          if (latest?.explainExecutionId === executionId) {
-            latest.explainPlan = undefined;
-            // Keep a usable tabular plan visible when the server explicitly rejects JSON.
-            const compatibility = mysqlExplainCompatibilityHint(e, jsonBuilt.sql);
-            latest.explainError = compatibility?.supportsJson === false && latest.explainTableResult ? undefined : formatError(e);
-          }
-        }
-      } finally {
-        const current = tabs.value.find((t) => t.id === id);
-        if (current?.explainExecutionId === executionId) {
-          current.isExplaining = false;
-          current.explainExecutionId = undefined;
-        }
-        if (current?.explainClientSessionId === clientSessionId) current.explainClientSessionId = undefined;
-        void closeClientSessionId(tab.connectionId, tab.database, clientSessionId, tab.catalog, { tabId: tab.id, explainExecutionId: executionId });
-      }
-      return { ok: true as const, sql: tab.explainSql ?? tableSql };
-    }
-
-    if (databaseType === "sqlserver") {
-      // SQL Server reuses the autotrace toggle to ask for the actual execution plan:
-      // STATISTICS XML runs the statement and adds runtime counters to the same
-      // ShowPlanXML document, while SHOWPLAN_XML only estimates.
-      const actualPlan = explainMode === "autotrace";
-      const planCaptureOn = actualPlan ? "SET STATISTICS XML ON;" : "SET SHOWPLAN_XML ON;";
-      const planCaptureOff = actualPlan ? "SET STATISTICS XML OFF;" : "SET SHOWPLAN_XML OFF;";
-      let built: BuildExplainSqlResult;
-      try {
-        built = actualPlan ? await buildExplainSql(databaseType, sql, "json", true) : await buildExplainSql(databaseType, sql);
-      } catch (e: any) {
-        tab.isExplaining = false;
-        tab.explainExecutionId = undefined;
-        tab.explainError = String(e?.message || e);
-        return { ok: true as const, sql: "" };
-      }
-      if (!built.ok) {
-        tab.isExplaining = false;
-        tab.explainExecutionId = undefined;
-        tab.explainError = built.reason;
-        return built;
-      }
-
-      tab.explainSql = built.sql;
-      const clientSessionId = `${tabClientSessionId(tab, "explain")}:${executionId}`;
-      tab.explainClientSessionId = clientSessionId;
-      let planCaptureEnabled = false;
-      try {
-        await api.executeQuery(tab.connectionId, tab.database, planCaptureOn, tab.schema, executionId, {
-          clientSessionId,
-          timeoutSecs: queryTimeoutSecs,
-          executionMode: "simple",
-        });
-        planCaptureEnabled = true;
-        if (tabs.value.find((t) => t.id === id)?.explainExecutionId !== executionId) {
-          return { ok: true as const, sql: built.sql };
-        }
-
-        const results = await api.executeMulti(tab.connectionId, tab.database, sql, tab.schema, executionId, {
-          clientSessionId,
-          timeoutSecs: queryTimeoutSecs,
-          executionMode: "simple",
-        });
-        const current = tabs.value.find((t) => t.id === id);
-        if (current?.explainExecutionId === executionId) {
-          const outcome = sqlServerExplainResult(results);
-          if (outcome.error !== undefined) {
-            current.explainPlan = undefined;
-            current.explainError = outcome.error;
-          } else if (outcome.result) {
-            current.explainPlan = parseExplainResult("sqlserver", outcome.result);
-            current.explainError = undefined;
-          } else {
-            current.explainPlan = undefined;
-            current.explainError = t("explain.empty");
-          }
-        }
-      } catch (e: any) {
-        const current = tabs.value.find((t) => t.id === id);
-        if (current?.explainExecutionId === executionId) {
-          current.explainPlan = undefined;
-          current.explainError = String(e?.message || e);
-        }
-      } finally {
-        if (planCaptureEnabled) {
-          try {
-            await api.executeQuery(tab.connectionId, tab.database, planCaptureOff, tab.schema, undefined, {
-              clientSessionId,
-              timeoutSecs: queryTimeoutSecs > 0 ? Math.min(queryTimeoutSecs, 5) : 5,
-              executionMode: "simple",
-            });
-          } catch (error) {
-            console.warn("[DBX][sqlserver-explain:cleanup:error]", { tabId: tab.id, error });
-          }
-        }
-        const current = tabs.value.find((t) => t.id === id);
-        if (current?.explainExecutionId === executionId) {
-          current.isExplaining = false;
-          current.explainExecutionId = undefined;
-        }
-        if (current?.explainClientSessionId === clientSessionId) current.explainClientSessionId = undefined;
-        await closeClientSessionId(tab.connectionId, tab.database, clientSessionId, tab.catalog, { tabId: tab.id, explainExecutionId: executionId });
-      }
-      return { ok: true as const, sql: built.sql };
-    }
-
-    const isPostgresFamily = databaseType === "postgres" || databaseType === "opengauss" || databaseType === "gaussdb";
-    const postgresAnalyze = isPostgresFamily && explainMode === "autotrace";
+    const postgresAnalyze = explainMode === "autotrace";
     // External JDBC plugins execute each request independently and do not expose
     // the native checkout/rollback wrapper. Keep EXPLAIN ANALYZE enabled there,
     // but only request the native read-only transaction mode for native pools.
-    const usesExternalJdbc = conn?.db_type === "jdbc" || opengaussConnectionMode(conn) === "jdbc" || gaussdbConnectionMode(conn) === "m-jdbc";
+    const usesExternalJdbc = conn?.db_type === "jdbc" || opengaussConnectionMode(conn) === "jdbc";
     const useReadOnlyTransaction = postgresAnalyze && !usesExternalJdbc;
     const built = postgresAnalyze ? await buildExplainSql(databaseType, sql, "json", true) : await buildExplainSql(databaseType, sql);
     if (!built.ok) {
@@ -4901,8 +3673,8 @@ export const useQueryStore = defineStore("query", () => {
       });
       const current = tabs.value.find((t) => t.id === id);
       if (current?.explainExecutionId === executionId) {
-        const explainParserDatabaseType = databaseType === "opengauss" || databaseType === "gaussdb" ? databaseType : "postgres";
-        current.explainPlan = parseExplainResult(isPostgresFamily ? explainParserDatabaseType : (databaseType as "mysql"), result);
+        const explainParserDatabaseType = databaseType === "opengauss" ? "opengauss" : "postgres";
+        current.explainPlan = parseExplainResult(explainParserDatabaseType, result);
         current.explainError = undefined;
       }
     } catch (e: any) {
@@ -5000,8 +3772,6 @@ export const useQueryStore = defineStore("query", () => {
     tab.activeResultIndex = index;
     tab.result = tab.results[index];
     tab.resultLocalSortOriginalRows = undefined;
-    tab.resultLocalSortOriginalMongoDocuments = undefined;
-    tab.resultLocalSortOriginalMongoCopyDocuments = undefined;
     tab.resultSortColumn = undefined;
     tab.resultSortColumnIndex = undefined;
     tab.resultSortDirection = undefined;
@@ -5012,14 +3782,13 @@ export const useQueryStore = defineStore("query", () => {
     tab.queryAnalysis = undefined;
     tab.querySourceColumns = undefined;
     tab.queryEditabilityReason = undefined;
-    tab.mongoEditTarget = undefined;
     syncActiveResultRunFromDisplayed(tab);
     const sourceStatement = tab.result?.sourceStatement;
-    if (tab.mode === "query" && sourceStatement && splitMongoCommandRanges(sourceStatement).length === 0) {
+    if (tab.mode === "query" && sourceStatement) {
       const metadataStartedAt = performance.now();
       const connection = useConnectionStore().getConfig(tab.connectionId);
       const executionDatabase = dataTabExecutionDatabase(connection, tab.database, tab.catalog);
-      analyzeQueryMetadataInBackground(id, sourceStatement, tab.result, executionDatabase, uuid().slice(0, 8), () => `${Math.round(performance.now() - metadataStartedAt)}ms`, effectiveDatabaseTypeForConnection(connection));
+      analyzeQueryMetadataInBackground(id, sourceStatement, tab.result, executionDatabase, uuid().slice(0, 8), () => `${Math.round(performance.now() - metadataStartedAt)}ms`);
     }
   }
 
@@ -5123,8 +3892,6 @@ export const useQueryStore = defineStore("query", () => {
     tab.resultEditorFingerprint = snapshot.resultEditorFingerprint;
     tab.result = snapshot.result ? markQueryResultRowsRaw(snapshot.result) : results?.[activeIndex] ? markQueryResultRowsRaw(results[activeIndex]) : undefined;
     tab.resultLocalSortOriginalRows = snapshot.resultLocalSortOriginalRows ? markRaw(snapshot.resultLocalSortOriginalRows) : undefined;
-    tab.resultLocalSortOriginalMongoDocuments = snapshot.resultLocalSortOriginalMongoDocuments ? markRaw(snapshot.resultLocalSortOriginalMongoDocuments) : undefined;
-    tab.resultLocalSortOriginalMongoCopyDocuments = snapshot.resultLocalSortOriginalMongoCopyDocuments ? markRaw(snapshot.resultLocalSortOriginalMongoCopyDocuments) : undefined;
     // 快照编解码会重建负载，落盘前的各 run 估算值不再对应恢复后的对象，
     // 置空让 projectResultRun 按需重算
     tab.resultRuns = snapshot.resultRuns ? markQueryResultRunsRowsRaw(snapshot.resultRuns).map((run) => ({ ...run, resultEstimatedBytes: undefined })) : tab.resultRuns;
@@ -5134,7 +3901,6 @@ export const useQueryStore = defineStore("query", () => {
     tab.queryAnalysis = snapshot.queryAnalysis;
     tab.querySourceColumns = snapshot.querySourceColumns;
     tab.queryEditabilityReason = snapshot.queryEditabilityReason;
-    tab.mongoEditTarget = snapshot.mongoEditTarget;
     // Data tab 的结果快照可能早于最近一次结构变更。已持有真实元数据时，
     // 不允许旧快照回滚列名或主键；若恢复后仍没有真实列，重新挂起编辑门控。
     if (tab.mode === "data" && tab.tableMeta?.columns.length) {
@@ -5339,63 +4105,6 @@ export const useQueryStore = defineStore("query", () => {
     const exportSettings = useSettingsStore().editorSettings;
     const exportRowLimit = exportSettings.exportRowLimitEnabled ? exportSettings.exportRowLimit : Number.POSITIVE_INFINITY;
 
-    if (effectiveDbType === "mongodb") {
-      let mongoCommand;
-      try {
-        mongoCommand = await api.mongoParseShellCommand(sql);
-      } catch {
-        throw new Error(QUERY_RESULT_EXPORT_UNSUPPORTED_ERROR);
-      }
-      if (mongoCommand.kind !== "find") throw new Error(QUERY_RESULT_EXPORT_UNSUPPORTED_ERROR);
-
-      const pageLimit = Math.max(1, Math.trunc(exportSettings.exportBatchSize));
-      const documents: unknown[] = [];
-      let copyDocuments: unknown[] | undefined = [];
-      let pageOffset = 0;
-      let totalRows = typeof tab.resultTotalRowCount === "number" ? Math.min(tab.resultTotalRowCount, exportRowLimit) : null;
-      const exportStartedAt = performance.now();
-      const exportExecutionId = uuid();
-
-      while (documents.length < exportRowLimit) {
-        const remaining = exportRowLimit - documents.length;
-        const plan = planMongoFindPagination(sql, mongoCommand, pageOffset, Math.min(pageLimit, remaining));
-        if (!plan) throw new Error(QUERY_RESULT_EXPORT_UNSUPPORTED_ERROR);
-        if (plan.requestLimit === 0) break;
-
-        const result = await api.mongoFindDocuments(tab.connectionId, tab.database, mongoCommand.collection, plan.requestSkip, plan.requestLimit, mongoCommand.filter, mongoCommand.projection, mongoCommand.sort, mongoCommand.collation, exportExecutionId);
-        const pageDocuments = result.documents.slice(0, plan.requestLimit);
-        documents.push(...pageDocuments);
-
-        if (copyDocuments) {
-          if (result.extended_documents?.length === result.documents.length) {
-            copyDocuments.push(...result.extended_documents.slice(0, pageDocuments.length));
-          } else {
-            copyDocuments = undefined;
-          }
-        }
-
-        if (result.total_is_exact !== false) {
-          totalRows = Math.min(mongoFindLogicalTotal(result.total, plan), exportRowLimit);
-        }
-        onProgress?.({ rowsExported: documents.length, totalRows });
-
-        pageOffset += pageDocuments.length;
-        const reachedLogicalLimit = plan.logicalLimit !== undefined && pageOffset >= plan.logicalLimit;
-        const reachedExactTotal = result.total_is_exact !== false && pageOffset >= mongoFindLogicalTotal(result.total, plan);
-        if (pageDocuments.length === 0 || pageDocuments.length < plan.requestLimit || reachedLogicalLimit || reachedExactTotal) break;
-      }
-
-      const result = mongoDocumentsToQueryResult(documents, performance.now() - exportStartedAt, totalRows ?? documents.length, copyDocuments, totalRows !== null);
-      if (result.columns.length === 0) {
-        result.columns = tab.result.columns;
-        result.column_types = tab.result.column_types;
-      }
-      result.affected_rows = documents.length;
-      result.truncated = false;
-      result.has_more = false;
-      return result;
-    }
-
     const agentExportMaxRows = exportSettings.exportRowLimitEnabled ? exportSettings.exportRowLimit : 2_147_483_647;
     // Use the already-computed total row count as a progress estimate so the
     // export dialog shows a moving bar instead of a stuck 0 while paginating.
@@ -5473,7 +4182,6 @@ export const useQueryStore = defineStore("query", () => {
     const settings = useSettingsStore().editorSettings;
     const effectiveDbType = effectiveDatabaseTypeForConnection(conn);
     if (!effectiveDbType) return undefined;
-    if (effectiveDbType === "mongodb") return undefined;
     const useAgentCursor = usesAgentCursorForQuery(conn?.db_type);
     const queryBaseSql = queryResultBaseSql(tab);
     const resultStatementIndex = tab.result.statement_index;
@@ -5627,18 +4335,9 @@ export const useQueryStore = defineStore("query", () => {
     retargetCommandTab,
     setCommandTabDatabase,
     openSettingsTab,
-    openMongoGridFs,
-    openMongoBucket,
     openUserAdmin,
     openProcessList,
-    openMysqlDashboard,
     openPostgresDashboard,
-    openNacosDashboard,
-    openDamengJobAdmin,
-    openMqAdmin,
-    openMqttAdmin,
-    openNacosAdmin,
-    clearNacosNavigationTarget,
     openTableStructure,
     linkSavedSql,
     linkExternalSqlPath,

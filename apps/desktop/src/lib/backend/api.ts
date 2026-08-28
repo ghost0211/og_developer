@@ -77,7 +77,6 @@ export const listJdbcMavenBundles = forward("listJdbcMavenBundles");
 export const listJdbcLocalBundles = forward("listJdbcLocalBundles");
 export const importJdbcDrivers = forward("importJdbcDrivers");
 export const installJdbcDriverFromMaven = forward("installJdbcDriverFromMaven");
-export const installPrestoSqlJdbcDriver = forward("installPrestoSqlJdbcDriver");
 export const deleteJdbcDriver = forward("deleteJdbcDriver");
 export const deleteJdbcMavenBundle = forward("deleteJdbcMavenBundle");
 export const deleteJdbcLocalBundle = forward("deleteJdbcLocalBundle");
@@ -131,20 +130,11 @@ export const savedSqlStorageDir = forward("savedSqlStorageDir");
 export const openSavedSqlStorageDir = forward("openSavedSqlStorageDir");
 export const revealPathInFileManager = forward("revealPathInFileManager");
 export const deleteDatabaseBackupFiles = forward("deleteDatabaseBackupFiles");
-export const isSqliteDatabaseFile = forward("isSqliteDatabaseFile");
-export const backupSqliteDatabase = forward("backupSqliteDatabase");
 export const syncSavedSqlDirectory = forward("syncSavedSqlDirectory");
 
 // Schema
 export const listDatabases = forward("listDatabases");
 export const listDatabaseStorage = forward("listDatabaseStorage");
-export const getSqlServerCompletionContext = forward("getSqlServerCompletionContext");
-export const listDorisCatalogs = forward("listDorisCatalogs");
-export const listDorisCatalogDatabases = forward("listDorisCatalogDatabases");
-export const listSqlServerLinkedServers = forward("listSqlServerLinkedServers");
-export const listSqlServerLinkedServerCatalogs = forward("listSqlServerLinkedServerCatalogs");
-export const listSqlServerLinkedServerSchemas = forward("listSqlServerLinkedServerSchemas");
-export const listSqlServerLinkedServerTables = forward("listSqlServerLinkedServerTables");
 export const saveSchemaCache = forward("saveSchemaCache");
 export const loadSchemaCache = forward("loadSchemaCache");
 export const deleteSchemaCachePrefix = forward("deleteSchemaCachePrefix");
@@ -159,7 +149,6 @@ export const completionAssistantSearch = forward("completionAssistantSearch");
 export const getObjectSource = forward("getObjectSource");
 export const getColumns = forward("getColumns");
 export const getAllColumns = forward("getAllColumns");
-export const getSqlServerColumnMetadata = forward("getSqlServerColumnMetadata");
 export const listDataTypes = forward("listDataTypes");
 export const listIndexes = forward("listIndexes");
 export const listForeignKeys = forward("listForeignKeys");
@@ -220,14 +209,11 @@ export const buildSortedQuerySql = forward("buildSortedQuerySql");
 export const buildExplainSql = forward("buildExplainSql");
 export const getExplainInfo = forward("getExplainInfo");
 export const buildCreateUserSql = forward("buildCreateUserSql");
-export const buildDroppedFilePreviewSql = forward("buildDroppedFilePreviewSql");
 export const buildTableSelectSql = forward("buildTableSelectSql");
 export const buildDatabaseSearchSql = forward("buildDatabaseSearchSql");
 export const buildSearchResultWhere = forward("buildSearchResultWhere");
 export const buildRenameObjectSql = forward("buildRenameObjectSql");
 export const buildCreateDatabaseSql = forward("buildCreateDatabaseSql");
-export const buildDuckDbAttachDatabaseSql = forward("buildDuckDbAttachDatabaseSql");
-export const buildSqliteAttachDatabaseSql = forward("buildSqliteAttachDatabaseSql");
 export const buildDropObjectSql = forward("buildDropObjectSql");
 export const buildDropTableSql = forward("buildDropTableSql");
 export const buildDropTableChildObjectSql = forward("buildDropTableChildObjectSql");
@@ -245,8 +231,6 @@ export const buildEditableObjectSource = forward("buildEditableObjectSource");
 export const buildRoutineRenameObjectSourceStatements = forward("buildRoutineRenameObjectSourceStatements");
 export const buildViewDdlSql = forward("buildViewDdlSql");
 export const buildTableStructureChangeSql = forward("buildTableStructureChangeSql");
-export const previewSqliteTableStructureChange = forward("previewSqliteTableStructureChange");
-export const applySqliteTableStructureChange = forward("applySqliteTableStructureChange");
 export const buildCreateTableSql = forward("buildCreateTableSql");
 export const buildSingleColumnAlterSql = forward("buildSingleColumnAlterSql");
 export const analyzeEditableQueryEditability = forward("analyzeEditableQueryEditability");
@@ -259,7 +243,6 @@ export const buildDataGridColumnValueFilterCondition = forward("buildDataGridCol
 export const buildDataGridColumnValuesFilterCondition = forward("buildDataGridColumnValuesFilterCondition");
 export const buildDataGridColumnDistinctValuesSql = forward("buildDataGridColumnDistinctValuesSql");
 export const buildDataGridCountSql = forward("buildDataGridCountSql");
-export const buildHiveTablePropertiesSql = forward("buildHiveTablePropertiesSql");
 export const buildExportInsertStatements = forward("buildExportInsertStatements");
 export const buildExportSqlInsert = forward("buildExportSqlInsert");
 export const buildDatabaseSqlExport = forward("buildDatabaseSqlExport");
@@ -347,33 +330,6 @@ export const saveExternalSqlFile = forward("saveExternalSqlFile");
 export const listSqlFilesInFolder = forward("listSqlFilesInFolder");
 export const listFilesInFolder = forward("listFilesInFolder");
 
-// Nacos
-export const nacosTestConnection = forward("nacosTestConnection");
-export const nacosListNamespaces = forward("nacosListNamespaces");
-export const nacosCreateNamespace = forward("nacosCreateNamespace");
-export const nacosUpdateNamespace = forward("nacosUpdateNamespace");
-export const nacosListConfigs = forward("nacosListConfigs");
-export const nacosGetConfig = forward("nacosGetConfig");
-export const nacosPublishConfig = forward("nacosPublishConfig");
-export const nacosDeleteConfig = forward("nacosDeleteConfig");
-export const nacosSearchConfigContent = forward("nacosSearchConfigContent");
-export const nacosCancelConfigContentSearch = forward("nacosCancelConfigContentSearch");
-export const nacosExportConfigs = forward("nacosExportConfigs");
-export const nacosPreviewConfigImport = forward("nacosPreviewConfigImport");
-export const nacosApplyConfigImport = forward("nacosApplyConfigImport");
-export const nacosPreviewConfigTransfer = forward("nacosPreviewConfigTransfer");
-export const nacosApplyConfigTransfer = forward("nacosApplyConfigTransfer");
-export const nacosListConfigHistory = forward("nacosListConfigHistory");
-export const nacosGetConfigHistory = forward("nacosGetConfigHistory");
-export const nacosRollbackConfig = forward("nacosRollbackConfig");
-export const nacosGetRNacosConsoleCaptcha = forward("nacosGetRNacosConsoleCaptcha");
-export const nacosLoginRNacosConsole = forward("nacosLoginRNacosConsole");
-export const nacosListServices = forward("nacosListServices");
-export const nacosListInstances = forward("nacosListInstances");
-export const nacosUpdateInstance = forward("nacosUpdateInstance");
-export const nacosGetDashboard = forward("nacosGetDashboard");
-export const nacosRawRequest = forward("nacosRawRequest");
-
 // Data Transfer
 export const startTransfer = forward("startTransfer");
 export const cancelTransfer = forward("cancelTransfer");
@@ -401,205 +357,12 @@ export const cancelTableExport = forward("cancelTableExport");
 export const startQueryResultExport = forward("startQueryResultExport");
 export const cancelQueryResultExport = forward("cancelQueryResultExport");
 
-// Redis
-export const redisListDatabases = forward("redisListDatabases");
-export const redisScanKeys = forward("redisScanKeys");
-export const redisScanKeysBatch = forward("redisScanKeysBatch");
-export const redisScanValues = forward("redisScanValues");
-export const redisGetValue = forward("redisGetValue");
-export const redisGetTtl = forward("redisGetTtl");
-export const redisGetStreamEntries = forward("redisGetStreamEntries");
-export const redisGetStreamGroups = forward("redisGetStreamGroups");
-export const redisGetStreamConsumers = forward("redisGetStreamConsumers");
-export const redisGetStreamPending = forward("redisGetStreamPending");
-export const redisSetString = forward("redisSetString");
-export const redisDeleteKey = forward("redisDeleteKey");
-export const redisHashSet = forward("redisHashSet");
-export const redisHashDel = forward("redisHashDel");
-export const redisListPush = forward("redisListPush");
-export const redisListSet = forward("redisListSet");
-export const redisListRemove = forward("redisListRemove");
-export const redisSetAdd = forward("redisSetAdd");
-export const redisSetRemove = forward("redisSetRemove");
-export const redisZadd = forward("redisZadd");
-export const redisZrem = forward("redisZrem");
-export const redisZsetUpdate = forward("redisZsetUpdate");
-export const redisStreamAdd = forward("redisStreamAdd");
-export const redisJsonSet = forward("redisJsonSet");
-export const redisCheckJsonModule = forward("redisCheckJsonModule");
-export const redisSetTtl = forward("redisSetTtl");
-export const redisSetExpireAt = forward("redisSetExpireAt");
-export const redisDeleteKeys = forward("redisDeleteKeys");
-export const redisFlushDb = forward("redisFlushDb");
-export const redisExecuteCommand = forward("redisExecuteCommand");
-export const redisLoadMore = forward("redisLoadMore");
-export const redisPubSubPublish = forward("redisPubSubPublish");
-export const redisPubSubConnect = forward("redisPubSubConnect");
-export const redisSlowlogGet = forward("redisSlowlogGet");
-export const redisClusterMasterNodes = forward("redisClusterMasterNodes");
-
-// etcd
-export const etcdListPrefix = forward("etcdListPrefix");
-export const etcdSupportsTtl = forward("etcdSupportsTtl");
-export const etcdGet = forward("etcdGet");
-export const etcdPut = forward("etcdPut");
-export const etcdDelete = forward("etcdDelete");
-export const etcdRename = forward("etcdRename");
-export const etcdHistory = forward("etcdHistory");
-export const etcdStatus = forward("etcdStatus");
-export const etcdPreflight = forward("etcdPreflight");
-export const etcdCompact = forward("etcdCompact");
-export const etcdDefrag = forward("etcdDefrag");
-export const etcdWatchStart = forward("etcdWatchStart");
-export const etcdWatchPoll = forward("etcdWatchPoll");
-export const etcdWatchStop = forward("etcdWatchStop");
-export const etcdLeaseList = forward("etcdLeaseList");
-export const etcdLeaseCall = forward("etcdLeaseCall");
-export const etcdAuthCall = forward("etcdAuthCall");
-
-// ZooKeeper
-export const zookeeperListPrefix = forward("zookeeperListPrefix");
-export const zookeeperGet = forward("zookeeperGet");
-export const zookeeperPut = forward("zookeeperPut");
-export const zookeeperDelete = forward("zookeeperDelete");
-
-// HBase
-export const hbaseGetTableSchema = forward("hbaseGetTableSchema");
-export const hbaseScanRows = forward("hbaseScanRows");
-export const hbaseGetRow = forward("hbaseGetRow");
-export const hbasePutRow = forward("hbasePutRow");
-export const hbaseDeleteRow = forward("hbaseDeleteRow");
-export const hbaseCreateTable = forward("hbaseCreateTable");
-export const hbaseDeleteTable = forward("hbaseDeleteTable");
-
-// Message Queue
-export const mqTestConnection = forward("mqTestConnection");
-export const mqListTenants = forward("mqListTenants");
-export const mqGetTenant = forward("mqGetTenant");
-export const mqCreateTenant = forward("mqCreateTenant");
-export const mqUpdateTenant = forward("mqUpdateTenant");
-export const mqDeleteTenant = forward("mqDeleteTenant");
-export const mqListNamespaces = forward("mqListNamespaces");
-export const mqCreateNamespace = forward("mqCreateNamespace");
-export const mqDeleteNamespace = forward("mqDeleteNamespace");
-export const mqGetNamespacePolicies = forward("mqGetNamespacePolicies");
-export const mqListTopics = forward("mqListTopics");
-export const mqCreateTopic = forward("mqCreateTopic");
-export const mqDeleteTopic = forward("mqDeleteTopic");
-export const mqUpdatePartitions = forward("mqUpdatePartitions");
-export const mqGetTopicStats = forward("mqGetTopicStats");
-export const mqGetTopicInternalStats = forward("mqGetTopicInternalStats");
-export const mqListExchanges = forward("mqListExchanges");
-export const mqCreateExchange = forward("mqCreateExchange");
-export const mqDeleteExchange = forward("mqDeleteExchange");
-export const mqListBindings = forward("mqListBindings");
-export const mqBind = forward("mqBind");
-export const mqUnbind = forward("mqUnbind");
-export const mqListClientConnections = forward("mqListClientConnections");
-export const mqListClientChannels = forward("mqListClientChannels");
-export const mqCloseClientConnection = forward("mqCloseClientConnection");
-export const mqListSubscriptions = forward("mqListSubscriptions");
-export const mqEnrichSubscriptions = forward("mqEnrichSubscriptions");
-export const mqCreateSubscription = forward("mqCreateSubscription");
-export const mqDeleteSubscription = forward("mqDeleteSubscription");
-export const mqSkipMessages = forward("mqSkipMessages");
-export const mqResetCursor = forward("mqResetCursor");
-export const mqClearBacklog = forward("mqClearBacklog");
-export const mqPeekMessages = forward("mqPeekMessages");
-export const mqExpireMessages = forward("mqExpireMessages");
-export const mqListProducers = forward("mqListProducers");
-export const mqListConsumers = forward("mqListConsumers");
-export const mqUnloadTopic = forward("mqUnloadTopic");
-export const mqSetPublishRate = forward("mqSetPublishRate");
-export const mqSetDispatchRate = forward("mqSetDispatchRate");
-export const mqSetSubscribeRate = forward("mqSetSubscribeRate");
-export const mqSetBacklogQuota = forward("mqSetBacklogQuota");
-export const mqSetRetention = forward("mqSetRetention");
-export const mqGetEffectivePolicies = forward("mqGetEffectivePolicies");
-export const mqGrantPermission = forward("mqGrantPermission");
-export const mqRevokePermission = forward("mqRevokePermission");
-export const mqListPermissions = forward("mqListPermissions");
-export const mqIssueToken = forward("mqIssueToken");
-export const mqListTokenRecords = forward("mqListTokenRecords");
-export const mqGetBacklog = forward("mqGetBacklog");
-export const mqGetConsumerGroupConfig = forward("mqGetConsumerGroupConfig");
-export const mqAlterConsumerGroupConfig = forward("mqAlterConsumerGroupConfig");
-export const mqGetClusterInfo = forward("mqGetClusterInfo");
-export const mqGetTopicRoute = forward("mqGetTopicRoute");
-export const mqAlterTopicConfig = forward("mqAlterTopicConfig");
-export const mqSkipTopicAccumulation = forward("mqSkipTopicAccumulation");
-export const mqViewMessage = forward("mqViewMessage");
-export const mqQueryMessagesByKey = forward("mqQueryMessagesByKey");
-export const mqQueryMessagesByTopic = forward("mqQueryMessagesByTopic");
-export const mqQueryMessageTrace = forward("mqQueryMessageTrace");
-export const mqRawRequest = forward("mqRawRequest");
-export const mqSendMessage = forward("mqSendMessage");
-export const mqListUsers = forward("mqListUsers");
-export const mqCreateUser = forward("mqCreateUser");
-export const mqDeleteUser = forward("mqDeleteUser");
-export const mqListUserPermissions = forward("mqListUserPermissions");
-export const mqGrantUserPermission = forward("mqGrantUserPermission");
-export const mqRevokeUserPermission = forward("mqRevokeUserPermission");
-export const mqListPolicies = forward("mqListPolicies");
-export const mqSetPolicy = forward("mqSetPolicy");
-export const mqDeletePolicy = forward("mqDeletePolicy");
-export const mqGetOverview = forward("mqGetOverview");
-export const mqListNodes = forward("mqListNodes");
-
-// MongoDB
-export const documentListDatabases = forward("documentListDatabases");
-export const mongoListDatabases = forward("mongoListDatabases");
-export const documentListCollections = forward("documentListCollections");
-export const mongoListCollections = forward("mongoListCollections");
-export const documentListGridFsBuckets = forward("documentListGridFsBuckets");
-export const documentCreateGridFsBucket = forward("documentCreateGridFsBucket");
-export const documentDeleteGridFsBucket = forward("documentDeleteGridFsBucket");
-export const documentListGridFsFiles = forward("documentListGridFsFiles");
-export const documentDownloadGridFsFile = forward("documentDownloadGridFsFile");
-export const documentUploadGridFsFile = forward("documentUploadGridFsFile");
-export const documentDeleteGridFsFile = forward("documentDeleteGridFsFile");
-export const vectorGetCollectionDetail = forward("vectorGetCollectionDetail");
-export const mongoCreateDatabase = forward("mongoCreateDatabase");
-export const mongoDropDatabase = forward("mongoDropDatabase");
-export const mongoDropCollection = forward("mongoDropCollection");
-export const mongoRenameCollection = forward("mongoRenameCollection");
-export const documentFindDocuments = forward("documentFindDocuments");
-export const elasticsearchCountDocuments = forward("elasticsearchCountDocuments");
-export const mongoFindDocuments = forward("mongoFindDocuments");
-export const mongoParseShellCommand = forward("mongoParseShellCommand");
-export const mongoFindOne = forward("mongoFindOne");
-export const mongoCountDocuments = forward("mongoCountDocuments");
-export const mongoServerVersion = forward("mongoServerVersion");
-export const mongoAggregateDocuments = forward("mongoAggregateDocuments");
-export const mongoDistinct = forward("mongoDistinct");
-export const mongoCollectionStats = forward("mongoCollectionStats");
-export const mongoCreateIndex = forward("mongoCreateIndex");
-export const mongoDropIndexes = forward("mongoDropIndexes");
-export const documentInsertDocument = forward("documentInsertDocument");
-export const mongoInsertDocument = forward("mongoInsertDocument");
-export const mongoInsertDocuments = forward("mongoInsertDocuments");
-export const documentUpdateDocument = forward("documentUpdateDocument");
-export const mongoUpdateDocument = forward("mongoUpdateDocument");
-export const mongoUpdateDocuments = forward("mongoUpdateDocuments");
-export const documentDeleteDocument = forward("documentDeleteDocument");
-export const mongoDeleteDocument = forward("mongoDeleteDocument");
-export const mongoDeleteDocuments = forward("mongoDeleteDocuments");
-export const mongoFindOneAndUpdate = forward("mongoFindOneAndUpdate");
-export const mongoFindOneAndReplace = forward("mongoFindOneAndReplace");
-export const mongoFindOneAndDelete = forward("mongoFindOneAndDelete");
-
-// Elasticsearch
-export const elasticsearchListIndices = forward("elasticsearchListIndices");
-export const vectorListCollections = forward("vectorListCollections");
-
 // History
 export const saveHistory = forward("saveHistory");
 export const loadHistory = forward("loadHistory");
 export const searchHistory = forward("searchHistory");
 export const loadHistoryConnectionOptions = forward("loadHistoryConnectionOptions");
-export const loadRedisHistory = forward("loadRedisHistory");
 export const clearHistory = forward("clearHistory");
-export const clearRedisHistory = forward("clearRedisHistory");
 export const deleteHistoryEntry = forward("deleteHistoryEntry");
 
 // Updates
@@ -645,66 +408,6 @@ export type {
   DriverStoreMigrationResult,
   DriverStorePathInfo,
   UpdateInfo,
-  RedisBlob,
-  RedisCollectionPage,
-  RedisDatabaseInfo,
-  RedisHashItem,
-  RedisKeyInfo,
-  RedisListItem,
-  RedisSetItem,
-  RedisStreamConsumer,
-  RedisStreamEntry,
-  RedisStreamField,
-  RedisStreamGroup,
-  RedisStreamMetric,
-  RedisStreamPage,
-  RedisStreamPendingEntry,
-  RedisStreamPendingPage,
-  RedisValue,
-  RedisValueData,
-  RedisZsetItem,
-  RedisScanResult,
-  RedisCommandSafety,
-  RedisCommandResult,
-  RedisSlowlogEntry,
-  RedisNodeEndpoint,
-  KvValueEncoding,
-  KvInt64,
-  KvValue,
-  KvKeyMetadata,
-  KvKeySummary,
-  KvListPrefixResponse,
-  KvListPrefixOptions,
-  KvGetOptions,
-  KvGetResponse,
-  KvWriteMode,
-  KvCreateMode,
-  KvPutOptions,
-  KvPutResponse,
-  KvDeleteOptions,
-  KvDeleteResponse,
-  KvHistoryEventType,
-  KvHistoryEvent,
-  KvHistoryResponse,
-  KvStatusMember,
-  KvPrometheusMetrics,
-  KvStatusResponse,
-  EtcdDefragResponse,
-  EtcdDefragMemberResult,
-  EtcdWatchStartRequest,
-  EtcdWatchStartResponse,
-  EtcdWatchPollResponse,
-  EtcdLeaseListResponse,
-  EtcdLeaseDetail,
-  EtcdAuthUserListResponse,
-  EtcdAuthUserDetail,
-  EtcdAuthPermission,
-  EtcdAuthRoleListResponse,
-  EtcdAuthRoleDetail,
-  EtcdPreflightResponse,
-  EtcdDangerousApproval,
-  DocumentQueryResult,
-  MongoDocumentResult,
   HistoryEntry,
   HistoryConnectionFilter,
   HistoryDatabaseFilter,
@@ -759,16 +462,6 @@ export type {
   GitBranchInfo,
   GitFileDiff,
 } from "@/lib/backend/tauri";
-
-// MQTT
-export const mqttGetBrokerInfo = forward("mqttGetBrokerInfo");
-export const mqttSubscribe = forward("mqttSubscribe");
-export const mqttUnsubscribe = forward("mqttUnsubscribe");
-export const mqttPublish = forward("mqttPublish");
-export const mqttListTopics = forward("mqttListTopics");
-export const mqttGetTopicTree = forward("mqttGetTopicTree");
-export const mqttGetMessages = forward("mqttGetMessages");
-export const mqttClearMessages = forward("mqttClearMessages");
 
 // Git
 export const gitIsRepo = forward("gitIsRepo");

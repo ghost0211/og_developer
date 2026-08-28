@@ -41,7 +41,6 @@ use crate::types::{
     DatabaseStorageInfo, ExtensionInfo, ForeignKeyInfo, FunctionInfo, IndexInfo, ObjectInfo, ObjectStatistics,
     OwnerInfo, QueryResult, RuleInfo, SchemaInfo, SequenceInfo, SpatialColumnBuilder, TableInfo, TriggerInfo,
 };
-
 pub(crate) const GAUSSDB_COMPATIBILITY_SQL: &str =
     "SELECT datcompatibility FROM pg_catalog.pg_database WHERE datname = current_database()";
 pub(crate) const OPENGAUSS_VERSION_SQL: &str = "SELECT version()";
@@ -647,6 +646,11 @@ pub(crate) fn classify_pg_type(type_name: &str) -> PgColType {
 
 pub(crate) fn classify_pg_column_types(column_types: &[String]) -> Vec<PgColType> {
     column_types.iter().map(|type_name| classify_pg_type(type_name)).collect()
+}
+
+pub(crate) fn pg_value_to_json(row: &Row, idx: usize, col_type: &str) -> serde_json::Value {
+    let classified = classify_pg_type(col_type);
+    pg_value_to_json_classified(row, idx, classified)
 }
 
 pub(crate) fn pg_value_to_json_classified(row: &Row, idx: usize, col_type: PgColType) -> serde_json::Value {
@@ -2942,12 +2946,14 @@ fn opengauss_packages_sql() -> &'static str {
 /// Resolve the object a synonym points at (pg_catalog.pg_synonym). Returns the
 /// target schema/name plus its relkind when the target is a pg_class object.
 /// Synonyms can chain to other synonyms, so the caller resolves iteratively.
+#[allow(dead_code)]
 pub(crate) fn opengauss_synonym_target_sql() -> &'static str {
     "SELECT synobjschema, synobjname FROM pg_catalog.pg_synonym \
      WHERE synname = $1 \
        AND synnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = $2)"
 }
 
+#[allow(dead_code)]
 pub(crate) fn opengauss_synonym_target_kind_sql() -> &'static str {
     "SELECT c.relkind::text FROM pg_catalog.pg_class c \
      JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
@@ -2957,6 +2963,7 @@ pub(crate) fn opengauss_synonym_target_kind_sql() -> &'static str {
 /// Column/attribute definitions of an openGauss composite or enum type
 /// (pg_attribute rows behind pg_type.typrelid). Mirrors the table column
 /// shape so the sidebar can render type members like table columns.
+#[allow(dead_code)]
 pub(crate) fn opengauss_type_attributes_sql() -> &'static str {
     "SELECT a.attname, format_type(a.atttypid, a.atttypmod) AS data_type, \
             (NOT a.attnotnull) AS is_nullable, \
@@ -2971,6 +2978,7 @@ pub(crate) fn opengauss_type_attributes_sql() -> &'static str {
 
 /// Objects referenced by a view/materialized view (its rewrite rules depend on
 /// tables/views; the rewrite itself is excluded).
+#[allow(dead_code)]
 pub(crate) fn opengauss_view_references_sql() -> &'static str {
     "SELECT DISTINCT n.nspname, c.relname, c.relkind::text \
      FROM pg_catalog.pg_depend d \
@@ -2985,6 +2993,7 @@ pub(crate) fn opengauss_view_references_sql() -> &'static str {
 
 /// Query matching candidate database objects by name across system catalogs
 /// (tables, views, mviews, sequences, routines, package members, packages, types, synonyms).
+#[allow(dead_code)]
 pub(crate) fn opengauss_find_candidate_objects_sql(has_gs_package: bool, has_pg_synonym: bool) -> String {
     let mut parts = vec![
         // 1. pg_class (tables, views, materialized views, sequences, composite types)
@@ -3069,6 +3078,7 @@ pub(crate) fn opengauss_find_candidate_objects_sql(has_gs_package: bool, has_pg_
 }
 
 /// Search user routines (pg_proc) whose source code contains the given target object name.
+#[allow(dead_code)]
 pub(crate) fn opengauss_search_routine_prosrc_sql() -> &'static str {
     "SELECT n.nspname, p.proname, \
             CASE p.prokind WHEN 'p' THEN 'procedure' ELSE 'function' END AS routine_type, \
@@ -3082,6 +3092,7 @@ pub(crate) fn opengauss_search_routine_prosrc_sql() -> &'static str {
 }
 
 /// Search user package specifications and bodies (gs_package) whose source code contains the target object name.
+#[allow(dead_code)]
 pub(crate) fn opengauss_search_package_body_src_sql() -> &'static str {
     "SELECT n.nspname, p.pkgname, 'package_body' AS pkg_type, \
             COALESCE(p.pkgbodydeclsrc, '') || E'\\n' || COALESCE(p.pkgbodyinitsrc, '') AS src \
@@ -3101,6 +3112,7 @@ pub(crate) fn opengauss_search_package_body_src_sql() -> &'static str {
 /// Tables/views referenced by a function/procedure/package (signature-level
 /// dependencies recorded in pg_depend; function-body references are not
 /// tracked by openGauss).
+#[allow(dead_code)]
 pub(crate) fn opengauss_routine_references_sql() -> &'static str {
     "SELECT DISTINCT n.nspname, c.relname, c.relkind::text \
      FROM pg_catalog.pg_depend d \
@@ -3115,6 +3127,7 @@ pub(crate) fn opengauss_routine_references_sql() -> &'static str {
 /// Objects that reference the given object (pg_depend refobjid = object oid).
 /// Resolves intermediate rows (rewrite rules → views, constraints → tables,
 /// column defaults → columns) into readable references.
+#[allow(dead_code)]
 pub(crate) fn opengauss_referenced_by_sql() -> &'static str {
     // Only external references: rows whose pg_depend objid resolves to the
     // target itself (own column defaults, own primary/unique constraints) are
@@ -3914,6 +3927,7 @@ pub(crate) fn pg_quote_ident(ident: &str) -> String {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) enum PostgresSearchPathContext {
     Query,
     Transaction,
@@ -4544,19 +4558,6 @@ pub(crate) async fn execute_postgres_infra_statement(
         .await
         .map_err(|_| format!("PostgreSQL {stage} timed out after {} seconds", timeout_duration.as_secs()))?
         .map_err(pg_error_to_string)
-}
-
-pub(crate) async fn wait_postgres_operation<T, F>(
-    pg_cancel_token: tokio_postgres::CancelToken,
-    cancel_context: Option<PostgresCancelContext>,
-    timeout_duration: Option<Duration>,
-    cancel_timeout: Duration,
-    future: F,
-) -> Result<T, String>
-where
-    F: Future<Output = Result<T, String>>,
-{
-    wait_postgres_query(pg_cancel_token, cancel_context, None, timeout_duration, cancel_timeout, future).await
 }
 
 async fn wait_postgres_query<T, F>(
@@ -7154,7 +7155,7 @@ mod tests {
             &query_sql,
             None,
             None,
-            DbOperationBudget::with_defaults(),
+            DbOperationBudget::default(),
             None,
             |item| {
                 if let PostgresQueryStreamItem::Row(row) = item {

@@ -127,16 +127,6 @@ test("parses typed structured IN values without losing large integers", () => {
   assert.equal(parseFilterValue("true", { data_type: "bit" }, "sqlserver"), true);
 });
 
-test("hides list and range modes for unsupported dialects", () => {
-  for (const databaseType of ["cassandra", "influxdb", "jdbc"] as const) {
-    assert.equal(filterModeIsSupportedForDatabase("in", databaseType), false);
-    assert.equal(filterModeIsSupportedForDatabase("not-in", databaseType), false);
-    assert.equal(filterModeIsSupportedForDatabase("between", databaseType), false);
-    assert.equal(filterModeIsSupportedForDatabase("not-between", databaseType), false);
-  }
-  assert.equal(filterModeIsSupportedForDatabase("between", "postgres"), true);
-  assert.equal(filterModeIsSupportedForDatabase("is-null", "influxdb"), true);
-});
 
 test("requires usable values for structured list and range filters", () => {
   assert.equal(filterModeHasCompleteValue("in", " , \n "), false);

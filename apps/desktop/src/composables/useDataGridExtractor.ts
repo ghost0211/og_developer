@@ -48,9 +48,6 @@ interface UseDataGridExtractorOptions {
   contextSelectionIsSynthetic: ComputedRef<boolean> | Ref<boolean>;
   copyText: (text: string, gridCopy?: { rows: readonly (readonly unknown[])[]; header?: readonly unknown[] }) => Promise<boolean>;
   canCopySqlInsert: (request: DataGridExtractRequest) => boolean;
-  buildMongoInsert: (extractorOptions: DataGridExtractorOptions, rowLimit?: number) => Promise<string | undefined>;
-  buildMongoUpdate?: (request: DataGridExtractRequest, rowLimit?: number) => Promise<string | undefined>;
-  canBuildMongoUpdate?: (request: DataGridExtractRequest) => boolean;
 }
 
 export function useDataGridExtractor(options: UseDataGridExtractorOptions) {
@@ -185,11 +182,6 @@ export function useDataGridExtractor(options: UseDataGridExtractorOptions) {
       return request !== null && options.canCopySqlInsert(request);
     }
     if (extractor === "sql-updates") {
-      // Mongo has a dedicated updateOne path that doesn't need SQL primary keys.
-      if (options.databaseType.value === "mongodb") {
-        const request = buildRequest(extractor, extractorOptions);
-        return request !== null && (options.canBuildMongoUpdate?.(request) ?? false);
-      }
       return canBuildSqlUpdateRequest();
     }
     if (extractor === "raw") {
@@ -205,13 +197,6 @@ export function useDataGridExtractor(options: UseDataGridExtractorOptions) {
     return resolveDataGridCopyPreference(preference, request.rows.length * request.selectedColumnIndexes.length);
   }
 
-  async function resolveMongoExtractorResult(extractor: DataGridCopyExtractorId, request: DataGridExtractRequest, rowLimit?: number) {
-    if (options.databaseType.value !== "mongodb") return undefined;
-    if (extractor !== "sql-inserts" && extractor !== "sql-updates") return undefined;
-    const text = extractor === "sql-inserts" ? ((await options.buildMongoInsert(request.options, rowLimit)) ?? "") : ((await options.buildMongoUpdate?.(request, rowLimit)) ?? "");
-    return { text, mimeType: "application/javascript", fileExtension: "js", rowCount: rowLimit ?? request.rows.length, columnCount: request.selectedColumnIndexes.length, warnings: undefined, omittedColumns: undefined };
-  }
-
   async function copyWithExtractor(extractor: DataGridCopyExtractorId, extractorOptions: DataGridExtractorOptions = options.extractorOptions?.value ?? DEFAULT_DATA_GRID_EXTRACTOR_OPTIONS): Promise<boolean> {
     if (hasUnsupportedDiscreteSelection.value) {
       toast(t("grid.copyExtractorUnsupportedSelection"), 5000);
@@ -221,8 +206,7 @@ export function useDataGridExtractor(options: UseDataGridExtractorOptions) {
     const request = buildRequest(extractor, extractorOptions);
     if (!request) return false;
     try {
-      const mongoResult = await resolveMongoExtractorResult(extractor, request);
-      const result = mongoResult ?? (await api.extractDataGridSelection(request));
+      const result = await api.extractDataGridSelection(request);
       if (!result.text) return false;
       // Derive the grid paste-back payload from the effective request schema so
       // hidden support columns, row headers, NULLs, tabs, and newlines keep the
@@ -255,9 +239,7 @@ export function useDataGridExtractor(options: UseDataGridExtractorOptions) {
     const request = buildRequest(extractor, extractorOptions);
     if (!request) throw new Error(t("grid.copyExtractorEmptySelection"));
     const sourceRowCount = request.rows.length;
-    const previewRowCount = Math.min(sourceRowCount, DATA_GRID_EXTRACTOR_PREVIEW_MAX_ROWS);
-    const mongoResult = await resolveMongoExtractorResult(extractor, request, previewRowCount);
-    const result = mongoResult ?? (await api.extractDataGridSelection({ ...request, rows: request.rows.slice(0, DATA_GRID_EXTRACTOR_PREVIEW_MAX_ROWS) }));
+    const result = await api.extractDataGridSelection({ ...request, rows: request.rows.slice(0, DATA_GRID_EXTRACTOR_PREVIEW_MAX_ROWS) });
     if (!result.text) throw new Error(t("grid.copyExtractorEmptySelection"));
     return { ...result, sourceRowCount, truncated: sourceRowCount > result.rowCount };
   }

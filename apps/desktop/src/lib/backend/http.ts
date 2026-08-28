@@ -4,10 +4,7 @@ import type {
   DatabaseConnectionInfo,
   DatabaseInfo,
   DatabaseStorageInfo,
-  SqlServerCompletionContext,
   SchemaInfo,
-  LinkedServerInfo,
-  CatalogInfo,
   TableInfo,
   TableNameFilter,
   ObjectInfo,
@@ -17,7 +14,6 @@ import type {
   ObjectSource,
   ObjectSourceKind,
   ColumnInfo,
-  SqlServerColumnMetadata,
   IndexInfo,
   ForeignKeyInfo,
   TriggerInfo,
@@ -44,9 +40,7 @@ import type {
   SshConfigHostEntry,
   TunnelProfile,
 } from "@/types/database";
-import { normalizeRustMongoCommand, type MongoCommand } from "@/lib/mongo/mongoShellCommand";
 import { BackendErrorException, type BackendError } from "@/lib/backend/errorUtils";
-import type { CollectionInfo } from "@/types/database";
 import type { SchemaDiffPreparation, SchemaDiffPreparationOptions, TableDiff, FunctionDiff, SequenceDiff, RuleDiff, OwnerDiff } from "@/lib/schema/schemaDiff";
 import type { SidebarObjectKind } from "@/lib/database/databaseObjectCapabilities";
 import type { AiConfig, AiTestConnectionResult } from "@/stores/settingsStore";
@@ -67,39 +61,6 @@ import type {
   JavaRuntimeConfig,
   UpdateInfo,
   UpdateDownloadSource,
-  RedisCollectionPage,
-  RedisDatabaseInfo,
-  RedisStreamConsumer,
-  RedisStreamGroup,
-  RedisStreamPage,
-  RedisStreamPendingPage,
-  RedisValue,
-  RedisScanResult,
-  RedisCommandResult,
-  RedisSlowlogEntry,
-  RedisNodeEndpoint,
-  KvInt64,
-  KvValue,
-  KvListPrefixResponse,
-  KvListPrefixOptions,
-  KvGetResponse,
-  KvGetOptions,
-  KvPutOptions,
-  KvPutResponse,
-  KvDeleteOptions,
-  KvDeleteResponse,
-  KvHistoryResponse,
-  KvStatusResponse,
-  EtcdDefragResponse,
-  EtcdWatchStartRequest,
-  EtcdWatchStartResponse,
-  EtcdWatchPollResponse,
-  EtcdLeaseListResponse,
-  DocumentQueryResult,
-  MongoDocumentResult,
-  MongoCollectionStatsResult,
-  MongoDropIndexesResult,
-  MongoGridFsBucketInfo,
   HistoryEntry,
   HistorySearchRequest,
   HistorySearchResult,
@@ -129,8 +90,6 @@ import type {
   QuerySqlBuildResult,
   BuildExplainSqlOptions,
   ExplainSqlBuildResult,
-  DroppedFilePreviewSqlOptions,
-  MongoGridFsFileInfo,
   AppSupportInfo,
   PromptTemplate,
   SshPromptResolution,
@@ -146,10 +105,9 @@ import type {
   DataGridCopyInsertStatementOptions,
   DataGridCopyUpdateStatementOptions,
   DataGridSaveStatementOptions,
-  HiveTablePropertiesSqlOptions,
 } from "@/lib/dataGrid/dataGridSql";
 import type { DataGridExtractRequest, DataGridExtractResult } from "@/lib/dataGrid/dataGridCopyExtractor";
-import type { BuildTableStructureChangeSqlOptions, BuildSingleColumnAlterSqlOptions, SqliteTableStructureChangePreview, TableStructureChangeSql } from "@/lib/table/tableStructureEditorSql";
+import type { BuildTableStructureChangeSqlOptions, BuildSingleColumnAlterSqlOptions, TableStructureChangeSql } from "@/lib/table/tableStructureEditorSql";
 import type { BuildTableSelectSqlOptions } from "@/lib/table/tableSelectSql";
 import type { DatabaseSearchSql, DatabaseSearchSqlOptions, SearchResultWhereOptions } from "@/lib/database/databaseSearch";
 import type { BuildEditableObjectSourceSqlInput, BuildRoutineRenameObjectSourceInput } from "@/lib/table/objectSourceEditor";
@@ -160,41 +118,8 @@ import type { DatabaseNameSqlOptions, DatabasePropertyEditSqlOptions, DropTableC
 import type { BuildDatabaseSqlExportOptions, BuildExportInsertStatementsOptions } from "@/lib/export/databaseExport";
 import { loadBrowserAppState, saveBrowserAppState } from "@/lib/backend/browserAppStateStorage";
 import type { DataCompareFromTablesOptions, DataCompareFromTablesPreparation, DataCompareSyncPlan, DataCompareSyncPlanOptions, DataComparePreparation, DataComparePreparationOptions } from "@/lib/dataGrid/dataCompare";
-import { apiUrl, apiWebSocketUrl } from "@/lib/common/webPath";
+import { apiUrl } from "@/lib/common/webPath";
 import type { DataGridSavePreparation } from "@/lib/backend/tauri";
-import type {
-  NacosBatchPreview,
-  NacosBatchReport,
-  NacosConfigSelector,
-  NacosConfigTransferRequest,
-  NacosConflictPolicy,
-  NacosContentSearchRequest,
-  NacosContentSearchResult,
-  NacosConfigHistoryKey,
-  NacosConfigHistoryList,
-  NacosConfigHistoryQuery,
-  NacosConfigItem,
-  NacosConfigKey,
-  NacosConfigList,
-  NacosConfigQuery,
-  NacosConfigRollbackRequest,
-  NacosConfigUpsert,
-  NacosConnectionInfo,
-  NacosRNacosConsoleCaptcha,
-  NacosInstanceInfo,
-  NacosInstanceQuery,
-  NacosInstanceUpdate,
-  NacosDashboardQuery,
-  NacosDashboardSnapshot,
-  NacosNamespaceCreate,
-  NacosNamespaceInfo,
-  NacosNamespaceUpdate,
-  NacosRawRequest,
-  NacosRawResponse,
-  NacosServiceList,
-  NacosServiceQuery,
-  NacosSearchProgress,
-} from "@/types/nacos";
 import { safeLocalStorageGet, safeLocalStorageSet } from "@/lib/backend/safeStorage";
 import { normalizeConnectionTestResult } from "@/lib/connection/connectionDatabaseInfo";
 
@@ -411,10 +336,6 @@ export async function installJdbcDriverFromMaven(coordinate: string, repositorie
   return post("/api/jdbc/drivers/maven", { coordinate, repositories });
 }
 
-export async function installPrestoSqlJdbcDriver(): Promise<JdbcDriverInfo[]> {
-  return post("/api/jdbc/drivers/prestosql", {});
-}
-
 export async function deleteJdbcDriver(path: string): Promise<JdbcDriverInfo[]> {
   const fileName = path.split("/").pop() || path;
   return del(`/api/jdbc/drivers/${encodeURIComponent(fileName)}`);
@@ -618,14 +539,6 @@ export async function deleteDatabaseBackupFiles(_paths: string[]): Promise<numbe
   throw new Error("Database backup file management is only available in the desktop app.");
 }
 
-export async function isSqliteDatabaseFile(_path: string): Promise<boolean> {
-  return false;
-}
-
-export async function backupSqliteDatabase(_connectionId: string, _destinationPath: string): Promise<void> {
-  throw new Error("SQLite backup is only available in the desktop app.");
-}
-
 export async function syncSavedSqlDirectory(_request: SavedSqlSyncRequest): Promise<void> {
   throw new Error("SQL directory sync is only available in the desktop app.");
 }
@@ -643,34 +556,6 @@ export async function listDatabaseStorage(connectionId: string, databases: strin
     connection_id: connectionId,
     databases,
   });
-}
-
-export async function getSqlServerCompletionContext(connectionId: string, database: string): Promise<SqlServerCompletionContext> {
-  return get(`/api/schema/sqlserver/completion-context?${qs({ connection_id: connectionId, database })}`);
-}
-
-export async function listDorisCatalogs(connectionId: string): Promise<CatalogInfo[]> {
-  return get(`/api/schema/doris/catalogs?${qs({ connection_id: connectionId })}`);
-}
-
-export async function listDorisCatalogDatabases(connectionId: string, catalog: string): Promise<DatabaseInfo[]> {
-  return get(`/api/schema/doris/catalog-databases?${qs({ connection_id: connectionId, catalog })}`);
-}
-
-export async function listSqlServerLinkedServers(connectionId: string): Promise<LinkedServerInfo[]> {
-  return get(`/api/schema/sqlserver/linked-servers?${qs({ connection_id: connectionId })}`);
-}
-
-export async function listSqlServerLinkedServerCatalogs(connectionId: string, server: string): Promise<DatabaseInfo[]> {
-  return get(`/api/schema/sqlserver/linked-server-catalogs?${qs({ connection_id: connectionId, server })}`);
-}
-
-export async function listSqlServerLinkedServerSchemas(connectionId: string, server: string, catalog: string): Promise<string[]> {
-  return get(`/api/schema/sqlserver/linked-server-schemas?${qs({ connection_id: connectionId, server, catalog })}`);
-}
-
-export async function listSqlServerLinkedServerTables(connectionId: string, server: string, catalog: string, schema: string, filter?: string, limit?: number, offset?: number): Promise<TableInfo[]> {
-  return get(`/api/schema/sqlserver/linked-server-tables?${qs({ connection_id: connectionId, server, catalog, schema, filter, limit, offset })}`);
 }
 
 export async function saveSchemaCache(cacheKey: string, payload: unknown): Promise<void> {
@@ -735,10 +620,6 @@ export async function getObjectSource(connectionId: string, database: string, sc
 
 export async function getColumns(connectionId: string, database: string, schema: string, table: string, catalog?: string, clientSessionId?: string): Promise<ColumnInfo[]> {
   return get(`/api/schema/columns?${qs({ connection_id: connectionId, database, schema, table, catalog, client_session_id: clientSessionId })}`);
-}
-
-export async function getSqlServerColumnMetadata(connectionId: string, database: string, schema: string, table: string): Promise<SqlServerColumnMetadata[]> {
-  return get(`/api/schema/sqlserver/column-metadata?${qs({ connection_id: connectionId, database, schema, table })}`);
 }
 
 export interface TableColumnsResult {
@@ -1160,11 +1041,6 @@ export async function getExplainInfo(connectionId: string, database: string | un
   });
 }
 
-export async function buildDroppedFilePreviewSql(options: DroppedFilePreviewSqlOptions): Promise<string | undefined> {
-  const result = await post<string | null>("/api/query/build-dropped-file-preview-sql", { options });
-  return result ?? undefined;
-}
-
 export async function buildTableSelectSql(options: BuildTableSelectSqlOptions): Promise<string> {
   return post("/api/query/build-table-select-sql", { options });
 }
@@ -1183,18 +1059,6 @@ export async function buildRenameObjectSql(options: BuildRenameObjectSqlOptions)
 
 export async function buildCreateDatabaseSql(options: CreateDatabaseSqlOptions): Promise<string> {
   return post("/api/query/build-create-database-sql", { options });
-}
-
-export async function buildDuckDbAttachDatabaseSql(path: string, name: string): Promise<string> {
-  return post("/api/query/build-duckdb-attach-database-sql", {
-    options: { path, name },
-  });
-}
-
-export async function buildSqliteAttachDatabaseSql(path: string, name: string): Promise<string> {
-  return post("/api/query/build-sqlite-attach-database-sql", {
-    options: { path, name },
-  });
 }
 
 export async function buildDropObjectSql(options: DropObjectSqlOptions): Promise<string> {
@@ -1269,23 +1133,6 @@ export async function buildTableStructureChangeSql(options: BuildTableStructureC
   return post("/api/query/build-table-structure-change-sql", { options });
 }
 
-export async function previewSqliteTableStructureChange(connectionId: string, database: string, options: BuildTableStructureChangeSqlOptions): Promise<SqliteTableStructureChangePreview> {
-  return post("/api/query/preview-sqlite-table-structure-change", {
-    connectionId,
-    database,
-    options,
-  });
-}
-
-export async function applySqliteTableStructureChange(connectionId: string, database: string, options: BuildTableStructureChangeSqlOptions, schemaRevision: string): Promise<QueryResult> {
-  return post("/api/query/apply-sqlite-table-structure-change", {
-    connectionId,
-    database,
-    options,
-    schemaRevision,
-  });
-}
-
 export async function buildCreateTableSql(options: BuildTableStructureChangeSqlOptions): Promise<TableStructureChangeSql> {
   return post("/api/query/build-create-table-sql", { options });
 }
@@ -1338,10 +1185,6 @@ export async function buildDataGridColumnDistinctValuesSql(options: DataGridColu
 
 export async function buildDataGridCountSql(options: DataGridCountSqlOptions): Promise<string> {
   return post("/api/query/build-data-grid-count-sql", { options });
-}
-
-export async function buildHiveTablePropertiesSql(options: HiveTablePropertiesSqlOptions): Promise<string> {
-  return post("/api/query/build-hive-table-properties-sql", { options });
 }
 
 export async function buildExportInsertStatements(options: BuildExportInsertStatementsOptions): Promise<string[]> {
@@ -2281,977 +2124,6 @@ export async function exportQueryResultMarkdown(filePath: string, columns: strin
 }
 
 // ---------------------------------------------------------------------------
-// Redis
-// ---------------------------------------------------------------------------
-
-export async function redisListDatabases(connectionId: string): Promise<RedisDatabaseInfo[]> {
-  return post("/api/redis/list-databases", { connectionId });
-}
-
-export async function redisScanKeys(connectionId: string, db: number, cursor: number, pattern: string, count: number): Promise<RedisScanResult> {
-  return post("/api/redis/scan-keys", {
-    connectionId,
-    db,
-    cursor,
-    pattern,
-    count,
-  });
-}
-
-export async function redisScanKeysBatch(connectionId: string, db: number, cursor: number, pattern: string, count: number, maxIterations: number, includeTypes = true): Promise<RedisScanResult> {
-  return post("/api/redis/scan-keys-batch", {
-    connectionId,
-    db,
-    cursor,
-    pattern,
-    count,
-    maxIterations,
-    includeTypes,
-  });
-}
-
-export async function redisScanValues(connectionId: string, db: number, cursor: number, pattern: string, query: string, count: number, includeKeyMatches = false): Promise<RedisScanResult> {
-  return post("/api/redis/scan-values", {
-    connectionId,
-    db,
-    cursor,
-    pattern,
-    query,
-    includeKeyMatches,
-    count,
-  });
-}
-
-export async function redisGetValue(connectionId: string, db: number, keyRaw: string): Promise<RedisValue> {
-  return post("/api/redis/get-value", { connectionId, db, keyRaw });
-}
-
-export async function redisGetTtl(connectionId: string, db: number, keyRaw: string): Promise<number> {
-  return post("/api/redis/get-ttl", { connectionId, db, keyRaw });
-}
-
-export async function redisGetStreamEntries(connectionId: string, db: number, keyRaw: string, cursor?: string): Promise<RedisStreamPage> {
-  return post("/api/redis/get-stream-entries", { connectionId, db, keyRaw, cursor });
-}
-
-export async function redisGetStreamGroups(connectionId: string, db: number, keyRaw: string): Promise<RedisStreamGroup[]> {
-  return post("/api/redis/get-stream-groups", { connectionId, db, keyRaw });
-}
-
-export async function redisGetStreamConsumers(connectionId: string, db: number, keyRaw: string, groupRaw: string): Promise<RedisStreamConsumer[]> {
-  return post("/api/redis/get-stream-consumers", {
-    connectionId,
-    db,
-    keyRaw,
-    groupRaw,
-  });
-}
-
-export async function redisGetStreamPending(connectionId: string, db: number, keyRaw: string, groupRaw: string, cursor?: string, consumerRaw?: string): Promise<RedisStreamPendingPage> {
-  return post("/api/redis/get-stream-pending", {
-    connectionId,
-    db,
-    keyRaw,
-    groupRaw,
-    cursor,
-    ...(consumerRaw === undefined ? {} : { consumerRaw }),
-  });
-}
-
-export async function redisSetString(connectionId: string, db: number, keyRaw: string, value: string, ttl?: number): Promise<void> {
-  return post("/api/redis/set-string", {
-    connectionId,
-    db,
-    keyRaw,
-    value,
-    ttl,
-  });
-}
-
-export async function redisDeleteKey(connectionId: string, db: number, keyRaw: string): Promise<void> {
-  return post("/api/redis/delete-key", { connectionId, db, keyRaw });
-}
-
-export async function redisHashSet(connectionId: string, db: number, keyRaw: string, field: string, value: string, ttl?: number): Promise<void> {
-  return post("/api/redis/hash-set", {
-    connectionId,
-    db,
-    keyRaw,
-    field,
-    value,
-    ttl,
-  });
-}
-
-export async function redisHashDel(connectionId: string, db: number, keyRaw: string, field: string): Promise<void> {
-  return post("/api/redis/hash-del", { connectionId, db, keyRaw, field });
-}
-
-export async function redisListPush(connectionId: string, db: number, keyRaw: string, value: string, ttl?: number): Promise<void> {
-  return post("/api/redis/list-push", { connectionId, db, keyRaw, value, ttl });
-}
-
-export async function redisListSet(connectionId: string, db: number, keyRaw: string, index: number, value: string): Promise<void> {
-  return post("/api/redis/list-set", {
-    connectionId,
-    db,
-    keyRaw,
-    index,
-    value,
-  });
-}
-
-export async function redisListRemove(connectionId: string, db: number, keyRaw: string, index: number): Promise<void> {
-  return post("/api/redis/list-remove", { connectionId, db, keyRaw, index });
-}
-
-export async function redisSetAdd(connectionId: string, db: number, keyRaw: string, member: string, ttl?: number): Promise<void> {
-  return post("/api/redis/set-add", { connectionId, db, keyRaw, member, ttl });
-}
-
-export async function redisSetRemove(connectionId: string, db: number, keyRaw: string, member: string): Promise<void> {
-  return post("/api/redis/set-remove", { connectionId, db, keyRaw, member });
-}
-
-export async function redisZadd(connectionId: string, db: number, keyRaw: string, member: string, score: number, ttl?: number): Promise<void> {
-  return post("/api/redis/zadd", {
-    connectionId,
-    db,
-    keyRaw,
-    member,
-    score,
-    ttl,
-  });
-}
-
-export async function redisZrem(connectionId: string, db: number, keyRaw: string, member: string): Promise<void> {
-  return post("/api/redis/zrem", { connectionId, db, keyRaw, member });
-}
-
-export async function redisZsetUpdate(connectionId: string, db: number, keyRaw: string, originalMember: string, expectedScore: string, member: string, score: string): Promise<boolean> {
-  return post("/api/redis/zset-update", { connectionId, db, keyRaw, originalMember, expectedScore, member, score });
-}
-
-export async function redisStreamAdd(connectionId: string, db: number, keyRaw: string, entryId: string, fields: [string, string][], ttl?: number): Promise<void> {
-  return post("/api/redis/stream-add", {
-    connectionId,
-    db,
-    keyRaw,
-    entryId,
-    fields,
-    ttl,
-  });
-}
-
-export async function redisJsonSet(connectionId: string, db: number, keyRaw: string, value: string, ttl?: number): Promise<void> {
-  return post("/api/redis/json-set", { connectionId, db, keyRaw, value, ttl });
-}
-
-export async function redisCheckJsonModule(connectionId: string, db: number): Promise<boolean> {
-  return post("/api/redis/check-json-module", { connectionId, db });
-}
-
-export async function redisSetTtl(connectionId: string, db: number, keyRaw: string, ttl: number): Promise<void> {
-  return post("/api/redis/set-ttl", { connectionId, db, keyRaw, ttl });
-}
-
-export async function redisSetExpireAt(connectionId: string, db: number, keyRaw: string, expireAt: number): Promise<void> {
-  return post("/api/redis/set-expire-at", {
-    connectionId,
-    db,
-    keyRaw,
-    expireAt,
-  });
-}
-
-export async function redisDeleteKeys(connectionId: string, db: number, keyRaws: string[]): Promise<number> {
-  return post("/api/redis/delete-keys", { connectionId, db, keyRaws });
-}
-
-export async function redisFlushDb(connectionId: string, db: number): Promise<void> {
-  return post("/api/redis/flush-db", { connectionId, db });
-}
-
-export async function redisExecuteCommand(connectionId: string, db: number, command: string, skipSafetyCheck?: boolean): Promise<RedisCommandResult> {
-  return post("/api/redis/execute-command", {
-    connectionId,
-    db,
-    command,
-    skipSafetyCheck: skipSafetyCheck ?? false,
-  });
-}
-
-export async function redisLoadMore(connectionId: string, db: number, keyRaw: string, keyType: string, cursor: number, count: number, filter?: string, sortDirection?: "asc" | "desc"): Promise<RedisCollectionPage> {
-  return post("/api/redis/load-more", {
-    connectionId,
-    db,
-    keyRaw,
-    keyType,
-    cursor,
-    count,
-    filter,
-    sortDirection,
-  });
-}
-
-export async function redisPubSubPublish(connectionId: string, db: number, channel: string, message: string): Promise<{ subscribers: number }> {
-  return post("/api/redis/pubsub/publish", {
-    connectionId,
-    db,
-    channel,
-    message,
-  });
-}
-
-export async function redisPubSubConnect(connectionId: string): Promise<WebSocket> {
-  return new WebSocket(apiWebSocketUrl(`/api/redis/pubsub/ws?connectionId=${encodeURIComponent(connectionId)}`));
-}
-
-export async function redisSlowlogGet(connectionId: string, count: number, nodeHost?: string, nodePort?: number): Promise<RedisSlowlogEntry[]> {
-  return post("/api/redis/slowlog-get", {
-    connectionId,
-    count,
-    nodeHost,
-    nodePort,
-  });
-}
-
-export async function redisClusterMasterNodes(connectionId: string): Promise<RedisNodeEndpoint[]> {
-  return post("/api/redis/cluster-master-nodes", { connectionId });
-}
-
-// ---------------------------------------------------------------------------
-// etcd
-// ---------------------------------------------------------------------------
-
-export async function etcdListPrefix(connectionId: string, prefix: string, limit: number, continuation?: string | null, options?: KvListPrefixOptions | null): Promise<KvListPrefixResponse> {
-  return post("/api/etcd/list-prefix", {
-    connectionId,
-    prefix,
-    limit,
-    continuation,
-    revision: options?.revision ?? null,
-    includeValues: options?.includeValues ?? null,
-  });
-}
-
-export async function etcdSupportsTtl(connectionId: string): Promise<boolean> {
-  return post("/api/etcd/supports-ttl", { connectionId });
-}
-
-export async function etcdGet(connectionId: string, key: string, options?: KvGetOptions | null): Promise<KvGetResponse> {
-  return post("/api/etcd/get", {
-    connectionId,
-    key,
-    keyBytes: options?.keyBytes ?? null,
-    revision: options?.revision ?? null,
-    metadataOnly: options?.metadataOnly ?? null,
-  });
-}
-
-export async function etcdPut(connectionId: string, key: string, value: KvValue, options?: KvPutOptions | number | null): Promise<KvPutResponse> {
-  const legacyLease = typeof options === "number" ? options : null;
-  const putOptions = typeof options === "object" ? options : null;
-  return post("/api/etcd/put", {
-    connectionId,
-    key,
-    value,
-    lease: legacyLease ?? putOptions?.lease ?? null,
-    ttl: putOptions?.ttl ?? null,
-    preserveLease: putOptions?.preserveLease ?? null,
-    keyBytes: putOptions?.keyBytes ?? null,
-    expectedModRevision: putOptions?.expectedModRevision ?? null,
-    expectedCreateRevision: putOptions?.expectedCreateRevision ?? null,
-  });
-}
-
-export async function etcdDelete(connectionId: string, key: string, options?: KvDeleteOptions | null): Promise<KvDeleteResponse> {
-  return post("/api/etcd/delete", {
-    connectionId,
-    key,
-    keyBytes: options?.keyBytes ?? null,
-    expectedModRevision: options?.expectedModRevision ?? null,
-  });
-}
-
-export async function etcdRename(
-  connectionId: string,
-  request: {
-    key: string;
-    keyBytes?: KvValue | null;
-    newKey: string;
-    expectedModRevision?: KvInt64 | null;
-  },
-): Promise<{ renamed: boolean; revision?: KvInt64 | null }> {
-  return post("/api/etcd/rename", { connectionId, request });
-}
-
-export async function etcdHistory(
-  connectionId: string,
-  request: {
-    key: string;
-    keyBytes?: KvValue | null;
-    startRevision?: KvInt64 | null;
-    endRevision?: KvInt64 | null;
-    limit: number;
-  },
-): Promise<KvHistoryResponse> {
-  return post("/api/etcd/history", { connectionId, request });
-}
-
-export async function etcdStatus(connectionId: string): Promise<KvStatusResponse> {
-  return post("/api/etcd/status", { connectionId });
-}
-export async function etcdPreflight(connectionId: string, action: string, params: Record<string, unknown>): Promise<import("./tauri").EtcdPreflightResponse> {
-  return post("/api/etcd/preflight", { connectionId, request: { action, params } });
-}
-export async function etcdCompact(connectionId: string, revision: KvInt64, approval: import("./tauri").EtcdDangerousApproval): Promise<{ revision: KvInt64 }> {
-  return post("/api/etcd/compact", { connectionId, revision, ...approval });
-}
-export async function etcdDefrag(connectionId: string, endpoints: string[], approval: import("./tauri").EtcdDangerousApproval): Promise<EtcdDefragResponse> {
-  return post("/api/etcd/defrag", { connectionId, endpoints, ...approval });
-}
-export async function etcdWatchStart(connectionId: string, request: EtcdWatchStartRequest): Promise<EtcdWatchStartResponse> {
-  return post("/api/etcd/watch/start", { connectionId, request });
-}
-export async function etcdWatchPoll(connectionId: string, watchId: string): Promise<EtcdWatchPollResponse> {
-  return post("/api/etcd/watch/poll", { connectionId, watchId });
-}
-export async function etcdWatchStop(connectionId: string, watchId: string): Promise<{ stopped: boolean }> {
-  return post("/api/etcd/watch/stop", { connectionId, watchId });
-}
-export async function etcdLeaseList(connectionId: string, limit = 100, continuation?: string | null): Promise<EtcdLeaseListResponse> {
-  return post("/api/etcd/lease/list", { connectionId, limit, continuation: continuation ?? null });
-}
-export async function etcdLeaseCall<T = unknown>(connectionId: string, operation: "get" | "grant" | "keepalive" | "revoke", params: Record<string, unknown>, approval?: import("./tauri").EtcdDangerousApproval): Promise<T> {
-  return post("/api/etcd/lease/call", { connectionId, operation, params, ...approval });
-}
-export async function etcdAuthCall<T = unknown>(connectionId: string, operation: string, params: Record<string, unknown>, approval?: import("./tauri").EtcdDangerousApproval): Promise<T> {
-  return post("/api/etcd/auth/call", { connectionId, operation, params, ...approval });
-}
-
-// ---------------------------------------------------------------------------
-// ZooKeeper
-// ---------------------------------------------------------------------------
-
-export async function zookeeperListPrefix(connectionId: string, prefix: string, limit: number, continuation?: string | null, options?: KvListPrefixOptions | null): Promise<KvListPrefixResponse> {
-  return post("/api/zookeeper/list-prefix", {
-    connectionId,
-    prefix,
-    limit,
-    continuation,
-    recursive: options?.recursive ?? null,
-  });
-}
-
-export async function zookeeperGet(connectionId: string, key: string): Promise<KvGetResponse> {
-  return post("/api/zookeeper/get", { connectionId, key });
-}
-
-export async function zookeeperPut(connectionId: string, key: string, value: KvValue, options?: KvPutOptions | null): Promise<KvPutResponse> {
-  return post("/api/zookeeper/put", {
-    connectionId,
-    key,
-    value,
-    options: options ?? null,
-  });
-}
-
-export async function zookeeperDelete(connectionId: string, key: string): Promise<KvDeleteResponse> {
-  return post("/api/zookeeper/delete", { connectionId, key });
-}
-
-// ---------------------------------------------------------------------------
-// Nacos
-// ---------------------------------------------------------------------------
-
-export async function nacosTestConnection(connectionId: string): Promise<NacosConnectionInfo> {
-  return post("/api/nacos/test-connection", { connectionId });
-}
-
-export async function nacosListNamespaces(connectionId: string): Promise<NacosNamespaceInfo[]> {
-  return post("/api/nacos/namespaces/list", { connectionId });
-}
-
-export async function nacosCreateNamespace(connectionId: string, req: NacosNamespaceCreate): Promise<void> {
-  return post("/api/nacos/namespaces/create", { connectionId, req });
-}
-
-export async function nacosUpdateNamespace(connectionId: string, req: NacosNamespaceUpdate): Promise<void> {
-  return post("/api/nacos/namespaces/update", { connectionId, req });
-}
-
-export async function nacosListConfigs(connectionId: string, query: NacosConfigQuery): Promise<NacosConfigList> {
-  return post("/api/nacos/configs/list", { connectionId, query });
-}
-
-export async function nacosGetConfig(connectionId: string, key: NacosConfigKey): Promise<NacosConfigItem> {
-  return post("/api/nacos/configs/get", { connectionId, key });
-}
-
-export async function nacosPublishConfig(connectionId: string, req: NacosConfigUpsert): Promise<void> {
-  return post("/api/nacos/configs/publish", { connectionId, req });
-}
-
-export async function nacosDeleteConfig(connectionId: string, key: NacosConfigKey): Promise<void> {
-  return post("/api/nacos/configs/delete", { connectionId, key });
-}
-
-export async function nacosSearchConfigContent(connectionId: string, req: NacosContentSearchRequest, onProgress?: (progress: NacosSearchProgress) => void): Promise<NacosContentSearchResult> {
-  const response = await fetch(apiUrl("/api/nacos/configs/search"), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ connectionId, req }),
-  });
-  if (!response.ok) throw await backendResponseError(response);
-  if (!response.body) throw new Error("Nacos content search did not return a response stream");
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let result: NacosContentSearchResult | null = null;
-
-  const consumeLine = (line: string) => {
-    if (!line.startsWith("data:")) return;
-    const data = line.slice(5).trim();
-    if (!data) return;
-    const event = JSON.parse(data) as { type: "progress"; progress: NacosSearchProgress } | { type: "result"; result: NacosContentSearchResult } | { type: "error"; error: string };
-    if (event.type === "progress") onProgress?.(event.progress);
-    else if (event.type === "result") result = event.result;
-    else throw new Error(event.error);
-  };
-
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
-      for (const line of lines) consumeLine(line);
-    }
-    buffer += decoder.decode();
-    if (buffer) consumeLine(buffer);
-    if (!result) throw new Error("Nacos content search stream ended without a final result");
-    return result;
-  } finally {
-    await reader.cancel().catch(() => {});
-  }
-}
-
-export async function nacosCancelConfigContentSearch(operationId: string): Promise<boolean> {
-  const result = await post<{ cancelled: boolean }>("/api/nacos/configs/search/cancel", { operationId });
-  return result.cancelled;
-}
-
-export async function nacosExportConfigs(connectionId: string, selector: NacosConfigSelector, _destination: string, fileName = "nacos-configs.zip"): Promise<void> {
-  const response = await fetch(apiUrl("/api/nacos/configs/export"), {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ connectionId, selector, fileName }),
-  });
-  if (!response.ok) throw await backendResponseError(response);
-  const blob = await response.blob();
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = fileName;
-  anchor.click();
-  setTimeout(() => URL.revokeObjectURL(url), 0);
-}
-
-export async function nacosPreviewConfigImport(connectionId: string, targetNamespace: string, archivePath: string | File): Promise<NacosBatchPreview> {
-  if (!(archivePath instanceof File)) throw new Error("Nacos ZIP import in web mode requires a File object");
-  const formData = new FormData();
-  formData.append("connectionId", connectionId);
-  formData.append("targetNamespace", targetNamespace);
-  formData.append("file", archivePath, archivePath.name);
-  const response = await fetch(apiUrl("/api/nacos/configs/import/preview"), {
-    method: "POST",
-    body: formData,
-  });
-  if (!response.ok) throw await backendResponseError(response);
-  return response.json();
-}
-
-export async function nacosApplyConfigImport(connectionId: string, operationId: string, targetNamespace: string, _archivePath: string | File, planHash: string, conflictPolicy: NacosConflictPolicy, archiveToken?: string): Promise<NacosBatchReport> {
-  if (!archiveToken) throw new Error("The Nacos import preview token is missing or expired");
-  return post("/api/nacos/configs/import/apply", {
-    connectionId,
-    operationId,
-    targetNamespace,
-    archiveToken,
-    planHash,
-    conflictPolicy,
-  });
-}
-
-export async function nacosPreviewConfigTransfer(req: NacosConfigTransferRequest): Promise<NacosBatchPreview> {
-  return post("/api/nacos/configs/copy/preview", { req });
-}
-
-export async function nacosApplyConfigTransfer(req: NacosConfigTransferRequest, planHash: string): Promise<NacosBatchReport> {
-  return post("/api/nacos/configs/copy/apply", { req, planHash });
-}
-
-export async function nacosListConfigHistory(connectionId: string, query: NacosConfigHistoryQuery): Promise<NacosConfigHistoryList> {
-  return post("/api/nacos/configs/history/list", { connectionId, query });
-}
-
-export async function nacosGetConfigHistory(connectionId: string, key: NacosConfigHistoryKey): Promise<NacosConfigItem> {
-  return post("/api/nacos/configs/history/get", { connectionId, key });
-}
-
-export async function nacosRollbackConfig(connectionId: string, req: NacosConfigRollbackRequest): Promise<void> {
-  return post("/api/nacos/configs/history/rollback", { connectionId, req });
-}
-
-export async function nacosGetRNacosConsoleCaptcha(connectionId: string): Promise<NacosRNacosConsoleCaptcha> {
-  return post("/api/nacos/rnacos-console/captcha", { connectionId });
-}
-
-export async function nacosLoginRNacosConsole(connectionId: string, captcha?: string): Promise<void> {
-  return post("/api/nacos/rnacos-console/login", { connectionId, captcha });
-}
-
-export async function nacosListServices(connectionId: string, query: NacosServiceQuery): Promise<NacosServiceList> {
-  return post("/api/nacos/services/list", { connectionId, query });
-}
-
-export async function nacosListInstances(connectionId: string, query: NacosInstanceQuery): Promise<NacosInstanceInfo[]> {
-  return post("/api/nacos/instances/list", { connectionId, query });
-}
-
-export async function nacosUpdateInstance(connectionId: string, req: NacosInstanceUpdate): Promise<void> {
-  return post("/api/nacos/instances/update", { connectionId, req });
-}
-
-export async function nacosGetDashboard(connectionId: string, query: NacosDashboardQuery): Promise<NacosDashboardSnapshot> {
-  return post("/api/nacos/dashboard", { connectionId, query });
-}
-
-export async function nacosRawRequest(connectionId: string, req: NacosRawRequest): Promise<NacosRawResponse> {
-  return post("/api/nacos/raw", { connectionId, req });
-}
-
-// ---------------------------------------------------------------------------
-// HBase
-// ---------------------------------------------------------------------------
-
-export async function hbaseGetTableSchema(connectionId: string, namespace: string, table: string): Promise<import("@/types/hbase").HBaseTableSchema> {
-  return post("/api/hbase/table-schema", { connectionId, namespace, table });
-}
-
-export async function hbaseScanRows(connectionId: string, namespace: string, table: string, rowKeyPrefix: string | undefined, limit: number): Promise<import("@/types/hbase").HBaseScanResult> {
-  return post("/api/hbase/scan-rows", {
-    connectionId,
-    namespace,
-    table,
-    rowKeyPrefix,
-    limit,
-  });
-}
-
-export async function hbaseGetRow(connectionId: string, namespace: string, table: string, rowKey: string, rowKeyEncoding?: import("@/types/hbase").HBaseValueEncoding): Promise<import("@/types/hbase").HBaseRow | null> {
-  return post("/api/hbase/get-row", {
-    connectionId,
-    namespace,
-    table,
-    rowKey,
-    rowKeyEncoding,
-  });
-}
-
-export async function hbasePutRow(connectionId: string, namespace: string, table: string, input: import("@/types/hbase").HBasePutRowInput): Promise<void> {
-  return post("/api/hbase/put-row", { connectionId, namespace, table, input });
-}
-
-export async function hbaseDeleteRow(connectionId: string, namespace: string, table: string, rowKey: string, rowKeyEncoding?: import("@/types/hbase").HBaseValueEncoding): Promise<void> {
-  return post("/api/hbase/delete-row", {
-    connectionId,
-    namespace,
-    table,
-    rowKey,
-    rowKeyEncoding,
-  });
-}
-
-export async function hbaseCreateTable(connectionId: string, namespace: string, table: string, columnFamilies: string[]): Promise<void> {
-  return post("/api/hbase/create-table", {
-    connectionId,
-    namespace,
-    table,
-    columnFamilies,
-  });
-}
-
-export async function hbaseDeleteTable(connectionId: string, namespace: string, table: string): Promise<void> {
-  return post("/api/hbase/delete-table", { connectionId, namespace, table });
-}
-
-// ---------------------------------------------------------------------------
-// MongoDB
-// ---------------------------------------------------------------------------
-
-export async function documentListDatabases(connectionId: string): Promise<string[]> {
-  return post("/api/document-store/list-databases", { connectionId });
-}
-
-export async function mongoListDatabases(connectionId: string): Promise<string[]> {
-  return documentListDatabases(connectionId);
-}
-
-export async function documentListCollections(connectionId: string, database: string): Promise<CollectionInfo[]> {
-  return post("/api/document-store/list-collections", {
-    connectionId,
-    database,
-  });
-}
-
-export async function mongoListCollections(connectionId: string, database: string): Promise<CollectionInfo[]> {
-  return documentListCollections(connectionId, database);
-}
-
-export async function mongoCreateDatabase(connectionId: string, database: string): Promise<void> {
-  await post("/api/mongo/create-database", { connectionId, database });
-}
-
-export async function mongoDropDatabase(connectionId: string, database: string): Promise<void> {
-  await post("/api/mongo/drop-database", { connectionId, database });
-}
-
-export async function mongoDropCollection(connectionId: string, database: string, collection: string): Promise<void> {
-  await post("/api/mongo/drop-collection", {
-    connectionId,
-    database,
-    collection,
-  });
-}
-
-export async function mongoRenameCollection(connectionId: string, database: string, collection: string, newName: string): Promise<void> {
-  await post("/api/mongo/rename-collection", {
-    connectionId,
-    database,
-    collection,
-    newName,
-  });
-}
-
-export async function elasticsearchListIndices(connectionId: string): Promise<string[]> {
-  const collections = await documentListCollections(connectionId, "default");
-  return collections.map((c) => c.name);
-}
-
-export async function vectorListCollections(connectionId: string, database?: string): Promise<CollectionInfo[]> {
-  return documentListCollections(connectionId, database || "default");
-}
-
-export async function vectorGetCollectionDetail(connectionId: string, database: string, collection: string): Promise<CollectionInfo> {
-  return post("/api/mongo/vector-collection-detail", {
-    connectionId,
-    database,
-    collection,
-  });
-}
-
-export async function mongoFindDocuments(connectionId: string, database: string, collection: string, skip: number, limit: number, filter?: string, projection?: string, sort?: string, collation?: string, executionId?: string): Promise<MongoDocumentResult> {
-  return documentFindDocuments(connectionId, database, collection, skip, limit, filter, projection, sort, collation, executionId);
-}
-
-export async function mongoParseShellCommand(source: string): Promise<MongoCommand> {
-  const raw = await post<Record<string, unknown>>("/api/mongo/parse-shell-command", { source });
-  return normalizeRustMongoCommand(raw);
-}
-
-export async function mongoFindOne(connectionId: string, database: string, collection: string, filter?: string, projection?: string, options?: string, executionId?: string): Promise<MongoDocumentResult> {
-  return post("/api/mongo/find-one", {
-    connectionId,
-    database,
-    collection,
-    filter,
-    projection,
-    options,
-    executionId,
-  });
-}
-
-export async function documentFindDocuments(connectionId: string, database: string, collection: string, skip: number, limit: number, filter?: string, projection?: string, sort?: string, collation?: string, executionId?: string): Promise<DocumentQueryResult> {
-  return post("/api/document-store/find-documents", {
-    connectionId,
-    database,
-    collection,
-    skip,
-    limit,
-    filter,
-    projection,
-    sort,
-    collation,
-    executionId,
-  });
-}
-
-export async function elasticsearchCountDocuments(connectionId: string, index: string, filter?: string, executionId?: string): Promise<number> {
-  return post("/api/document-store/elasticsearch-count-documents", {
-    connectionId,
-    index,
-    filter,
-    executionId,
-  });
-}
-
-export async function mongoCountDocuments(connectionId: string, database: string, collection: string, filter?: string, mode?: "accurate" | "legacy", executionId?: string): Promise<number> {
-  return post("/api/mongo/count-documents", {
-    connectionId,
-    database,
-    collection,
-    filter,
-    mode,
-    executionId,
-  });
-}
-
-export async function documentListGridFsFiles(connectionId: string, database: string, bucket: string, filter?: string, sort?: string): Promise<MongoGridFsFileInfo[]> {
-  return post("/api/document-store/list-gridfs-files", {
-    connectionId,
-    database,
-    bucket,
-    filter,
-    sort,
-  });
-}
-
-export async function documentListGridFsBuckets(connectionId: string, database: string, filter?: string, sort?: string): Promise<MongoGridFsBucketInfo[]> {
-  return post("/api/document-store/list-gridfs-buckets", {
-    connectionId,
-    database,
-    filter,
-    sort,
-  });
-}
-
-export async function documentCreateGridFsBucket(connectionId: string, database: string, bucket: string): Promise<void> {
-  return post("/api/document-store/create-gridfs-bucket", {
-    connectionId,
-    database,
-    bucket,
-  });
-}
-
-export async function documentDeleteGridFsBucket(connectionId: string, database: string, bucket: string): Promise<void> {
-  return post("/api/document-store/delete-gridfs-bucket", {
-    connectionId,
-    database,
-    bucket,
-  });
-}
-
-export async function documentDownloadGridFsFile(connectionId: string, database: string, bucket: string, fileId: string): Promise<Uint8Array> {
-  const res = await fetch(apiUrl("/api/document-store/download-gridfs-file"), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ connectionId, database, bucket, fileId }),
-  });
-  if (!res.ok) throw await backendResponseError(res);
-  const data = (await res.json()) as number[];
-  return new Uint8Array(data);
-}
-
-export async function documentUploadGridFsFile(connectionId: string, database: string, bucket: string, fileName: string, data: Uint8Array, contentType?: string): Promise<string> {
-  const body = new FormData();
-  body.append("connectionId", connectionId);
-  body.append("database", database);
-  body.append("bucket", bucket);
-  body.append("fileName", fileName);
-  if (contentType) body.append("contentType", contentType);
-  const bytes = new Uint8Array(data.byteLength);
-  bytes.set(data);
-  body.append("file", new Blob([bytes], { type: contentType || "application/octet-stream" }), fileName);
-  const res = await fetch(apiUrl("/api/document-store/upload-gridfs-file"), {
-    method: "POST",
-    body,
-  });
-  if (!res.ok) throw await backendResponseError(res);
-  return res.json();
-}
-
-export async function documentDeleteGridFsFile(connectionId: string, database: string, bucket: string, fileId: string): Promise<void> {
-  return post("/api/document-store/delete-gridfs-file", {
-    connectionId,
-    database,
-    bucket,
-    fileId,
-  });
-}
-
-export async function mongoServerVersion(connectionId: string, database: string, executionId?: string): Promise<string> {
-  return post("/api/mongo/server-version", {
-    connectionId,
-    database,
-    executionId,
-  });
-}
-
-export async function mongoAggregateDocuments(connectionId: string, database: string, collection: string, pipelineJson: string, maxRows?: number, optionsJson?: string, executionId?: string): Promise<MongoDocumentResult> {
-  return post("/api/mongo/aggregate-documents", {
-    connectionId,
-    database,
-    collection,
-    pipelineJson,
-    maxRows,
-    optionsJson,
-    executionId,
-  });
-}
-
-export async function mongoDistinct(connectionId: string, database: string, collection: string, field: string, filter?: string, executionId?: string): Promise<MongoDocumentResult> {
-  return post("/api/mongo/distinct", {
-    connectionId,
-    database,
-    collection,
-    field,
-    filter,
-    executionId,
-  });
-}
-
-export async function mongoCollectionStats(connectionId: string, database: string, collection: string, scale?: number, executionId?: string): Promise<MongoCollectionStatsResult> {
-  return post("/api/mongo/collection-stats", {
-    connectionId,
-    database,
-    collection,
-    scale,
-    executionId,
-  });
-}
-
-export async function mongoCreateIndex(connectionId: string, database: string, collection: string, keysJson: string, optionsJson?: string): Promise<{ name: string }> {
-  return post("/api/mongo/create-index", {
-    connectionId,
-    database,
-    collection,
-    keysJson,
-    optionsJson,
-  });
-}
-
-export async function mongoDropIndexes(connectionId: string, database: string, collection: string, indexesJson?: string, single = false): Promise<MongoDropIndexesResult> {
-  return post("/api/mongo/drop-indexes", {
-    connectionId,
-    database,
-    collection,
-    indexesJson,
-    single,
-  });
-}
-
-export async function mongoInsertDocument(connectionId: string, database: string, collection: string, docJson: string, routing?: string): Promise<string> {
-  return documentInsertDocument(connectionId, database, collection, docJson, routing);
-}
-
-export async function documentInsertDocument(connectionId: string, database: string, collection: string, docJson: string, routing?: string): Promise<string> {
-  return post("/api/document-store/insert-document", {
-    connectionId,
-    database,
-    collection,
-    docJson,
-    routing,
-  });
-}
-
-export async function mongoInsertDocuments(connectionId: string, database: string, collection: string, docsJson: string): Promise<{ affected_rows: number }> {
-  return post("/api/mongo/insert-documents", {
-    connectionId,
-    database,
-    collection,
-    docsJson,
-  });
-}
-
-export async function mongoUpdateDocument(connectionId: string, database: string, collection: string, id: string, docJson: string, routing?: string): Promise<number> {
-  return documentUpdateDocument(connectionId, database, collection, id, docJson, routing);
-}
-
-export async function documentUpdateDocument(connectionId: string, database: string, collection: string, id: string, docJson: string, routing?: string): Promise<number> {
-  return post("/api/document-store/update-document", {
-    connectionId,
-    database,
-    collection,
-    id,
-    docJson,
-    routing,
-  });
-}
-
-export async function mongoUpdateDocuments(connectionId: string, database: string, collection: string, filterJson: string, updateJson: string, many: boolean, optionsJson?: string): Promise<{ affected_rows: number }> {
-  return post("/api/mongo/update-documents", {
-    connectionId,
-    database,
-    collection,
-    filterJson,
-    updateJson,
-    many,
-    optionsJson,
-  });
-}
-
-export async function mongoDeleteDocument(connectionId: string, database: string, collection: string, id: string, routing?: string): Promise<number> {
-  return documentDeleteDocument(connectionId, database, collection, id, routing);
-}
-
-export async function documentDeleteDocument(connectionId: string, database: string, collection: string, id: string, routing?: string, documentType?: string): Promise<number> {
-  return post("/api/document-store/delete-document", {
-    connectionId,
-    database,
-    collection,
-    id,
-    routing,
-    documentType,
-  });
-}
-
-export async function mongoDeleteDocuments(connectionId: string, database: string, collection: string, filterJson: string, many: boolean): Promise<{ affected_rows: number }> {
-  return post("/api/mongo/delete-documents", {
-    connectionId,
-    database,
-    collection,
-    filterJson,
-    many,
-  });
-}
-
-export async function mongoFindOneAndUpdate(connectionId: string, database: string, collection: string, filterJson: string, updateJson: string, optionsJson?: string): Promise<MongoDocumentResult> {
-  return post("/api/mongo/find-one-and-update", {
-    connectionId,
-    database,
-    collection,
-    filterJson,
-    updateJson,
-    optionsJson,
-  });
-}
-
-export async function mongoFindOneAndReplace(connectionId: string, database: string, collection: string, filterJson: string, replacementJson: string, optionsJson?: string): Promise<MongoDocumentResult> {
-  return post("/api/mongo/find-one-and-replace", {
-    connectionId,
-    database,
-    collection,
-    filterJson,
-    replacementJson,
-    optionsJson,
-  });
-}
-
-export async function mongoFindOneAndDelete(connectionId: string, database: string, collection: string, filterJson: string, optionsJson?: string): Promise<MongoDocumentResult> {
-  return post("/api/mongo/find-one-and-delete", {
-    connectionId,
-    database,
-    collection,
-    filterJson,
-    optionsJson,
-  });
-}
-
-// ---------------------------------------------------------------------------
 // History
 // ---------------------------------------------------------------------------
 
@@ -3271,17 +2143,8 @@ export async function loadHistoryConnectionOptions(): Promise<HistoryConnectionO
   return get("/api/history/options");
 }
 
-export async function loadRedisHistory(limit = 100, offset = 0): Promise<HistoryEntry[]> {
-  return loadHistory(limit, offset, "redis_command");
-}
-
 export async function clearHistory(): Promise<void> {
   return del("/api/history");
-}
-
-export async function clearRedisHistory(): Promise<void> {
-  const entries = await loadRedisHistory(1000, 0);
-  await Promise.all(entries.map((e) => deleteHistoryEntry(e.id)));
 }
 
 export async function deleteHistoryEntry(id: string): Promise<void> {
@@ -3409,7 +2272,5 @@ export async function opengaussDebugCallResult(sessionId: string): Promise<strin
   return post("/api/debug/call-result", { session_id: sessionId });
 }
 
-export * from "@/lib/backend/mq-http";
-export * from "@/lib/backend/mqtt-http";
 export * from "@/lib/backend/git-http";
 export type * from "@/types/git";

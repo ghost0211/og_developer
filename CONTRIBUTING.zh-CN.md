@@ -42,19 +42,6 @@ make docs              # 本地预览文档站
 make cargo-check-fast  # 快速 Rust 检查
 ```
 
-### JDBC Agent 驱动
-
-Agent 驱动工程在 `agents/` 目录。Java/JDBC 驱动构建和测试需要 JDK 21；环境允许时 Gradle 可以自动下载对应 toolchain。
-
-```bash
-cd agents
-./gradlew test
-```
-
-修改已有 Agent 时不要手动修改 `agents/versions.json`，发布工作流会自动 bump 发生变化的模块。只有新增驱动时才需要登记初始版本；新增 Java/JDBC 驱动还要同步 `agents/settings.gradle` 和支持列表，原生驱动按 Agent authoring/release checklist 登记构建产物。
-
-本地验证 Java Agent 时，需要构建目标 `shadowJar`，备份并覆盖 `~/.dbx/agents/drivers/<db_type>/agent.jar`，然后重启 DBX 或重新连接数据库。完整命令见[官网贡献教程](https://dbxio.com/cn/docs/contributing)。
-
 ## 项目结构
 
 | 路径 | 说明 |
@@ -65,10 +52,8 @@ cd agents
 | `crates/dbx-web/` | Docker / Web HTTP 后端 |
 | `packages/cli/` | `@dbx-app/cli` |
 | `packages/mcp-server/` | `@dbx-app/mcp-server` |
-| `packages/mongo-shell/` | 桌面端内部 MongoDB 编辑器解析工具 |
 | `docs/` | 官方文档站 |
 | `examples/` | 配置与自动化示例 |
-| `agents/` | JDBC Agent 驱动工程 |
 
 ## 开发约定
 

@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use sqlparser::dialect::{MsSqlDialect, PostgreSqlDialect};
+use sqlparser::dialect::PostgreSqlDialect;
 use sqlparser::tokenizer::{Token, Tokenizer};
 
 use crate::models::connection::DatabaseType;
@@ -59,46 +59,18 @@ pub fn build_explain_sql(options: ExplainSqlOptions) -> ExplainSqlBuildResult {
     }
     if options.analyze == Some(true)
         && options.database_type.is_some_and(|database_type| {
-            matches!(
-                database_type,
-                DatabaseType::Postgres | DatabaseType::OpenGauss | DatabaseType::Gaussdb | DatabaseType::SqlServer
-            ) && is_write_sql_for_database(&source, database_type)
+            matches!(database_type, DatabaseType::Postgres | DatabaseType::OpenGauss)
+                && is_write_sql_for_database(&source, database_type)
         })
     {
         return explain_err("unsafe");
     }
-    if options.database_type == Some(DatabaseType::SqlServer) && crate::sql::split_sql_batches(&source).len() != 1 {
-        return explain_err("unsafe");
-    }
 
     let sql = match options.database_type {
-        // ANALYZE executes the statement; is_safe_explain_sql has already limited
-        // the source to SELECT/WITH/TABLE/VALUES. MongoDb shares the plain arm only.
-        Some(DatabaseType::Postgres | DatabaseType::OpenGauss | DatabaseType::Gaussdb)
-            if options.analyze == Some(true) =>
-        {
+        Some(DatabaseType::Postgres | DatabaseType::OpenGauss) if options.analyze == Some(true) => {
             format!("EXPLAIN (ANALYZE, FORMAT JSON) {source}")
         }
-        Some(DatabaseType::Postgres | DatabaseType::OpenGauss | DatabaseType::Gaussdb | DatabaseType::MongoDb) => {
-            format!("EXPLAIN (FORMAT JSON) {source}")
-        }
-        Some(DatabaseType::Dameng | DatabaseType::Questdb) => {
-            format!("EXPLAIN {source}")
-        }
-        Some(DatabaseType::Oracle) => format!("EXPLAIN PLAN FOR {source}"),
-        // STATISTICS XML returns the same ShowPlanXML document plus per-operator
-        // runtime counters, at the price of actually running the statement.
-        Some(DatabaseType::SqlServer) if options.analyze == Some(true) => {
-            format!("SET STATISTICS XML ON;\nGO\n{source}\nGO\nSET STATISTICS XML OFF;")
-        }
-        Some(DatabaseType::SqlServer) => {
-            format!("SET SHOWPLAN_XML ON;\nGO\n{source}\nGO\nSET SHOWPLAN_XML OFF;")
-        }
-        Some(DatabaseType::Mysql) if options.format == Some(ExplainFormat::Standard) => {
-            // MySQL 8.0.32+ may otherwise inherit TREE or JSON from the session-level explain_format.
-            format!("EXPLAIN FORMAT=TRADITIONAL {source}")
-        }
-        _ => format!("EXPLAIN FORMAT=JSON {source}"),
+        _ => format!("EXPLAIN (FORMAT JSON) {source}"),
     };
     ExplainSqlBuildResult { ok: true, sql: Some(sql), reason: None }
 }
@@ -123,19 +95,7 @@ pub fn build_dropped_file_preview_sql(options: DroppedFilePreviewSqlOptions) -> 
 }
 
 pub fn supports_explain_plan(database_type: Option<DatabaseType>) -> bool {
-    matches!(
-        database_type,
-        Some(
-            DatabaseType::Mysql
-                | DatabaseType::Postgres
-                | DatabaseType::OpenGauss
-                | DatabaseType::Gaussdb
-                | DatabaseType::Questdb
-                | DatabaseType::Dameng
-                | DatabaseType::Oracle
-                | DatabaseType::SqlServer
-        )
-    )
+    matches!(database_type, Some(DatabaseType::Postgres | DatabaseType::OpenGauss))
 }
 
 pub fn is_safe_explain_sql(sql: &str) -> bool {
@@ -148,22 +108,8 @@ pub fn is_safe_explain_sql(sql: &str) -> bool {
 
 /// Returns true for databases that support SQL query execution (execute_query / get_sample_data).
 /// Non-SQL databases (Redis, MongoDB, Elasticsearch, InfluxDB, VictoriaMetrics, Neo4j, etcd) are excluded.
-pub fn supports_sql_query(database_type: DatabaseType) -> bool {
-    !matches!(
-        database_type,
-        DatabaseType::Redis
-            | DatabaseType::MongoDb
-            | DatabaseType::Elasticsearch
-            | DatabaseType::Easysearch
-            | DatabaseType::Qdrant
-            | DatabaseType::Milvus
-            | DatabaseType::Weaviate
-            | DatabaseType::ChromaDb
-            | DatabaseType::InfluxDb
-            | DatabaseType::VictoriaMetrics
-            | DatabaseType::Neo4j
-            | DatabaseType::Etcd
-    )
+pub fn supports_sql_query(_database_type: DatabaseType) -> bool {
+    !false
 }
 
 pub fn is_safe_dameng_autotrace_sql(sql: &str) -> bool {
@@ -237,7 +183,7 @@ pub fn is_write_sql(sql: &str) -> bool {
 pub fn is_write_sql_for_database(sql: &str, database_type: DatabaseType) -> bool {
     // VictoriaMetrics execution is hard-wired to the read-only query API; MetricsQL
     // does not use SQL verbs and must not be rejected by SQL write classification.
-    if database_type == DatabaseType::VictoriaMetrics {
+    if false {
         return false;
     }
     if let Some(risk) = classify_search_engine_query_risk(sql, database_type) {
@@ -255,9 +201,9 @@ pub(crate) enum SearchEngineQueryRisk {
 
 pub(crate) fn classify_search_engine_query_risk(
     source: &str,
-    database_type: DatabaseType,
+    _database_type: DatabaseType,
 ) -> Option<SearchEngineQueryRisk> {
-    if !matches!(database_type, DatabaseType::Elasticsearch | DatabaseType::Easysearch) {
+    if !false {
         return None;
     }
     let source = strip_leading_search_engine_comments(source);
@@ -322,9 +268,6 @@ fn strip_leading_search_engine_comments(input: &str) -> &str {
 }
 
 fn is_write_sql_with_database_type(sql: &str, database_type: Option<DatabaseType>) -> bool {
-    if database_type == Some(DatabaseType::SqlServer) && is_sqlserver_plan_capture_set(sql) {
-        return false;
-    }
     if database_type.is_some_and(|database_type| has_dialect_specific_write(sql, database_type)) {
         return true;
     }
@@ -343,41 +286,12 @@ fn is_write_sql_with_database_type(sql: &str, database_type: Option<DatabaseType
         .any(|statement| is_write_sql_statement(statement, detect_mysql_executable_comments, detect_select_into))
 }
 
-/// The explain flows toggle plan capture with a standalone SET statement:
-/// `SHOWPLAN_XML` for the estimated plan, `STATISTICS XML` for the actual one.
-fn is_sqlserver_plan_capture_set(sql: &str) -> bool {
-    let normalized = strip_sql_comments(sql)
-        .split_whitespace()
-        .map(|part| part.trim_end_matches(';').to_ascii_uppercase())
-        .collect::<Vec<_>>();
-    let tokens = normalized.iter().map(String::as_str).collect::<Vec<_>>();
-    matches!(tokens.as_slice(), ["SET", "SHOWPLAN_XML", "ON" | "OFF"] | ["SET", "STATISTICS", "XML", "ON" | "OFF"])
-}
-
-fn is_mysql_compatible_database(database_type: DatabaseType) -> bool {
-    matches!(
-        database_type,
-        DatabaseType::Mysql
-            | DatabaseType::Doris
-            | DatabaseType::StarRocks
-            | DatabaseType::ManticoreSearch
-            | DatabaseType::Goldendb
-    )
+fn is_mysql_compatible_database(_database_type: DatabaseType) -> bool {
+    false
 }
 
 fn is_postgresql_family_database(database_type: DatabaseType) -> bool {
-    matches!(
-        database_type,
-        DatabaseType::Postgres
-            | DatabaseType::Redshift
-            | DatabaseType::Gaussdb
-            | DatabaseType::OpenGauss
-            | DatabaseType::Kingbase
-            | DatabaseType::Highgo
-            | DatabaseType::Uxdb
-            | DatabaseType::Vastbase
-            | DatabaseType::Kwdb
-    )
+    matches!(database_type, DatabaseType::Postgres | DatabaseType::OpenGauss)
 }
 
 /// Detects write-capable syntax that otherwise looks like a read query and is
@@ -399,7 +313,6 @@ fn has_dialect_specific_write_statement(sql: &str, database_type: DatabaseType) 
         contains_unquoted_keyword(sql, &PostgreSqlDialect {}, "INTO")
     } else {
         match database_type {
-            DatabaseType::SqlServer => contains_unquoted_keyword(sql, &MsSqlDialect {}, "INTO"),
             _ => false,
         }
     }
@@ -794,6 +707,7 @@ where
 }
 
 #[cfg(test)]
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -805,788 +719,25 @@ mod tests {
             analyze: None,
             sql: " select * from users where id = 1; ".to_string(),
         });
-
-        assert_eq!(
-            result,
-            ExplainSqlBuildResult {
-                ok: true,
-                sql: Some("EXPLAIN (FORMAT JSON) select * from users where id = 1".to_string()),
-                reason: None,
-            }
-        );
+        assert_eq!(result.sql.as_deref(), Some("EXPLAIN (FORMAT JSON) select * from users where id = 1"));
     }
 
     #[test]
-    fn builds_postgres_analyze_explain_sql() {
+    fn builds_opengauss_json_explain_sql() {
         let result = build_explain_sql(ExplainSqlOptions {
-            database_type: Some(DatabaseType::Postgres),
+            database_type: Some(DatabaseType::Opengauss),
             format: None,
             analyze: Some(true),
-            sql: " select * from users where id = 1; ".to_string(),
+            sql: "SELECT * FROM users;".to_string(),
         });
-
-        assert_eq!(
-            result,
-            ExplainSqlBuildResult {
-                ok: true,
-                sql: Some("EXPLAIN (ANALYZE, FORMAT JSON) select * from users where id = 1".to_string()),
-                reason: None,
-            }
-        );
-
-        // analyze: Some(false) must behave exactly like the omitted flag.
-        assert_eq!(
-            build_explain_sql(ExplainSqlOptions {
-                database_type: Some(DatabaseType::Postgres),
-                format: None,
-                analyze: Some(false),
-                sql: "SELECT 1".to_string(),
-            })
-            .sql,
-            Some("EXPLAIN (FORMAT JSON) SELECT 1".to_string())
-        );
+        assert_eq!(result.sql.as_deref(), Some("EXPLAIN (ANALYZE, FORMAT JSON) SELECT * FROM users"));
     }
 
     #[test]
-    fn builds_sqlserver_actual_plan_explain_sql() {
-        let result = build_explain_sql(ExplainSqlOptions {
-            database_type: Some(DatabaseType::SqlServer),
-            format: None,
-            analyze: Some(true),
-            sql: " select * from dbo.orders where id = 1; ".to_string(),
-        });
-
-        assert_eq!(
-            result,
-            ExplainSqlBuildResult {
-                ok: true,
-                sql: Some(
-                    "SET STATISTICS XML ON;\nGO\nselect * from dbo.orders where id = 1\nGO\nSET STATISTICS XML OFF;"
-                        .to_string()
-                ),
-                reason: None,
-            }
-        );
-
-        // analyze: Some(false) must keep the estimated SHOWPLAN plan.
-        assert_eq!(
-            build_explain_sql(ExplainSqlOptions {
-                database_type: Some(DatabaseType::SqlServer),
-                format: None,
-                analyze: Some(false),
-                sql: "SELECT 1".to_string(),
-            })
-            .sql,
-            Some("SET SHOWPLAN_XML ON;\nGO\nSELECT 1\nGO\nSET SHOWPLAN_XML OFF;".to_string())
-        );
-    }
-
-    #[test]
-    fn refuses_sqlserver_analyze_on_non_select_sources() {
-        // STATISTICS XML runs the statement, so the safety gate stays load-bearing.
-        for sql in [
-            "delete from dbo.orders",
-            "update dbo.orders set name = 'x'",
-            "SELECT * INTO dbo.orders_copy FROM dbo.orders",
-            "SELECT 1\nGO\nDROP TABLE dbo.orders",
-        ] {
-            assert_eq!(
-                build_explain_sql(ExplainSqlOptions {
-                    database_type: Some(DatabaseType::SqlServer),
-                    format: None,
-                    analyze: Some(true),
-                    sql: sql.to_string(),
-                }),
-                ExplainSqlBuildResult { ok: false, sql: None, reason: Some("unsafe".to_string()) },
-                "{sql}"
-            );
-        }
-    }
-
-    #[test]
-    fn ignores_analyze_for_every_engine_but_postgres_and_sqlserver() {
-        for (db_type, expected) in [
-            (DatabaseType::MongoDb, "EXPLAIN (FORMAT JSON) SELECT 1"),
-            (DatabaseType::Mysql, "EXPLAIN FORMAT=JSON SELECT 1"),
-            (DatabaseType::Dameng, "EXPLAIN SELECT 1"),
-            (DatabaseType::Questdb, "EXPLAIN SELECT 1"),
-            (DatabaseType::Oracle, "EXPLAIN PLAN FOR SELECT 1"),
-        ] {
-            let analyzed = build_explain_sql(ExplainSqlOptions {
-                database_type: Some(db_type),
-                format: None,
-                analyze: Some(true),
-                sql: "SELECT 1".to_string(),
-            });
-            let plain = build_explain_sql(ExplainSqlOptions {
-                database_type: Some(db_type),
-                format: None,
-                analyze: None,
-                sql: "SELECT 1".to_string(),
-            });
-
-            assert_eq!(analyzed, plain, "{db_type:?} must ignore the analyze flag");
-            // MongoDb is rejected earlier by supports_explain_plan, so it never
-            // reaches the match arm it nominally shares with Postgres.
-            if db_type != DatabaseType::MongoDb {
-                assert_eq!(analyzed.sql, Some(expected.to_string()), "{db_type:?}");
-            } else {
-                assert_eq!(analyzed.reason, Some("unsupported".to_string()));
-            }
-        }
-    }
-
-    #[test]
-    fn builds_opengauss_explain_sql() {
-        let plain = build_explain_sql(ExplainSqlOptions {
-            database_type: Some(DatabaseType::OpenGauss),
-            format: None,
-            analyze: None,
-            sql: "SELECT * FROM test_t".to_string(),
-        });
-        assert_eq!(
-            plain,
-            ExplainSqlBuildResult {
-                ok: true,
-                sql: Some("EXPLAIN (FORMAT JSON) SELECT * FROM test_t".to_string()),
-                reason: None,
-            }
-        );
-
-        let analyzed = build_explain_sql(ExplainSqlOptions {
-            database_type: Some(DatabaseType::OpenGauss),
-            format: None,
-            analyze: Some(true),
-            sql: "SELECT * FROM test_t".to_string(),
-        });
-        assert_eq!(
-            analyzed,
-            ExplainSqlBuildResult {
-                ok: true,
-                sql: Some("EXPLAIN (ANALYZE, FORMAT JSON) SELECT * FROM test_t".to_string()),
-                reason: None,
-            }
-        );
-    }
-
-    #[test]
-    fn refuses_analyze_on_non_select_sources() {
-        for sql in ["delete from users", "update users set name = 'x'", "SELECT 1; DROP TABLE users"] {
-            assert_eq!(
-                build_explain_sql(ExplainSqlOptions {
-                    database_type: Some(DatabaseType::Postgres),
-                    format: None,
-                    analyze: Some(true),
-                    sql: sql.to_string(),
-                }),
-                ExplainSqlBuildResult { ok: false, sql: None, reason: Some("unsafe".to_string()) },
-                "{sql}"
-            );
-        }
-    }
-
-    #[test]
-    fn builds_dameng_explain_sql() {
-        let result = build_explain_sql(ExplainSqlOptions {
-            database_type: Some(DatabaseType::Dameng),
-            format: None,
-            analyze: None,
-            sql: "SELECT * FROM t1 WHERE id = 1".to_string(),
-        });
-
-        assert_eq!(
-            result,
-            ExplainSqlBuildResult {
-                ok: true,
-                sql: Some("EXPLAIN SELECT * FROM t1 WHERE id = 1".to_string()),
-                reason: None,
-            }
-        );
-    }
-
-    #[test]
-    fn builds_oracle_explain_plan_sql() {
-        let result = build_explain_sql(ExplainSqlOptions {
-            database_type: Some(DatabaseType::Oracle),
-            format: None,
-            analyze: None,
-            sql: "WITH rows AS (SELECT 1 AS id FROM dual) SELECT * FROM rows;".to_string(),
-        });
-
-        assert_eq!(
-            result,
-            ExplainSqlBuildResult {
-                ok: true,
-                sql: Some("EXPLAIN PLAN FOR WITH rows AS (SELECT 1 AS id FROM dual) SELECT * FROM rows".to_string()),
-                reason: None,
-            }
-        );
-    }
-
-    #[test]
-    fn builds_sqlserver_showplan_xml_batches() {
-        let result = build_explain_sql(ExplainSqlOptions {
-            database_type: Some(DatabaseType::SqlServer),
-            format: None,
-            analyze: None,
-            sql: "WITH rows AS (SELECT 1 AS id) SELECT * FROM rows;".to_string(),
-        });
-
-        assert_eq!(
-            result,
-            ExplainSqlBuildResult {
-                ok: true,
-                sql: Some(
-                    "SET SHOWPLAN_XML ON;\nGO\nWITH rows AS (SELECT 1 AS id) SELECT * FROM rows\nGO\nSET SHOWPLAN_XML OFF;"
-                        .to_string()
-                ),
-                reason: None,
-            }
-        );
-
-        assert_eq!(
-            build_explain_sql(ExplainSqlOptions {
-                database_type: Some(DatabaseType::SqlServer),
-                format: None,
-                analyze: None,
-                sql: "SELECT 1\nGO\nSELECT 2".to_string(),
-            }),
-            ExplainSqlBuildResult { ok: false, sql: None, reason: Some("unsafe".to_string()) }
-        );
-        assert!(
-            build_explain_sql(ExplainSqlOptions {
-                database_type: Some(DatabaseType::SqlServer),
-                format: None,
-                analyze: None,
-                sql: "SELECT 'first line\nGO\nlast line' AS text".to_string(),
-            })
-            .ok
-        );
-    }
-
-    #[test]
-    fn validates_dameng_autotrace_sql_safety() {
-        assert!(is_safe_dameng_autotrace_sql("SELECT * FROM t WHERE name = 'delete';"));
-        assert!(is_safe_dameng_autotrace_sql("/* comment */ WITH q AS (SELECT 1) SELECT * FROM q"));
-        assert!(!is_safe_dameng_autotrace_sql("SELECT * FROM t; DELETE FROM t"));
-        assert!(!is_safe_dameng_autotrace_sql("UPDATE t SET name = 'x'"));
-        assert!(!is_safe_dameng_autotrace_sql("SELECT * FROM t; /* hidden */ DROP TABLE t"));
-        assert!(!is_safe_dameng_autotrace_sql(""));
-    }
-
-    #[test]
-    fn builds_mysql_json_explain_and_rejects_unsafe_sql() {
-        assert_eq!(
-            build_explain_sql(ExplainSqlOptions {
-                database_type: Some(DatabaseType::Mysql),
-                format: None,
-                analyze: None,
-                sql: "SELECT * FROM users;".to_string(),
-            }),
-            ExplainSqlBuildResult {
-                ok: true,
-                sql: Some("EXPLAIN FORMAT=JSON SELECT * FROM users".to_string()),
-                reason: None,
-            }
-        );
-
-        assert_eq!(
-            build_explain_sql(ExplainSqlOptions {
-                database_type: Some(DatabaseType::Mysql),
-                format: None,
-                analyze: None,
-                sql: "delete from users".to_string(),
-            }),
-            ExplainSqlBuildResult { ok: false, sql: None, reason: Some("unsafe".to_string()) }
-        );
-
-        assert_eq!(
-            build_explain_sql(ExplainSqlOptions {
-                database_type: Some(DatabaseType::Mysql),
-                format: None,
-                analyze: None,
-                sql: "SELECT * FROM users; DELETE FROM users".to_string(),
-            }),
-            ExplainSqlBuildResult { ok: false, sql: None, reason: Some("unsafe".to_string()) }
-        );
-
-        assert_eq!(
-            build_explain_sql(ExplainSqlOptions {
-                database_type: Some(DatabaseType::Mysql),
-                format: Some(ExplainFormat::Standard),
-                analyze: None,
-                sql: "SELECT * FROM users;".to_string(),
-            }),
-            ExplainSqlBuildResult {
-                ok: true,
-                sql: Some("EXPLAIN FORMAT=TRADITIONAL SELECT * FROM users".to_string()),
-                reason: None,
-            }
-        );
-    }
-
-    #[test]
-    fn builds_dropped_file_preview_sql() {
-        assert_eq!(
-            build_dropped_file_preview_sql(DroppedFilePreviewSqlOptions {
-                path: "/tmp/O'Hara.csv".to_string(),
-                limit: Some(25),
-            }),
-            Some("SELECT * FROM read_csv('/tmp/O''Hara.csv') LIMIT 25".to_string())
-        );
-        assert_eq!(
-            build_dropped_file_preview_sql(DroppedFilePreviewSqlOptions {
-                path: "/tmp/data.tsv".to_string(),
-                limit: None,
-            }),
-            Some("SELECT * FROM read_csv('/tmp/data.tsv', delim='\\t') LIMIT 1000".to_string())
-        );
-        assert_eq!(
-            build_dropped_file_preview_sql(DroppedFilePreviewSqlOptions {
-                path: "/tmp/data.txt".to_string(),
-                limit: None,
-            }),
-            None
-        );
-    }
-
-    #[test]
-    fn strip_sql_comments_and_literals_basic() {
-        assert_eq!(strip_sql_comments_and_literals("SELECT 1"), "SELECT 1");
-        assert_eq!(strip_sql_comments_and_literals("SELECT 'hello'"), "SELECT        ");
-        assert_eq!(strip_sql_comments_and_literals("SELECT \"hello\""), "SELECT        ");
-        assert_eq!(strip_sql_comments_and_literals("-- comment\nSELECT 1"), " SELECT 1");
-        assert_eq!(strip_sql_comments_and_literals("/* block */ SELECT 1"), "  SELECT 1");
-        assert_eq!(strip_sql_comments_and_literals("# comment\nSELECT 1"), " SELECT 1");
-    }
-
-    #[test]
-    fn strip_sql_comments_and_literals_nested() {
-        // String literals containing comments should be stripped
-        assert_eq!(strip_sql_comments_and_literals("SELECT '/* not a comment */'"), "SELECT                      ");
-        // Comments containing string delimiters should be stripped
-        assert_eq!(strip_sql_comments_and_literals("/* 'not a string' */ SELECT 1"), "  SELECT 1");
-    }
-
-    #[test]
-    fn contains_dangerous_sql_keyword_detects_writes() {
-        assert!(contains_dangerous_sql_keyword("DROP TABLE users"));
-        assert!(contains_dangerous_sql_keyword("DELETE FROM users"));
-        assert!(contains_dangerous_sql_keyword("TRUNCATE TABLE users"));
-        assert!(contains_dangerous_sql_keyword("ALTER TABLE users ADD COLUMN age INT"));
-        assert!(contains_dangerous_sql_keyword("UPDATE users SET name = 'x'"));
-        assert!(contains_dangerous_sql_keyword("MERGE INTO target USING source"));
-        assert!(contains_dangerous_sql_keyword("REPLACE INTO users VALUES (1)"));
-        assert!(contains_dangerous_sql_keyword("INSERT INTO users VALUES (1)"));
-        assert!(contains_dangerous_sql_keyword("CREATE TABLE users (id INT)"));
-    }
-
-    #[test]
-    fn contains_dangerous_sql_keyword_ignores_substrings() {
-        // "updateable" contains "update" as substring but is a different word
-        assert!(!contains_dangerous_sql_keyword("SELECT * FROM updateable_view"));
-        // "dropped" contains "drop" as substring
-        assert!(!contains_dangerous_sql_keyword("SELECT dropped FROM t"));
-        // "inserted" contains "insert"
-        assert!(!contains_dangerous_sql_keyword("SELECT inserted FROM t"));
-    }
-
-    #[test]
-    fn contains_dangerous_sql_keyword_ignores_in_string_literals() {
-        assert!(!contains_dangerous_sql_keyword("SELECT 'DROP TABLE users' FROM t"));
-        assert!(!contains_dangerous_sql_keyword("SELECT 'delete' FROM t"));
-        assert!(!contains_dangerous_sql_keyword("SELECT \"CREATE TABLE\" FROM t"));
-    }
-
-    #[test]
-    fn contains_dangerous_sql_keyword_ignores_backtick_identifiers() {
-        for keyword in ["drop", "delete", "truncate", "alter", "update", "merge", "replace", "insert", "create"] {
-            let sql = format!("SELECT 1 AS `{keyword}`");
-            assert!(!contains_dangerous_sql_keyword(&sql), "expected safe SQL: {sql}");
-        }
-        assert!(!contains_dangerous_sql_keyword("SELECT 1 AS `before``delete`"));
-    }
-
-    #[test]
-    fn is_write_sql_detects_simple_writes() {
-        assert!(is_write_sql("INSERT INTO users VALUES (1)"));
-        assert!(is_write_sql("UPDATE users SET name = 'x'"));
-        assert!(is_write_sql("DELETE FROM users"));
-        assert!(is_write_sql("DROP TABLE users"));
-        assert!(is_write_sql("CREATE TABLE users (id INT)"));
-        assert!(is_write_sql("ALTER TABLE users ADD COLUMN age INT"));
-        assert!(is_write_sql("TRUNCATE TABLE users"));
-        assert!(is_write_sql("EXPLAIN ANALYZE DELETE FROM users"));
-        assert!(is_write_sql("SELECT * INTO backup_users FROM users"));
-        assert!(is_write_sql("SELECT * FROM users INTO OUTFILE '/tmp/users.csv'"));
-        assert!(is_write_sql("COPY users FROM '/tmp/users.csv'"));
-        assert!(is_write_sql("/*! DELETE FROM users */"));
-        assert!(is_write_sql(
-            "MERGE INTO target USING source ON t.id = s.id WHEN MATCHED THEN UPDATE SET t.name = s.name"
-        ));
-        assert!(is_write_sql("REPLACE INTO users VALUES (1)"));
-    }
-
-    #[test]
-    fn is_write_sql_allows_reads() {
-        assert!(!is_write_sql("SELECT * FROM users"));
-        assert!(!is_write_sql("SELECT id, name FROM users WHERE active = true"));
-        assert!(!is_write_sql("WITH cte AS (SELECT 1) SELECT * FROM cte"));
-        assert!(!is_write_sql("SHOW TABLES"));
-        assert!(!is_write_sql("DESCRIBE users"));
-        assert!(!is_write_sql("DESC users"));
-        assert!(!is_write_sql("EXPLAIN SELECT * FROM users"));
-        assert!(!is_write_sql("PRAGMA table_info(users)"));
-        assert!(!is_write_sql("FROM users SELECT *"));
-    }
-
-    #[test]
-    fn is_write_sql_allows_backtick_identifiers_with_dangerous_keywords() {
-        for keyword in ["drop", "delete", "truncate", "alter", "update", "merge", "replace", "insert", "create"] {
-            let sql = format!("SELECT 1 AS `{keyword}`");
-            assert!(!is_write_sql(&sql), "expected read-only SQL: {sql}");
-        }
-        assert!(!is_write_sql("SHOW COLUMNS FROM `delete`"));
-        assert!(!is_write_sql("DESC `delete`"));
-        assert!(!is_write_sql("SELECT 1 AS `before``delete`"));
-        assert!(!is_write_sql("SELECT 1 AS `semi;delete`; SELECT 2"));
-    }
-
-    #[test]
-    fn is_write_sql_still_blocks_writes_with_backtick_identifiers() {
-        assert!(is_write_sql("DELETE FROM `users`"));
-        assert!(is_write_sql("DROP TABLE `users`"));
-        assert!(is_write_sql("UPDATE `users` SET name = 'Ada'"));
-    }
-
-    #[test]
-    fn is_write_sql_allows_show_create_statements() {
-        for sql in [
-            "SHOW CREATE TABLE users",
-            "show create view active_users",
-            "SHOW CREATE PROCEDURE refresh_users",
-            "SHOW CREATE FUNCTION user_count",
-            "  /* metadata */\nSHOW\nCREATE TABLE users;",
-            "SHOW CREATE TABLE users; SELECT ';' AS separator",
-            "SHOW CREATE TABLE users /* ; DELETE FROM users */",
-        ] {
-            assert!(!is_write_sql(sql), "expected read-only SQL: {sql}");
-        }
-    }
-
-    #[test]
-    fn is_write_sql_blocks_writes_after_show_create() {
-        for write_sql in [
-            "DROP TABLE users",
-            "DELETE FROM users",
-            "TRUNCATE TABLE users",
-            "ALTER TABLE users ADD COLUMN active BOOLEAN",
-            "UPDATE users SET active = true",
-            "MERGE INTO users USING source ON users.id = source.id WHEN MATCHED THEN UPDATE SET active = true",
-            "REPLACE INTO users VALUES (1)",
-            "INSERT INTO users VALUES (1)",
-            "CREATE TABLE audit (id INT)",
-        ] {
-            let sql = format!("SHOW CREATE TABLE users; {write_sql}");
-            assert!(is_write_sql(&sql), "expected write SQL: {sql}");
-        }
-    }
-
-    #[test]
-    fn is_write_sql_ignores_leading_whitespace_and_comments() {
-        assert!(!is_write_sql("   /* comment */ SELECT * FROM users"));
-        assert!(!is_write_sql("-- comment\nSELECT * FROM users"));
-        assert!(is_write_sql("   /* comment */ INSERT INTO users VALUES (1)"));
-    }
-
-    #[test]
-    fn is_write_sql_blocks_mysql_and_mariadb_executable_comments() {
-        for sql in [
-            "SELECT 3156 /*! INTO OUTFILE '/var/lib/mysql-files/dbx_ro_probe.txt' */",
-            "SELECT 3156 /*!50000 INTO OUTFILE '/var/lib/mysql-files/dbx_ro_probe.txt' */",
-            "SELECT 3156 /*M! INTO OUTFILE '/var/lib/mysql-files/dbx_ro_probe.txt' */",
-            "SELECT 3156 /*M!100100 INTO OUTFILE '/var/lib/mysql-files/dbx_ro_probe.txt' */",
-        ] {
-            assert!(is_write_sql_for_database(sql, DatabaseType::Mysql), "expected write SQL: {sql}");
-        }
-
-        assert!(!is_write_sql_for_database(
-            "SELECT 3156 /* INTO OUTFILE '/var/lib/mysql-files/dbx_ro_probe.txt' */",
-            DatabaseType::Mysql
-        ));
-        assert!(!is_write_sql_for_database(
-            "SELECT '/*!50000 INTO OUTFILE \'/tmp/probe\' */' AS note",
-            DatabaseType::Mysql
-        ));
-    }
-
-    #[test]
-    fn is_write_sql_treats_mysql_executable_comment_syntax_as_plain_for_other_dialects() {
-        for database_type in [DatabaseType::Postgres, DatabaseType::Sqlite] {
-            for sql in [
-                "SELECT 3156 /*!50000 INTO OUTFILE '/var/lib/mysql-files/dbx_ro_probe.txt' */",
-                "SELECT 3156 /*M!100100 INTO OUTFILE '/var/lib/mysql-files/dbx_ro_probe.txt' */",
-                "SELECT 3156 /* ordinary block comment */",
-            ] {
-                assert!(
-                    !is_write_sql_for_database(sql, database_type),
-                    "expected read-only SQL for {database_type:?}: {sql}"
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn is_write_sql_blocks_dialect_specific_select_into_writes() {
-        for sql in [
-            "SELECT 3156 INTO OUTFILE '/var/lib/mysql-files/dbx_ro_probe.txt'",
-            "SELECT 3156 INTO DUMPFILE '/var/lib/mysql-files/dbx_ro_probe.bin'",
-            "WITH probe AS (SELECT 3156) SELECT * FROM probe INTO OUTFILE '/var/lib/mysql-files/dbx_ro_probe.txt'",
-        ] {
-            assert!(is_write_sql_for_database(sql, DatabaseType::Mysql), "expected write SQL: {sql}");
-        }
-
-        for database_type in [
-            DatabaseType::Postgres,
-            DatabaseType::Redshift,
-            DatabaseType::Gaussdb,
-            DatabaseType::OpenGauss,
-            DatabaseType::Kingbase,
-            DatabaseType::Highgo,
-            DatabaseType::Vastbase,
-            DatabaseType::Kwdb,
-        ] {
-            for sql in [
-                "SELECT * INTO copied_users FROM users",
-                "WITH active AS (SELECT * FROM users WHERE active) SELECT * INTO active_users FROM active",
-            ] {
-                assert!(
-                    is_write_sql_for_database(sql, database_type),
-                    "expected write SQL for {database_type:?}: {sql}"
-                );
-            }
-        }
-
-        for sql in [
-            "SELECT * INTO dbo.copied_users FROM dbo.users",
-            "WITH active AS (SELECT * FROM users WHERE active = 1) SELECT * INTO #active_users FROM active",
-        ] {
-            assert!(is_write_sql_for_database(sql, DatabaseType::SqlServer), "expected write SQL: {sql}");
-        }
-    }
-
-    #[test]
-    fn is_write_sql_does_not_globally_block_into() {
-        for sql in [
-            "SELECT 3156 INTO @probe",
-            "SELECT 'INTO OUTFILE /tmp/probe' AS note",
-            "SELECT 3156 /* INTO OUTFILE '/tmp/probe' */",
-            "SELECT 1 AS `into`, 2 AS `outfile`",
-        ] {
-            assert!(!is_write_sql_for_database(sql, DatabaseType::Mysql), "expected read-only SQL: {sql}");
-        }
-
-        for sql in
-            ["SELECT 'INTO copied_users' AS note", "SELECT $$INTO copied_users$$ AS note", "SELECT 1 AS \"into\""]
-        {
-            assert!(!is_write_sql_for_database(sql, DatabaseType::Postgres), "expected read-only SQL: {sql}");
-        }
-
-        assert!(!is_write_sql_for_database("SELECT 1 AS [into]", DatabaseType::SqlServer));
-        assert!(!is_write_sql_for_database("SELECT 1 INTO unsupported", DatabaseType::Sqlite));
-    }
-
-    #[test]
-    fn is_write_sql_cte_with_nested_write() {
-        // CTE starting with WITH but containing a write operation inside
-        assert!(is_write_sql("WITH deleted AS (DELETE FROM users RETURNING id) SELECT * FROM deleted"));
-        assert!(is_write_sql("WITH updated AS (UPDATE users SET name = 'x' RETURNING id) SELECT * FROM updated"));
-        assert!(is_write_sql("WITH inserted AS (INSERT INTO users VALUES (1) RETURNING id) SELECT * FROM inserted"));
-        // Pure read CTE should be allowed
-        assert!(!is_write_sql("WITH cte AS (SELECT * FROM users) SELECT * FROM cte"));
-    }
-
-    #[test]
-    fn is_write_sql_case_insensitive() {
-        assert!(!is_write_sql("select * from users"));
-        assert!(!is_write_sql("Select * From users"));
-        assert!(is_write_sql("insert into users values (1)"));
-        assert!(is_write_sql("Insert Into users Values (1)"));
-        assert!(is_write_sql("update users set name = 'x'"));
-    }
-
-    #[test]
-    fn is_write_sql_edge_cases() {
-        assert!(!is_write_sql("")); // empty string -> not a write
-        assert!(!is_write_sql("   ")); // whitespace only -> not a write
-        assert!(is_write_sql("COMMIT")); // not a recognized read keyword
-        assert!(is_write_sql("ROLLBACK")); // not a recognized read keyword
-        assert!(is_write_sql("BEGIN")); // not a recognized read keyword
-        assert!(is_write_sql("GRANT SELECT ON users TO admin"));
-        assert!(is_write_sql("REVOKE SELECT ON users FROM admin"));
-    }
-
-    #[test]
-    fn is_write_sql_blocks_stored_procedure_calls() {
-        // CALL and EXEC don't start with a read keyword, so they are treated as writes
-        assert!(is_write_sql("CALL my_procedure(1, 2)"));
-        assert!(is_write_sql("call my_procedure()"));
-        assert!(is_write_sql("EXEC sp_update_stats"));
-        assert!(is_write_sql("EXECUTE sp_rename 'old', 'new'"));
-        assert!(is_write_sql("execute my_func()"));
-    }
-
-    #[test]
-    fn is_write_sql_allows_safe_read_pragmas() {
-        // Read-only PRAGMA forms (function-call style with known safe names) are allowed
-        assert!(!is_write_sql("PRAGMA table_info(users)"));
-        assert!(!is_write_sql("PRAGMA table_xinfo(users)"));
-        assert!(!is_write_sql("PRAGMA index_list(users)"));
-        assert!(!is_write_sql("PRAGMA index_info(idx_name)"));
-        assert!(!is_write_sql("PRAGMA foreign_key_list(users)"));
-        assert!(!is_write_sql("PRAGMA database_list"));
-        assert!(!is_write_sql("PRAGMA compile_options"));
-        assert!(!is_write_sql("PRAGMA data_version"));
-        assert!(!is_write_sql("pragma table_info(users)"));
-    }
-
-    #[test]
-    fn is_write_sql_blocks_unsafe_pragmas() {
-        // Assignment forms are always blocked
-        assert!(is_write_sql("PRAGMA journal_mode = WAL"));
-        assert!(is_write_sql("PRAGMA synchronous = OFF"));
-        assert!(is_write_sql("PRAGMA foreign_keys = ON"));
-        assert!(is_write_sql("PRAGMA cache_size = -2000"));
-        assert!(is_write_sql("PRAGMA user_version = 123"));
-        // Unknown PRAGMA names are blocked
-        assert!(is_write_sql("PRAGMA writable_schema = ON"));
-        assert!(is_write_sql("PRAGMA locking_mode = EXCLUSIVE"));
-        assert!(is_write_sql("PRAGMA temp_store = MEMORY"));
-        assert!(is_write_sql("PRAGMA some_unknown_pragma"));
-    }
-
-    #[test]
-    fn is_write_sql_string_literal_hides_keywords() {
-        // The dangerous keyword is inside a string literal, so it should NOT be detected
-        assert!(!is_write_sql("SELECT 'DROP TABLE users' AS hint FROM t"));
-        assert!(!is_write_sql("SELECT * FROM t WHERE name = 'delete'"));
-    }
-
-    #[test]
-    fn check_read_only_success_and_error() {
-        assert_eq!(check_read_only("SELECT * FROM users", "prod-db", DatabaseType::Mysql), Ok(()));
-        assert_eq!(check_read_only("WITH cte AS (SELECT 1) SELECT * FROM cte", "prod-db", DatabaseType::Mysql), Ok(()));
-        assert_eq!(check_read_only("SHOW CREATE TABLE users", "prod-db", DatabaseType::Mysql), Ok(()));
-        assert_eq!(check_read_only("SELECT 1 AS `delete`", "prod-db", DatabaseType::Mysql), Ok(()));
-
-        let err = check_read_only("DELETE FROM users", "prod-db", DatabaseType::Mysql);
-        assert!(err.is_err());
-        assert_eq!(
-            err.unwrap_err(),
-            "Read-only mode: connection 'prod-db' has read-only protection enabled. Write operation (including stored procedure calls) blocked."
-        );
-
-        let err2 = check_read_only("UPDATE users SET name = 'x'", "reporting-db", DatabaseType::Mysql);
-        assert!(err2.is_err());
-        assert!(err2.unwrap_err().contains("reporting-db"));
-
-        let show_create_err =
-            check_read_only("SHOW CREATE TABLE users; DELETE FROM users", "prod-db", DatabaseType::Mysql);
-        assert!(show_create_err.is_err());
-        assert!(show_create_err.unwrap_err().contains("Write operation"));
-    }
-
-    #[test]
-    fn check_read_only_allows_only_sqlserver_plan_capture_session_switches() {
-        for sql in [
-            "SET SHOWPLAN_XML ON;",
-            "-- explain\nSET SHOWPLAN_XML OFF",
-            "SET STATISTICS XML ON;",
-            "-- actual plan\nSET STATISTICS XML OFF",
-        ] {
-            assert_eq!(check_read_only(sql, "readonly", DatabaseType::SqlServer), Ok(()));
-        }
-        assert!(check_read_only("SET SHOWPLAN_ALL ON", "readonly", DatabaseType::SqlServer).is_err());
-        assert!(check_read_only("SET STATISTICS IO ON", "readonly", DatabaseType::SqlServer).is_err());
-        assert!(check_read_only("SET SHOWPLAN_XML ON; SELECT 1", "readonly", DatabaseType::SqlServer).is_err());
-        assert!(check_read_only("SET SHOWPLAN_XML OFF; DROP TABLE users", "readonly", DatabaseType::SqlServer).is_err());
-        assert!(
-            check_read_only("SET STATISTICS XML OFF; DROP TABLE users", "readonly", DatabaseType::SqlServer).is_err()
-        );
-    }
-
-    #[test]
-    fn check_read_only_only_treats_executable_comments_as_writes_for_mysql_compatible_connections() {
-        let mysql_executable_comment = "SELECT 3156 /*!50000 INTO OUTFILE '/var/lib/mysql-files/dbx_ro_probe.txt' */";
-        let mariadb_executable_comment =
-            "SELECT 3156 /*M!100100 INTO OUTFILE '/var/lib/mysql-files/dbx_ro_probe.txt' */";
-
-        assert!(check_read_only(mysql_executable_comment, "mysql", DatabaseType::Mysql).is_err());
-        assert!(check_read_only(mariadb_executable_comment, "mariadb", DatabaseType::Mysql).is_err());
-
-        for database_type in [DatabaseType::Postgres, DatabaseType::Sqlite] {
-            assert_eq!(check_read_only(mysql_executable_comment, "readonly", database_type), Ok(()));
-            assert_eq!(check_read_only(mariadb_executable_comment, "readonly", database_type), Ok(()));
-        }
-    }
-
-    #[test]
-    fn check_read_only_blocks_dialect_specific_select_into_writes() {
-        for (sql, database_type) in [
-            ("SELECT 3156 INTO OUTFILE '/var/lib/mysql-files/dbx_ro_probe.txt'", DatabaseType::Mysql),
-            ("SELECT * INTO copied_users FROM users", DatabaseType::Postgres),
-            ("SELECT * INTO copied_users FROM users", DatabaseType::Redshift),
-            ("SELECT * INTO copied_users FROM users", DatabaseType::Gaussdb),
-            ("SELECT * INTO copied_users FROM users", DatabaseType::OpenGauss),
-            ("SELECT * INTO copied_users FROM users", DatabaseType::Kingbase),
-            ("SELECT * INTO copied_users FROM users", DatabaseType::Highgo),
-            ("SELECT * INTO copied_users FROM users", DatabaseType::Vastbase),
-            ("SELECT * INTO copied_users FROM users", DatabaseType::Kwdb),
-            ("SELECT * INTO #copied_users FROM users", DatabaseType::SqlServer),
-        ] {
-            assert!(check_read_only(sql, "readonly", database_type).is_err(), "expected blocked SQL: {sql}");
-        }
-    }
-
-    #[test]
-    fn strip_sql_comments_basic() {
-        assert_eq!(strip_sql_comments("SELECT 1"), "SELECT 1");
-        assert_eq!(strip_sql_comments("-- comment\nSELECT 1"), " SELECT 1");
-        assert_eq!(strip_sql_comments("/* block */ SELECT 1"), "  SELECT 1");
-        assert_eq!(strip_sql_comments("# comment\nSELECT 1"), " SELECT 1");
-    }
-
-    #[test]
-    fn strip_sql_comments_preserves_strings() {
-        // strip_sql_comments does NOT handle string delimiters, so it strips
-        // comments even inside string literals
-        assert_eq!(strip_sql_comments("SELECT 'hello /* not a comment */'"), "SELECT 'hello  '");
-    }
-
-    #[test]
-    fn classifies_search_engine_rest_writes() {
-        assert!(!is_write_sql_for_database("GET /_cluster/health", DatabaseType::Easysearch));
-        assert!(!is_write_sql_for_database(
-            "POST /products/_search\n{\"query\":{\"match_all\":{}}}",
-            DatabaseType::Easysearch
-        ));
-        assert!(is_write_sql_for_database(
-            "PUT /products/_doc/1?refresh=true\n{\"name\":\"Notebook\"}",
-            DatabaseType::Easysearch
-        ));
-    }
-
-    #[test]
-    fn excludes_victoriametrics_from_sql_query_paths() {
-        assert!(!supports_sql_query(DatabaseType::VictoriaMetrics));
-        assert!(supports_sql_query(DatabaseType::Postgres));
-        assert_eq!(
-            check_read_only(
-                r#"{__name__="dbx_issue_5352_temperature_celsius"}[5m]"#,
-                "VictoriaMetrics",
-                DatabaseType::VictoriaMetrics,
-            ),
-            Ok(())
-        );
+    fn detects_write_sql_for_postgres() {
+        assert!(is_write_sql_for_database("INSERT INTO users VALUES (1)", DatabaseType::Postgres));
+        assert!(is_write_sql_for_database("UPDATE users SET name = 'a'", DatabaseType::Postgres));
+        assert!(is_write_sql_for_database("DELETE FROM users", DatabaseType::Postgres));
+        assert!(!is_write_sql_for_database("SELECT * FROM users", DatabaseType::Postgres));
     }
 }

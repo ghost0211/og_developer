@@ -9,16 +9,6 @@ const runtimeHost = readFileSync("apps/desktop/src/components/sidebar/SidebarTre
 const connectionTree = readFileSync("apps/desktop/src/components/sidebar/ConnectionTree.vue", "utf8");
 const connectionStore = readFileSync("apps/desktop/src/stores/connectionStore.ts", "utf8");
 
-test("sidebar rows retain database-specific node affordances", () => {
-  for (const nodeType of ["connection", "database", "schema", "table", "column", "mongo-db", "mongo-collection", "redis-db", "nacos-namespace", "mq-tenant"]) {
-    const sources = `${treeItem}\n${runtimeHost}`;
-    assert.ok(sources.includes(`node.type === "${nodeType}"`) || sources.includes(`node.type === '${nodeType}'`), nodeType);
-  }
-  assert.match(treeItem, /@dblclick="onDoubleClick"/);
-  assert.match(treeItem, /@keydown="onKeydown"/);
-  assert.match(treeItem, /@mousedown="onRowMouseDown"/);
-  assert.match(treeItem, /@contextmenu="onTreeItemContextMenu"/);
-});
 
 test("complex tree changes retain the full rebuild fallback", () => {
   assert.match(connectionTree, /const filteredNodes = computed/);

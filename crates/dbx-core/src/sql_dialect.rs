@@ -18,8 +18,7 @@ mod tests;
 mod descriptor_snapshots;
 
 pub use capabilities::{
-    firebird_rows_clause, is_schema_aware, pagination_strategy, table_pagination_strategy, uses_fetch_first,
-    uses_oracle_row_id, uses_single_row_insert_statements, PaginationContext, TablePaginationStrategy,
+    is_schema_aware, pagination_strategy, table_pagination_strategy, PaginationContext, TablePaginationStrategy,
 };
 pub use ddl_profile::{
     profile_for, AutoIncSyntax, DdlDialectProfile, IndexTypePlacement, QuoteStyle, RenameColumnSyntax, TriggerTemplate,
@@ -35,16 +34,13 @@ pub use descriptor::{
     CAP_REORDER_COLUMN, CAP_TEMPORARY_TABLE, CAP_TRANSACTIONAL_DDL, CAP_TRUNCATE_TABLE,
 };
 pub(crate) use identifiers::{
-    is_postgres_reserved_identifier, is_simple_lower_identifier, parse_sqlserver_linked_schema_ref,
-    qualified_transfer_table, quote_transfer_identifier,
+    is_postgres_reserved_identifier, is_simple_lower_identifier, quote_table_data_identifier,
+    table_data_qualified_table_name, uses_connection_identifier_quote,
 };
 pub use identifiers::{
     normalize_where_input, qualified_table_name, qualified_table_name_with_catalog, quote_table_identifier,
 };
 pub use table_select::{build_count_table_sql, build_table_data_select_sql, build_table_select_sql};
-pub(crate) use table_select::{
-    quote_table_data_identifier, table_data_qualified_table_name, uses_connection_identifier_quote,
-};
 pub use type_rewrite::{
     apply_auto_inc_to_column_def, column_is_auto_increment, rewrite_column_type, split_type_base_params,
     type_looks_integer, AutoIncColumnBuild,

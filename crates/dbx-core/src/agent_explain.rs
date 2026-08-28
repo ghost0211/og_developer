@@ -24,30 +24,27 @@ pub async fn get_agent_explain_info_core(
     let database_for_pool = database.filter(|value| !value.trim().is_empty());
     state.get_or_create_pool(connection_id, database_for_pool).await?;
 
-    let client = {
-        let connections = state.connections.read().await;
-        let pool = connections.get(connection_id).ok_or_else(|| "Connection not found".to_string())?;
-        match pool {
-            PoolKind::Agent(client) => client.clone(),
-            _ => return Err("Connection is not an agent-based connection".to_string()),
+    let connections = state.connections.read().await;
+    let pool = connections.get(connection_id).ok_or_else(|| "Connection not found".to_string())?;
+    match pool {
+        PoolKind::ExternalDriver { session, .. } => {
+            let timeout_secs = {
+                let configs = state.configs.read().await;
+                configs.get(connection_id).ok_or_else(|| "Connection config not found".to_string())?.query_timeout_secs
+            };
+
+            let params = serde_json::json!({
+                "sql": sql,
+                "database": database.unwrap_or_default(),
+                "schema": schema.unwrap_or_default(),
+                "timeoutSecs": timeout_secs as i64,
+                "mode": mode,
+            });
+            let result: Value = session.invoke("getExplainInfo", params).await?;
+            decode_agent_explain_result(result)
         }
-    };
-
-    let timeout_secs = {
-        let configs = state.configs.read().await;
-        configs.get(connection_id).ok_or_else(|| "Connection config not found".to_string())?.query_timeout_secs
-    };
-
-    let params = serde_json::json!({
-        "sql": sql,
-        "database": database.unwrap_or_default(),
-        "schema": schema.unwrap_or_default(),
-        "timeoutSecs": timeout_secs as i64,
-        "mode": mode,
-    });
-    let mut client = client.lock().await;
-    let result: Value = client.get_explain_info(params).await?;
-    decode_agent_explain_result(result)
+        _ => Err("Connection is not an external driver connection".to_string()),
+    }
 }
 
 fn decode_agent_explain_result(result: Value) -> Result<String, String> {

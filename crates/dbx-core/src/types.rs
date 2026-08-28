@@ -94,6 +94,39 @@ pub struct ObjectStatistics {
     pub total_bytes: Option<i64>,
 }
 
+pub type ObjectStatisticsInfo = ObjectStatistics;
+pub type CompletionAssistantSearchParams = CompletionAssistantRequest;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TableNameFilter {
+    pub pattern: String,
+    pub exact: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VectorCollectionInfo {
+    pub id: String,
+    pub name: String,
+    pub dimension: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VectorCollectionDetail {
+    pub name: String,
+    pub dimensions: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ObjectListOutcome {
+    pub objects: Vec<ObjectInfo>,
+    pub total: Option<usize>,
+}
+
+pub fn unpaged_object_list(objects: Vec<ObjectInfo>) -> ObjectListOutcome {
+    let total = Some(objects.len());
+    ObjectListOutcome { objects, total }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ObjectSourceKind {
@@ -329,7 +362,27 @@ pub struct QueryResult {
     pub elasticsearch_raw_body: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+impl Default for QueryResult {
+    fn default() -> Self {
+        Self {
+            columns: vec![],
+            column_types: vec![],
+            column_sortables: vec![],
+            spatial_columns: vec![],
+            spatial_values: vec![],
+            rows: vec![],
+            affected_rows: 0,
+            execution_time_ms: 0,
+            messages: vec![],
+            truncated: false,
+            session_id: None,
+            has_more: false,
+            elasticsearch_raw_body: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct IndexInfo {
     pub name: String,
     pub columns: Vec<String>,
@@ -341,7 +394,7 @@ pub struct IndexInfo {
     pub comment: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ForeignKeyInfo {
     pub name: String,
     pub column: String,
@@ -455,6 +508,96 @@ pub struct OwnerInfo {
     pub object_name: String,
     pub object_type: String,
     pub owner: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentProgressEvent {
+    pub step: String,
+    pub progress: f64,
+    pub message: String,
+    pub operation_id: Option<String>,
+}
+
+impl AgentProgressEvent {
+    pub fn with_operation_id(mut self, id: &str) -> Self {
+        self.operation_id = Some(id.to_string());
+        self
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct JavaRuntimeConfig {
+    pub mode: JavaRuntimeMode,
+    pub custom_java_home: Option<String>,
+    pub custom_java_path: Option<String>,
+    pub jre_key: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum JavaRuntimeMode {
+    #[default]
+    Auto,
+    Bundled,
+    System,
+    Custom,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentDriverInfo {
+    pub db_type: String,
+    pub display_name: String,
+    pub version: String,
+    pub installed: bool,
+    pub update_available: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct DriverStoreUsage {
+    pub total_bytes: u64,
+    pub drivers: Vec<DriverStoreItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DriverStoreItem {
+    pub name: String,
+    pub size_bytes: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct OfflineImportPlan {
+    pub imported: Vec<String>,
+    pub skipped: Vec<String>,
+    pub errors: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SynonymTargetInfo {
+    pub schema: Option<String>,
+    pub name: String,
+    pub object_type: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TypeAttributeInfo {
+    pub name: String,
+    pub data_type: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ObjectReferenceInfo {
+    pub schema: Option<String>,
+    pub name: String,
+    pub object_type: String,
 }
 
 #[cfg(test)]

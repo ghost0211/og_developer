@@ -1,87 +1,42 @@
 import { describe, expect, it } from "vitest";
 import { qualifiedTableName, quoteTableDataIdentifier, quoteTableIdentifier } from "@/lib/table/tableSelectSql";
 
-describe("qualifiedTableName — Doris/StarRocks multi-catalog", () => {
-  it("prefixes external catalog for Doris (no schema)", () => {
-    expect(qualifiedTableName({ databaseType: "doris", catalog: "iceberg_catalog", tableName: "orders" })).toBe("`iceberg_catalog`.`orders`");
+describe("qualifiedTableName", () => {
+  it("qualifies a PostgreSQL table with its schema", () => {
+    expect(qualifiedTableName({ databaseType: "postgres", schema: "public", tableName: "orders" })).toBe('"public"."orders"');
   });
 
-  it("prefixes external catalog for Doris (with schema)", () => {
-    expect(qualifiedTableName({ databaseType: "doris", catalog: "iceberg_catalog", schema: "sales", tableName: "orders" })).toBe("`iceberg_catalog`.`sales`.`orders`");
+  it("qualifies an openGauss table with its schema", () => {
+    expect(qualifiedTableName({ databaseType: "opengauss", schema: "public", tableName: "orders" })).toBe('"public"."orders"');
   });
 
-  it("prefixes external catalog for StarRocks", () => {
-    expect(qualifiedTableName({ databaseType: "starrocks", catalog: "hive_catalog", tableName: "orders" })).toBe("`hive_catalog`.`orders`");
+  it("uses the connection-reported quote for openGauss table-data identifiers", () => {
+    expect(qualifiedTableName({ databaseType: "opengauss", identifierQuote: '"', schema: "public", tableName: "MixedCase" })).toBe('public."MixedCase"');
   });
 
-  it("treats the internal catalog as no catalog", () => {
-    expect(qualifiedTableName({ databaseType: "doris", catalog: "internal", tableName: "orders" })).toBe("`orders`");
-  });
-
-  it("omits the catalog for non-Doris engines", () => {
-    // MySQL has no 3-part catalog naming; the catalog must be ignored.
-    expect(qualifiedTableName({ databaseType: "mysql", catalog: "iceberg_catalog", tableName: "orders" })).toBe("`orders`");
-  });
-
-  it("escapes embedded backticks in catalog and table identifiers", () => {
-    expect(qualifiedTableName({ databaseType: "doris", catalog: "a`b", schema: "c`d", tableName: "e`f" })).toBe("`a``b`.`c``d`.`e``f`");
-  });
-});
-
-describe("qualifiedTableName — SQLite attached databases", () => {
-  it("qualifies tables with the attached database alias", () => {
-    expect(qualifiedTableName({ databaseType: "sqlite", schema: "analytics", tableName: "events" })).toBe('"analytics"."events"');
-  });
-});
-
-describe("qualifiedTableName — GBase 8s", () => {
-  it("keeps the owner unquoted when the driver reports no identifier quote support", () => {
-    expect(qualifiedTableName({ databaseType: "informix", identifierQuote: "", schema: "gbasedbt", tableName: "connection_smoke" })).toBe("gbasedbt.connection_smoke");
-    expect(quoteTableDataIdentifier("informix", "connection_smoke", "")).toBe("connection_smoke");
-  });
-
-  it("keeps native Informix qualification when no driver capability was loaded", () => {
-    expect(qualifiedTableName({ databaseType: "informix", schema: "gbasedbt", tableName: "connection_smoke" })).toBe("gbasedbt.connection_smoke");
+  it("passes JDBC table names through unqualified and unquoted", () => {
+    expect(qualifiedTableName({ databaseType: "jdbc", schema: "public", tableName: "orders" })).toBe("orders");
   });
 });
 
 describe("quoteTableIdentifier", () => {
-  it("backtick-quotes mysql identifiers", () => {
-    expect(quoteTableIdentifier("mysql", "orders")).toBe("`orders`");
+  it("double-quotes postgres identifiers", () => {
+    expect(quoteTableIdentifier("postgres", "orders")).toBe('"orders"');
+    expect(quoteTableIdentifier("postgres", 'a"b')).toBe('"a""b"');
   });
 
-  it("uses BigQuery quoted identifiers and escape sequences", () => {
-    expect(quoteTableIdentifier("bigquery", "order")).toBe("`order`");
-    expect(quoteTableIdentifier("bigquery", "a`b")).toBe("`a\\`b`");
+  it("keeps explicitly quoted openGauss identifiers untouched", () => {
+    expect(quoteTableIdentifier("opengauss", '"AlreadyQuoted"')).toBe('"AlreadyQuoted"');
+    expect(quoteTableIdentifier("opengauss", "orders")).toBe('"orders"');
   });
 
-  it("bracket-quotes sqlserver identifiers", () => {
-    expect(quoteTableIdentifier("sqlserver", "orders")).toBe("[orders]");
+  it("passes JDBC identifiers through unquoted", () => {
+    expect(quoteTableIdentifier("jdbc", "orders")).toBe("orders");
   });
+});
 
-  it("uses the connection-reported quote for Kingbase table-data identifiers", () => {
-    expect(quoteTableDataIdentifier("kingbase", "order", "`")).toBe("`order`");
-    expect(quoteTableDataIdentifier("kingbase", "MixedCase", '"')).toBe('"MixedCase"');
-    expect(quoteTableDataIdentifier("kingbase", "order detail", "`")).toBe("`order detail`");
-  });
-
-  it("selectively quotes GaussDB JDBC identifiers with the driver-reported quote", () => {
-    expect(quoteTableDataIdentifier("gaussdb", "table_01", '"')).toBe("table_01");
-    expect(quoteTableDataIdentifier("gaussdb", "MixedCase", '"')).toBe('"MixedCase"');
-    expect(quoteTableDataIdentifier("gaussdb", "order", '"')).toBe('"order"');
-    expect(quoteTableDataIdentifier("gaussdb", "order detail", '"')).toBe('"order detail"');
-    expect(quoteTableDataIdentifier("gaussdb", 'already"quoted', '"')).toBe('"already""quoted"');
-    expect(quoteTableDataIdentifier("gaussdb", '"AlreadyQuoted"', '"')).toBe('"AlreadyQuoted"');
-
-    expect(quoteTableDataIdentifier("gaussdb", "table_01", "`")).toBe("table_01");
-    expect(quoteTableDataIdentifier("gaussdb", "MixedCase", "`")).toBe("`MixedCase`");
-    expect(quoteTableDataIdentifier("gaussdb", "order", "`")).toBe("`order`");
-    expect(quoteTableDataIdentifier("gaussdb", "order detail", "`")).toBe("`order detail`");
-    expect(quoteTableDataIdentifier("gaussdb", "already`quoted", "`")).toBe("`already``quoted`");
-    expect(quoteTableDataIdentifier("gaussdb", "`AlreadyQuoted`", "`")).toBe("`AlreadyQuoted`");
-  });
-
-  it("uses detected GaussDB compatibility quotes through PostgreSQL-compatible JDBC dialects", () => {
+describe("quoteTableDataIdentifier", () => {
+  it("selectively quotes openGauss/PostgreSQL identifiers with the driver-reported quote", () => {
     for (const databaseType of ["postgres", "opengauss"] as const) {
       expect(quoteTableDataIdentifier(databaseType, "table_01", "`")).toBe("table_01");
       expect(quoteTableDataIdentifier(databaseType, "MixedCase", "`")).toBe("`MixedCase`");
@@ -92,19 +47,9 @@ describe("quoteTableIdentifier", () => {
     }
   });
 
-  it("preserves native GaussDB and openGauss quoting behavior", () => {
-    expect(quoteTableDataIdentifier("gaussdb", "table_01")).toBe('"table_01"');
-    expect(quoteTableDataIdentifier("gaussdb", "MixedCase")).toBe('"MixedCase"');
-    expect(quoteTableDataIdentifier("gaussdb", '"AlreadyQuoted"')).toBe('"AlreadyQuoted"');
+  it("preserves native openGauss quoting behavior without a driver quote", () => {
     expect(quoteTableDataIdentifier("opengauss", "table_01")).toBe('"table_01"');
     expect(quoteTableDataIdentifier("opengauss", "MixedCase")).toBe('"MixedCase"');
     expect(quoteTableDataIdentifier("opengauss", '"AlreadyQuoted"')).toBe('"AlreadyQuoted"');
-  });
-
-  it("escapes Kingbase identifiers without maintaining a reserved-word list", () => {
-    expect(quoteTableDataIdentifier("kingbase", "ANALYZE", "`")).toBe("`ANALYZE`");
-    expect(quoteTableDataIdentifier("kingbase", "AUTHORIZATION", '"')).toBe('"AUTHORIZATION"');
-    expect(quoteTableDataIdentifier("kingbase", "COLLATE", "`")).toBe("`COLLATE`");
-    expect(quoteTableDataIdentifier("kingbase", "a`b", "`")).toBe("`a``b`");
   });
 });

@@ -1,8 +1,7 @@
-﻿import { useConnectionStore } from "@/stores/connectionStore";
+import { useConnectionStore } from "@/stores/connectionStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { findConnectionGroupPath } from "@/lib/sidebar/sidebarLayout";
-import { splitMongoCommandRanges } from "@/lib/mongo/mongoShellCommand";
-import { executableStatementRanges, splitSqlStatementRanges, type SqlTextRange } from "@/lib/sql/sqlStatementRanges";
+import { splitSqlStatementRanges, type SqlTextRange } from "@/lib/sql/sqlStatementRanges";
 import { sqlTextFingerprint } from "@/lib/sql/sqlTextFingerprint";
 import { isQueryExecutionErrorResult } from "@/lib/query/queryResultError";
 import type { BatchSqlExecution, ConnectionConfig, DatabaseType, QueryResult, QueryTab } from "@/types/database";
@@ -46,7 +45,6 @@ function jdbcTargetLabel(connection: ConnectionConfig): string {
 export function databaseDisplayNameForTab(connectionId: string, database: string, t: Translate): string {
   const connectionStore = useConnectionStore();
   const connection = connectionStore.getConfig(connectionId);
-  if (connection?.db_type === "redis" && database !== "") return `db${database}`;
   if (connection?.db_type === "jdbc" && !database) return jdbcTargetLabel(connection);
   return database || t("editor.noDatabase");
 }
@@ -78,47 +76,6 @@ export function tabDisplayTitle(tab: QueryTab, t: Translate): string {
     if (compact) return connectionDisplayName(tab.connectionId);
     return `${connectionDisplayName(tab.connectionId)}@${database}`;
   }
-  if (tab.mode === "mongo" && tab.sql) {
-    if (compact) return tab.sql;
-    return `${tab.sql}@${database}`;
-  }
-  if (tab.mode === "mongo-gridfs") {
-    if (compact) return t("tabs.gridfs");
-    return `${t("tabs.gridfs")}@${database}`;
-  }
-  if (tab.mode === "mongo-bucket") {
-    const bucketName = tab.mongoBucket?.bucketName || tab.sql || tab.title.split(".").pop() || tab.title;
-    if (compact) return bucketName;
-    return `${bucketName}@${database}`;
-  }
-  if (tab.mode === "vector" && tab.sql) {
-    if (compact) return tab.sql;
-    return `${tab.sql}@${database}`;
-  }
-  if (tab.mode === "hbase" && tab.sql) {
-    if (compact) return tab.sql;
-    return `${tab.sql}@${database}`;
-  }
-  if (tab.mode === "redis") {
-    if (compact) return connectionDisplayName(tab.connectionId);
-    return `${connectionDisplayName(tab.connectionId)}@${database}`;
-  }
-  if (tab.mode === "etcd") {
-    if (compact) return connectionDisplayName(tab.connectionId);
-    return `${connectionDisplayName(tab.connectionId)}@keys`;
-  }
-  if (tab.mode === "etcd-dashboard") {
-    if (compact) return connectionDisplayName(tab.connectionId);
-    return `${connectionDisplayName(tab.connectionId)}@dashboard`;
-  }
-  if (tab.mode === "etcd-access-control") {
-    if (compact) return connectionDisplayName(tab.connectionId);
-    return `${connectionDisplayName(tab.connectionId)}@${t("tabs.etcdAccessControl")}`;
-  }
-  if (tab.mode === "zookeeper") {
-    if (compact) return connectionDisplayName(tab.connectionId);
-    return `${connectionDisplayName(tab.connectionId)}@keys`;
-  }
   if (tab.mode === "objects") {
     const schema = tab.objectBrowser?.schema;
     if (compact) return schema || tab.title;
@@ -144,21 +101,6 @@ export function tabTooltipLines(tab: QueryTab, t: Translate): { label: string; v
   }
   if (tab.mode === "data" && tab.tableMeta?.tableName) {
     lines.push({ label: t("tabs.tooltipTable"), value: tab.tableMeta.tableName });
-  }
-  if (tab.mode === "mongo" && tab.sql) {
-    lines.push({ label: t("tabs.tooltipCollection"), value: tab.sql });
-  }
-  if (tab.mode === "mongo-gridfs") {
-    lines.push({ label: t("tabs.gridfs"), value: t("tabs.gridfs") });
-  }
-  if (tab.mode === "mongo-bucket") {
-    lines.push({ label: t("tabs.gridfs"), value: tab.mongoBucket?.bucketName || tab.sql || tab.title });
-  }
-  if (tab.mode === "vector" && tab.sql) {
-    lines.push({ label: t("tabs.tooltipCollection"), value: tab.sql });
-  }
-  if (tab.mode === "hbase" && tab.sql) {
-    lines.push({ label: t("tabs.tooltipTable"), value: tab.sql });
   }
   if (tab.mode === "objects" && tab.objectBrowser?.schema) {
     lines.push({ label: t("tabs.tooltipSchema"), value: tab.objectBrowser.schema });
@@ -232,8 +174,6 @@ function lineStartOffset(sql: string, from: number): number {
 }
 
 function statementRanges(sql: string, databaseType?: DatabaseType): SqlTextRange[] {
-  if (databaseType === "redis") return executableStatementRanges(sql, databaseType);
-  if (databaseType === "mongodb") return splitMongoCommandRanges(sql).map(({ from, to, text }) => ({ from, to, sql: text }));
   return splitSqlStatementRanges(sql, databaseType);
 }
 
@@ -415,16 +355,6 @@ export function executionSummaryItems(tab: Pick<QueryTab, "result" | "results" |
 export function tabModeLabel(tab: QueryTab, t: Translate): string {
   if (tab.mode === "data") return t("tabs.table");
   if (tab.mode === "query") return t("tabs.sql");
-  if (tab.mode === "mongo") return t("tabs.mongo");
-  if (tab.mode === "mongo-gridfs" || tab.mode === "mongo-bucket") return t("tabs.gridfs");
-  if (tab.mode === "vector") return t("tabs.vector");
-  if (tab.mode === "hbase") return "HBase";
-  if (tab.mode === "redis") return t("tabs.redis");
-  if (tab.mode === "etcd") return t("tabs.etcd");
-  if (tab.mode === "etcd-dashboard") return t("tabs.etcdDashboard");
-  if (tab.mode === "etcd-access-control") return t("tabs.etcdAccessControl");
-  if (tab.mode === "zookeeper") return t("tabs.zookeeper");
-  if (tab.mode === "nacos") return "Nacos";
   if (tab.mode === "objects") return t("tabs.objects");
   if (tab.mode === "users") return t("tabs.users");
   if (tab.mode === "routine-test") return t("contextMenu.executeProcedure");

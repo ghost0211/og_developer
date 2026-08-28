@@ -75,7 +75,7 @@ const splitpanesSize = ref(45);
 const editorContainer = ref<HTMLDivElement>();
 const editorView = shallowRef<EditorView | null>(null);
 
-const isOpenGaussRoutine = computed(() => props.databaseType === "opengauss" || props.databaseType === "gaussdb");
+const isOpenGaussRoutine = computed(() => props.databaseType === "opengauss");
 
 const generatedSql = computed(() => {
   if (isOpenGaussRoutine.value) {
@@ -419,7 +419,7 @@ onUnmounted(() => {
             <kbd class="ml-1 rounded bg-primary-foreground/20 px-1 py-0.2 text-[10px] text-primary-foreground">F8</kbd>
           </Button>
 
-          <Button v-if="props.databaseType === 'opengauss' || props.databaseType === 'gaussdb'" variant="outline" size="sm" class="h-7 gap-1.5 px-2.5" :disabled="executing || loading" @click="startDebugging">
+          <Button v-if="props.databaseType === 'opengauss'" variant="outline" size="sm" class="h-7 gap-1.5 px-2.5" :disabled="executing || loading" @click="startDebugging">
             <Bug class="h-3.5 w-3.5 text-amber-500" />
             <span>{{ t("contextMenu.debugProcedure") }}</span>
           </Button>

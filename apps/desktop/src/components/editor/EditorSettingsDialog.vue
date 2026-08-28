@@ -2309,7 +2309,7 @@ function updatePreviewSqlDiagnostics() {
 }
 
 function previewExecutableStatementRangeStartingAt(currentView: EditorViewType, lineFrom: number) {
-  previewExecutableCache = executableStatementRangeCacheForDoc(previewExecutableCache, currentView.state.doc, "mysql");
+  previewExecutableCache = executableStatementRangeCacheForDoc(previewExecutableCache, currentView.state.doc, "opengauss");
   return executableStatementRangeStartingAt(previewExecutableCache, lineFrom);
 }
 
@@ -2389,7 +2389,7 @@ function buildPreviewCurrentStatementFrameExtension(viewModule: Pick<typeof impo
       }
       getDeco(view: import("@codemirror/view").EditorView) {
         if (view.state.selection.ranges.some((range) => !range.empty)) return Decoration.none;
-        const range = currentExecutableStatementRange(view.state.doc.toString(), view.state.selection.main.head, "mysql");
+        const range = currentExecutableStatementRange(view.state.doc.toString(), view.state.selection.main.head, "opengauss");
         if (!range) return Decoration.none;
 
         const startLine = view.state.doc.lineAt(range.from);

@@ -67,8 +67,6 @@ export default defineConfig(async () => ({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
-      // Prefer package source during app dev so shell parse changes need no rebuild.
-      "@dbx-app/mongo-shell": path.resolve(__dirname, "../../packages/mongo-shell/src/index.ts"),
     },
   },
   clearScreen: false,

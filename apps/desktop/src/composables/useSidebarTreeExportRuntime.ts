@@ -204,7 +204,6 @@ export function useSidebarTreeExportRuntime(options: SidebarTreeExportRuntimeOpt
 
     try {
       await connectionStore.ensureConnected(connectionId);
-      const queryColumns = config.db_type === "neo4j" ? (await api.getColumns(connectionId, database, node.schema || database, node.label)).map((column) => column.name) : undefined;
       const effectiveDbType = effectiveDatabaseTypeForConnection(config);
       const result = await fetchTableDataForExport({
         databaseType: effectiveDbType,
@@ -212,7 +211,7 @@ export function useSidebarTreeExportRuntime(options: SidebarTreeExportRuntimeOpt
         schema: node.schema,
         tableName: node.label,
         tableType: node.tableType,
-        columns: queryColumns,
+        columns: undefined,
         executePage: (sql) => api.executeQuery(connectionId, database, sql),
       });
 
@@ -258,27 +257,6 @@ export function useSidebarTreeExportRuntime(options: SidebarTreeExportRuntimeOpt
       await connectionStore.ensureConnected(connectionId);
       task = addExportTask(node.label, format, outputPath);
       const currentTask = task;
-      const effectiveDbType = effectiveDatabaseTypeForConnection(config);
-      if (effectiveDbType === "victoriametrics") {
-        const result = await fetchTableDataForExport({
-          databaseType: effectiveDbType,
-          schema: node.schema,
-          tableName: node.label,
-          tableType: node.tableType,
-          executePage: (sql) => api.executeQuery(connectionId, database, sql),
-        });
-        if (format === "csv") {
-          await api.exportQueryResultCsv(outputPath, result.columns, result.rows);
-        } else {
-          await api.exportQueryResultXlsx(outputPath, node.label, result.columns, result.column_types ?? result.columns.map(() => ""), undefined, result.rows);
-        }
-        currentTask.status = "Done";
-        currentTask.rowsExported = result.rows.length;
-        currentTask.totalRows = result.rows.length;
-        toast(t("grid.exported"));
-        return;
-      }
-      const queryColumns = config.db_type === "neo4j" ? (await api.getColumns(connectionId, database, node.schema || database, node.label)).map((column) => column.name) : undefined;
       const rowLimit = settingsStore.editorSettings.exportRowLimitEnabled ? settingsStore.editorSettings.exportRowLimit : null;
       const request: api.TableExportRequest = {
         exportId: currentTask.exportId,
@@ -289,7 +267,7 @@ export function useSidebarTreeExportRuntime(options: SidebarTreeExportRuntimeOpt
         tableName: node.label,
         filePath: outputPath,
         format,
-        columns: queryColumns,
+        columns: undefined,
         batchSize: settingsStore.editorSettings.exportBatchSize,
         skipCount: format === "sql",
         rowLimit,

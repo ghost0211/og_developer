@@ -27,14 +27,11 @@ export interface TabResultSnapshot {
    * still return to the original result order.
    */
   resultLocalSortOriginalRows?: QueryResult["rows"];
-  resultLocalSortOriginalMongoDocuments?: QueryResult["mongo_documents"];
-  resultLocalSortOriginalMongoCopyDocuments?: QueryResult["mongo_copy_documents"];
   resultRuns?: QueryTab["resultRuns"];
   activeResultRunId?: string;
   queryAnalysis?: QueryTab["queryAnalysis"];
   querySourceColumns?: QueryTab["querySourceColumns"];
   queryEditabilityReason?: QueryTab["queryEditabilityReason"];
-  mongoEditTarget?: QueryTab["mongoEditTarget"];
   tableMeta?: QueryTab["tableMeta"];
   resultPageSql?: string;
   resultPageLimit?: number;
@@ -53,8 +50,6 @@ interface ColumnarQueryResult {
   column_types?: string[];
   columnValues: CellValue[][];
   rowCount: number;
-  mongo_documents?: unknown[];
-  mongo_copy_documents?: unknown[];
   affected_rows: number;
   execution_time_ms: number;
   truncated?: boolean;
@@ -329,8 +324,6 @@ function stripSessionIds(result: QueryResult | undefined): QueryResult | undefin
     spatial_columns: result.spatial_columns?.map((entry) => ({ column_index: entry.column_index, srid: entry.srid })),
     spatial_values: result.spatial_values?.map((row) => [...row]),
     rows: result.rows.map((row) => [...row]),
-    mongo_documents: result.mongo_documents ? clonePlain(result.mongo_documents) : undefined,
-    mongo_copy_documents: result.mongo_copy_documents ? clonePlain(result.mongo_copy_documents) : undefined,
     affected_rows: result.affected_rows,
     execution_time_ms: result.execution_time_ms,
     truncated: result.truncated,
@@ -353,8 +346,6 @@ function stripResultRunSessionIds(resultRuns: QueryTab["resultRuns"]): QueryTab[
     result: stripSessionIds(run.result),
     results: stripResultSessionIds(run.results),
     resultLocalSortOriginalRows: run.resultLocalSortOriginalRows?.map((row) => [...row]),
-    resultLocalSortOriginalMongoDocuments: run.resultLocalSortOriginalMongoDocuments ? clonePlain(run.resultLocalSortOriginalMongoDocuments) : undefined,
-    resultLocalSortOriginalMongoCopyDocuments: run.resultLocalSortOriginalMongoCopyDocuments ? clonePlain(run.resultLocalSortOriginalMongoCopyDocuments) : undefined,
     resultSessionId: undefined,
   }));
 }
@@ -371,8 +362,6 @@ function toColumnarResult(result: QueryResult | undefined): ColumnarQueryResult 
     spatial_values: result.spatial_values?.map((row) => [...row]),
     columnValues,
     rowCount: result.rows.length,
-    mongo_documents: result.mongo_documents ? clonePlain(result.mongo_documents) : undefined,
-    mongo_copy_documents: result.mongo_copy_documents ? clonePlain(result.mongo_copy_documents) : undefined,
     affected_rows: result.affected_rows,
     execution_time_ms: result.execution_time_ms,
     truncated: result.truncated,
@@ -395,8 +384,6 @@ function fromColumnarResult(result: ColumnarQueryResult | undefined): QueryResul
     spatial_columns: result.spatial_columns?.map((entry) => ({ column_index: entry.column_index, srid: entry.srid })),
     spatial_values: result.spatial_values?.map((row) => [...row]),
     rows,
-    mongo_documents: result.mongo_documents ? clonePlain(result.mongo_documents) : undefined,
-    mongo_copy_documents: result.mongo_copy_documents ? clonePlain(result.mongo_copy_documents) : undefined,
     affected_rows: result.affected_rows,
     execution_time_ms: result.execution_time_ms,
     truncated: result.truncated,
@@ -715,14 +702,11 @@ export function buildTabResultSnapshot(tab: QueryTab): TabResultSnapshot | undef
     activeResultIndex: tab.activeResultIndex,
     resultEditorFingerprint: tab.resultEditorFingerprint,
     resultLocalSortOriginalRows: tab.resultLocalSortOriginalRows?.map((row) => [...row]),
-    resultLocalSortOriginalMongoDocuments: tab.resultLocalSortOriginalMongoDocuments ? clonePlain(tab.resultLocalSortOriginalMongoDocuments) : undefined,
-    resultLocalSortOriginalMongoCopyDocuments: tab.resultLocalSortOriginalMongoCopyDocuments ? clonePlain(tab.resultLocalSortOriginalMongoCopyDocuments) : undefined,
     resultRuns: stripResultRunSessionIds(tab.resultRuns),
     activeResultRunId: tab.activeResultRunId,
     queryAnalysis: tab.queryAnalysis ? clonePlain(tab.queryAnalysis) : undefined,
     querySourceColumns: tab.querySourceColumns ? [...tab.querySourceColumns] : undefined,
     queryEditabilityReason: tab.queryEditabilityReason,
-    mongoEditTarget: tab.mongoEditTarget ? clonePlain(tab.mongoEditTarget) : undefined,
     tableMeta: tab.tableMeta ? clonePlain(tab.tableMeta) : undefined,
     resultPageSql: tab.resultPageSql,
     resultPageLimit: tab.resultPageLimit,

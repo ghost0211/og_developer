@@ -12,35 +12,13 @@ type ParsedNode = {
 };
 
 const typeMap: Record<string, { dbType: DatabaseType; profile: string; label: string; port: number; user: string }> = {
-  // String type identifiers (from Navicat ConnType / DatabaseType attributes)
-  mysql: { dbType: "mysql", profile: "mysql", label: "MySQL", port: 3306, user: "root" },
-  mariadb: { dbType: "mysql", profile: "mariadb", label: "MariaDB", port: 3306, user: "root" },
+  // String type identifiers
   postgresql: { dbType: "postgres", profile: "postgres", label: "PostgreSQL", port: 5432, user: "postgres" },
   postgres: { dbType: "postgres", profile: "postgres", label: "PostgreSQL", port: 5432, user: "postgres" },
-  sqlite: { dbType: "sqlite", profile: "sqlite", label: "SQLite", port: 0, user: "" },
-  sqlserver: { dbType: "sqlserver", profile: "sqlserver", label: "SQL Server", port: 1433, user: "sa" },
-  mssql: { dbType: "sqlserver", profile: "sqlserver", label: "SQL Server", port: 1433, user: "sa" },
-  oracle: { dbType: "oracle", profile: "oracle", label: "Oracle", port: 1521, user: "system" },
-  redis: { dbType: "redis", profile: "redis", label: "Redis", port: 6379, user: "" },
-  mongodb: { dbType: "mongodb", profile: "mongodb", label: "MongoDB", port: 27017, user: "" },
-  mongo: { dbType: "mongodb", profile: "mongodb", label: "MongoDB", port: 27017, user: "" },
-  dameng: { dbType: "dameng", profile: "dm", label: "达梦 Dameng", port: 5236, user: "SYSDBA" },
-  dm: { dbType: "dameng", profile: "dm", label: "达梦 Dameng", port: 5236, user: "SYSDBA" },
-  clickhouse: { dbType: "clickhouse", profile: "clickhouse", label: "ClickHouse", port: 8123, user: "default" },
-  snowflake: { dbType: "snowflake", profile: "snowflake", label: "Snowflake", port: 443, user: "" },
-  kingbase: { dbType: "kingbase", profile: "kingbase", label: "KingbaseES", port: 54321, user: "SYSTEM" },
-  kingbasees: { dbType: "kingbase", profile: "kingbase", label: "KingbaseES", port: 54321, user: "SYSTEM" },
-  gaussdb: { dbType: "gaussdb", profile: "gaussdb", label: "GaussDB", port: 8000, user: "root" },
-  oceanbase: { dbType: "oceanbase-oracle", profile: "oceanbase", label: "OceanBase", port: 2883, user: "root" },
+  opengauss: { dbType: "opengauss", profile: "opengauss", label: "openGauss", port: 5432, user: "gaussdb" },
+  gaussdb: { dbType: "opengauss", profile: "opengauss", label: "openGauss", port: 5432, user: "gaussdb" },
   // Numeric type codes (Navicat uses numeric ConnType for some exports)
-  "1": { dbType: "mysql", profile: "mysql", label: "MySQL", port: 3306, user: "root" },
   "2": { dbType: "postgres", profile: "postgres", label: "PostgreSQL", port: 5432, user: "postgres" },
-  "3": { dbType: "sqlite", profile: "sqlite", label: "SQLite", port: 0, user: "" },
-  "4": { dbType: "oracle", profile: "oracle", label: "Oracle", port: 1521, user: "system" },
-  "5": { dbType: "mysql", profile: "mariadb", label: "MariaDB", port: 3306, user: "root" },
-  "7": { dbType: "sqlserver", profile: "sqlserver", label: "SQL Server", port: 1433, user: "sa" },
-  "8": { dbType: "mongodb", profile: "mongodb", label: "MongoDB", port: 27017, user: "" },
-  "9": { dbType: "redis", profile: "redis", label: "Redis", port: 6379, user: "" },
 };
 
 const unsupportedTypes = new Set(["http", "https", "ftp", "sftp", "ssh"]);
@@ -65,10 +43,6 @@ function getSqlitePath(values: Record<string, string>) {
 function truthyNavicatFlag(value: string) {
   const normalized = value.trim().toLowerCase();
   return ["1", "true", "yes", "y", "on", "checked"].includes(normalized);
-}
-
-function optionalNavicatFlag(value: string): boolean | undefined {
-  return value.trim() ? truthyNavicatFlag(value) : undefined;
 }
 
 function hexToBytes(hex: string) {
@@ -219,66 +193,6 @@ function isConnectionCandidate(node: ParsedNode) {
   return !!(name || host || file) && !!(type || host || file);
 }
 
-function encodeMongoUrlPart(value: string): string {
-  return encodeURIComponent(value);
-}
-
-function normalizeMongoAuthMechanism(value: string): string {
-  const trimmed = value.trim();
-  if (!trimmed) return "";
-  // "Password" is the SCRAM default; let the driver negotiate it.
-  if (/^(password|default|none|scram)$/i.test(trimmed)) return "";
-  return trimmed.toUpperCase();
-}
-
-function normalizeMongoReadPreference(value: string): string {
-  const trimmed = value.trim();
-  if (!trimmed || /^primary$/i.test(trimmed)) return "";
-  return trimmed.charAt(0).toLowerCase() + trimmed.slice(1);
-}
-
-function buildMongoReplicaSetConnectionString(opts: {
-  useSrv: boolean;
-  username: string;
-  password: string;
-  members: MongoReplicaMember[];
-  database: string;
-  replicaSet: string;
-  authSource: string;
-  authMechanism: string;
-  readPreference: string;
-  retryReads?: boolean;
-  retryWrites?: boolean;
-  ssl: boolean;
-}): string {
-  const scheme = opts.useSrv ? "mongodb+srv://" : "mongodb://";
-  const userInfo = opts.username ? `${encodeMongoUrlPart(opts.username)}:${encodeMongoUrlPart(opts.password)}@` : "";
-
-  let hosts: string;
-  if (opts.useSrv) {
-    // SRV forbids ports; DNS resolves the seed list.
-    const srvHost = opts.members[0]?.host ?? "";
-    hosts = encodeMongoUrlPart(srvHost);
-  } else {
-    hosts = opts.members.map((member) => (member.host.includes(":") ? `[${member.host}]:${member.port}` : `${member.host}:${member.port}`)).join(",");
-  }
-
-  const path = opts.database ? `/${encodeMongoUrlPart(opts.database)}` : "";
-  const params = new URLSearchParams();
-  if (opts.replicaSet) params.set("replicaSet", opts.replicaSet);
-  if (opts.authSource) params.set("authSource", opts.authSource);
-  const authMechanism = normalizeMongoAuthMechanism(opts.authMechanism);
-  if (authMechanism) params.set("authMechanism", authMechanism);
-  const readPreference = normalizeMongoReadPreference(opts.readPreference);
-  if (readPreference) params.set("readPreference", readPreference);
-  if (opts.retryWrites !== undefined) params.set("retryWrites", String(opts.retryWrites));
-  if (opts.retryReads !== undefined) params.set("retryReads", String(opts.retryReads));
-  if (opts.ssl) params.set("tls", "true");
-  const query = params.toString();
-
-  return `${scheme}${userInfo}${hosts}${path}${query ? `?${query}` : ""}`;
-}
-
 async function parseConnection(node: ParsedNode): Promise<ConnectionConfig | null> {
   const rawType = getAny(node.values, ["connType", "databaseType", "driver", "dbType", "connectionType", "type"]);
   const portValue = Number(getAny(node.values, ["port", "serverPort"]));
@@ -291,29 +205,19 @@ async function parseConnection(node: ParsedNode): Promise<ConnectionConfig | nul
   }
 
   // Navicat NCX uses ServiceProvider to distinguish vendor-specific database providers.
-  // e.g. OceanBase MySQL reports ConnType="MYSQL" ServiceProvider="AliyunOceanBase"
-  //      OceanBase Oracle reports ConnType="ORACLE" ServiceProvider="AliyunOceanBase"
-  //      GaussDB reports ConnType="POSTGRESQL" ServiceProvider="HuaweiCloudGaussDB"
-  // For OceanBase, ConnType remains the source of truth for the compatibility mode.
+  // e.g. GaussDB reports ConnType="POSTGRESQL" ServiceProvider="HuaweiCloudGaussDB".
   const serviceProvider = getAny(node.values, ["serviceprovider"]);
   let effectiveProfile = profile;
   if (serviceProvider) {
     const sp = serviceProvider.toLowerCase();
-    if (sp.includes("oceanbase")) {
-      const oceanbaseOracleMode = normalizeKey(rawType).includes("oracle") || profile.dbType === "oracle";
-      effectiveProfile = oceanbaseOracleMode ? { ...profile, dbType: "oceanbase-oracle", profile: "oceanbase-oracle", label: "OceanBase Oracle Mode", port: 2883 } : { ...profile, dbType: "mysql", profile: "oceanbase", label: "OceanBase", port: 2883 };
-    } else if (sp.includes("gaussdb") || sp.includes("huaweicloudgauss")) {
-      effectiveProfile = { ...profile, dbType: "gaussdb", profile: "gaussdb", label: "GaussDB", port: 8000 };
+    if (sp.includes("gaussdb") || sp.includes("huaweicloudgauss")) {
+      effectiveProfile = { ...profile, dbType: "opengauss", profile: "opengauss", label: "openGauss", port: 8000 };
     }
   }
 
-  const sqlitePath = effectiveProfile.dbType === "sqlite" ? getSqlitePath(node.values) : "";
-  const name = getAny(node.values, ["name", "connectionName", "connName", "caption", "title"]) || getAny(node.values, ["host", "server", "hostname"]) || sqlitePath || effectiveProfile.label;
-  const host = sqlitePath || getAny(node.values, ["host", "server", "hostname", "serverHost", "address"]) || (effectiveProfile.dbType === "sqlite" ? "" : "127.0.0.1");
-  // Navicat exports OceanBase Oracle connections with Database="ORCL", but OceanBase resolves the target from the username.
-  const database = effectiveProfile.dbType === "sqlite" ? "" : effectiveProfile.dbType === "oceanbase-oracle" ? "" : getAny(node.values, ["database", "databaseName", "initialDatabase", "serviceName", "sid", "schema"]);
-  const isOracleLike = effectiveProfile.dbType === "oracle" || effectiveProfile.dbType === "oceanbase-oracle";
-  const oracleConnectionType = isOracleLike && getAny(node.values, ["sid"]) ? "sid" : isOracleLike ? "service_name" : undefined;
+  const name = getAny(node.values, ["name", "connectionName", "connName", "caption", "title"]) || getAny(node.values, ["host", "server", "hostname"]) || effectiveProfile.label;
+  const host = getAny(node.values, ["host", "server", "hostname", "serverHost", "address"]) || "127.0.0.1";
+  const database = getAny(node.values, ["database", "databaseName", "initialDatabase", "serviceName", "sid", "schema"]);
   const username = getAny(node.values, ["user", "username", "userName", "uid"]) || profile.user;
   const password = await decryptNavicatPassword(getAny(node.values, ["password"]));
   const keepaliveValue = Number(getAny(node.values, ["keepAliveInterval", "keepaliveInterval", "keepAliveTime", "keepaliveTime"]));
@@ -339,36 +243,10 @@ async function parseConnection(node: ParsedNode): Promise<ConnectionConfig | nul
     query_timeout_secs: 30,
     keepalive_interval_secs: keepaliveInterval,
     ssl: false,
-    oracle_connection_type: oracleConnectionType,
     connection_string: undefined,
     jdbc_driver_class: undefined,
     jdbc_driver_paths: [],
   };
-
-  // Navicat leaves <Connection Host> as a "localhost" placeholder; rebuild a
-  // multi-host URL from the real <Member> seeds.
-  if (effectiveProfile.dbType === "mongodb" && node.members.length > 0) {
-    const replicaDatabase = getAny(node.values, ["advanceDatabase", "database", "databaseName"]);
-    const useSrv = truthyNavicatFlag(getAny(node.values, ["useSRVRecord", "srvRecord"]));
-    config.connection_string = buildMongoReplicaSetConnectionString({
-      useSrv,
-      username,
-      password,
-      members: node.members,
-      database: replicaDatabase,
-      replicaSet: getAny(node.values, ["replicaSetName", "replicaSet"]),
-      authSource: getAny(node.values, ["authSource"]),
-      authMechanism: getAny(node.values, ["authMechanism"]),
-      readPreference: getAny(node.values, ["readPreference"]),
-      retryReads: optionalNavicatFlag(getAny(node.values, ["retryReads"])),
-      retryWrites: optionalNavicatFlag(getAny(node.values, ["retryWrites"])),
-      ssl: truthyNavicatFlag(getAny(node.values, ["ssl", "useSsl"])),
-    });
-    config.host = node.members[0].host;
-    config.port = node.members[0].port;
-    config.database = replicaDatabase || undefined;
-    config.url_params = "";
-  }
 
   return { ...config, id: uuid() };
 }

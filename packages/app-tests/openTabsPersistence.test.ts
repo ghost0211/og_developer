@@ -98,32 +98,7 @@ test("serializes table tabs with reload context", () => {
   );
 });
 
-test("serializes MQ tabs with selected tenant context", () => {
-  const saved = serializeOpenTabs([
-    queryTab({
-      mode: "mq",
-      database: "",
-      mqTenant: "public",
-    }),
-  ]);
 
-  assert.equal(saved[0]?.mqTenant, "public");
-});
-
-test("serializes Nacos admin tabs", () => {
-  const saved = serializeOpenTabs([
-    queryTab({
-      mode: "nacos",
-      database: "",
-      nacosNamespace: "dev",
-      nacosNamespaceName: "Development",
-    }),
-  ]);
-
-  assert.equal(saved[0]?.mode, "nacos");
-  assert.equal(saved[0]?.nacosNamespace, "dev");
-  assert.equal(saved[0]?.nacosNamespaceName, "Development");
-});
 
 test("serializes evicted result cache handles", () => {
   const saved = serializeOpenTabs([

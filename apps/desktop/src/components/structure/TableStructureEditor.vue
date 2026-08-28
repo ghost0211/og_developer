@@ -31,9 +31,7 @@ import { loadObjectMetadataFacet, type ObjectMetadataFacet } from "@/lib/metadat
 import { invalidateTableMetadataCache } from "@/lib/metadata/tableMetadataCache";
 import { type BuildTableStructureChangeSqlOptions, type EditableStructureColumn, type EditableStructureForeignKey, type EditableStructureIndex, type EditableStructureTrigger } from "@/lib/table/tableStructureEditorSql";
 import { PRESET_FIELDS_TEMPLATE_ID, createTableColumnTemplateDrafts } from "@/lib/table/tableColumnTemplates";
-import { getMysqlDataTypeHelp } from "@/lib/table/mysqlDataTypeHelp";
 import { getPostgresDataTypeHelp } from "@/lib/table/postgresDataTypeHelp";
-import { getSqliteDataTypeHelp } from "@/lib/table/sqliteDataTypeHelp";
 import { getTableMetadataCapabilities, firstStructureMetadataTab, isStructureMetadataTabSupported } from "@/lib/table/tableMetadataCapabilities";
 import { hasTableStructureRefreshWork, unloadedTableStructureRefreshScope, visibleTableStructureRefreshScope, type TableStructureRefreshScope } from "@/lib/table/tableStructureMetadataLoading";
 import { canAddTableStructureColumn, getTableStructureCapabilities, hasLocalTableColumnOrderChange, isPhysicalTableColumnOrderChange, sanitizeStructureIndexesForCapabilities, supportsLocalTableColumnReorder } from "@/lib/table/tableStructureCapabilities";
@@ -42,44 +40,29 @@ import { loadTableDataGridColumnOrder, notifyTableDataGridColumnOrderChanged, re
 import { connectionObjectTreeQuerySchema, tableStructureDatabaseTypeForConnection } from "@/lib/database/jdbcDialect";
 import type { TableInfoTab, TableStructureEditorDraft, TableStructureEditorTarget, TableStructureEditorViewport } from "@/types/database";
 import {
-  applyManticoreDdlColumnExtras,
   buildStructureTargetLabel,
   canEditStructuredTriggerDraft,
-  canEditManticoreColumnProperties,
   combineDataTypeForDatabase,
-  combineDataTypeForDatabaseWithLengthUnit,
   createColumnDrafts,
   createForeignKeyDrafts,
   createIndexDrafts,
   createTriggerDrafts,
   dataTypeLengthInputValue,
-  dataTypeLengthUnitValue,
   defaultNewColumnDataType,
   filterStructureIndexColumnOptions,
   generateIndexName,
   generateUniqueIndexName,
   getColumnEditorControls,
   getDataTypeOptions,
-  getDataTypeLengthUnitOptions,
   getDefaultLengthForType,
-  hasExistingColumnTypeChange,
   isDataTypeLengthDisabled,
-  isDamengIdentityCompatibleDataType,
-  isMysqlEnumDataType,
-  isMysqlCharacterDataType,
-  isProtectedManticoreIdColumn,
-  isSqlServerIdentityCompatibleDataType,
-  mysqlEnumDataType,
   parseExtraToColumnExtra,
   rehydrateColumnDraftsFromMetadata,
   resolveInsertColumnIndex,
-  restoreDamengLengthUnitsAfterSave,
   sameStructureIndexType,
   splitDataType,
   toColumnNames,
 } from "@/lib/table/tableStructureEditorState";
-import { CREATE_DATABASE_CHARSET_OPTIONS, createDatabaseCollationOptionsForCharset, fallbackCreateDatabaseCharsetMetadata, normalizeCreateDatabaseCharsetKey, parseCreateDatabaseCharsetMetadata } from "@/lib/database/createDatabaseCharsetOptions";
-import type { CreateDatabaseCharsetMetadata } from "@/lib/database/createDatabaseCharsetOptions";
 import * as api from "@/lib/backend/api";
 
 const { t } = useI18n();
@@ -188,7 +171,6 @@ const columns = ref<EditableStructureColumn[]>([]);
 const indexes = ref<EditableStructureIndex[]>([]);
 const pendingStatements = ref<string[]>([]);
 const warnings = ref<string[]>([]);
-const sqliteSchemaRevision = ref<string>();
 const foreignKeys = ref<EditableStructureForeignKey[]>([]);
 const triggers = ref<EditableStructureTrigger[]>([]);
 const triggersLoaded = ref(false);
@@ -476,7 +458,6 @@ const structureHeaderCellClass = "relative min-w-0 overflow-hidden border-b bord
 const structureCellClass = "min-w-0 overflow-hidden border-b border-r px-[var(--structure-cell-px)] py-[var(--structure-cell-py)]";
 const structureLastCellClass = "min-w-0 overflow-hidden border-b px-[var(--structure-cell-px)] py-[var(--structure-cell-py)]";
 const structurePropertyListClass = "flex min-w-0 items-center gap-0 overflow-hidden";
-const structurePropertyLabelClass = "flex min-w-0 items-center gap-1 whitespace-nowrap";
 const structureActionButtonClass = `${structureIconButtonClass} shrink-0`;
 const structureDensityMenuOpen = ref(false);
 const structureDensityMenuRef = ref<HTMLElement>();
@@ -581,7 +562,7 @@ watch(localStructureDensity, (density, previousDensity) => {
 function onColResize(e: MouseEvent, col: number) {
   e.preventDefault();
   const widthIndex = columnWidthIndex(col);
-  const minimumWidth = widthIndex === 3 && databaseType.value === "dameng" ? structureDensityMetric.value.minLengthColumnWidth : structureDensityMetric.value.minColumnWidth;
+  const minimumWidth = structureDensityMetric.value.minColumnWidth;
   colResizing.value = { col: widthIndex, startX: e.clientX, startW: Math.max(colWidths.value[widthIndex] ?? minimumWidth, minimumWidth) };
   const onMove = (ev: MouseEvent) => {
     if (!colResizing.value) return;
@@ -620,7 +601,6 @@ function onIndexColResize(e: MouseEvent, col: number) {
 
 const connection = computed(() => (props.connectionId ? store.getConfig(props.connectionId) : undefined));
 const databaseType = computed(() => tableStructureDatabaseTypeForConnection(connection.value));
-const usesMysql8SafeDefaults = computed(() => databaseType.value === "mysql" && connection.value?.db_type === "mysql" && connection.value.driver_profile === "mysql");
 const structureCapabilities = computed(() => getTableStructureCapabilities(databaseType.value, connection.value?.db_type, connection.value?.database_info?.productVersion));
 const tableMetadataCapabilities = computed(() => getTableMetadataCapabilities(databaseType.value));
 const structureDialect = computed(() => structureCapabilities.value.dialect);
@@ -631,10 +611,6 @@ const columnEditorControls = computed(() => getColumnEditorControls(databaseType
 
 const indexTypesByDb: Record<string, string[]> = {
   postgres: ["BTREE", "HASH", "GIST", "SPGIST", "GIN", "BRIN"],
-  mysql: ["BTREE", "HASH", "FULLTEXT", "SPATIAL", "RTREE"],
-  sqlserver: ["CLUSTERED", "NONCLUSTERED", "COLUMNSTORE", "NONCLUSTERED COLUMNSTORE", "XML", "SPATIAL"],
-  oracle: ["NORMAL", "BITMAP", "FUNCTION-BASED NORMAL", "FUNCTION-BASED DOMAIN", "DOMAIN", "CLUSTER"],
-  sqlite: ["BTREE"],
 };
 const indexTypeOptions = computed(() => (structureCapabilities.value.indexType ? (indexTypesByDb[structureDialect.value] ?? []) : []));
 
@@ -652,110 +628,18 @@ const defaultValuePresets = computed((): DefaultValuePreset[] => {
   ];
 
   const dialectPresets: Record<string, DefaultValuePreset[]> = {
-    mysql: [
-      { label: "CURRENT_TIMESTAMP", value: "CURRENT_TIMESTAMP" },
-      { label: "CURRENT_DATE", value: "CURRENT_DATE" },
-      { label: "CURRENT_TIME", value: "CURRENT_TIME" },
-    ],
     postgres: [
       { label: "CURRENT_TIMESTAMP", value: "CURRENT_TIMESTAMP" },
       { label: "CURRENT_DATE", value: "CURRENT_DATE" },
       { label: "now()", value: "now()" },
       { label: "gen_random_uuid()", value: "gen_random_uuid()" },
     ],
-    sqlite: [
-      { label: "CURRENT_TIMESTAMP", value: "CURRENT_TIMESTAMP" },
-      { label: "CURRENT_DATE", value: "CURRENT_DATE" },
-      { label: "CURRENT_TIME", value: "CURRENT_TIME" },
-    ],
-    duckdb: [
-      { label: "CURRENT_TIMESTAMP", value: "CURRENT_TIMESTAMP" },
-      { label: "CURRENT_DATE", value: "CURRENT_DATE" },
-    ],
-    sqlserver: [
-      { label: "GETDATE()", value: "GETDATE()" },
-      { label: "GETUTCDATE()", value: "GETUTCDATE()" },
-      { label: "CURRENT_TIMESTAMP", value: "CURRENT_TIMESTAMP" },
-      { label: "NEWID()", value: "NEWID()" },
-    ],
-    oracle: [
-      { label: "SYSDATE", value: "SYSDATE" },
-      { label: "SYSTIMESTAMP", value: "SYSTIMESTAMP" },
-      { label: "CURRENT_TIMESTAMP", value: "CURRENT_TIMESTAMP" },
-    ],
-    h2: [
-      { label: "CURRENT_TIMESTAMP", value: "CURRENT_TIMESTAMP" },
-      { label: "CURRENT_DATE", value: "CURRENT_DATE" },
-    ],
-    clickhouse: [
-      { label: "now()", value: "now()" },
-      { label: "today()", value: "today()" },
-    ],
-    informix: [
-      { label: "CURRENT", value: "CURRENT" },
-      { label: "TODAY", value: "TODAY" },
-    ],
   };
 
   return [...universal, ...(dialectPresets[structureDialect.value] ?? [])];
 });
 
-function isPostgresIdentityType(dbType: string | undefined): boolean {
-  return dbType === "postgres" || dbType === "gaussdb" || dbType === "kwdb" || dbType === "opengauss" || dbType === "highgo" || dbType === "uxdb" || dbType === "vastbase" || dbType === "kingbase";
-}
-
-const showExtendedProperties = computed(() => {
-  const dt = databaseType.value;
-  return dt === "mysql" || dt === "dameng" || dt === "manticoresearch" || isPostgresIdentityType(dt) || dt === "sqlserver";
-});
-const showCharacterSet = computed(() => structureDialect.value === "mysql");
-
-const serverCharsetMetadata = ref<CreateDatabaseCharsetMetadata>();
-const charsetMetadataLoading = ref(false);
-
-const mysqlCharsetOptions = computed<string[]>(() => {
-  const meta = serverCharsetMetadata.value;
-  return meta ? meta.charsets : ([...CREATE_DATABASE_CHARSET_OPTIONS] as string[]);
-});
-
-function collationOptionsForCharset(charset: string): string[] {
-  const meta = serverCharsetMetadata.value;
-  if (meta) {
-    return meta.collationsByCharset[normalizeCreateDatabaseCharsetKey(charset)] ?? [];
-  }
-  return createDatabaseCollationOptionsForCharset(charset);
-}
-
-async function loadCharsetMetadata() {
-  if (charsetMetadataLoading.value || !showCharacterSet.value) return;
-  charsetMetadataLoading.value = true;
-  try {
-    await store.ensureConnected(props.connectionId);
-    const [charsetResult, collationResult] = await Promise.all([api.executeQuery(props.connectionId, props.database, "SHOW CHARACTER SET"), api.executeQuery(props.connectionId, props.database, "SHOW COLLATION")]);
-    serverCharsetMetadata.value = parseCreateDatabaseCharsetMetadata(charsetResult, collationResult);
-  } catch {
-    serverCharsetMetadata.value = fallbackCreateDatabaseCharsetMetadata();
-  } finally {
-    charsetMetadataLoading.value = false;
-  }
-}
-
-function onCharsetChange(column: EditableStructureColumn, charset: string) {
-  column.characterSet = charset;
-  // If the collation is no longer valid for the new charset, clear it so the
-  // server picks its default (COLLATE is only emitted when explicitly chosen).
-  if (column.collation && !collationOptionsForCharset(charset).includes(column.collation)) {
-    column.collation = "";
-  }
-}
-
-function columnCharset(column: EditableStructureColumn): string {
-  return column.characterSet ?? "";
-}
-
-function columnCollation(column: EditableStructureColumn): string {
-  return column.collation ?? "";
-}
+const showExtendedProperties = computed(() => structureDialect.value === "postgres");
 
 const extendedPropertiesColumnIndex = 10;
 const actionButtonGap = 2;
@@ -770,7 +654,7 @@ const visibleColWidths = computed(() =>
   colLabels.value.map((column) => {
     if (column.key === "actions") return columnActionsWidth.value;
     const width = colWidths.value[column.widthIndex] ?? structureDensityMetric.value.minColumnWidth;
-    return column.key === "length" && databaseType.value === "dameng" ? Math.max(width, structureDensityMetric.value.minLengthColumnWidth) : width;
+    return width;
   }),
 );
 
@@ -789,8 +673,6 @@ const colLabels = computed(() => {
   if (columnEditorControls.value.primaryKey) labels.push({ key: "primaryKey", label: t("structureEditor.primaryKey"), widthIndex: 5 });
   if (columnEditorControls.value.defaultValue) labels.push({ key: "defaultValue", label: t("structureEditor.defaultValue"), widthIndex: 6 });
   if (columnEditorControls.value.comment) labels.push({ key: "comment", label: t("structureEditor.comment"), widthIndex: 7 });
-  if (showCharacterSet.value) labels.push({ key: "characterSet", label: t("structureEditor.characterSet"), widthIndex: 8 });
-  if (showCharacterSet.value) labels.push({ key: "collation", label: t("structureEditor.collation"), widthIndex: 9 });
   if (showExtendedProperties.value) {
     labels.push({ key: "extendedProperties", label: t("structureEditor.extendedProperties"), widthIndex: extendedPropertiesColumnIndex });
   }
@@ -826,24 +708,11 @@ const triggerEventOptions = ["INSERT", "UPDATE", "DELETE"];
 const metadataSchema = computed(() => connectionObjectTreeQuerySchema(connection.value, props.database, props.schema));
 const refreshVersion = computed(() => (props.connectionId && props.tableName ? queryStore.tableStructureRefreshVersion(props.connectionId, props.database, props.schema, props.tableName) : 0));
 const isCreateMode = computed(() => !props.tableName);
-const usesSqliteRebuildStrategy = computed(() => !isCreateMode.value && structureCapabilities.value.alterStrategy === "sqlite-rebuild");
-const hasSqliteTypeChange = computed(() => usesSqliteRebuildStrategy.value && hasExistingColumnTypeChange(columns.value));
 const canAddColumn = computed(() => canAddTableStructureColumn(databaseType.value, isCreateMode.value));
 const newTableName = ref("");
 const tableComment = ref("");
 const originalTableComment = ref("");
 const targetLabel = computed(() => buildStructureTargetLabel(connection.value?.name, props.database, props.schema, isCreateMode.value ? undefined : props.tableName));
-
-function isManticoreTextColumn(column: EditableStructureColumn): boolean {
-  if (databaseType.value !== "manticoresearch") return false;
-  const baseType = splitDataType(column.dataType).baseType.trim().toLowerCase();
-  return baseType === "text" || baseType === "string";
-}
-
-function isManticoreJsonColumn(column: EditableStructureColumn): boolean {
-  if (databaseType.value !== "manticoresearch") return false;
-  return splitDataType(column.dataType).baseType.trim().toLowerCase() === "json";
-}
 
 let sqlPreviewRequestId = 0;
 let structureLoadRequestId = 0;
@@ -987,17 +856,7 @@ async function hydrateRestoredDraftFromDatabase() {
   let shouldRefreshPreview = false;
   try {
     await store.ensureConnected(connectionId);
-    let { value: nextColumns } = await loadObjectMetadataFacet({ connectionId, database, schema, tableName, catalog }, "columns", () => api.getColumns(connectionId, database, schema, tableName, catalog));
-    if (databaseType.value === "manticoresearch" && tableMetadataCapabilities.value.ddl) {
-      try {
-        const { ddl } = await loadObjectDdl({ connectionId, database, schema, tableName, catalog });
-        ddlContent.value = await formatSqlForDisplay(ddl, sqlFormatDialectForDbType(databaseType.value), settingsStore.editorSettings.sqlFormatter);
-        ddlFetched.value = true;
-        nextColumns = applyManticoreDdlColumnExtras(nextColumns, ddl);
-      } catch {
-        /* ignore — Manticore column properties can still come from SHOW COLUMNS when available */
-      }
-    }
+    const { value: nextColumns } = await loadObjectMetadataFacet({ connectionId, database, schema, tableName, catalog }, "columns", () => api.getColumns(connectionId, database, schema, tableName, catalog));
     columns.value = rehydrateColumnDraftsFromMetadata(columns.value, nextColumns, databaseType.value);
     markDraftHydratedAndSync();
     shouldRefreshPreview = true;
@@ -1032,7 +891,6 @@ function clearSqlPreviewState() {
   sqlPreviewLoading.value = false;
   pendingStatements.value = [];
   warnings.value = [];
-  sqliteSchemaRevision.value = undefined;
 }
 
 function dataTypeOptionsCacheKey(connectionId: string, database: string) {
@@ -1053,30 +911,14 @@ function mergeDataTypeOptions(primary: readonly string[], fallback: readonly str
   return result;
 }
 
-function mysqlDataTypeTooltip(option: string): string | undefined {
-  if (databaseType.value !== "mysql") return undefined;
-  const product = connection.value?.driver_profile === "mariadb" ? "mariadb" : connection.value?.driver_profile === "mysql" ? "mysql" : undefined;
-  const help = getMysqlDataTypeHelp(option, { product });
-  return help ? [help.key, ...(help.warningKeys ?? [])].map((key) => t(`structureEditor.mysqlDataTypeHelp.${key}`)).join("\n\n") : undefined;
-}
-
 function postgresDataTypeTooltip(option: string): string | undefined {
   if (databaseType.value !== "postgres") return undefined;
   const help = getPostgresDataTypeHelp(option);
   return help ? t(`structureEditor.postgresDataTypeHelp.${help.key}`) : undefined;
 }
 
-function sqliteDataTypeTooltip(option: string): string | undefined {
-  if (databaseType.value !== "sqlite") return undefined;
-  const help = getSqliteDataTypeHelp(option);
-  return help ? t(`structureEditor.sqliteDataTypeHelp.${help.key}`) : undefined;
-}
-
 function dataTypeTooltip(option: string): string | undefined {
-  if (databaseType.value === "mysql") return mysqlDataTypeTooltip(option);
-  if (databaseType.value === "postgres") return postgresDataTypeTooltip(option);
-  if (databaseType.value === "sqlite") return sqliteDataTypeTooltip(option);
-  return undefined;
+  return databaseType.value === "postgres" ? postgresDataTypeTooltip(option) : undefined;
 }
 
 async function loadDynamicDataTypeOptions() {
@@ -1121,7 +963,6 @@ function scheduleSqlPreviewRefresh() {
   deferredSqlPreviewRefresh = false;
   pendingStatements.value = [];
   warnings.value = [];
-  sqliteSchemaRevision.value = undefined;
   if (!hasPendingStructureChanges()) {
     sqlPreviewLoading.value = false;
     return;
@@ -1157,40 +998,27 @@ async function refreshSqlPreview() {
   if (!hasPendingStructureChanges()) {
     pendingStatements.value = [];
     warnings.value = [];
-    sqliteSchemaRevision.value = undefined;
     sqlPreviewLoading.value = false;
     return;
   }
   sqlPreviewLoading.value = true;
   const options = structureChangeOptions();
   try {
-    const result = isCreateMode.value ? await api.buildCreateTableSql(options) : hasSqliteTypeChange.value ? await api.previewSqliteTableStructureChange(props.connectionId, props.database, options) : await api.buildTableStructureChangeSql(options);
+    const result = isCreateMode.value ? await api.buildCreateTableSql(options) : await api.buildTableStructureChangeSql(options);
     if (requestId !== sqlPreviewRequestId) return;
     pendingStatements.value = result.statements;
     warnings.value = result.warnings;
-    sqliteSchemaRevision.value = "schemaRevision" in result && typeof result.schemaRevision === "string" ? result.schemaRevision : undefined;
   } catch (e: any) {
     if (requestId !== sqlPreviewRequestId) return;
     pendingStatements.value = [];
     warnings.value = [e?.message || String(e)];
-    sqliteSchemaRevision.value = undefined;
   } finally {
     if (requestId === sqlPreviewRequestId) sqlPreviewLoading.value = false;
   }
 }
 
 const canApply = computed(
-  () =>
-    !loading.value &&
-    !saving.value &&
-    !postSaveRefreshing.value &&
-    !secondaryMetadataLoading.value &&
-    !sqlPreviewLoading.value &&
-    pendingStatements.value.length > 0 &&
-    warnings.value.length === 0 &&
-    (!hasSqliteTypeChange.value || !!sqliteSchemaRevision.value) &&
-    !!props.connectionId &&
-    (isCreateMode.value ? !!newTableName.value.trim() : !!props.tableName),
+  () => !loading.value && !saving.value && !postSaveRefreshing.value && !secondaryMetadataLoading.value && !sqlPreviewLoading.value && pendingStatements.value.length > 0 && warnings.value.length === 0 && !!props.connectionId && (isCreateMode.value ? !!newTableName.value.trim() : !!props.tableName),
 );
 
 function clearDraft() {
@@ -1211,7 +1039,6 @@ function resetState() {
   indexes.value = [];
   pendingStatements.value = [];
   warnings.value = [];
-  sqliteSchemaRevision.value = undefined;
   foreignKeys.value = [];
   triggers.value = [];
   triggersLoaded.value = false;
@@ -1247,7 +1074,7 @@ async function reloadStructureFromDatabase() {
     ddlFetched.value = false;
     await fetchDdl(true);
   } else {
-    await loadStructure(false, visibleTableStructureRefreshScope(activeTab.value), true, { blockSecondaryMetadata: true, forceDdl: true, forceMetadata: true });
+    await loadStructure(false, visibleTableStructureRefreshScope(activeTab.value), true, { blockSecondaryMetadata: true, forceMetadata: true });
   }
 }
 
@@ -1275,12 +1102,7 @@ function loadCachedTableComment(request: ReturnType<typeof ddlRequest>, force = 
   return loadObjectMetadataFacet(request, "comment", () => fetchTableCommentValue(request.connectionId, request.database, request.schema, request.tableName, request.catalog), { force });
 }
 
-async function loadStructure(
-  silent = false,
-  scope: TableStructureRefreshScope = visibleTableStructureRefreshScope(activeTab.value),
-  showErrors = true,
-  options: { blockSecondaryMetadata?: boolean; preserveDraft?: boolean; damengLengthUnitsAfterSave?: ReadonlyMap<string, string>; forceDdl?: boolean; forceMetadata?: boolean } = {},
-) {
+async function loadStructure(silent = false, scope: TableStructureRefreshScope = visibleTableStructureRefreshScope(activeTab.value), showErrors = true, options: { blockSecondaryMetadata?: boolean; preserveDraft?: boolean; forceMetadata?: boolean } = {}) {
   const connectionId = props.connectionId;
   const database = props.database;
   const catalog = props.catalog;
@@ -1316,24 +1138,10 @@ async function loadStructure(
       : Promise.resolve(undefined);
     const tableCommentPromise = scope.tableComment && structureCapabilities.value.comment ? loadCachedTableComment(metadataRequest, forceMetadata).then((result) => result.value) : Promise.resolve(undefined);
 
-    let nextColumns = await columnsPromise;
+    const nextColumns = await columnsPromise;
     if (nextColumns) {
-      if (databaseType.value === "manticoresearch" && tableMetadataCapabilities.value.ddl) {
-        try {
-          const { ddl } = await loadObjectDdl({ connectionId, database, schema, tableName, catalog }, { force: options.forceDdl });
-          ddlContent.value = await formatSqlForDisplay(ddl, sqlFormatDialectForDbType(databaseType.value), settingsStore.editorSettings.sqlFormatter);
-          ddlFetched.value = true;
-          nextColumns = applyManticoreDdlColumnExtras(nextColumns, ddl);
-        } catch {
-          /* ignore — Manticore column properties can still come from SHOW COLUMNS when available */
-        }
-      }
-      // Load live charset/collation metadata from the MySQL server so the column
-      // editor shows the correct options for the server version.
-      void loadCharsetMetadata();
       const nextColumnDrafts = createColumnDrafts(nextColumns, databaseType.value);
-      const hydratedColumnDrafts = databaseType.value === "dameng" && options.damengLengthUnitsAfterSave ? restoreDamengLengthUnitsAfterSave(nextColumnDrafts, options.damengLengthUnitsAfterSave) : nextColumnDrafts;
-      columns.value = applyStoredLocalColumnOrder(hydratedColumnDrafts);
+      columns.value = applyStoredLocalColumnOrder(nextColumnDrafts);
       loadedMetadataFacets.add("columns");
       if (!options.preserveDraft) selectedColumnId.value = null;
     }
@@ -1391,9 +1199,9 @@ async function loadStructure(
   }
 }
 
-async function refreshStructureAfterSave(scope: TableStructureRefreshScope, damengLengthUnitsAfterSave: ReadonlyMap<string, string>) {
+async function refreshStructureAfterSave(scope: TableStructureRefreshScope) {
   try {
-    await loadStructure(true, scope, false, { blockSecondaryMetadata: true, damengLengthUnitsAfterSave });
+    await loadStructure(true, scope, false, { blockSecondaryMetadata: true });
   } catch (e) {
     console.warn("[DBX][structure-editor:post-save-refresh-failed]", e);
   } finally {
@@ -1544,163 +1352,13 @@ function persistLocalColumnOrder(showNotice = true) {
   toast(t("structureEditor.localColumnOrderNotice"), 4000);
 }
 
-function isSqlServerIdentityChecked(column: EditableStructureColumn): boolean {
-  return !!column.extra.autoIncrement || !!column.extra.identity;
-}
-
-function canEditSqlServerIdentity(column: EditableStructureColumn): boolean {
-  return !column.original && !column.markedForDrop && isSqlServerIdentityCompatibleDataType(column.dataType);
-}
-
-function clearSqlServerIdentity(column: EditableStructureColumn) {
-  column.extra.autoIncrement = false;
-  column.extra.identity = undefined;
-}
-
-function syncSqlServerIdentityForDataType(column: EditableStructureColumn) {
-  if (databaseType.value !== "sqlserver") return;
-  if (!isSqlServerIdentityChecked(column)) return;
-  if (isSqlServerIdentityCompatibleDataType(column.dataType)) return;
-  clearSqlServerIdentity(column);
-}
-
-function ensureSqlServerIdentity(column: EditableStructureColumn) {
-  column.extra.autoIncrement = true;
-  column.extra.identity = {
-    seed: column.extra.identity?.seed ?? 1,
-    increment: column.extra.identity?.increment ?? 1,
-  };
-}
-
-function setSqlServerIdentity(column: EditableStructureColumn, checked: boolean) {
-  if (!canEditSqlServerIdentity(column)) return;
-  if (checked) {
-    ensureSqlServerIdentity(column);
-    column.isNullable = false;
-  } else {
-    clearSqlServerIdentity(column);
-  }
-}
-
-function parseOptionalNumberInput(value: string | number): number | undefined {
-  if (typeof value === "number") return Number.isFinite(value) ? value : undefined;
-  const trimmed = value.trim();
-  if (!trimmed) return undefined;
-  const numeric = Number(trimmed);
-  return Number.isFinite(numeric) ? numeric : undefined;
-}
-
-function updateSqlServerIdentitySeed(column: EditableStructureColumn, value: string | number) {
-  if (!canEditSqlServerIdentity(column)) return;
-  ensureSqlServerIdentity(column);
-  column.extra.identity!.seed = parseOptionalNumberInput(value);
-}
-
-function updateSqlServerIdentityIncrement(column: EditableStructureColumn, value: string | number) {
-  if (!canEditSqlServerIdentity(column)) return;
-  ensureSqlServerIdentity(column);
-  column.extra.identity!.increment = parseOptionalNumberInput(value);
-}
-
-function isDamengIdentityChecked(column: EditableStructureColumn): boolean {
-  return !!column.extra.autoIncrement || !!column.extra.identity;
-}
-
-function canEditDamengIdentity(column: EditableStructureColumn): boolean {
-  if (column.original || column.markedForDrop || !isDamengIdentityCompatibleDataType(column.dataType)) return false;
-  // DM8 permits only one identity column per table, so prevent creating an invalid draft in the editor.
-  return isDamengIdentityChecked(column) || !columns.value.some((candidate) => candidate !== column && !candidate.markedForDrop && isDamengIdentityChecked(candidate));
-}
-
-function clearDamengIdentity(column: EditableStructureColumn) {
-  column.extra.autoIncrement = false;
-  column.extra.identity = undefined;
-}
-
-function syncDamengIdentityForDataType(column: EditableStructureColumn) {
-  if (databaseType.value !== "dameng") return;
-  if (!isDamengIdentityChecked(column)) return;
-  if (isDamengIdentityCompatibleDataType(column.dataType)) return;
-  clearDamengIdentity(column);
-}
-
-function ensureDamengIdentity(column: EditableStructureColumn) {
-  column.extra.autoIncrement = true;
-  column.extra.identity = {
-    seed: column.extra.identity?.seed ?? 1,
-    increment: column.extra.identity?.increment ?? 1,
-  };
-}
-
-function setDamengIdentity(column: EditableStructureColumn, checked: boolean) {
-  if (!canEditDamengIdentity(column)) return;
-  if (checked) {
-    ensureDamengIdentity(column);
-    column.isNullable = false;
-  } else {
-    clearDamengIdentity(column);
-  }
-}
-
-function updateDamengIdentitySeed(column: EditableStructureColumn, value: string | number) {
-  if (!canEditDamengIdentity(column)) return;
-  ensureDamengIdentity(column);
-  column.extra.identity!.seed = parseOptionalNumberInput(value);
-}
-
-function updateDamengIdentityIncrement(column: EditableStructureColumn, value: string | number) {
-  if (!canEditDamengIdentity(column)) return;
-  ensureDamengIdentity(column);
-  column.extra.identity!.increment = parseOptionalNumberInput(value);
-}
-
 function updateColumnDataType(column: EditableStructureColumn, baseType: string) {
-  if (isMysqlEnumDataType(databaseType.value, baseType)) {
-    if (!column.enumValues?.length) column.enumValues = [""];
-    column.dataType = mysqlEnumDataType(column.enumValues);
-  } else {
-    column.dataType = combineDataTypeForDatabase(databaseType.value, baseType, getDefaultLengthForType(databaseType.value, baseType, { omitMysqlDeprecatedDefaults: usesMysql8SafeDefaults.value }));
-  }
-  syncSqlServerIdentityForDataType(column);
-  syncDamengIdentityForDataType(column);
-  // Clear charset/collation when switching to a non-character MySQL type
-  if (showCharacterSet.value && !isMysqlCharacterDataType(column.dataType)) {
-    column.characterSet = "";
-    column.collation = "";
-  }
-}
-
-function updateMysqlEnumValue(column: EditableStructureColumn, index: number, value: string | number) {
-  if (!column.enumValues || index < 0 || index >= column.enumValues.length) return;
-  column.enumValues[index] = String(value);
-  column.dataType = mysqlEnumDataType(column.enumValues);
-}
-
-function addMysqlEnumValue(column: EditableStructureColumn) {
-  column.enumValues ??= [];
-  column.enumValues.push("");
-  column.dataType = mysqlEnumDataType(column.enumValues);
-}
-
-function removeMysqlEnumValue(column: EditableStructureColumn, index: number) {
-  if (!column.enumValues || column.enumValues.length <= 1) return;
-  column.enumValues.splice(index, 1);
-  column.dataType = mysqlEnumDataType(column.enumValues);
+  column.dataType = combineDataTypeForDatabase(databaseType.value, baseType, getDefaultLengthForType(databaseType.value, baseType));
 }
 
 function updateColumnDataTypeLength(column: EditableStructureColumn, value: string | number) {
   const baseType = splitDataType(column.dataType).baseType;
-  column.dataType = combineDataTypeForDatabaseWithLengthUnit(databaseType.value, baseType, String(value), dataTypeLengthUnitValue(databaseType.value, column.dataType));
-  syncSqlServerIdentityForDataType(column);
-  syncDamengIdentityForDataType(column);
-}
-
-function updateColumnDataTypeLengthUnit(column: EditableStructureColumn, value: unknown) {
-  const baseType = splitDataType(column.dataType).baseType;
-  const unit = value === "__default" ? "" : String(value ?? "");
-  column.dataType = combineDataTypeForDatabaseWithLengthUnit(databaseType.value, baseType, dataTypeLengthInputValue(databaseType.value, column.dataType), unit);
-  syncSqlServerIdentityForDataType(column);
-  syncDamengIdentityForDataType(column);
+  column.dataType = combineDataTypeForDatabase(databaseType.value, baseType, String(value));
 }
 
 function moveColumnTo(index: number, insertionIndex: number) {
@@ -2009,14 +1667,6 @@ function isColumnLengthDisabled(column: EditableStructureColumn): boolean {
   return isDataTypeLengthDisabled(databaseType.value, baseType);
 }
 
-function columnLengthUnitOptions(column: EditableStructureColumn) {
-  return getDataTypeLengthUnitOptions(databaseType.value, column.dataType);
-}
-
-function isColumnLengthUnitDisabled(column: EditableStructureColumn): boolean {
-  return isColumnLengthDisabled(column) || !dataTypeLengthInputValue(databaseType.value, column.dataType).trim();
-}
-
 function isColumnNullableDisabled(column: EditableStructureColumn): boolean {
   return column.markedForDrop || column.isPrimaryKey || (!!column.original && !structureCapabilities.value.alterNullability);
 }
@@ -2029,12 +1679,6 @@ function isColumnCommentDisabled(column: EditableStructureColumn): boolean {
   return column.markedForDrop || !structureCapabilities.value.comment;
 }
 
-function isColumnCharsetDisabled(column: EditableStructureColumn): boolean {
-  if (column.markedForDrop) return true;
-  if (!showCharacterSet.value) return true;
-  return !isMysqlCharacterDataType(column.dataType);
-}
-
 function isPrimaryKeyDisabled(column: EditableStructureColumn): boolean {
   if (column.markedForDrop) return true;
   if (!column.original) return false;
@@ -2042,11 +1686,7 @@ function isPrimaryKeyDisabled(column: EditableStructureColumn): boolean {
 }
 
 function canDropColumn(column: EditableStructureColumn): boolean {
-  return !!column.original && !column.isPrimaryKey && !isProtectedManticoreIdColumn(databaseType.value, column.original.name) && structureCapabilities.value.dropColumn;
-}
-
-function isManticoreColumnPropertyDisabled(column: EditableStructureColumn): boolean {
-  return !canEditManticoreColumnProperties(databaseType.value, !!column.original) || column.markedForDrop;
+  return !!column.original && !column.isPrimaryKey && structureCapabilities.value.dropColumn;
 }
 
 function addIndex() {
@@ -2159,8 +1799,8 @@ function canDropIndex(index: EditableStructureIndex): boolean {
 }
 
 const canEditForeignKeys = computed(() => structureCapabilities.value.foreignKey);
-const canEditTriggers = computed(() => structureDialect.value === "mysql" || structureDialect.value === "oracle");
-const isOracleTriggerEditor = computed(() => structureDialect.value === "oracle");
+const canEditTriggers = computed(() => false);
+const isOracleTriggerEditor = computed(() => false);
 
 function generatedForeignKeyName(column = ""): string {
   const table = structureIndexTableName() || "table";
@@ -2253,7 +1893,7 @@ async function recordStructureHistory(sql: string, start: number, success: boole
       success,
       error,
       activity_kind: "schema_change",
-      operation: hasSqliteTypeChange.value ? "ALTER TABLE" : primarySqlOperation(sql),
+      operation: primarySqlOperation(sql),
       target: isCreateMode.value ? newTableName.value.trim() : props.tableName,
       affected_rows: success ? result?.affected_rows : undefined,
     });
@@ -2305,19 +1945,9 @@ async function applyChanges() {
   saving.value = true;
   errorMessage.value = "";
   const refreshScope = captureStructureRefreshScope();
-  const damengLengthUnitsAfterSave = new Map<string, string>();
-  if (databaseType.value === "dameng") {
-    for (const column of columns.value) {
-      if (!column.markedForDrop && dataTypeLengthUnitValue("dameng", column.dataType)) {
-        damengLengthUnitsAfterSave.set(column.name.trim().toLowerCase(), column.dataType);
-      }
-    }
-  }
   const startedAt = Date.now();
   try {
-    const result = hasSqliteTypeChange.value
-      ? await api.applySqliteTableStructureChange(props.connectionId, props.database, structureChangeOptions(), sqliteSchemaRevision.value!)
-      : await api.executeBatch(props.connectionId, props.database, pendingStatements.value, props.schema, queryTimeoutSecsForConnection(connection));
+    const result = await api.executeBatch(props.connectionId, props.database, pendingStatements.value, props.schema, queryTimeoutSecsForConnection(connection));
     await recordStructureHistory(sql, startedAt, true, result);
     if (!isCreateMode.value && props.tableName) {
       invalidateTableMetadataCache({ connectionId: props.connectionId, database: props.database, schema: metadataSchema.value, tableName: props.tableName });
@@ -2327,7 +1957,6 @@ async function applyChanges() {
     toast(t("structureEditor.saved"), 2500);
     pendingStatements.value = [];
     warnings.value = [];
-    sqliteSchemaRevision.value = undefined;
     ddlFetched.value = false;
     ddlContent.value = "";
     if (isCreateMode.value) {
@@ -2341,7 +1970,7 @@ async function applyChanges() {
       postSaveRefreshing.value = true;
       skipNextRefreshVersion = true;
       emit("saved", tableComment.value !== originalTableComment.value);
-      await refreshStructureAfterSave(refreshScope, damengLengthUnitsAfterSave);
+      await refreshStructureAfterSave(refreshScope);
     }
     return true;
   } catch (e: any) {
@@ -2807,47 +2436,7 @@ watch([activeTab, ddlLoading], ([tab, loading]) => {
                     <Input v-else :model-value="splitDataType(column.dataType).baseType" :class="[structureMonoControlClass, 'w-full']" disabled />
                   </td>
                   <td v-if="columnEditorControls.length" :class="structureCellClass">
-                    <Popover v-if="isMysqlEnumDataType(databaseType, column.dataType)">
-                      <PopoverTrigger as-child>
-                        <Button variant="outline" size="sm" :class="[structureMonoControlClass, 'w-full justify-between px-2']" :disabled="isColumnTypeDisabled(column)">
-                          <span>{{ t("structureEditor.enumValueCount", { count: column.enumValues?.length ?? 0 }) }}</span>
-                          <ListChevronsUpDown :class="structureIconClass" />
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent class="w-80 p-3" align="start">
-                        <div class="mb-2 flex items-center justify-between gap-2">
-                          <span class="text-sm font-medium">{{ t("structureEditor.enumValues") }}</span>
-                          <Button variant="outline" size="sm" class="h-7 px-2" @click="addMysqlEnumValue(column)">
-                            <Plus class="mr-1 h-3.5 w-3.5" />
-                            {{ t("structureEditor.addEnumValue") }}
-                          </Button>
-                        </div>
-                        <div class="max-h-64 space-y-1.5 overflow-y-auto pr-1">
-                          <div v-for="(value, valueIndex) in column.enumValues" :key="valueIndex" class="flex items-center gap-1.5">
-                            <Input :model-value="value" :class="structureMonoControlClass" :placeholder="t('structureEditor.enumValuePlaceholder')" @update:model-value="updateMysqlEnumValue(column, valueIndex, $event)" />
-                            <Button variant="ghost" size="icon" class="h-8 w-8 shrink-0" :disabled="(column.enumValues?.length ?? 0) <= 1" :title="t('structureEditor.removeEnumValue')" @click="removeMysqlEnumValue(column, valueIndex)">
-                              <Trash2 class="h-3.5 w-3.5" />
-                            </Button>
-                          </div>
-                        </div>
-                      </PopoverContent>
-                    </Popover>
-                    <div v-else class="flex min-w-0 items-center gap-1">
-                      <Input :model-value="dataTypeLengthInputValue(databaseType, column.dataType)" :class="[structureMonoControlClass, 'min-w-0 flex-1']" :disabled="isColumnLengthDisabled(column)" @update:model-value="updateColumnDataTypeLength(column, $event)" />
-                      <Select v-if="columnLengthUnitOptions(column).length" :model-value="dataTypeLengthUnitValue(databaseType, column.dataType) || '__default'" :disabled="isColumnLengthUnitDisabled(column)" @update:model-value="updateColumnDataTypeLengthUnit(column, $event)">
-                        <SelectTrigger
-                          :aria-label="t('structureEditor.lengthUnit')"
-                          :title="t('structureEditor.lengthUnit')"
-                          class="h-[var(--structure-control-height)] w-16 shrink-0 rounded-[6px] px-[var(--structure-control-px)] font-mono text-[length:var(--structure-font-size)] focus-visible:border-ring/50 focus-visible:ring-1 focus-visible:ring-ring/25"
-                        >
-                          <SelectValue :placeholder="t('structureEditor.unitPlaceholder')" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="__default">{{ t("structureEditor.defaultAction") }}</SelectItem>
-                          <SelectItem v-for="unit in columnLengthUnitOptions(column)" :key="unit" :value="unit">{{ unit }}</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
+                    <Input :model-value="dataTypeLengthInputValue(databaseType, column.dataType)" :class="[structureMonoControlClass, 'w-full']" :disabled="isColumnLengthDisabled(column)" @update:model-value="updateColumnDataTypeLength(column, $event)" />
                   </td>
                   <td v-if="columnEditorControls.nullable" :class="structureCellClass">
                     <label class="flex items-center gap-1.5">
@@ -2913,95 +2502,10 @@ watch([activeTab, ddlLoading], ([tab, loading]) => {
                       </Popover>
                     </div>
                   </td>
-                  <td v-if="showCharacterSet" :class="structureCellClass">
-                    <SearchableSelect
-                      :model-value="columnCharset(column)"
-                      :options="mysqlCharsetOptions"
-                      :placeholder="t('structureEditor.charsetPlaceholder')"
-                      :search-placeholder="t('structureEditor.charsetPlaceholder')"
-                      :empty-text="t('structureEditor.noMatchingType')"
-                      :allow-custom="true"
-                      :disabled="isColumnCharsetDisabled(column)"
-                      :trigger-class="[structureMonoControlClass, 'w-20']"
-                      @update:model-value="(v: string) => onCharsetChange(column, v)"
-                    />
-                  </td>
-                  <td v-if="showCharacterSet" :class="structureCellClass">
-                    <SearchableSelect
-                      :model-value="columnCollation(column)"
-                      :options="collationOptionsForCharset(columnCharset(column))"
-                      :placeholder="t('structureEditor.collationPlaceholder')"
-                      :search-placeholder="t('structureEditor.collationPlaceholder')"
-                      :empty-text="t('structureEditor.noMatchingType')"
-                      :allow-custom="true"
-                      :disabled="isColumnCharsetDisabled(column)"
-                      :trigger-class="[structureMonoControlClass, 'w-28']"
-                      @update:model-value="(v: string) => (column.collation = v)"
-                    />
-                  </td>
                   <td v-if="showExtendedProperties" :class="structureCellClass">
                     <div :class="structurePropertyListClass">
-                      <!-- Manticore Search: character data type properties -->
-                      <template v-if="databaseType === 'manticoresearch'">
-                        <template v-if="isManticoreTextColumn(column)">
-                          <label :class="structurePropertyLabelClass" title="indexed">
-                            <input :checked="!!column.extra.manticoreIndexed" type="checkbox" :class="[structureCheckboxClass, 'shrink-0']" :disabled="isManticoreColumnPropertyDisabled(column)" @change="column.extra.manticoreIndexed = ($event.target as HTMLInputElement).checked" />
-                            <span class="min-w-0 truncate">indexed</span>
-                          </label>
-                          <label :class="structurePropertyLabelClass" title="stored">
-                            <input :checked="!!column.extra.manticoreStored" type="checkbox" :class="[structureCheckboxClass, 'shrink-0']" :disabled="isManticoreColumnPropertyDisabled(column)" @change="column.extra.manticoreStored = ($event.target as HTMLInputElement).checked" />
-                            <span class="min-w-0 truncate">stored</span>
-                          </label>
-                          <label :class="structurePropertyLabelClass" title="attribute">
-                            <input :checked="!!column.extra.manticoreAttribute" type="checkbox" :class="[structureCheckboxClass, 'shrink-0']" :disabled="isManticoreColumnPropertyDisabled(column)" @change="column.extra.manticoreAttribute = ($event.target as HTMLInputElement).checked" />
-                            <span class="min-w-0 truncate">attribute</span>
-                          </label>
-                        </template>
-                        <template v-else-if="isManticoreJsonColumn(column)">
-                          <label :class="structurePropertyLabelClass" title="secondary_index">
-                            <input :checked="!!column.extra.manticoreSecondaryIndex" type="checkbox" :class="[structureCheckboxClass, 'shrink-0']" :disabled="isManticoreColumnPropertyDisabled(column)" @change="column.extra.manticoreSecondaryIndex = ($event.target as HTMLInputElement).checked" />
-                            <span class="min-w-0 truncate">secondary_index</span>
-                          </label>
-                        </template>
-                      </template>
-                      <!-- MySQL: AUTO_INCREMENT + ON UPDATE CURRENT_TIMESTAMP -->
-                      <template v-else-if="structureDialect === 'mysql'">
-                        <label :class="[structurePropertyLabelClass, 'shrink-0 pr-1']" :title="t('structureEditor.autoIncrement')">
-                          <input v-model="column.extra.autoIncrement" type="checkbox" :class="[structureCheckboxClass, 'shrink-0']" />
-                          <span>{{ t("structureEditor.autoIncrement") }}</span>
-                        </label>
-                        <label :class="[structurePropertyLabelClass, 'flex-1 basis-0']" :title="t('structureEditor.onUpdateCurrentTimestamp')">
-                          <input v-model="column.extra.onUpdateCurrentTimestamp" type="checkbox" :class="[structureCheckboxClass, 'shrink-0']" />
-                          <span class="min-w-0 truncate">{{ t("structureEditor.onUpdateCurrentTimestamp") }}</span>
-                        </label>
-                      </template>
-                      <!-- Dameng: IDENTITY -->
-                      <template v-else-if="databaseType === 'dameng'">
-                        <label :class="structurePropertyLabelClass" :title="t('structureEditor.identity')">
-                          <input :checked="isDamengIdentityChecked(column)" type="checkbox" :class="[structureCheckboxClass, 'shrink-0']" :disabled="!canEditDamengIdentity(column)" @change="setDamengIdentity(column, ($event.target as HTMLInputElement).checked)" />
-                          <span class="min-w-0 truncate">{{ t("structureEditor.autoIncrement") }}</span>
-                        </label>
-                        <template v-if="isDamengIdentityChecked(column)">
-                          <Input
-                            :model-value="column.extra.identity?.seed?.toString() ?? '1'"
-                            type="number"
-                            :class="[structureControlClass, 'w-14']"
-                            :placeholder="t('structureEditor.identitySeed')"
-                            :disabled="!canEditDamengIdentity(column)"
-                            @update:model-value="(v) => updateDamengIdentitySeed(column, v)"
-                          />
-                          <Input
-                            :model-value="column.extra.identity?.increment?.toString() ?? '1'"
-                            type="number"
-                            :class="[structureControlClass, 'w-14']"
-                            :placeholder="t('structureEditor.identityIncrement')"
-                            :disabled="!canEditDamengIdentity(column)"
-                            @update:model-value="(v) => updateDamengIdentityIncrement(column, v)"
-                          />
-                        </template>
-                      </template>
-                      <!-- PostgreSQL: IDENTITY -->
-                      <template v-else-if="structureDialect === 'postgres'">
+                      <!-- PostgreSQL/openGauss: IDENTITY -->
+                      <template v-if="structureDialect === 'postgres'">
                         <Select
                           :model-value="column.extra.identity?.generation ?? 'none'"
                           @update:model-value="
@@ -3053,31 +2557,6 @@ watch([activeTab, ddlLoading], ([tab, loading]) => {
                                 }
                               }
                             "
-                          />
-                        </template>
-                      </template>
-                      <!-- SQL Server: IDENTITY -->
-                      <template v-else-if="structureDialect === 'sqlserver'">
-                        <label :class="structurePropertyLabelClass" :title="canEditSqlServerIdentity(column) || isSqlServerIdentityChecked(column) ? t('structureEditor.identity') : t('structureEditor.sqlServerIdentityTypeHint')">
-                          <input :checked="isSqlServerIdentityChecked(column)" type="checkbox" :class="[structureCheckboxClass, 'shrink-0']" :disabled="!canEditSqlServerIdentity(column)" @change="setSqlServerIdentity(column, ($event.target as HTMLInputElement).checked)" />
-                          <span class="min-w-0 truncate">{{ t("structureEditor.autoIncrement") }}</span>
-                        </label>
-                        <template v-if="isSqlServerIdentityChecked(column)">
-                          <Input
-                            :model-value="column.extra.identity?.seed?.toString() ?? '1'"
-                            type="number"
-                            :class="[structureControlClass, 'w-14']"
-                            :placeholder="t('structureEditor.identitySeed')"
-                            :disabled="!canEditSqlServerIdentity(column)"
-                            @update:model-value="(v) => updateSqlServerIdentitySeed(column, v)"
-                          />
-                          <Input
-                            :model-value="column.extra.identity?.increment?.toString() ?? '1'"
-                            type="number"
-                            :class="[structureControlClass, 'w-14']"
-                            :placeholder="t('structureEditor.identityIncrement')"
-                            :disabled="!canEditSqlServerIdentity(column)"
-                            @update:model-value="(v) => updateSqlServerIdentityIncrement(column, v)"
                           />
                         </template>
                       </template>
@@ -3376,10 +2855,6 @@ watch([activeTab, ddlLoading], ([tab, loading]) => {
           </div>
         </div>
         <div v-if="!sqlPreviewCollapsed" class="min-h-0 flex-1 overflow-auto p-2.5">
-          <div v-if="hasSqliteTypeChange" class="mb-2 flex gap-1.5 rounded-md border border-primary/40 bg-primary/10 px-[var(--structure-cell-px)] py-[var(--structure-cell-py)] text-[length:var(--structure-font-size)] text-primary">
-            <Info :class="[structureIconClass, 'mt-0.5 shrink-0']" />
-            <span>{{ t("structureEditor.sqliteRebuildNotice") }}</span>
-          </div>
           <div v-if="warnings.length" class="mb-2 space-y-1">
             <div v-for="warning in warnings" :key="warning" class="flex gap-1.5 rounded-md border border-yellow-300/40 bg-yellow-500/10 px-[var(--structure-cell-px)] py-[var(--structure-cell-py)] text-[length:var(--structure-font-size)] text-yellow-700 dark:text-yellow-300">
               <AlertTriangle :class="[structureIconClass, 'mt-0.5 shrink-0']" />

@@ -3,116 +3,42 @@ use crate::models::connection::DatabaseType;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DialectKind {
-    Mysql,
     Postgres,
-    Sqlite,
-    DuckDb,
-    SqlServer,
-    Oracle,
-    H2,
-    ClickHouse,
-    ManticoreSearch,
-    Informix,
-    Questdb,
+    Opengauss,
     Unsupported,
 }
 
 impl DialectKind {
+    pub const OpenGauss: DialectKind = DialectKind::Opengauss;
+
     pub fn from_database_type(db_type: DatabaseType) -> Self {
         match db_type {
-            DatabaseType::Mysql
-            | DatabaseType::Doris
-            | DatabaseType::StarRocks
-            | DatabaseType::Goldendb
-            | DatabaseType::Sundb
-            | DatabaseType::Databend
-            | DatabaseType::Gbase => DialectKind::Mysql,
-            DatabaseType::Postgres
-            | DatabaseType::Gaussdb
-            | DatabaseType::Kwdb
-            | DatabaseType::OpenGauss
-            | DatabaseType::Highgo
-            | DatabaseType::Vastbase
-            | DatabaseType::Kingbase
-            | DatabaseType::Firebird
-            | DatabaseType::Redshift
-            | DatabaseType::Vertica
-            | DatabaseType::Exasol => DialectKind::Postgres,
-            DatabaseType::Sqlite | DatabaseType::Rqlite | DatabaseType::Turso => DialectKind::Sqlite,
-            DatabaseType::DuckDb => DialectKind::DuckDb,
-            DatabaseType::SqlServer | DatabaseType::Access => DialectKind::SqlServer,
-            DatabaseType::Oracle
-            | DatabaseType::Dameng
-            | DatabaseType::OceanbaseOracle
-            | DatabaseType::Iris
-            | DatabaseType::Yashandb
-            | DatabaseType::Xugu => DialectKind::Oracle,
-            DatabaseType::H2 => DialectKind::H2,
-            DatabaseType::ClickHouse => DialectKind::ClickHouse,
-            DatabaseType::ManticoreSearch => DialectKind::ManticoreSearch,
-            DatabaseType::Informix => DialectKind::Informix,
-            DatabaseType::Questdb => DialectKind::Questdb,
+            DatabaseType::Postgres => DialectKind::Postgres,
+            DatabaseType::Opengauss => DialectKind::Opengauss,
             _ => DialectKind::Unsupported,
         }
     }
 
     pub fn to_database_type(self) -> Option<DatabaseType> {
         match self {
-            DialectKind::Mysql => Some(DatabaseType::Mysql),
             DialectKind::Postgres => Some(DatabaseType::Postgres),
-            DialectKind::Sqlite => Some(DatabaseType::Sqlite),
-            DialectKind::DuckDb => Some(DatabaseType::DuckDb),
-            DialectKind::SqlServer => Some(DatabaseType::SqlServer),
-            DialectKind::Oracle => Some(DatabaseType::Oracle),
-            DialectKind::H2 => Some(DatabaseType::H2),
-            DialectKind::ClickHouse => Some(DatabaseType::ClickHouse),
-            DialectKind::ManticoreSearch => Some(DatabaseType::ManticoreSearch),
-            DialectKind::Informix => Some(DatabaseType::Informix),
-            DialectKind::Questdb => Some(DatabaseType::Questdb),
+            DialectKind::Opengauss => Some(DatabaseType::Opengauss),
             DialectKind::Unsupported => None,
         }
     }
 
     pub fn label(self) -> &'static str {
         match self {
-            DialectKind::Mysql => "mysql",
             DialectKind::Postgres => "postgres",
-            DialectKind::Sqlite => "sqlite",
-            DialectKind::DuckDb => "duckdb",
-            DialectKind::SqlServer => "sqlserver",
-            DialectKind::Oracle => "oracle",
-            DialectKind::H2 => "h2",
-            DialectKind::ClickHouse => "clickhouse",
-            DialectKind::ManticoreSearch => "manticoresearch",
-            DialectKind::Informix => "informix",
-            DialectKind::Questdb => "questdb",
+            DialectKind::Opengauss => "opengauss",
             DialectKind::Unsupported => "unsupported",
         }
     }
 
     pub fn from_label(label: &str) -> Option<Self> {
         match label.to_ascii_lowercase().as_str() {
-            // MySQL family
-            "mysql" | "doris" | "starrocks" | "goldendb" | "sundb" | "databend" | "gbase" => Some(DialectKind::Mysql),
-            // PostgreSQL family
-            "postgresql" | "postgres" | "gaussdb" | "kwdb" | "opengauss" | "highgo" | "vastbase" | "kingbase"
-            | "firebird" | "redshift" | "vertica" | "exasol" => Some(DialectKind::Postgres),
-            // SQLite family
-            "sqlite" | "rqlite" | "turso" => Some(DialectKind::Sqlite),
-            // DuckDB
-            "duckdb" => Some(DialectKind::DuckDb),
-            // SQL Server family
-            "sqlserver" | "mssql" | "sql server" | "access" => Some(DialectKind::SqlServer),
-            // Oracle family
-            "oracle" | "dameng" | "oceanbaseoracle" | "oceanbase" | "iris" | "yashandb" | "xugu" => {
-                Some(DialectKind::Oracle)
-            }
-            // Others
-            "h2" => Some(DialectKind::H2),
-            "clickhouse" => Some(DialectKind::ClickHouse),
-            "manticoresearch" => Some(DialectKind::ManticoreSearch),
-            "informix" => Some(DialectKind::Informix),
-            "questdb" => Some(DialectKind::Questdb),
+            "postgresql" | "postgres" => Some(DialectKind::Postgres),
+            "gaussdb" | "opengauss" => Some(DialectKind::Opengauss),
             _ => None,
         }
     }
@@ -252,52 +178,8 @@ impl DialectCapabilityDescriptor {
 
     pub fn for_dialect(kind: DialectKind) -> Self {
         match kind {
-            DialectKind::Mysql => Self {
-                dialect: DialectKind::Mysql,
-                flags: CAP_ADD_COLUMN
-                    | CAP_DROP_COLUMN
-                    | CAP_RENAME_COLUMN
-                    | CAP_ALTER_EXISTING_COLUMN
-                    | CAP_REORDER_COLUMN
-                    | CAP_COMMENT
-                    | CAP_CREATE_INDEX
-                    | CAP_DROP_INDEX
-                    | CAP_REBUILD_INDEX
-                    | CAP_INDEX_TYPE
-                    | CAP_INDEX_COMMENT
-                    | CAP_ALTER_PRIMARY_KEY
-                    | CAP_FOREIGN_KEY
-                    | CAP_CREATE_TABLE
-                    | CAP_DROP_TABLE
-                    | CAP_TRUNCATE_TABLE
-                    | CAP_CREATE_TRIGGER
-                    | CAP_DROP_TRIGGER
-                    | CAP_CREATE_FUNCTION
-                    | CAP_DROP_FUNCTION
-                    | CAP_CREATE_SEQUENCE
-                    | CAP_DROP_SEQUENCE
-                    | CAP_ALTER_OWNER
-                    | CAP_GRANT_REVOKE
-                    | CAP_IF_NOT_EXISTS
-                    | CAP_TEMPORARY_TABLE
-                    | CAP_AUTO_INCREMENT,
-                max_identifier_length: 64,
-                max_columns_per_table: 4096,
-                max_indexes_per_table: 64,
-                max_query_size_bytes: 16 * 1024 * 1024,
-                max_foreign_key_name_length: 64,
-                supports_full_text_index: true,
-                supports_spatial_index: true,
-                supports_partitioning: true,
-                supports_on_update_cascade: true,
-                supports_on_delete_set_null: true,
-                supports_json_type: true,
-                supports_enum_type: true,
-                supports_auto_increment: true,
-                ..Default::default()
-            },
-            DialectKind::Postgres => Self {
-                dialect: DialectKind::Postgres,
+            DialectKind::Postgres | DialectKind::Opengauss => Self {
+                dialect: kind,
                 flags: CAP_ADD_COLUMN
                     | CAP_DROP_COLUMN
                     | CAP_RENAME_COLUMN
@@ -349,277 +231,7 @@ impl DialectCapabilityDescriptor {
                 supports_sequences: true,
                 ..Default::default()
             },
-            DialectKind::Sqlite => Self {
-                dialect: DialectKind::Sqlite,
-                flags: CAP_ADD_COLUMN
-                    | CAP_DROP_COLUMN
-                    | CAP_RENAME_COLUMN
-                    | CAP_CREATE_INDEX
-                    | CAP_DROP_INDEX
-                    | CAP_REBUILD_INDEX
-                    | CAP_INDEX_FILTER
-                    | CAP_CREATE_TABLE
-                    | CAP_DROP_TABLE
-                    | CAP_TRUNCATE_TABLE
-                    | CAP_CREATE_TRIGGER
-                    | CAP_DROP_TRIGGER
-                    | CAP_CREATE_FUNCTION
-                    | CAP_DROP_FUNCTION
-                    | CAP_CREATE_SEQUENCE
-                    | CAP_DROP_SEQUENCE
-                    | CAP_IF_NOT_EXISTS
-                    | CAP_AUTO_INCREMENT,
-                max_identifier_length: 255,
-                max_columns_per_table: 2000,
-                max_indexes_per_table: 200,
-                max_foreign_key_name_length: 255,
-                supports_full_text_index: true,
-                supports_on_update_cascade: true,
-                supports_on_delete_set_null: true,
-                supports_auto_increment: true,
-                ..Default::default()
-            },
-            DialectKind::DuckDb => Self {
-                dialect: DialectKind::DuckDb,
-                flags: CAP_ADD_COLUMN
-                    | CAP_DROP_COLUMN
-                    | CAP_RENAME_COLUMN
-                    | CAP_CREATE_INDEX
-                    | CAP_DROP_INDEX
-                    | CAP_REBUILD_INDEX
-                    | CAP_CREATE_TABLE
-                    | CAP_DROP_TABLE
-                    | CAP_TRUNCATE_TABLE
-                    | CAP_IF_NOT_EXISTS
-                    | CAP_CREATE_OR_REPLACE
-                    | CAP_TEMPORARY_TABLE,
-                max_identifier_length: 255,
-                supports_schemas: true,
-                max_columns_per_table: 1600,
-                max_indexes_per_table: 100,
-                max_query_size_bytes: 256 * 1024 * 1024,
-                max_foreign_key_name_length: 255,
-                supports_spatial_index: true,
-                supports_partitioning: true,
-                supports_table_sampling: true,
-                supports_on_update_cascade: true,
-                supports_on_delete_set_null: true,
-                supports_array_type: true,
-                supports_json_type: true,
-                supports_enum_type: true,
-                supports_uuid_type: true,
-                supports_sequences: true,
-                ..Default::default()
-            },
-            DialectKind::SqlServer => Self {
-                dialect: DialectKind::SqlServer,
-                flags: CAP_ADD_COLUMN
-                    | CAP_DROP_COLUMN
-                    | CAP_RENAME_COLUMN
-                    | CAP_ALTER_EXISTING_COLUMN
-                    | CAP_COMMENT
-                    | CAP_CREATE_INDEX
-                    | CAP_DROP_INDEX
-                    | CAP_REBUILD_INDEX
-                    | CAP_INDEX_TYPE
-                    | CAP_INDEX_INCLUDE
-                    | CAP_INDEX_FILTER
-                    | CAP_INDEX_COMMENT
-                    | CAP_CREATE_TABLE
-                    | CAP_DROP_TABLE
-                    | CAP_TRUNCATE_TABLE
-                    | CAP_CREATE_TRIGGER
-                    | CAP_DROP_TRIGGER
-                    | CAP_CREATE_FUNCTION
-                    | CAP_DROP_FUNCTION
-                    | CAP_CREATE_SEQUENCE
-                    | CAP_DROP_SEQUENCE
-                    | CAP_ALTER_OWNER
-                    | CAP_GRANT_REVOKE
-                    | CAP_IF_NOT_EXISTS
-                    | CAP_TEMPORARY_TABLE
-                    | CAP_TRANSACTIONAL_DDL
-                    | CAP_IDENTITY_COLUMNS,
-                max_identifier_length: 128,
-                supports_schemas: true,
-                supports_catalogs: true,
-                max_columns_per_table: 1024,
-                max_indexes_per_table: 999,
-                max_query_size_bytes: 65_536 * 4_096,
-                max_foreign_key_name_length: 128,
-                supports_full_text_index: true,
-                supports_spatial_index: true,
-                supports_partitioning: true,
-                supports_table_sampling: true,
-                supports_on_update_cascade: true,
-                supports_on_delete_set_null: true,
-                supports_json_type: true,
-                supports_uuid_type: true,
-                supports_identity_columns: true,
-                supports_sequences: true,
-                ..Default::default()
-            },
-            DialectKind::Oracle => Self {
-                dialect: DialectKind::Oracle,
-                flags: CAP_ADD_COLUMN
-                    | CAP_DROP_COLUMN
-                    | CAP_RENAME_COLUMN
-                    | CAP_ALTER_EXISTING_COLUMN
-                    | CAP_COMMENT
-                    | CAP_CREATE_INDEX
-                    | CAP_DROP_INDEX
-                    | CAP_REBUILD_INDEX
-                    | CAP_INDEX_TYPE
-                    | CAP_CREATE_TABLE
-                    | CAP_DROP_TABLE
-                    | CAP_TRUNCATE_TABLE
-                    | CAP_CREATE_TRIGGER
-                    | CAP_DROP_TRIGGER
-                    | CAP_CREATE_FUNCTION
-                    | CAP_DROP_FUNCTION
-                    | CAP_CREATE_SEQUENCE
-                    | CAP_DROP_SEQUENCE
-                    | CAP_ALTER_OWNER
-                    | CAP_GRANT_REVOKE
-                    | CAP_IF_NOT_EXISTS
-                    | CAP_TEMPORARY_TABLE,
-                max_identifier_length: 30,
-                supports_schemas: true,
-                max_columns_per_table: 1000,
-                max_indexes_per_table: 100,
-                max_query_size_bytes: 64 * 1024,
-                max_foreign_key_name_length: 30,
-                supports_full_text_index: true,
-                supports_spatial_index: true,
-                supports_partitioning: true,
-                supports_table_sampling: true,
-                supports_on_update_cascade: true,
-                supports_on_delete_set_null: true,
-                supports_deferrable_constraints: true,
-                supports_json_type: true,
-                supports_identity_columns: true,
-                supports_sequences: true,
-                ..Default::default()
-            },
-            DialectKind::H2 => Self {
-                dialect: DialectKind::H2,
-                flags: CAP_ADD_COLUMN
-                    | CAP_DROP_COLUMN
-                    | CAP_RENAME_COLUMN
-                    | CAP_ALTER_EXISTING_COLUMN
-                    | CAP_COMMENT
-                    | CAP_CREATE_INDEX
-                    | CAP_DROP_INDEX
-                    | CAP_REBUILD_INDEX
-                    | CAP_CREATE_TABLE
-                    | CAP_DROP_TABLE
-                    | CAP_TRUNCATE_TABLE
-                    | CAP_CREATE_TRIGGER
-                    | CAP_DROP_TRIGGER
-                    | CAP_CREATE_FUNCTION
-                    | CAP_DROP_FUNCTION
-                    | CAP_IF_NOT_EXISTS
-                    | CAP_TEMPORARY_TABLE
-                    | CAP_IDENTITY_COLUMNS,
-                max_identifier_length: 256,
-                supports_schemas: true,
-                max_columns_per_table: 1600,
-                max_indexes_per_table: 100,
-                max_query_size_bytes: 128 * 1024,
-                max_foreign_key_name_length: 256,
-                supports_full_text_index: true,
-                supports_spatial_index: true,
-                supports_on_update_cascade: true,
-                supports_on_delete_set_null: true,
-                supports_deferrable_constraints: true,
-                supports_json_type: true,
-                supports_uuid_type: true,
-                supports_identity_columns: true,
-                supports_sequences: true,
-                ..Default::default()
-            },
-            DialectKind::ClickHouse => Self {
-                dialect: DialectKind::ClickHouse,
-                flags: CAP_ADD_COLUMN
-                    | CAP_DROP_COLUMN
-                    | CAP_RENAME_COLUMN
-                    | CAP_ALTER_EXISTING_COLUMN
-                    | CAP_REORDER_COLUMN
-                    | CAP_COMMENT
-                    | CAP_CREATE_TABLE
-                    | CAP_DROP_TABLE
-                    | CAP_TRUNCATE_TABLE
-                    | CAP_IF_NOT_EXISTS
-                    | CAP_TEMPORARY_TABLE,
-                max_identifier_length: 256,
-                supports_schemas: true,
-                max_columns_per_table: 1000,
-                max_query_size_bytes: 256 * 1024 * 1024,
-                max_foreign_key_name_length: 256,
-                supports_full_text_index: true,
-                supports_partitioning: true,
-                supports_table_sampling: true,
-                supports_array_type: true,
-                supports_json_type: true,
-                supports_enum_type: true,
-                supports_uuid_type: true,
-                ..Default::default()
-            },
-            DialectKind::ManticoreSearch => Self {
-                dialect: DialectKind::ManticoreSearch,
-                flags: CAP_ADD_COLUMN | CAP_DROP_COLUMN | CAP_CREATE_TABLE | CAP_DROP_TABLE | CAP_TRUNCATE_TABLE,
-                max_identifier_length: 256,
-                max_columns_per_table: 512,
-                max_query_size_bytes: 16 * 1024 * 1024,
-                supports_full_text_index: true,
-                supports_spatial_index: true,
-                supports_json_type: true,
-                supports_auto_increment: true,
-                ..Default::default()
-            },
-            DialectKind::Informix => Self {
-                dialect: DialectKind::Informix,
-                flags: CAP_ADD_COLUMN
-                    | CAP_DROP_COLUMN
-                    | CAP_RENAME_COLUMN
-                    | CAP_ALTER_EXISTING_COLUMN
-                    | CAP_CREATE_INDEX
-                    | CAP_DROP_INDEX
-                    | CAP_REBUILD_INDEX
-                    | CAP_CREATE_TABLE
-                    | CAP_DROP_TABLE
-                    | CAP_TRUNCATE_TABLE
-                    | CAP_CREATE_TRIGGER
-                    | CAP_DROP_TRIGGER
-                    | CAP_GRANT_REVOKE,
-                max_identifier_length: 128,
-                supports_schemas: true,
-                max_columns_per_table: 32767,
-                max_indexes_per_table: 200,
-                max_query_size_bytes: 2 * 1024 * 1024,
-                max_foreign_key_name_length: 128,
-                supports_partitioning: true,
-                supports_on_delete_set_null: true,
-                supports_deferrable_constraints: true,
-                supports_sequences: true,
-                ..Default::default()
-            },
-            DialectKind::Questdb => Self {
-                dialect: DialectKind::Questdb,
-                flags: CAP_ADD_COLUMN
-                    | CAP_DROP_COLUMN
-                    | CAP_RENAME_COLUMN
-                    | CAP_ALTER_EXISTING_COLUMN
-                    | CAP_CREATE_TABLE
-                    | CAP_DROP_TABLE
-                    | CAP_TRUNCATE_TABLE
-                    | CAP_IF_NOT_EXISTS,
-                max_identifier_length: 256,
-                max_columns_per_table: 1024,
-                max_query_size_bytes: 64 * 1024,
-                supports_partitioning: true,
-                ..Default::default()
-            },
+
             DialectKind::Unsupported => Self::default(),
         }
     }
@@ -651,251 +263,10 @@ impl TypeMappingMatrix {
     }
 
     fn build_rules(from: DialectKind, to: DialectKind) -> Vec<TypeConversionRule> {
-        let mut rules = Vec::new();
-        match (from, to) {
-            (DialectKind::Mysql, DialectKind::Postgres) => {
-                rules.push(TypeConversionRule {
-                    source_type: "TINYINT(1)".into(),
-                    target_type: "BOOLEAN".into(),
-                    precision_loss: false,
-                    requires_cast: true,
-                });
-                rules.push(TypeConversionRule {
-                    source_type: "TINYINT".into(),
-                    target_type: "SMALLINT".into(),
-                    precision_loss: false,
-                    requires_cast: false,
-                });
-                rules.push(TypeConversionRule {
-                    source_type: "MEDIUMINT".into(),
-                    target_type: "INTEGER".into(),
-                    precision_loss: false,
-                    requires_cast: false,
-                });
-                rules.push(TypeConversionRule {
-                    source_type: "INT".into(),
-                    target_type: "INTEGER".into(),
-                    precision_loss: false,
-                    requires_cast: false,
-                });
-                rules.push(TypeConversionRule {
-                    source_type: "BIGINT".into(),
-                    target_type: "BIGINT".into(),
-                    precision_loss: false,
-                    requires_cast: false,
-                });
-                rules.push(TypeConversionRule {
-                    source_type: "FLOAT".into(),
-                    target_type: "REAL".into(),
-                    precision_loss: false,
-                    requires_cast: false,
-                });
-                rules.push(TypeConversionRule {
-                    source_type: "DOUBLE".into(),
-                    target_type: "DOUBLE PRECISION".into(),
-                    precision_loss: false,
-                    requires_cast: false,
-                });
-                rules.push(TypeConversionRule {
-                    source_type: "TINYTEXT".into(),
-                    target_type: "TEXT".into(),
-                    precision_loss: false,
-                    requires_cast: false,
-                });
-                rules.push(TypeConversionRule {
-                    source_type: "TEXT".into(),
-                    target_type: "TEXT".into(),
-                    precision_loss: false,
-                    requires_cast: false,
-                });
-                rules.push(TypeConversionRule {
-                    source_type: "MEDIUMTEXT".into(),
-                    target_type: "TEXT".into(),
-                    precision_loss: false,
-                    requires_cast: false,
-                });
-                rules.push(TypeConversionRule {
-                    source_type: "LONGTEXT".into(),
-                    target_type: "TEXT".into(),
-                    precision_loss: false,
-                    requires_cast: false,
-                });
-                rules.push(TypeConversionRule {
-                    source_type: "BLOB".into(),
-                    target_type: "BYTEA".into(),
-                    precision_loss: false,
-                    requires_cast: false,
-                });
-                rules.push(TypeConversionRule {
-                    source_type: "TINYBLOB".into(),
-                    target_type: "BYTEA".into(),
-                    precision_loss: false,
-                    requires_cast: false,
-                });
-                rules.push(TypeConversionRule {
-                    source_type: "MEDIUMBLOB".into(),
-                    target_type: "BYTEA".into(),
-                    precision_loss: false,
-                    requires_cast: false,
-                });
-                rules.push(TypeConversionRule {
-                    source_type: "LONGBLOB".into(),
-                    target_type: "BYTEA".into(),
-                    precision_loss: false,
-                    requires_cast: false,
-                });
-                rules.push(TypeConversionRule {
-                    source_type: "DATETIME".into(),
-                    target_type: "TIMESTAMP".into(),
-                    precision_loss: false,
-                    requires_cast: false,
-                });
-            }
-            (DialectKind::Postgres, DialectKind::Mysql) => {
-                rules.push(TypeConversionRule {
-                    source_type: "SMALLINT".into(),
-                    target_type: "SMALLINT".into(),
-                    precision_loss: false,
-                    requires_cast: false,
-                });
-                rules.push(TypeConversionRule {
-                    source_type: "INTEGER".into(),
-                    target_type: "INT".into(),
-                    precision_loss: false,
-                    requires_cast: false,
-                });
-                rules.push(TypeConversionRule {
-                    source_type: "BIGINT".into(),
-                    target_type: "BIGINT".into(),
-                    precision_loss: false,
-                    requires_cast: false,
-                });
-                rules.push(TypeConversionRule {
-                    source_type: "REAL".into(),
-                    target_type: "FLOAT".into(),
-                    precision_loss: false,
-                    requires_cast: false,
-                });
-                rules.push(TypeConversionRule {
-                    source_type: "DOUBLE PRECISION".into(),
-                    target_type: "DOUBLE".into(),
-                    precision_loss: false,
-                    requires_cast: false,
-                });
-                rules.push(TypeConversionRule {
-                    source_type: "TEXT".into(),
-                    target_type: "LONGTEXT".into(),
-                    precision_loss: false,
-                    requires_cast: false,
-                });
-                rules.push(TypeConversionRule {
-                    source_type: "BYTEA".into(),
-                    target_type: "BLOB".into(),
-                    precision_loss: false,
-                    requires_cast: false,
-                });
-                rules.push(TypeConversionRule {
-                    source_type: "BOOLEAN".into(),
-                    target_type: "TINYINT(1)".into(),
-                    precision_loss: false,
-                    requires_cast: true,
-                });
-                rules.push(TypeConversionRule {
-                    source_type: "TIMESTAMP".into(),
-                    target_type: "DATETIME".into(),
-                    precision_loss: false,
-                    requires_cast: false,
-                });
-                rules.push(TypeConversionRule {
-                    source_type: "TIMESTAMPTZ".into(),
-                    target_type: "DATETIME".into(),
-                    precision_loss: true,
-                    requires_cast: true,
-                });
-                rules.push(TypeConversionRule {
-                    source_type: "UUID".into(),
-                    target_type: "CHAR(36)".into(),
-                    precision_loss: false,
-                    requires_cast: true,
-                });
-                rules.push(TypeConversionRule {
-                    source_type: "JSONB".into(),
-                    target_type: "JSON".into(),
-                    precision_loss: false,
-                    requires_cast: false,
-                });
-            }
-            (DialectKind::Mysql, DialectKind::Sqlite) => {
-                rules.push(TypeConversionRule {
-                    source_type: "INT".into(),
-                    target_type: "INTEGER".into(),
-                    precision_loss: false,
-                    requires_cast: false,
-                });
-                rules.push(TypeConversionRule {
-                    source_type: "BIGINT".into(),
-                    target_type: "INTEGER".into(),
-                    precision_loss: false,
-                    requires_cast: false,
-                });
-                rules.push(TypeConversionRule {
-                    source_type: "TINYINT".into(),
-                    target_type: "INTEGER".into(),
-                    precision_loss: false,
-                    requires_cast: false,
-                });
-                rules.push(TypeConversionRule {
-                    source_type: "SMALLINT".into(),
-                    target_type: "INTEGER".into(),
-                    precision_loss: false,
-                    requires_cast: false,
-                });
-                rules.push(TypeConversionRule {
-                    source_type: "MEDIUMINT".into(),
-                    target_type: "INTEGER".into(),
-                    precision_loss: false,
-                    requires_cast: false,
-                });
-                rules.push(TypeConversionRule {
-                    source_type: "DOUBLE".into(),
-                    target_type: "REAL".into(),
-                    precision_loss: false,
-                    requires_cast: false,
-                });
-                rules.push(TypeConversionRule {
-                    source_type: "FLOAT".into(),
-                    target_type: "REAL".into(),
-                    precision_loss: false,
-                    requires_cast: false,
-                });
-                rules.push(TypeConversionRule {
-                    source_type: "DATETIME".into(),
-                    target_type: "TEXT".into(),
-                    precision_loss: false,
-                    requires_cast: false,
-                });
-                rules.push(TypeConversionRule {
-                    source_type: "TIMESTAMP".into(),
-                    target_type: "TEXT".into(),
-                    precision_loss: false,
-                    requires_cast: false,
-                });
-                rules.push(TypeConversionRule {
-                    source_type: "TEXT".into(),
-                    target_type: "TEXT".into(),
-                    precision_loss: false,
-                    requires_cast: false,
-                });
-                rules.push(TypeConversionRule {
-                    source_type: "BLOB".into(),
-                    target_type: "BLOB".into(),
-                    precision_loss: false,
-                    requires_cast: false,
-                });
-            }
-            _ => {}
-        }
-        rules
+        // Only the PostgreSQL family remains, so there are no cross-dialect
+        // conversion rules.
+        let _ = (from, to);
+        Vec::new()
     }
 
     pub fn convert_type(&self, source_type: &str) -> (String, bool) {
@@ -975,11 +346,7 @@ impl DialectInfo {
     }
 
     pub fn all() -> Vec<Self> {
-        use DialectKind::*;
-        vec![Mysql, Postgres, Sqlite, DuckDb, SqlServer, Oracle, H2, ClickHouse, ManticoreSearch, Informix, Questdb]
-            .into_iter()
-            .map(Self::for_kind)
-            .collect()
+        vec![DialectKind::Postgres].into_iter().map(Self::for_kind).collect()
     }
 }
 
@@ -996,82 +363,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn dialect_kind_from_database_type_roundtrip() {
-        let test_cases = vec![
-            (DatabaseType::Mysql, DialectKind::Mysql),
-            (DatabaseType::Postgres, DialectKind::Postgres),
-            (DatabaseType::Sqlite, DialectKind::Sqlite),
-            (DatabaseType::DuckDb, DialectKind::DuckDb),
-            (DatabaseType::SqlServer, DialectKind::SqlServer),
-            (DatabaseType::Oracle, DialectKind::Oracle),
-            (DatabaseType::H2, DialectKind::H2),
-            (DatabaseType::ClickHouse, DialectKind::ClickHouse),
-            (DatabaseType::ManticoreSearch, DialectKind::ManticoreSearch),
-            (DatabaseType::Informix, DialectKind::Informix),
-            (DatabaseType::Questdb, DialectKind::Questdb),
-            (DatabaseType::Redis, DialectKind::Unsupported),
-            (DatabaseType::MongoDb, DialectKind::Unsupported),
-        ];
-        for (db_type, expected) in test_cases {
-            assert_eq!(DialectKind::from_database_type(db_type), expected, "Mismatch for {db_type:?}");
-        }
+    fn dialect_kind_from_database_type_maps_pg_family() {
+        assert_eq!(DialectKind::from_database_type(DatabaseType::Postgres), DialectKind::Postgres);
+        assert_eq!(DialectKind::from_database_type(DatabaseType::OpenGauss), DialectKind::Opengauss);
+        assert_eq!(DialectKind::from_database_type(DatabaseType::Jdbc), DialectKind::Unsupported);
     }
 
     #[test]
     fn dialect_kind_to_database_type_roundtrip() {
-        for kind in &[
-            DialectKind::Mysql,
-            DialectKind::Postgres,
-            DialectKind::Sqlite,
-            DialectKind::DuckDb,
-            DialectKind::SqlServer,
-            DialectKind::Oracle,
-            DialectKind::H2,
-            DialectKind::ClickHouse,
-            DialectKind::ManticoreSearch,
-            DialectKind::Informix,
-            DialectKind::Questdb,
-        ] {
-            let db_type = kind.to_database_type().unwrap();
-            let back = DialectKind::from_database_type(db_type);
-            assert_eq!(*kind, back, "Roundtrip failed for {kind:?}");
-        }
+        let db_type = DialectKind::Postgres.to_database_type().unwrap();
+        assert_eq!(DialectKind::from_database_type(db_type), DialectKind::Postgres);
         assert_eq!(DialectKind::Unsupported.to_database_type(), None);
-    }
-
-    #[test]
-    fn dialect_capability_descriptor_for_all_kinds() {
-        for kind in &[
-            DialectKind::Mysql,
-            DialectKind::Postgres,
-            DialectKind::Sqlite,
-            DialectKind::DuckDb,
-            DialectKind::SqlServer,
-            DialectKind::Oracle,
-            DialectKind::H2,
-            DialectKind::ClickHouse,
-            DialectKind::ManticoreSearch,
-            DialectKind::Informix,
-            DialectKind::Questdb,
-            DialectKind::Unsupported,
-        ] {
-            let desc = DialectCapabilityDescriptor::for_dialect(*kind);
-            assert_eq!(desc.dialect, *kind);
-        }
-    }
-
-    #[test]
-    fn mysql_capabilities_match_capabilities_for() {
-        let desc = DialectCapabilityDescriptor::for_dialect(DialectKind::Mysql);
-        assert!(desc.has_capability(CAP_ADD_COLUMN));
-        assert!(desc.has_capability(CAP_DROP_COLUMN));
-        assert!(desc.has_capability(CAP_RENAME_COLUMN));
-        assert!(desc.has_capability(CAP_FOREIGN_KEY));
-        assert!(desc.supports_auto_increment);
-        assert!(desc.supports_json_type);
-        assert!(desc.supports_enum_type);
-        assert!(!desc.supports_schemas);
-        assert!(!desc.supports_identity_columns);
     }
 
     #[test]
@@ -1093,42 +395,9 @@ mod tests {
     }
 
     #[test]
-    fn mysql_to_postgres_type_mapping() {
-        let matrix = TypeMappingMatrix::for_dialects(DialectKind::Mysql, DialectKind::Postgres);
-        assert_eq!(matrix.convert_type("INT"), ("INTEGER".to_string(), false));
-        assert_eq!(matrix.convert_type("TINYINT"), ("SMALLINT".to_string(), false));
-        assert_eq!(matrix.convert_type("BIGINT"), ("BIGINT".to_string(), false));
-        assert_eq!(matrix.convert_type("BLOB"), ("BYTEA".to_string(), false));
-        assert_eq!(matrix.convert_type("DATETIME"), ("TIMESTAMP".to_string(), false));
-        assert_eq!(matrix.convert_type("TEXT"), ("TEXT".to_string(), false));
-        assert!(matrix.convert_type("TINYINT(1)").1);
-    }
-
-    #[test]
-    fn postgres_to_mysql_type_mapping() {
-        let matrix = TypeMappingMatrix::for_dialects(DialectKind::Postgres, DialectKind::Mysql);
-        assert_eq!(matrix.convert_type("INTEGER"), ("INT".to_string(), false));
-        assert_eq!(matrix.convert_type("BIGINT"), ("BIGINT".to_string(), false));
-        assert_eq!(matrix.convert_type("TEXT"), ("LONGTEXT".to_string(), false));
-        assert_eq!(matrix.convert_type("BYTEA"), ("BLOB".to_string(), false));
-        assert_eq!(matrix.convert_type("BOOLEAN"), ("TINYINT(1)".to_string(), true));
-        assert_eq!(matrix.convert_type("UUID"), ("CHAR(36)".to_string(), true));
-    }
-
-    #[test]
-    fn mysql_to_sqlite_type_mapping() {
-        let matrix = TypeMappingMatrix::for_dialects(DialectKind::Mysql, DialectKind::Sqlite);
-        assert_eq!(matrix.convert_type("INT"), ("INTEGER".to_string(), false));
-        assert_eq!(matrix.convert_type("BIGINT"), ("INTEGER".to_string(), false));
-        assert_eq!(matrix.convert_type("TEXT"), ("TEXT".to_string(), false));
-        let (result, lossy) = matrix.convert_type("VARCHAR(255)");
-        assert_eq!(result, "VARCHAR(255)");
-        assert!(lossy);
-    }
-
-    #[test]
-    fn type_mapping_unknown_type_passthrough() {
-        let matrix = TypeMappingMatrix::for_dialects(DialectKind::Mysql, DialectKind::Postgres);
+    fn same_family_type_mapping_has_no_rules() {
+        let matrix = TypeMappingMatrix::for_dialects(DialectKind::Postgres, DialectKind::Postgres);
+        assert!(matrix.rules.is_empty());
         let (result, lossy) = matrix.convert_type("GEOGRAPHY");
         assert_eq!(result, "GEOGRAPHY");
         assert!(lossy);
@@ -1136,7 +405,6 @@ mod tests {
 
     #[test]
     fn dialect_kind_label() {
-        assert_eq!(DialectKind::Mysql.label(), "mysql");
         assert_eq!(DialectKind::Postgres.label(), "postgres");
         assert_eq!(DialectKind::Unsupported.label(), "unsupported");
     }

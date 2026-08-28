@@ -247,7 +247,6 @@ mod tests {
     use crate::models::connection::{
         HttpTunnelConfig, ProxyTunnelConfig, ProxyType, SshTunnelConfig, TransportLayerConfig,
     };
-
     fn ssh_layer(id: &str, host: &str, port: u16) -> TransportLayerConfig {
         TransportLayerConfig::Ssh(SshTunnelConfig {
             profile_id: String::new(),

@@ -108,12 +108,6 @@ async function loadObjectNames(): Promise<string[]> {
     return api.listSchemas(props.connectionId, config?.database || "");
   }
   await connectionStore.ensureConnected(props.connectionId);
-  if (config?.db_type === "redis") {
-    return (await api.redisListDatabases(props.connectionId)).map((database) => String(database.db));
-  }
-  if (config?.db_type === "mongodb") {
-    return api.mongoListDatabases(props.connectionId);
-  }
   return (await api.listDatabases(props.connectionId)).map((database) => database.name);
 }
 

@@ -24,16 +24,6 @@ export function hasInstalledAgentVersion(drivers: readonly AgentDriverInstallSta
 }
 
 export function agentDriverInstallKey(dbType: DatabaseType | undefined, driverProfile?: string): string | undefined {
-  if (dbType === "oracle") return "oracle";
-  if (dbType === "mongodb") return "mongodb";
-  if (dbType === "dameng") return "dameng";
-  if (dbType === "gbase") return driverProfile === "gbase8s" ? "gbase8s" : "gbase8a";
-  if (dbType === "mq") {
-    if (driverProfile === "kafka") return "kafka";
-    if (driverProfile === "rocketmq") return "rocketmq";
-    if (driverProfile === "rabbitmq") return "rabbitmq";
-    return undefined;
-  }
   return driverProfile && driverProfile !== dbType ? driverProfile : dbType;
 }
 

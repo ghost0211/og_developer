@@ -20,26 +20,17 @@ function connection(dbType: ConnectionConfig["db_type"]): ConnectionConfig {
 }
 
 describe("quickConnectionOpenTarget", () => {
-  it("opens message queue connections in the MQ admin console", () => {
-    expect(quickConnectionOpenTarget(connection("mq"))).toEqual({ kind: "mq-admin" });
-  });
-
-  it("opens Nacos connections in the Nacos admin console", () => {
-    expect(quickConnectionOpenTarget(connection("nacos"))).toEqual({ kind: "nacos-admin" });
-  });
-
-  it("opens Etcd connections in the key browser", () => {
-    expect(quickConnectionOpenTarget(connection("etcd"))).toEqual({ kind: "etcd" });
-  });
-
-  it("opens ZooKeeper connections in the key browser", () => {
-    expect(quickConnectionOpenTarget(connection("zookeeper"))).toEqual({ kind: "zookeeper" });
-  });
-
-  it("opens regular connections in a query tab", () => {
-    expect(quickConnectionOpenTarget({ ...connection("postgresql"), database: "app" })).toEqual({
+  it("opens connections in a query tab on the configured database", () => {
+    expect(quickConnectionOpenTarget({ ...connection("postgres"), database: "app" })).toEqual({
       kind: "query",
       database: "app",
+    });
+  });
+
+  it("falls back to the default openGauss database", () => {
+    expect(quickConnectionOpenTarget(connection("opengauss"))).toEqual({
+      kind: "query",
+      database: "postgres",
     });
   });
 });

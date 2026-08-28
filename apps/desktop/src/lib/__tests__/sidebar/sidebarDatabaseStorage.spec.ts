@@ -9,15 +9,14 @@ function config(dbType: ConnectionConfig["db_type"]): ConnectionConfig {
 describe("sidebar database storage", () => {
   it("keeps database totals PostgreSQL-specific while reusing supported table statistics", () => {
     expect(supportsSidebarDatabaseStorage(config("postgres"))).toBe(true);
-    expect(supportsSidebarDatabaseStorage(config("mysql"))).toBe(false);
+    expect(supportsSidebarDatabaseStorage(config("opengauss"))).toBe(false);
     expect(supportsSidebarDatabaseStorage({ ...config("postgres"), driver_profile: "cockroachdb" })).toBe(false);
 
-    for (const dbType of ["mysql", "postgres", "sqlserver", "oracle", "clickhouse", "dameng", "gaussdb", "kingbase", "gbase"] as const) {
+    for (const dbType of ["postgres", "opengauss"] as const) {
       expect(supportsSidebarTableStorage(config(dbType))).toBe(true);
     }
     expect(supportsSidebarTableStorage(config("jdbc"))).toBe(false);
     expect(supportsSidebarTableStorage({ ...config("postgres"), driver_profile: "cockroachdb" })).toBe(false);
-    expect(supportsSidebarTableStorage({ ...config("gbase"), driver_profile: "gbase8s" })).toBe(false);
   });
 
   it("requests and applies only visible database nodes", () => {
@@ -57,7 +56,7 @@ describe("sidebar database storage", () => {
     expect(auditTable.sizeBytes).toBeUndefined();
   });
 
-  it("applies database-scoped MySQL statistics to tree nodes without a schema", () => {
+  it("applies database-scoped statistics to tree nodes without a schema", () => {
     const table: TreeNode = { id: "products", label: "products", type: "table", connectionId: "connection", database: "shop" };
     expect(applySidebarTableStorage([table], { connectionId: "connection", database: "shop", schema: "" }, [{ name: "products", schema: "shop", total_bytes: 49152 }])).toBe(true);
     expect(table.sizeBytes).toBe(49152);

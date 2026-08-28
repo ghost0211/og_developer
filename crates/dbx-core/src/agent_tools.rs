@@ -5,7 +5,6 @@ use serde_json::json;
 
 use crate::agent_events::{ToolCall, ToolDefinition, ToolResult};
 use crate::connection::AppState;
-use crate::db::vector_driver;
 use crate::models::connection::DatabaseType;
 use crate::query::QueryExecutionOptions;
 use crate::query_execution_sql::{build_explain_sql, supports_explain_plan, supports_sql_query, ExplainSqlOptions};
@@ -174,8 +173,8 @@ fn sql_risk_allowed(risk: SqlRisk, permissions: &AgentSqlPermissions) -> bool {
 
 /// Returns true for vector database types (Qdrant, Milvus, Weaviate, ChromaDb).
 /// If modifying this, also update VECTOR_DB_TYPES in apps/desktop/src/lib/ai.ts.
-pub fn is_vector_db(db_type: DatabaseType) -> bool {
-    matches!(db_type, DatabaseType::Qdrant | DatabaseType::Milvus | DatabaseType::Weaviate | DatabaseType::ChromaDb)
+pub fn is_vector_db(_db_type: DatabaseType) -> bool {
+    false
 }
 
 /// `get_current_time` tool definition — DB-independent utility that returns
@@ -537,10 +536,10 @@ async fn execute_list_tables(
         database,
         &schema,
         None,
+        None,
+        None,
+        None,
         Some(LIST_TABLES_LIMIT + 1),
-        None,
-        None,
-        None,
     )
     .await
     .map_err(|e| format!("Failed to list tables: {e}"))?;
@@ -900,22 +899,6 @@ async fn execute_explain_query(
         }
     }
 
-    if *db_type == DatabaseType::Oracle {
-        return match crate::agent_explain::get_agent_explain_info_core(
-            state,
-            connection_id,
-            Some(database),
-            default_schema,
-            sql,
-            Some("explain"),
-        )
-        .await
-        {
-            Ok(plan) => (Ok(plan.clone()), Some(serde_json::Value::String(plan))),
-            Err(error) => (Err(error), None),
-        };
-    }
-
     // Build the database-specific EXPLAIN SQL
     let explain_result = build_explain_sql(ExplainSqlOptions {
         database_type: Some(*db_type),
@@ -1037,13 +1020,7 @@ async fn execute_browse_collection(
         .map(|l| (l as usize).min(MAX_ALLOWED_ROWS))
         .unwrap_or(BROWSE_COLLECTION_LIMIT);
 
-    // ChromaDB requires UUID in URL path, not collection name.
-    // If the collection param is already a UUID (from list_collections output), use it directly.
-    let collection_id = if *db_type == DatabaseType::ChromaDb && !is_uuid(collection) {
-        resolve_chroma_collection_uuid(state, connection_id, database, collection).await?
-    } else {
-        collection.to_string()
-    };
+    let collection_id = collection.to_string();
 
     let query = build_browse_query(db_type, &collection_id, database, limit)?;
 
@@ -1060,824 +1037,51 @@ async fn execute_browse_collection(
 fn build_browse_query(
     db_type: &DatabaseType,
     collection: &str,
-    database: &str,
+    _database: &str,
     limit: usize,
 ) -> Result<String, String> {
     let collection = collection.trim();
     if collection.is_empty() {
         return Err("Collection name cannot be empty".to_string());
     }
-    let limit = limit.max(1) as u64;
+    let _limit = limit.max(1) as u64;
 
     match db_type {
-        DatabaseType::Qdrant => Ok(format!(
-            "POST /collections/{}/points/scroll\n{}",
-            vector_driver::path_segment(collection),
-            serde_json::json!({ "limit": limit, "with_payload": true, "with_vector": false })
-        )),
         // Milvus v2 omitting outputFields defaults to returning only scalar fields (no vectors).
-        DatabaseType::Milvus => Ok(format!(
-            "POST /v2/vectordb/entities/query\n{}",
-            serde_json::json!({
-                "dbName": if database.is_empty() { "default" } else { database },
-                "collectionName": collection,
-                "filter": "", "limit": limit
-            })
-        )),
-        DatabaseType::Weaviate => {
-            Ok(format!("GET /v1/objects?class={}&limit={}", vector_driver::query_value(collection), limit))
-        }
         // TODO: ChromaDB Cloud 支持自定义租户和数据库，当前只实现了本地部署
         // （固定 default_tenant / default_database），后续支持云服务时需改为可配置。
-        DatabaseType::ChromaDb => Ok(format!(
-            "POST /api/v2/tenants/default_tenant/databases/default_database/collections/{}/get\n{}",
-            collection,
-            serde_json::json!({ "limit": limit, "include": ["documents", "metadatas"] })
-        )),
         _ => Err(format!("Unsupported database type: {:?}", db_type)),
     }
-}
-
-/// Check if a string looks like a UUID (simple check — 36 chars with 4 hyphens).
-fn is_uuid(s: &str) -> bool {
-    s.len() == 36
-        && s.chars().filter(|&c| c == '-').count() == 4
-        && s.chars().all(|c| c.is_ascii_hexdigit() || c == '-')
-}
-
-/// Resolve a ChromaDB collection name to its UUID by listing all collections.
-async fn resolve_chroma_collection_uuid(
-    state: &Arc<AppState>,
-    connection_id: &str,
-    database: &str,
-    name: &str,
-) -> Result<String, String> {
-    let collections = crate::schema::list_vector_collections_core(state, connection_id, database).await?;
-    collections
-        .into_iter()
-        .find(|c| c.name == name)
-        .map(|c| c.id)
-        .ok_or_else(|| format!("Collection '{name}' not found"))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[cfg(unix)]
-    use crate::connection::PoolKind;
-    #[cfg(unix)]
-    use crate::db::agent_driver::{AgentDriverClient, AgentLaunchSpec};
-    #[cfg(unix)]
-    use crate::models::connection::{default_redis_key_separator, ConnectionConfig};
-    #[cfg(unix)]
-    use crate::storage::Storage;
-
-    #[cfg(unix)]
-    async fn spawn_recording_agent(record_path: &std::path::Path) -> (AgentDriverClient, tempfile::NamedTempFile) {
-        use std::io::Write;
-
-        let mut script = tempfile::NamedTempFile::new().unwrap();
-        write!(
-            script,
-            r#"import json
-import sys
-
-record_path = sys.argv[1]
-print(json.dumps({{"ready": True}}), flush=True)
-for line in sys.stdin:
-    request = json.loads(line)
-    with open(record_path, "a", encoding="utf-8") as record:
-        record.write(json.dumps(request) + "\n")
-    result = {{
-        "columns": [],
-        "column_types": [],
-        "column_sortables": [],
-        "rows": [],
-        "affected_rows": 1,
-        "execution_time_ms": 0,
-        "truncated": False,
-        "session_id": None,
-        "has_more": False
-    }}
-    print(json.dumps({{"jsonrpc": "2.0", "id": request["id"], "result": result}}), flush=True)
-"#
-        )
-        .unwrap();
-        script.flush().unwrap();
-
-        let client = AgentDriverClient::spawn(
-            AgentLaunchSpec::new("python3")
-                .with_args([script.path().to_string_lossy().to_string(), record_path.to_string_lossy().to_string()]),
-        )
-        .await
-        .unwrap();
-        (client, script)
-    }
-
-    #[cfg(unix)]
-    fn agent_test_connection(id: &str, name: &str, db_type: DatabaseType, database: &str) -> ConnectionConfig {
-        ConnectionConfig {
-            id: id.to_string(),
-            name: name.to_string(),
-            note: String::new(),
-            db_type,
-            driver_profile: None,
-            driver_label: None,
-            url_params: None,
-            agent_java_options: Vec::new(),
-            host: "localhost".to_string(),
-            port: 5236,
-            username: "APP_USER".to_string(),
-            password: String::new(),
-            database: Some(database.to_string()),
-            visible_databases: None,
-            visible_schemas: None,
-            show_system_schemas: false,
-            attached_databases: Vec::new(),
-            init_script: None,
-            color: None,
-            transport_layers: Vec::new(),
-            connect_timeout_secs: 10,
-            query_timeout_secs: 30,
-            idle_timeout_secs: 60,
-            keepalive_interval_secs: 30,
-            ssl: false,
-            ca_cert_path: String::new(),
-            client_cert_path: String::new(),
-            client_key_path: String::new(),
-            sysdba: false,
-            oracle_connection_type: None,
-            connection_string: None,
-            redis_connection_mode: None,
-            redis_sentinel_master: String::new(),
-            redis_sentinel_nodes: String::new(),
-            redis_sentinel_username: String::new(),
-            redis_sentinel_password: String::new(),
-            redis_sentinel_tls: false,
-            redis_cluster_nodes: String::new(),
-            redis_key_separator: default_redis_key_separator(),
-            redis_scan_page_size: None,
-            redis_database_aliases: Default::default(),
-            etcd_endpoints: String::new(),
-            gbase_server: String::new(),
-            informix_server: String::new(),
-            external_config: None,
-            jdbc_driver_class: None,
-            jdbc_driver_paths: Vec::new(),
-            one_time: false,
-            read_only: false,
-            is_production: false,
-            production_databases: vec![],
-            database_info: None,
-        }
-    }
 
     #[test]
-    fn vector_read_only_tools_do_not_include_collection_browsing() {
-        let tools = read_only_tools(DatabaseType::Qdrant);
-        let names: Vec<&str> = tools.iter().map(|tool| tool.name).collect();
-
-        assert!(names.contains(&"list_collections"));
-        assert!(!names.contains(&"browse_collection"));
-        assert!(names.contains(&"get_current_time"));
-    }
-
-    #[test]
-    fn vector_agent_tools_include_collection_browsing() {
-        let tools = all_tools(DatabaseType::Qdrant, AgentSqlPermissions::default());
-        let names: Vec<&str> = tools.iter().map(|tool| tool.name).collect();
-
-        assert!(names.contains(&"list_collections"));
-        assert!(names.contains(&"browse_collection"));
-        assert!(names.contains(&"get_current_time"));
-    }
-
-    #[test]
-    fn confirmed_sql_permissions_update_execute_query_contract() {
-        let tools = all_tools(
-            DatabaseType::Mysql,
-            AgentSqlPermissions {
-                allow_writes: true,
-                allow_dangerous: true,
-                confirmed_write_sql: None,
-                permission_level: AgentPermissionLevel::Full,
-            },
-        );
-        let execute_query = tools.iter().find(|tool| tool.name == "execute_query").unwrap();
-
-        assert!(execute_query.description.contains("permission level"));
-        assert!(execute_query.description.contains("DDL"));
-    }
-
-    #[test]
-    fn sql_permissions_keep_writes_blocked_until_confirmation() {
-        assert!(!sql_risk_allowed(SqlRisk::Write, &AgentSqlPermissions::default()));
-        assert!(!sql_risk_allowed(SqlRisk::Ddl, &AgentSqlPermissions::default()));
-        assert!(sql_risk_allowed(
-            SqlRisk::Ddl,
-            &AgentSqlPermissions {
-                allow_writes: true,
-                allow_dangerous: true,
-                confirmed_write_sql: None,
-                permission_level: AgentPermissionLevel::Full,
-            }
-        ));
-        assert!(!sql_risk_allowed(
-            SqlRisk::Transaction,
-            &AgentSqlPermissions {
-                allow_writes: true,
-                allow_dangerous: true,
-                confirmed_write_sql: None,
-                permission_level: AgentPermissionLevel::Full,
-            }
-        ));
-    }
-
-    #[test]
-    fn oracle_agent_tools_include_explain_query() {
-        let tools = all_tools(DatabaseType::Oracle, AgentSqlPermissions::default());
-        let names: Vec<&str> = tools.iter().map(|tool| tool.name).collect();
-
-        assert!(names.contains(&"explain_query"));
-    }
-
-    fn query_result(columns: Vec<&str>, rows: Vec<Vec<serde_json::Value>>, affected_rows: u64) -> QueryResult {
-        QueryResult {
-            columns: columns.into_iter().map(str::to_string).collect(),
-            column_types: Vec::new(),
-            column_sortables: Vec::new(),
-            spatial_columns: Vec::new(),
-            spatial_values: Vec::new(),
-            rows,
-            affected_rows,
-            execution_time_ms: 1,
-            messages: Vec::new(),
-            truncated: false,
-            session_id: None,
-            has_more: false,
-            elasticsearch_raw_body: None,
-        }
-    }
-
-    #[test]
-    fn query_result_formatter_reports_dml_affected_rows() {
-        let result = query_result(vec![], vec![], 2);
-
-        assert_eq!(format_query_result_as_text(&result, 50).unwrap(), "Query executed. 2 row(s) affected.");
-    }
-
-    #[test]
-    fn query_result_formatter_distinguishes_zero_row_dml_from_an_empty_result_set() {
-        let dml = query_result(vec![], vec![], 0);
-        let returning = query_result(vec!["id", "name"], vec![], 0);
-
-        assert_eq!(format_query_result_as_text(&dml, 50).unwrap(), "Query executed. 0 row(s) affected.");
-        assert_eq!(format_query_result_as_text(&returning, 50).unwrap(), "| id | name |\n|---|---|\n(0 rows, 1ms)");
-    }
-
-    #[test]
-    fn query_result_formatter_renders_returning_rows() {
-        let result =
-            query_result(vec!["id", "name"], vec![vec![serde_json::json!(5), serde_json::json!("returning")]], 0);
-
-        assert_eq!(
-            format_query_result_as_text(&result, 50).unwrap(),
-            "| id | name |\n|---|---|\n| 5 | returning |\n(1 rows, 1ms)"
-        );
-    }
-
-    #[test]
-    fn sample_data_sql_uses_database_identifier_and_limit_syntax() {
-        assert_eq!(
-            build_sample_data_sql(&DatabaseType::Mysql, Some("app"), "sys_tenant", 20),
-            "SELECT * FROM `app`.`sys_tenant` LIMIT 20;"
-        );
-        assert_eq!(
-            build_sample_data_sql(&DatabaseType::Postgres, Some("public"), "sys_tenant", 20),
-            "SELECT * FROM \"public\".\"sys_tenant\" LIMIT 20;"
-        );
-        assert_eq!(
-            build_sample_data_sql(&DatabaseType::SqlServer, Some("dbo"), "sys_tenant", 20),
-            "SELECT TOP (20) * FROM [dbo].[sys_tenant]"
-        );
-        assert_eq!(
-            build_sample_data_sql(&DatabaseType::Oracle, Some("APP"), "SYS_TENANT", 20),
-            "SELECT * FROM (SELECT * FROM \"APP\".\"SYS_TENANT\") WHERE ROWNUM <= 20"
-        );
-    }
-
-    #[test]
-    fn selected_schema_overrides_the_tool_schema_argument() {
-        let call = ToolCall {
-            id: "call-1".to_string(),
-            name: "list_tables".to_string(),
-            arguments: serde_json::json!({ "schema": "OTHER" }),
-            provider_payload: None,
-        };
-
-        assert_eq!(effective_schema(&call, Some("REPORTING")).as_deref(), Some("REPORTING"));
-        assert_eq!(effective_schema(&call, None).as_deref(), Some("OTHER"));
-    }
-
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn dameng_agent_queries_and_confirmed_writes_use_selected_schema() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let record_path = temp_dir.path().join("agent-requests.jsonl");
-        let (client, _script) = spawn_recording_agent(&record_path).await;
-        let storage = Storage::open(&temp_dir.path().join("storage.db")).await.unwrap();
-        let state = Arc::new(AppState::new(storage));
-        let connection = agent_test_connection("dameng-1", "Dameng", DatabaseType::Dameng, "APPDB");
-        state.configs.write().await.insert(connection.id.clone(), connection);
-        state.connections.write().await.insert("dameng-1:APPDB".to_string(), PoolKind::agent(client));
-
-        let read = ToolCall {
-            id: "read".to_string(),
-            name: "execute_query".to_string(),
-            arguments: json!({ "sql": "SELECT * FROM orders" }),
-            provider_payload: None,
-        };
-        let read_result = execute_tool(
-            &read,
-            &state,
-            "dameng-1",
-            "APPDB",
-            Some("REPORTING"),
-            &DatabaseType::Dameng,
-            AgentSqlPermissions::default(),
-        )
-        .await;
-        assert!(!read_result.is_error, "{}", read_result.content);
-
-        let confirmed_sql = "DELETE FROM orders WHERE id = 1";
-        let write = ToolCall {
-            id: "write".to_string(),
-            name: "execute_query".to_string(),
-            arguments: json!({ "sql": confirmed_sql }),
-            provider_payload: None,
-        };
-        let write_result = execute_tool(
-            &write,
-            &state,
-            "dameng-1",
-            "APPDB",
-            Some("REPORTING"),
-            &DatabaseType::Dameng,
-            confirmed_write_sql_permissions(false, true, Some(confirmed_sql.to_string())),
-        )
-        .await;
-        assert!(!write_result.is_error, "{}", write_result.content);
-
-        let requests = std::fs::read_to_string(&record_path)
-            .unwrap()
-            .lines()
-            .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
-            .filter(|request| request["method"] == "execute_query")
-            .collect::<Vec<_>>();
-        assert_eq!(requests.len(), 2);
-        assert_eq!(requests[0]["params"]["sql"], "SELECT * FROM orders");
-        assert_eq!(requests[1]["params"]["sql"], confirmed_sql);
-        for request in requests {
-            assert_eq!(request["params"]["database"], "APPDB");
-            assert_eq!(request["params"]["schema"], "REPORTING");
-        }
-    }
-
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn mysql_agent_allows_show_triggers_without_write_confirmation() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let record_path = temp_dir.path().join("agent-requests.jsonl");
-        let (client, _script) = spawn_recording_agent(&record_path).await;
-        let storage = Storage::open(&temp_dir.path().join("storage.db")).await.unwrap();
-        let state = Arc::new(AppState::new(storage));
-        let connection = agent_test_connection("mysql-1", "MySQL", DatabaseType::Mysql, "rs_main");
-        state.configs.write().await.insert(connection.id.clone(), connection);
-        state.connections.write().await.insert("mysql-1:rs_main".to_string(), PoolKind::agent(client));
-
-        let sql = "SHOW TRIGGERS FROM `rs_main` LIKE 'trg_order_items_after_%';";
-        let call = ToolCall {
-            id: "show-triggers".to_string(),
-            name: "execute_query".to_string(),
-            arguments: json!({ "sql": sql }),
-            provider_payload: None,
-        };
-        let result = execute_tool(
-            &call,
-            &state,
-            "mysql-1",
-            "rs_main",
-            None,
-            &DatabaseType::Mysql,
-            AgentSqlPermissions::default(),
-        )
-        .await;
-
-        assert!(!result.is_error, "{}", result.content);
-        let request = std::fs::read_to_string(&record_path)
-            .unwrap()
-            .lines()
-            .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
-            .find(|request| request["method"] == "execute_query")
-            .unwrap();
-        assert_eq!(request["params"]["sql"], sql);
-    }
-
-    #[test]
-    fn build_browse_query_qdrant() {
-        let q = build_browse_query(&DatabaseType::Qdrant, "articles", "", 10).unwrap();
-        assert!(q.starts_with("POST /collections/articles/points/scroll"));
-        assert!(q.contains("\"limit\":10"));
-        assert!(q.contains("\"with_payload\":true"));
-    }
-
-    #[test]
-    fn build_browse_query_qdrant_encodes_url_chars() {
-        let q = build_browse_query(&DatabaseType::Qdrant, "my collection", "", 10).unwrap();
-        assert!(q.starts_with("POST /collections/my%20collection/points/scroll"));
-    }
-
-    #[test]
-    fn build_browse_query_milvus() {
-        let q = build_browse_query(&DatabaseType::Milvus, "articles", "custom_db", 20).unwrap();
-        assert!(q.starts_with("POST /v2/vectordb/entities/query"));
-        assert!(q.contains("\"dbName\":\"custom_db\""));
-        assert!(q.contains("\"collectionName\":\"articles\""));
-        assert!(q.contains("\"limit\":20"));
-        assert!(!q.contains("outputFields"));
-    }
-
-    #[test]
-    fn build_browse_query_milvus_default_db() {
-        let q = build_browse_query(&DatabaseType::Milvus, "articles", "", 10).unwrap();
-        assert!(q.contains("\"dbName\":\"default\""));
-    }
-
-    #[test]
-    fn build_browse_query_weaviate() {
-        let q = build_browse_query(&DatabaseType::Weaviate, "Articles", "", 5).unwrap();
-        assert_eq!(q, "GET /v1/objects?class=Articles&limit=5");
-    }
-
-    #[test]
-    fn build_browse_query_weaviate_encodes_query_param() {
-        let q = build_browse_query(&DatabaseType::Weaviate, "A&B", "", 5).unwrap();
-        assert!(q.contains("class=A%26B"));
-    }
-
-    #[test]
-    fn build_browse_query_chromadb() {
-        let q = build_browse_query(&DatabaseType::ChromaDb, "uuid-123", "", 15).unwrap();
-        assert!(
-            q.starts_with("POST /api/v2/tenants/default_tenant/databases/default_database/collections/uuid-123/get")
-        );
-        assert!(q.contains("\"limit\":15"));
-    }
-
-    #[test]
-    fn build_browse_query_rejects_empty_collection() {
-        let result = build_browse_query(&DatabaseType::Qdrant, "  ", "", 10);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn build_browse_query_rejects_unsupported_type() {
-        let result = build_browse_query(&DatabaseType::Postgres, "articles", "", 10);
-        assert!(result.is_err());
-    }
-
-    // ── SQL confirmation binding tests ──────────────────────────────────────
-
-    #[test]
-    fn normalize_sql_only_trims_outer_whitespace() {
-        assert_eq!(normalize_sql_for_confirmation("  CREATE TABLE users (id INT);\n"), "CREATE TABLE users (id INT);");
-    }
-
-    #[test]
-    fn confirmed_sql_binding_rejects_quoted_identifier_case_change() {
-        let confirmed = Some("DROP TABLE \"Users\"".to_string());
-        assert!(!sql_matches_confirmed_write("DROP TABLE \"users\"", &confirmed));
-    }
-
-    #[test]
-    fn confirmed_sql_binding_rejects_keyword_case_or_reformatting() {
-        let confirmed = Some("DELETE FROM AuditLog WHERE id = 1".to_string());
-        assert!(!sql_matches_confirmed_write("delete from AuditLog where id = 1", &confirmed));
-        assert!(!sql_matches_confirmed_write("DELETE FROM AuditLog\nWHERE id = 1", &confirmed));
-    }
-
-    #[test]
-    fn confirmed_sql_binding_rejects_line_comment_newline_change() {
-        let confirmed = Some("DELETE FROM users -- only one record\nWHERE id = 1".to_string());
-        assert!(!sql_matches_confirmed_write("DELETE FROM users -- only one record WHERE id = 1", &confirmed));
-    }
-
-    #[test]
-    fn sql_matches_when_no_confirmation_required() {
-        assert!(sql_matches_confirmed_write("DELETE FROM users WHERE id = 1", &None));
-    }
-
-    #[test]
-    fn sql_matches_when_only_outer_whitespace_differs() {
-        // The confirmed statement itself must be unchanged; only surrounding
-        // whitespace is ignored before comparison.
-        let confirmed = Some("CREATE TABLE users (id INT)".to_string());
-        assert!(sql_matches_confirmed_write("  CREATE TABLE users (id INT)  ", &confirmed,));
-    }
-
-    #[test]
-    fn sql_mismatch_rejected_when_executed_differs_from_confirmed() {
-        let confirmed = Some("CREATE TABLE users (id INT)".to_string());
-        assert!(!sql_matches_confirmed_write("DROP TABLE users", &confirmed,));
-    }
-
-    #[test]
-    fn confirmed_sql_binding_rejects_same_table_different_statement() {
-        let confirmed = Some("INSERT INTO users (id, name) VALUES (1, 'test')".to_string());
-        assert!(!sql_matches_confirmed_write("DELETE FROM users WHERE id = 1", &confirmed,));
-    }
-
-    #[test]
-    fn confirmed_sql_binding_rejects_different_case_in_data_values() {
-        // Confirmed VALUES ('Alice') must NOT match executed VALUES ('alice').
-        // String-literal data values are preserved verbatim.
-        let confirmed = Some("INSERT INTO users (name) VALUES ('Alice')".to_string());
-        assert!(!sql_matches_confirmed_write("INSERT INTO users (name) VALUES ('alice')", &confirmed,));
-    }
-
-    #[test]
-    fn confirmed_sql_binding_rejects_different_whitespace_in_data_values() {
-        // Confirmed VALUES ('a b') must NOT match executed VALUES ('a  b').
-        let confirmed = Some("INSERT INTO t (c) VALUES ('a b')".to_string());
-        assert!(!sql_matches_confirmed_write("INSERT INTO t (c) VALUES ('a  b')", &confirmed,));
-    }
-
-    #[test]
-    fn confirmed_sql_default_is_none() {
-        let perms = AgentSqlPermissions::default();
-        assert_eq!(perms.confirmed_write_sql, None);
-    }
-
-    #[test]
-    fn confirmed_write_sql_diagnostics_redact_sensitive_literals() {
-        let confirmed_sql = "CREATE USER app_user WITH PASSWORD 'secret-123'";
-        let diagnostic = crate::sql_diagnostics::redact_sql_for_diagnostics(confirmed_sql);
-
-        assert!(!diagnostic.contains("secret-123"));
-        assert!(diagnostic.contains("'[REDACTED]'"));
-    }
-
-    #[test]
-    fn confirmed_write_permissions_bind_only_a_nonproduction_nonempty_confirmation() {
-        let confirmed_sql = Some("DELETE FROM sessions WHERE id = 7".to_string());
-        let permissions = confirmed_write_sql_permissions(false, true, confirmed_sql.clone());
-
-        assert!(permissions.allow_writes);
-        assert!(permissions.allow_dangerous);
-        assert_eq!(permissions.confirmed_write_sql, confirmed_sql);
-        assert!(!sql_matches_confirmed_write("DROP TABLE sessions", &permissions.confirmed_write_sql));
-    }
-
-    #[test]
-    fn confirmed_write_permissions_fail_closed_for_production_or_empty_confirmation() {
-        for (production_database, confirmed_write_sql) in
-            [(true, Some("DELETE FROM sessions".to_string())), (false, None), (false, Some("  \n".to_string()))]
-        {
-            let permissions = confirmed_write_sql_permissions(production_database, true, confirmed_write_sql);
-            assert!(!permissions.allow_writes);
-            assert!(!permissions.allow_dangerous);
-            assert_eq!(permissions.confirmed_write_sql, None);
-        }
-    }
-
-    #[test]
-    fn confirmed_sql_preserved_through_permission_construction() {
-        let perms = AgentSqlPermissions {
-            allow_writes: true,
-            allow_dangerous: true,
-            confirmed_write_sql: Some("CREATE TABLE t (c INT)".to_string()),
-            permission_level: AgentPermissionLevel::Full,
-        };
-        assert_eq!(perms.confirmed_write_sql.as_deref(), Some("CREATE TABLE t (c INT)"));
-    }
-
-    #[test]
-    fn permission_levels_gate_write_and_ddl_risks() {
-        // ReadOnly (default): reads allowed, writes and DDL blocked.
-        let readonly = AgentSqlPermissions::default();
-        assert_eq!(readonly.permission_level, AgentPermissionLevel::ReadOnly);
-        assert!(sql_risk_allowed(SqlRisk::ReadOnly, &readonly));
-        assert!(!sql_risk_allowed(SqlRisk::Write, &readonly));
-        assert!(!sql_risk_allowed(SqlRisk::Ddl, &readonly));
-
-        // Data: writes allowed, DDL blocked.
-        let data = agent_permissions_for_request(false, None, AgentPermissionLevel::Data);
-        assert!(data.allow_writes);
-        assert!(!data.allow_dangerous);
-        assert!(sql_risk_allowed(SqlRisk::ReadOnly, &data));
-        assert!(sql_risk_allowed(SqlRisk::Write, &data));
-        assert!(!sql_risk_allowed(SqlRisk::Ddl, &data));
-
-        // Full: writes and DDL allowed.
-        let full = agent_permissions_for_request(false, None, AgentPermissionLevel::Full);
-        assert!(full.allow_writes);
-        assert!(full.allow_dangerous);
-        assert!(sql_risk_allowed(SqlRisk::Ddl, &full));
-        assert!(!sql_risk_allowed(SqlRisk::Transaction, &full));
-    }
-
-    #[test]
-    fn permission_levels_are_fail_closed_for_production_databases() {
-        for level in [AgentPermissionLevel::ReadOnly, AgentPermissionLevel::Data, AgentPermissionLevel::Full] {
-            let permissions = agent_permissions_for_request(true, None, level);
-            assert!(!permissions.allow_writes, "production must not allow writes at {level:?}");
-            assert!(!permissions.allow_dangerous, "production must not allow DDL at {level:?}");
-            assert_eq!(permissions.permission_level, AgentPermissionLevel::ReadOnly);
-            assert!(sql_risk_allowed(SqlRisk::ReadOnly, &permissions));
-            assert!(!sql_risk_allowed(SqlRisk::Write, &permissions));
-            assert!(!sql_risk_allowed(SqlRisk::Ddl, &permissions));
-        }
-    }
-
-    #[test]
-    fn confirmed_sql_pins_the_run_even_at_higher_levels() {
-        let permissions = agent_permissions_for_request(
-            false,
-            Some("DELETE FROM sessions WHERE id = 7".to_string()),
-            AgentPermissionLevel::Full,
-        );
-        assert!(permissions.allow_writes);
-        assert!(permissions.allow_dangerous);
-        assert!(sql_matches_confirmed_write("DELETE FROM sessions WHERE id = 7", &permissions.confirmed_write_sql));
-        assert!(!sql_matches_confirmed_write("DROP TABLE sessions", &permissions.confirmed_write_sql));
-    }
-
-    #[test]
-    fn write_allowed_when_confirmed_sql_is_none_and_writes_enabled() {
-        // confirmed_write_sql=None + allow_writes=true: write SQL is allowed
-        // (the check passes because sql_matches_confirmed_write returns true
-        // when no confirmation is required). This documents the current
-        // contract — the frontend is responsible for only sending
-        // allow_write_sql=true when a specific SQL was confirmed.
-        assert!(sql_matches_confirmed_write("INSERT INTO t VALUES (1)", &None));
-    }
-
-    // ── get_current_time tests ────────────────────────────────────────────
-
-    #[test]
-    fn get_current_time_is_in_all_tools_postgres() {
-        let tools = all_tools(DatabaseType::Postgres, AgentSqlPermissions::default());
-        let names: Vec<&str> = tools.iter().map(|tool| tool.name).collect();
-        assert!(names.contains(&"get_current_time"), "get_current_time missing from all_tools(Postgres)");
-    }
-
-    #[test]
-    fn get_current_time_is_in_read_only_tools_postgres() {
+    fn tools_for_postgres() {
         let tools = read_only_tools(DatabaseType::Postgres);
-        let names: Vec<&str> = tools.iter().map(|tool| tool.name).collect();
-        assert!(names.contains(&"get_current_time"), "get_current_time missing from read_only_tools(Postgres)");
+        assert!(!tools.is_empty());
+        assert!(tools.iter().any(|t| t.name == "list_tables"));
+        assert!(tools.iter().any(|t| t.name == "get_columns"));
     }
 
     #[test]
-    fn get_current_time_is_in_all_tools_qdrant() {
-        let tools = all_tools(DatabaseType::Qdrant, AgentSqlPermissions::default());
-        let names: Vec<&str> = tools.iter().map(|tool| tool.name).collect();
-        assert!(names.contains(&"get_current_time"), "get_current_time missing from all_tools(Qdrant)");
+    fn tools_for_opengauss() {
+        let tools = all_tools(DatabaseType::Opengauss, AgentSqlPermissions::default());
+        assert!(!tools.is_empty());
+        assert!(tools.iter().any(|t| t.name == "execute_query"));
     }
 
     #[test]
-    fn get_current_time_is_in_read_only_tools_qdrant() {
-        let tools = read_only_tools(DatabaseType::Qdrant);
-        let names: Vec<&str> = tools.iter().map(|tool| tool.name).collect();
-        assert!(names.contains(&"get_current_time"), "get_current_time missing from read_only_tools(Qdrant)");
+    fn build_sample_data_sql_postgres() {
+        let sql = build_sample_data_sql(&DatabaseType::Postgres, Some("public"), "users", 20);
+        assert_eq!(sql, "SELECT * FROM \"public\".\"users\" LIMIT 20");
     }
 
     #[test]
-    fn get_current_time_tool_is_read_only_and_parallel_ok() {
-        let tool = get_current_time_tool();
-        assert!(tool.read_only, "get_current_time must be read_only");
-        assert!(tool.parallel_ok, "get_current_time must be parallel_ok");
-    }
-
-    #[test]
-    fn execute_get_current_time_returns_valid_timestamps() {
-        let before_secs = chrono::Utc::now().timestamp();
-        let tool_call = ToolCall {
-            id: "call-gct".to_string(),
-            name: "get_current_time".to_string(),
-            arguments: serde_json::json!({ "utc_offset_minutes": 480, "timezone": "Asia/Shanghai" }),
-            provider_payload: None,
-        };
-        let result = execute_get_current_time(&tool_call).expect("get_current_time should succeed");
-        let after_secs = chrono::Utc::now().timestamp();
-
-        let parsed: serde_json::Value =
-            serde_json::from_str(&result).expect("get_current_time result should be valid JSON");
-
-        let utc_str = parsed["utc"].as_str().expect("utc field should be a string");
-        let local_str = parsed["local"].as_str().expect("local field should be a string");
-
-        // Parse as RFC3339 timestamps.
-        let _utc_dt = chrono::DateTime::parse_from_rfc3339(utc_str).expect("utc should be valid RFC3339");
-        let local_dt = chrono::DateTime::parse_from_rfc3339(local_str).expect("local should be valid RFC3339");
-
-        // Verify UTC is within tolerance.
-        let utc_dt_utc = chrono::DateTime::parse_from_rfc3339(utc_str)
-            .expect("utc should parse as rfc3339")
-            .with_timezone(&chrono::Utc);
-        let utc_ts = utc_dt_utc.timestamp();
-        assert!(
-            utc_ts >= before_secs && utc_ts <= after_secs + 1,
-            "UTC timestamp {utc_ts} should be within [{before_secs}, {after_secs}+1]"
-        );
-
-        // Verify local is within tolerance (converted to UTC).
-        let local_ts = local_dt.with_timezone(&chrono::Utc).timestamp();
-        assert!(
-            local_ts >= before_secs && local_ts <= after_secs + 1,
-            "Local timestamp {local_ts} (UTC) should be within [{before_secs}, {after_secs}+1]"
-        );
-
-        // utc_offset_minutes should match the offset in local.
-        let offset_minutes =
-            parsed["utc_offset_minutes"].as_i64().expect("utc_offset_minutes should be an integer") as i32;
-        let local_offset_secs = local_dt.offset().local_minus_utc();
-        // The offset from the RFC3339 timestamp should match utc_offset_minutes * 60.
-        assert_eq!(
-            local_offset_secs / 60,
-            offset_minutes,
-            "utc_offset_minutes {offset_minutes} does not match local offset {}",
-            local_offset_secs / 60
-        );
-        assert_eq!(offset_minutes, 480);
-        assert_eq!(parsed["timezone"], "Asia/Shanghai");
-
-        // readable should be a non-empty string.
-        let readable = parsed["readable"].as_str().expect("readable field should be a string");
-        assert!(!readable.is_empty(), "readable should not be empty");
-    }
-
-    #[test]
-    fn execute_get_current_time_defaults_to_utc_without_client_context() {
-        let tool_call = ToolCall {
-            id: "call-gct".to_string(),
-            name: "get_current_time".to_string(),
-            arguments: serde_json::json!({}),
-            provider_payload: None,
-        };
-        let result = execute_get_current_time(&tool_call).expect("get_current_time should succeed");
-        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
-
-        assert_eq!(parsed["utc_offset_minutes"], 0);
-        assert_eq!(parsed["timezone"], "UTC");
-        assert!(parsed["local"].as_str().unwrap().ends_with("+00:00"));
-    }
-
-    #[test]
-    fn execute_get_current_time_labels_offset_when_timezone_name_is_missing() {
-        let tool_call = ToolCall {
-            id: "call-gct".to_string(),
-            name: "get_current_time".to_string(),
-            arguments: serde_json::json!({ "utc_offset_minutes": -300 }),
-            provider_payload: None,
-        };
-        let result = execute_get_current_time(&tool_call).expect("get_current_time should succeed");
-        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
-
-        assert_eq!(parsed["timezone"], "UTC-05:00");
-        assert!(parsed["local"].as_str().unwrap().ends_with("-05:00"));
-    }
-
-    #[test]
-    fn execute_tool_get_current_time_is_not_error() {
-        // Test via execute_tool dispatch. All args can be dummy since the tool
-        // does not use any of them.
-        let temp_dir = tempfile::tempdir().unwrap();
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        rt.block_on(async {
-            let storage = crate::storage::Storage::open(&temp_dir.path().join("storage.db")).await.unwrap();
-            let state = std::sync::Arc::new(crate::connection::AppState::new(storage));
-            let tool_call = ToolCall {
-                id: "call-gct".to_string(),
-                name: "get_current_time".to_string(),
-                arguments: serde_json::json!({}),
-                provider_payload: None,
-            };
-            let result = execute_tool(
-                &tool_call,
-                &state,
-                "dummy",
-                "dummy",
-                None,
-                &DatabaseType::Postgres,
-                AgentSqlPermissions::default(),
-            )
-            .await;
-            assert!(!result.is_error, "execute_tool get_current_time should not error: {}", result.content);
-            let parsed: serde_json::Value = serde_json::from_str(&result.content).expect("result should be valid JSON");
-            assert!(parsed["utc"].is_string());
-            assert!(parsed["local"].is_string());
-            assert!(parsed["readable"].is_string());
-        });
+    fn build_sample_data_sql_opengauss() {
+        let sql = build_sample_data_sql(&DatabaseType::Opengauss, Some("public"), "users", 20);
+        assert_eq!(sql, "SELECT * FROM \"public\".\"users\" LIMIT 20");
     }
 }

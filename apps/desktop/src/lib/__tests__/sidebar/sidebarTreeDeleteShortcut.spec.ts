@@ -14,8 +14,8 @@ function tableNode(id: string, connectionId: string): TreeNode {
   };
 }
 
-function databaseTypeForNode(node: TreeNode): DatabaseType | undefined {
-  return node.connectionId === "hbase-connection" ? "hbase" : "postgresql";
+function databaseTypeForNode(_node: TreeNode): DatabaseType | undefined {
+  return "opengauss";
 }
 
 function deleteEvent(key: "Delete" | "Backspace", init: KeyboardEventInit = {}): KeyboardEvent {
@@ -23,53 +23,10 @@ function deleteEvent(key: "Delete" | "Backspace", init: KeyboardEventInit = {}):
 }
 
 describe("sidebar tree delete shortcut", () => {
-  it.each(["Delete", "Backspace"] as const)("routes %s for a single HBase table through REST deletion", (key) => {
-    const activeNode = tableNode("table-1", "hbase-connection");
-    const event = deleteEvent(key);
-    const stopPropagation = vi.spyOn(event, "stopPropagation");
-    const requestHBaseTableDelete = vi.fn(() => true);
-    const requestDefaultDelete = vi.fn(() => true);
-
-    expect(
-      handleSidebarTreeDeleteShortcut(event, {
-        activeNode,
-        selectedNodes: [activeNode],
-        databaseTypeForNode,
-        requestHBaseTableDelete,
-        requestDefaultDelete,
-      }),
-    ).toBe(true);
-    expect(requestHBaseTableDelete).toHaveBeenCalledOnce();
-    expect(requestDefaultDelete).not.toHaveBeenCalled();
-    expect(event.defaultPrevented).toBe(true);
-    expect(stopPropagation).toHaveBeenCalledOnce();
-  });
-
-  it("blocks unsupported HBase multi-selection before generic SQL deletion", () => {
-    const activeNode = tableNode("table-1", "hbase-connection");
-    const selectedNodes = [activeNode, tableNode("table-2", "hbase-connection")];
-    const event = deleteEvent("Delete");
-    const requestHBaseTableDelete = vi.fn(() => true);
-    const requestDefaultDelete = vi.fn(() => true);
-
-    expect(
-      handleSidebarTreeDeleteShortcut(event, {
-        activeNode,
-        selectedNodes,
-        databaseTypeForNode,
-        requestHBaseTableDelete,
-        requestDefaultDelete,
-      }),
-    ).toBe(true);
-    expect(requestHBaseTableDelete).not.toHaveBeenCalled();
-    expect(requestDefaultDelete).not.toHaveBeenCalled();
-    expect(event.defaultPrevented).toBe(true);
-  });
-
   it("keeps the existing generic delete route for SQL tables", () => {
-    const activeNode = tableNode("table-1", "postgres-connection");
+    const activeNode = tableNode("table-1", "opengauss-connection");
     const event = deleteEvent("Delete");
-    const requestHBaseTableDelete = vi.fn(() => true);
+    const requestHBaseTableDelete = vi.fn(() => false);
     const requestDefaultDelete = vi.fn(() => true);
 
     expect(
@@ -81,15 +38,14 @@ describe("sidebar tree delete shortcut", () => {
         requestDefaultDelete,
       }),
     ).toBe(true);
-    expect(requestHBaseTableDelete).not.toHaveBeenCalled();
     expect(requestDefaultDelete).toHaveBeenCalledOnce();
     expect(event.defaultPrevented).toBe(true);
   });
 
   it("ignores modified delete shortcuts", () => {
-    const activeNode = tableNode("table-1", "hbase-connection");
+    const activeNode = tableNode("table-1", "opengauss-connection");
     const event = deleteEvent("Delete", { ctrlKey: true });
-    const requestHBaseTableDelete = vi.fn(() => true);
+    const requestHBaseTableDelete = vi.fn(() => false);
     const requestDefaultDelete = vi.fn(() => true);
 
     expect(
@@ -101,7 +57,6 @@ describe("sidebar tree delete shortcut", () => {
         requestDefaultDelete,
       }),
     ).toBe(false);
-    expect(requestHBaseTableDelete).not.toHaveBeenCalled();
     expect(requestDefaultDelete).not.toHaveBeenCalled();
     expect(event.defaultPrevented).toBe(false);
   });

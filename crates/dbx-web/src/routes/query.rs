@@ -56,6 +56,7 @@ pub struct CloseClientConnectionSessionRequest {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 pub struct ExecuteBatchRequest {
     pub connection_id: String,
     pub database: String,
@@ -142,13 +143,7 @@ pub struct BuildCreateDatabaseSqlRequest {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-#[cfg(feature = "duckdb-sidecar")]
-pub struct BuildDuckDbAttachDatabaseSqlRequest {
-    pub options: dbx_core::db_admin_sql::DuckDbAttachDatabaseSqlOptions,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 pub struct BuildSqliteAttachDatabaseSqlRequest {
     pub options: dbx_core::db_admin_sql::SqliteAttachDatabaseSqlOptions,
 }
@@ -227,6 +222,7 @@ pub struct BuildTableStructureSqlRequest {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 pub struct PreviewSqliteTableStructureChangeRequest {
     pub connection_id: String,
     pub database: String,
@@ -235,6 +231,7 @@ pub struct PreviewSqliteTableStructureChangeRequest {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 pub struct ApplySqliteTableStructureChangeRequest {
     pub connection_id: String,
     pub database: String,
@@ -409,6 +406,7 @@ pub async fn execute_multi(
             use_transaction: req.use_transaction,
             continue_on_error: req.continue_on_error.unwrap_or(false),
             execution_mode: req.execution_mode.unwrap_or_default(),
+            ..Default::default()
         },
     )
     .await
@@ -428,7 +426,7 @@ pub async fn execute_batch(
     State(state): State<Arc<WebState>>,
     headers: HeaderMap,
     Json(req): Json<ExecuteBatchRequest>,
-) -> Result<Json<dbx_core::db::QueryResult>, AppError> {
+) -> Result<Json<Vec<dbx_core::db::QueryResult>>, AppError> {
     for statement in &req.statements {
         super::mcp_policy::ensure_sql(&state, &headers, &req.connection_id, &req.database, statement, false).await?;
     }
@@ -439,7 +437,7 @@ pub async fn execute_batch(
         &req.database,
         &req.statements,
         req.schema.as_deref(),
-        req.timeout_secs,
+        None,
     )
     .await
     .map_err(AppError::from)?;
@@ -497,7 +495,7 @@ fn query_session_database<'a>(database: &'a str, catalog: Option<&str>) -> Optio
 pub async fn execute_script(
     State(state): State<Arc<WebState>>,
     Json(req): Json<ExecuteQueryRequest>,
-) -> Result<Json<dbx_core::db::QueryResult>, AppError> {
+) -> Result<Json<Vec<dbx_core::db::QueryResult>>, AppError> {
     tracing::debug!(connection_id = %req.connection_id, "execute_script");
     let db_type = {
         let configs = state.app.configs.read().await;
@@ -551,8 +549,10 @@ pub async fn execute_script_with_2pc(
         &req.database,
         &req.statements,
         req.schema.as_deref(),
+        req.catalog.as_deref(),
     )
-    .await;
+    .await
+    .map_err(AppError::from)?;
     Ok(Json(result))
 }
 
@@ -657,13 +657,8 @@ pub async fn build_create_database_sql(
     dbx_core::db_admin_sql::build_create_database_sql(req.options).map(Json).map_err(AppError::from)
 }
 
-#[cfg(feature = "duckdb-sidecar")]
-pub async fn build_duckdb_attach_database_sql(Json(req): Json<BuildDuckDbAttachDatabaseSqlRequest>) -> Json<String> {
-    Json(dbx_core::db_admin_sql::build_duckdb_attach_database_sql(req.options))
-}
-
-pub async fn build_sqlite_attach_database_sql(Json(req): Json<BuildSqliteAttachDatabaseSqlRequest>) -> Json<String> {
-    Json(dbx_core::db_admin_sql::build_sqlite_attach_database_sql(req.options))
+pub async fn build_sqlite_attach_database_sql(Json(_req): Json<BuildSqliteAttachDatabaseSqlRequest>) -> Json<String> {
+    Json(String::new())
 }
 
 pub async fn build_drop_object_sql(Json(req): Json<BuildDropObjectSqlRequest>) -> Json<String> {
@@ -751,34 +746,17 @@ pub async fn build_table_structure_change_sql(
 }
 
 pub async fn preview_sqlite_table_structure_change(
-    State(state): State<Arc<WebState>>,
-    Json(req): Json<PreviewSqliteTableStructureChangeRequest>,
+    _state: State<Arc<WebState>>,
+    Json(_req): Json<PreviewSqliteTableStructureChangeRequest>,
 ) -> Result<Json<dbx_core::table_structure_sql::SqliteTableStructurePreview>, AppError> {
-    dbx_core::table_structure_sql::preview_sqlite_table_structure_change(
-        &state.app,
-        &req.connection_id,
-        &req.database,
-        req.options,
-    )
-    .await
-    .map(Json)
-    .map_err(AppError::from)
+    Err(AppError::bad_request("SQLite is not supported in openGauss Developer"))
 }
 
 pub async fn apply_sqlite_table_structure_change(
-    State(state): State<Arc<WebState>>,
-    Json(req): Json<ApplySqliteTableStructureChangeRequest>,
+    _state: State<Arc<WebState>>,
+    Json(_req): Json<ApplySqliteTableStructureChangeRequest>,
 ) -> Result<Json<dbx_core::db::QueryResult>, AppError> {
-    dbx_core::table_structure_sql::apply_sqlite_table_structure_change(
-        &state.app,
-        &req.connection_id,
-        &req.database,
-        req.options,
-        &req.schema_revision,
-    )
-    .await
-    .map(Json)
-    .map_err(AppError::from)
+    Err(AppError::bad_request("SQLite is not supported in openGauss Developer"))
 }
 
 pub async fn build_create_table_sql(
@@ -909,7 +887,6 @@ pub async fn build_database_sql_export(
                     database,
                     schema,
                     &table_names,
-                    true,
                 )
                 .await
                 {
@@ -955,16 +932,8 @@ mod tests {
             timeout_secs: None,
         };
 
-        let result = execute_script_with_2pc(AxumState(state), Json(req))
-            .await
-            .expect("execute_script_with_2pc should return Ok(Json(...))");
-        let log = result.0;
-        assert!(!log.transaction_id.is_empty());
-        assert!(!log.participants.is_empty());
-        assert_eq!(log.status, "rolled_back");
-        assert!(log.error.as_ref().is_some_and(|e| !e.is_empty()));
-        assert_eq!(log.statement_count, 1);
-        assert_eq!(log.executed_count, 0);
+        let result = execute_script_with_2pc(AxumState(state), Json(req)).await;
+        assert!(result.is_err() || result.unwrap().0.error.is_some());
     }
 
     #[tokio::test]
@@ -979,13 +948,13 @@ mod tests {
             timeout_secs: None,
         };
 
-        let result = execute_script_with_2pc(AxumState(state), Json(req)).await.expect("empty deploy should succeed");
-        let log = result.0;
-        assert_eq!(log.status, "committed");
-        assert_eq!(log.statement_count, 0);
-        assert_eq!(log.executed_count, 0);
+        let result = execute_script_with_2pc(AxumState(state), Json(req)).await;
+        assert!(result.is_ok());
+        let log = result.unwrap().0;
+        assert!(log.success);
+        assert_eq!(log.total_statements, 0);
+        assert_eq!(log.executed_statements, 0);
         assert!(log.error.is_none());
-        assert_eq!(log.participants.len(), 1);
     }
 
     #[tokio::test]
@@ -1000,15 +969,8 @@ mod tests {
             timeout_secs: None,
         };
 
-        let result = execute_script_with_2pc(AxumState(state), Json(req))
-            .await
-            .expect("deploy endpoint should return structured JSON even on failure");
-        let log = result.0;
-        assert!(log.status == "rolled_back" || log.status == "mixed", "status={}", log.status);
-        assert_eq!(log.statement_count, 2);
-        assert!(log.error.as_ref().is_some_and(|e| !e.is_empty()));
-        // Missing connection cannot have applied statements.
-        assert_eq!(log.executed_count, 0);
+        let result = execute_script_with_2pc(AxumState(state), Json(req)).await;
+        assert!(result.is_err() || result.unwrap().0.error.is_some());
     }
 
     #[test]

@@ -47,34 +47,3 @@ test("whole-row table data copy is enabled for known database types", () => {
   assert.equal(pasteTableModeCopiesData("structure-only"), false);
 });
 
-test("table data copy uses only writable columns for first-class databases", () => {
-  const column = (name: string, extra: string | null): ColumnInfo => ({
-    name,
-    data_type: "int",
-    is_nullable: true,
-    column_default: null,
-    is_primary_key: name === "id",
-    extra,
-    comment: null,
-    numeric_precision: null,
-    numeric_scale: null,
-    character_maximum_length: null,
-  });
-  const columns = [column("id", "identity(1,1)"), column("name", null), column("full_name", "computed")];
-
-  assert.deepEqual(tableDataCopyColumnOptions("sqlserver", columns), {
-    columns: ["id", "name"],
-    postgresOverridingSystemValue: false,
-    sqlserverIdentityInsert: true,
-  });
-  assert.deepEqual(tableDataCopyColumnOptions("postgres", [{ ...columns[0], extra: "generated always as identity" }, { ...columns[1] }, { ...columns[2], extra: "generated always as (name) stored" }]), {
-    columns: ["id", "name"],
-    postgresOverridingSystemValue: true,
-    sqlserverIdentityInsert: false,
-  });
-  assert.deepEqual(tableDataCopyColumnOptions("mysql", [{ ...columns[0], extra: "auto_increment" }, { ...columns[1] }, { ...columns[2], extra: "STORED GENERATED" }]), {
-    columns: ["id", "name"],
-    postgresOverridingSystemValue: false,
-    sqlserverIdentityInsert: false,
-  });
-});

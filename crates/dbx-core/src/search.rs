@@ -47,20 +47,11 @@ pub struct DatabaseSearchScopeTarget {
 const SEARCH_CONNECTION_TIMEOUT: Duration = Duration::from_secs(10);
 
 fn supports_postgres_search(config: &ConnectionConfig) -> bool {
-    matches!(
-        config.db_type,
-        DatabaseType::Postgres
-            | DatabaseType::OpenGauss
-            | DatabaseType::Gaussdb
-            | DatabaseType::Kwdb
-            | DatabaseType::Questdb
-            | DatabaseType::Highgo
-            | DatabaseType::Vastbase
-    )
+    matches!(config.db_type, DatabaseType::Postgres | DatabaseType::OpenGauss)
 }
 
 fn supports_package_search(config: &ConnectionConfig) -> bool {
-    matches!(config.db_type, DatabaseType::OpenGauss | DatabaseType::Gaussdb)
+    matches!(config.db_type, DatabaseType::OpenGauss)
 }
 
 fn escape_like_pattern(query: &str) -> String {
@@ -495,7 +486,6 @@ async fn search_connected_postgres(
                 )
                 .await;
             }
-            _ => {}
         }
     }
     (metadata_hits, definition_hits)

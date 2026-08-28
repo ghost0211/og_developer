@@ -6,7 +6,7 @@ import { createSemanticSelectionRangeIndex, type SemanticSelectionContext, type 
 
 export interface SqlSemanticSelectionOptions {
   databaseType?: DatabaseType;
-  dialect?: "mysql" | "postgres" | "sqlserver" | "clickhouse";
+  dialect?: "postgres";
 }
 
 interface SqlSelectionToken {

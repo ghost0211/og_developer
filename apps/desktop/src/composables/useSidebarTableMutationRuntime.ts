@@ -5,7 +5,6 @@ import { useConnectionStore } from "@/stores/connectionStore";
 import type { DatabaseType, TreeNode } from "@/types/database";
 import { supportsTableTruncate } from "@/lib/database/databaseCapabilities";
 import { buildDropTableSql, buildEmptyTableSql, buildTruncateTableSql, supportsDropTableCascade, supportsTruncateTableCascade, type TableAdminSqlOptions } from "@/lib/database/dbAdminSql";
-import { isSqlServerLinkedNode } from "@/lib/database/sqlServerLinkedServers";
 import { sidebarDangerTarget, showDropTableConfirm, showEmptyTableConfirm, showTruncateTableConfirm, dropTablePreviewSql, dropTableCascade, emptyTablePreviewSql, truncateTablePreviewSql, truncateTableCascade } from "@/components/sidebar/sidebarTreeDialogState";
 
 interface SidebarTableMutationRuntimeOptions {
@@ -24,7 +23,7 @@ export function useSidebarTableMutationRuntime(options: SidebarTableMutationRunt
   const { toast } = useToast();
   const { activeNode, connectionStore, currentDatabaseType, databaseTypeForNode } = options;
 
-  const isTableNotView = computed(() => activeNode.value.type === "table" && !isSqlServerLinkedNode(activeNode.value));
+  const isTableNotView = computed(() => activeNode.value.type === "table");
   const supportsTruncate = computed(() => supportsTableTruncate(currentDatabaseType()));
   const canDropTableCascade = computed(() => activeNode.value.type === "table" && supportsDropTableCascade(currentDatabaseType()));
   const canTruncateTableCascade = computed(() => activeNode.value.type === "table" && supportsTruncateTableCascade(currentDatabaseType()));
@@ -111,8 +110,7 @@ export function useSidebarTableMutationRuntime(options: SidebarTableMutationRunt
       await connectionStore.ensureConnected(node.connectionId);
       const sql = emptyTablePreviewSql.value || (await buildEmptyTableSql(tableAdminSqlOptionsForNode(node)));
       await options.executeWithProductionGuard(node, sql, { database: node.database, schema: node.schema });
-      const messageKey = databaseTypeForNode(node) === "clickhouse" ? "contextMenu.emptyTableSubmitted" : "contextMenu.emptyTableSuccess";
-      toast(t(messageKey, { name: node.label }), 3000);
+      toast(t("contextMenu.emptyTableSuccess", { name: node.label }), 3000);
       await options.refreshMutatedTableDataTabsForNode(node);
     } catch (error: any) {
       toast(t("contextMenu.tableOperationFailed", { message: error?.message || String(error) }), 5000);

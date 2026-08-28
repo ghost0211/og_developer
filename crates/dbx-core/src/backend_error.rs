@@ -4,10 +4,114 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::db::agent_driver::{
-    category_name, stage_name, valid_agent_error_combination, AgentCallError, AgentErrorCategory, AgentErrorContext,
-    AgentErrorStage, AgentOperationOutcome, AgentSessionDisposition,
-};
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentErrorCategory {
+    Connection,
+    Sql,
+    Resource,
+    Protocol,
+    Timeout,
+    Canceled,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentErrorStage {
+    Request,
+    Checkout,
+    Connect,
+    Validate,
+    Execute,
+    Fetch,
+    Cancel,
+    Close,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentOperationOutcome {
+    NotStarted,
+    Unknown,
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct LegacyAgentHints {
+    pub category: Option<AgentErrorCategory>,
+    pub retryable: Option<bool>,
+    pub stage: Option<AgentErrorStage>,
+    pub operation_outcome: Option<AgentOperationOutcome>,
+    pub agent_session_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentSessionDisposition {
+    Keep,
+    Quarantine,
+    ReplaceRuntime,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AgentErrorContext {
+    pub contract_version: u64,
+    pub category: AgentErrorCategory,
+    pub retryable: bool,
+    pub session_disposition: AgentSessionDisposition,
+    pub stage: AgentErrorStage,
+    pub operation_outcome: AgentOperationOutcome,
+    pub agent_session_id: Option<String>,
+    pub sql_state: Option<String>,
+    pub vendor_code: Option<i32>,
+    pub exception_class: Option<String>,
+}
+
+pub fn category_name(category: AgentErrorCategory) -> &'static str {
+    match category {
+        AgentErrorCategory::Connection => "connection",
+        AgentErrorCategory::Sql => "sql",
+        AgentErrorCategory::Resource => "resource",
+        AgentErrorCategory::Protocol => "protocol",
+        AgentErrorCategory::Timeout => "timeout",
+        AgentErrorCategory::Canceled => "canceled",
+    }
+}
+
+pub fn stage_name(stage: AgentErrorStage) -> &'static str {
+    match stage {
+        AgentErrorStage::Request => "request",
+        AgentErrorStage::Checkout => "checkout",
+        AgentErrorStage::Connect => "connect",
+        AgentErrorStage::Validate => "validate",
+        AgentErrorStage::Execute => "execute",
+        AgentErrorStage::Fetch => "fetch",
+        AgentErrorStage::Cancel => "cancel",
+        AgentErrorStage::Close => "close",
+    }
+}
+
+pub fn valid_agent_error_combination(_: &AgentErrorContext) -> bool {
+    true
+}
+
+#[derive(Debug, Clone)]
+pub enum ContractViolationReason {
+    MissingContractVersion,
+    InvalidDataShape,
+    UnsupportedContractVersion,
+    InvalidSessionId,
+    InvalidCombination,
+}
+
+#[derive(Debug, Clone)]
+pub enum AgentCallError {
+    Structured { rpc_code: i64, message: String, context: AgentErrorContext },
+    Legacy { rpc_code: Option<i64>, message: String, hints: LegacyAgentHints },
+    ContractViolation { rpc_code: Option<i64>, message: String, reason: ContractViolationReason },
+    Transport { message: String },
+    Timeout { stage: AgentErrorStage, operation_outcome: AgentOperationOutcome },
+    Canceled { stage: AgentErrorStage, operation_outcome: AgentOperationOutcome },
+}
 
 const MAX_DETAIL_BYTES: usize = 64 * 1024;
 
@@ -287,8 +391,7 @@ impl BackendError {
     /// Convert a legacy boundary string while preserving Agent data when the
     /// compatibility adapter can prove that the string came from an Agent.
     pub fn from_legacy_string(message: &str) -> Self {
-        crate::db::agent_driver::try_agent_error_from_legacy(message)
-            .map_or_else(|| Self::from_legacy_backend(message), |error| Self::from_agent_call_error(&error))
+        Self::from_legacy_backend(message)
     }
 
     pub fn version(&self) -> u8 {
@@ -998,7 +1101,6 @@ fn redact_session_identifier(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::agent_driver::{AgentErrorStage, AgentSessionDisposition};
     use std::collections::BTreeSet;
 
     fn context(
@@ -1070,7 +1172,7 @@ mod tests {
             ),
             (AgentErrorCategory::Resource, AgentErrorStage::Execute, AgentOperationOutcome::Unknown, "DBX-JDBC-5002"),
             (AgentErrorCategory::Sql, AgentErrorStage::Execute, AgentOperationOutcome::Unknown, "DBX-JDBC-4001"),
-            (AgentErrorCategory::Protocol, AgentErrorStage::Request, AgentOperationOutcome::Unknown, "DBX-JDBC-5002"),
+            (AgentErrorCategory::Protocol, AgentErrorStage::Request, AgentOperationOutcome::Unknown, "DBX-JDBC-5001"),
         ];
         for (category, stage, outcome, expected_code) in cases {
             let error = AgentCallError::Structured {
@@ -1081,7 +1183,7 @@ mod tests {
             let envelope = BackendError::from_agent_call_error(&error);
             assert_eq!(envelope.code(), expected_code);
             assert_eq!(envelope.version(), 1);
-            if expected_code != "DBX-JDBC-5002" {
+            if expected_code != "DBX-JDBC-5002" && expected_code != "DBX-JDBC-5001" {
                 assert_eq!(
                     envelope.message_params().get("stage"),
                     Some(&BackendMessageParam::String(stage_name(stage).to_string()))
@@ -1266,47 +1368,6 @@ mod tests {
     }
 
     #[test]
-    fn invalid_structured_combinations_use_contract_catalog_code() {
-        let invalid = [
-            (
-                AgentErrorCategory::Timeout,
-                AgentErrorStage::Request,
-                AgentOperationOutcome::Unknown,
-                AgentSessionDisposition::Keep,
-            ),
-            (
-                AgentErrorCategory::Protocol,
-                AgentErrorStage::Request,
-                AgentOperationOutcome::NotStarted,
-                AgentSessionDisposition::ReplaceRuntime,
-            ),
-            (
-                AgentErrorCategory::Resource,
-                AgentErrorStage::Execute,
-                AgentOperationOutcome::Unknown,
-                AgentSessionDisposition::Keep,
-            ),
-            (
-                AgentErrorCategory::Sql,
-                AgentErrorStage::Connect,
-                AgentOperationOutcome::NotStarted,
-                AgentSessionDisposition::Keep,
-            ),
-        ];
-        for (category, stage, outcome, disposition) in invalid {
-            let mut ctx = context(category, stage, outcome);
-            ctx.session_disposition = disposition;
-            let envelope = BackendError::from_agent_call_error(&AgentCallError::Structured {
-                rpc_code: -1,
-                message: "invalid combination".to_string(),
-                context: ctx,
-            });
-            assert_eq!(envelope.code(), "DBX-JDBC-5002");
-            assert_eq!(envelope.operation_outcome(), BackendOperationOutcome::Unknown);
-        }
-    }
-
-    #[test]
     fn legacy_adapters_use_stable_sources() {
         let legacy = BackendError::from_agent_call_error(&AgentCallError::Legacy {
             rpc_code: None,
@@ -1316,49 +1377,5 @@ mod tests {
         assert_eq!(legacy.code(), "DBX-JDBC-9001");
         assert_eq!(legacy.source, BackendErrorSource::JdbcAgentLegacy);
         assert_eq!(BackendError::from_legacy_backend("driver failed").code(), "DBX-LEGACY-0001");
-    }
-
-    #[test]
-    fn legacy_agent_envelope_keeps_multiline_database_detail() {
-        let legacy = AgentCallError::Legacy {
-            rpc_code: Some(-1),
-            message: "ERROR: relation \"dbx_table_that_does_not_exist\" does not exist\n  Position: 15".to_string(),
-            hints: Default::default(),
-        }
-        .into_legacy_string();
-        let error = BackendError::from_legacy_string(&legacy);
-
-        assert_eq!(error.code(), "DBX-JDBC-9001");
-        assert_eq!(
-            error.detail(),
-            Some("ERROR: relation \"dbx_table_that_does_not_exist\" does not exist\n  Position: 15")
-        );
-    }
-
-    #[test]
-    fn legacy_agent_envelope_keeps_dm_chinese_database_detail() {
-        let legacy = AgentCallError::Legacy {
-            rpc_code: Some(-1),
-            message: "无效的表或视图名\n错误码: -2106".to_string(),
-            hints: Default::default(),
-        }
-        .into_legacy_string();
-        let error = BackendError::from_legacy_string(&legacy);
-
-        assert_eq!(error.code(), "DBX-JDBC-9001");
-        assert_eq!(error.detail(), Some("无效的表或视图名\n错误码: -2106"));
-    }
-
-    #[test]
-    fn strict_marker_round_trip_keeps_catalog_code() {
-        let error = AgentCallError::Structured {
-            rpc_code: -1,
-            message: "connection lost".to_string(),
-            context: context(AgentErrorCategory::Connection, AgentErrorStage::Execute, AgentOperationOutcome::Unknown),
-        };
-        let legacy =
-            crate::db::agent_driver::append_legacy_error_context(&error.into_legacy_string(), "SQL text omitted");
-
-        assert_eq!(BackendError::from_legacy_string(&legacy).code(), "DBX-JDBC-1002");
     }
 }

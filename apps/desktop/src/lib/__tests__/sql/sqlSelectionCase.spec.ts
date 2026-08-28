@@ -32,22 +32,4 @@ describe("convertSqlSelectionCase", () => {
 
     expect(convertSqlSelectionCase(sql, { from: 0, to: sql.length }, "lower")).toBe('select "mixedname" -- keep comment\nfrom users');
   });
-
-  it("uses SQL Server tokenization so temp tables do not hide later literals", () => {
-    const sql = "SELECT * FROM #Temp WHERE Code = 'AbC001'";
-
-    expect(convertSqlSelectionCase(sql, { from: 0, to: sql.length }, "lower", "sqlserver")).toBe("select * from #temp where code = 'AbC001'");
-  });
-
-  it("preserves MySQL double-quoted strings", () => {
-    const sql = 'SELECT "Mixed Value" AS Label';
-
-    expect(convertSqlSelectionCase(sql, { from: 0, to: sql.length }, "lower", "mysql")).toBe('select "Mixed Value" as label');
-  });
-
-  it("preserves MySQL executable comments", () => {
-    const sql = "SELECT 1 /*!40101 SET @Name = 'Mixed Value' */ FROM Dual";
-
-    expect(convertSqlSelectionCase(sql, { from: 0, to: sql.length }, "lower", "mysql")).toBe("select 1 /*!40101 SET @Name = 'Mixed Value' */ from dual");
-  });
 });

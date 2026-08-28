@@ -8,11 +8,9 @@ use super::descriptor::{
     CAP_GRANT_REVOKE, CAP_IDENTITY_COLUMNS, CAP_IF_NOT_EXISTS, CAP_INDEX_COMMENT, CAP_INDEX_FILTER, CAP_INDEX_INCLUDE,
     CAP_INDEX_TYPE, CAP_REBUILD_INDEX, CAP_RENAME_COLUMN, CAP_REORDER_COLUMN, CAP_TEMPORARY_TABLE,
     CAP_TRANSACTIONAL_DDL, CAP_TRUNCATE_TABLE,
-};
-
-// ============================================================================
-// YAML Dialect Descriptor — complete Schema matching V4 design §3.1.1
-// ============================================================================
+}; // ============================================================================
+   // YAML Dialect Descriptor — complete Schema matching V4 design §3.1.1
+   // ============================================================================
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct DialectYaml {
@@ -688,40 +686,6 @@ impl DialectYaml {
 
     pub fn from_descriptor_with_caps(kind: DialectKind, desc: &DialectCapabilityDescriptor) -> Self {
         let (versions, mut ddl_caps) = match kind {
-            DialectKind::Mysql => (
-                vec![
-                    DialectVersion { version: "8.0".to_string(), status: "RECOMMENDED".to_string() },
-                    DialectVersion { version: "5.7".to_string(), status: "COMPATIBLE".to_string() },
-                ],
-                DdlCapabilitiesYaml {
-                    add_column: true,
-                    drop_column: true,
-                    rename_column: true,
-                    alter_column_type: true,
-                    reorder_column: true,
-                    comment: true,
-                    create_index: true,
-                    drop_index: true,
-                    rebuild_index: true,
-                    index_type: true,
-                    index_comment: true,
-                    alter_primary_key: true,
-                    foreign_key: true,
-                    truncate_table: true,
-                    create_trigger: true,
-                    drop_trigger: true,
-                    create_function: true,
-                    drop_function: true,
-                    create_sequence: true,
-                    drop_sequence: true,
-                    alter_owner: true,
-                    grant_revoke: true,
-                    if_not_exists: true,
-                    temporary_table: true,
-                    auto_increment: true,
-                    ..Default::default()
-                },
-            ),
             DialectKind::Postgres => (
                 vec![
                     DialectVersion { version: "16".to_string(), status: "RECOMMENDED".to_string() },
@@ -757,126 +721,6 @@ impl DialectYaml {
                     ..Default::default()
                 },
             ),
-            DialectKind::Sqlite => (
-                vec![DialectVersion { version: "3".to_string(), status: "RECOMMENDED".to_string() }],
-                DdlCapabilitiesYaml {
-                    rename_column: true,
-                    create_index: true,
-                    drop_index: true,
-                    rebuild_index: true,
-                    index_filter: true,
-                    truncate_table: true,
-                    create_trigger: true,
-                    drop_trigger: true,
-                    create_function: true,
-                    drop_function: true,
-                    create_sequence: true,
-                    drop_sequence: true,
-                    if_not_exists: true,
-                    auto_increment: true,
-                    ..Default::default()
-                },
-            ),
-            DialectKind::DuckDb => (
-                vec![DialectVersion { version: "1".to_string(), status: "RECOMMENDED".to_string() }],
-                DdlCapabilitiesYaml {
-                    rename_column: true,
-                    create_index: true,
-                    drop_index: true,
-                    rebuild_index: true,
-                    truncate_table: true,
-                    if_not_exists: true,
-                    create_or_replace: true,
-                    temporary_table: true,
-                    ..Default::default()
-                },
-            ),
-            DialectKind::SqlServer => (
-                vec![DialectVersion { version: "2022".to_string(), status: "RECOMMENDED".to_string() }],
-                DdlCapabilitiesYaml {
-                    rename_column: true,
-                    alter_column_type: true,
-                    comment: true,
-                    create_index: true,
-                    drop_index: true,
-                    rebuild_index: true,
-                    index_type: true,
-                    index_include: true,
-                    index_filter: true,
-                    index_comment: true,
-                    truncate_table: true,
-                    create_trigger: true,
-                    drop_trigger: true,
-                    create_function: true,
-                    drop_function: true,
-                    create_sequence: true,
-                    drop_sequence: true,
-                    alter_owner: true,
-                    grant_revoke: true,
-                    if_not_exists: true,
-                    temporary_table: true,
-                    transactional_ddl: true,
-                    identity_columns: true,
-                    ..Default::default()
-                },
-            ),
-            DialectKind::Oracle => (
-                vec![DialectVersion { version: "21c".to_string(), status: "RECOMMENDED".to_string() }],
-                DdlCapabilitiesYaml {
-                    rename_column: true,
-                    alter_column_type: true,
-                    comment: true,
-                    create_index: true,
-                    drop_index: true,
-                    rebuild_index: true,
-                    index_type: true,
-                    truncate_table: true,
-                    create_trigger: true,
-                    drop_trigger: true,
-                    create_function: true,
-                    drop_function: true,
-                    create_sequence: true,
-                    drop_sequence: true,
-                    alter_owner: true,
-                    grant_revoke: true,
-                    if_not_exists: true,
-                    temporary_table: true,
-                    ..Default::default()
-                },
-            ),
-            DialectKind::H2 => (
-                vec![DialectVersion { version: "2".to_string(), status: "RECOMMENDED".to_string() }],
-                DdlCapabilitiesYaml {
-                    rename_column: true,
-                    alter_column_type: true,
-                    comment: true,
-                    create_index: true,
-                    drop_index: true,
-                    rebuild_index: true,
-                    truncate_table: true,
-                    create_trigger: true,
-                    drop_trigger: true,
-                    create_function: true,
-                    drop_function: true,
-                    if_not_exists: true,
-                    temporary_table: true,
-                    identity_columns: true,
-                    ..Default::default()
-                },
-            ),
-            DialectKind::ClickHouse => (
-                vec![DialectVersion { version: "24".to_string(), status: "RECOMMENDED".to_string() }],
-                DdlCapabilitiesYaml {
-                    rename_column: true,
-                    alter_column_type: true,
-                    reorder_column: true,
-                    comment: true,
-                    truncate_table: true,
-                    if_not_exists: true,
-                    temporary_table: true,
-                    ..Default::default()
-                },
-            ),
             _ => (
                 vec![DialectVersion { version: "1".to_string(), status: "COMPATIBLE".to_string() }],
                 DdlCapabilitiesYaml::default(),
@@ -888,27 +732,7 @@ impl DialectYaml {
         ddl_caps.apply_descriptor_flags(desc.flags);
 
         let identifier_rules = match kind {
-            DialectKind::Mysql => IdentifierRules {
-                quote_char: "`".to_string(),
-                case_sensitive: false,
-                max_length: desc.max_identifier_length,
-            },
             DialectKind::Postgres => IdentifierRules {
-                quote_char: "\"".to_string(),
-                case_sensitive: true,
-                max_length: desc.max_identifier_length,
-            },
-            DialectKind::Sqlite => IdentifierRules {
-                quote_char: "\"".to_string(),
-                case_sensitive: false,
-                max_length: desc.max_identifier_length,
-            },
-            DialectKind::SqlServer => IdentifierRules {
-                quote_char: "\"".to_string(),
-                case_sensitive: false,
-                max_length: desc.max_identifier_length,
-            },
-            DialectKind::Oracle => IdentifierRules {
                 quote_char: "\"".to_string(),
                 case_sensitive: true,
                 max_length: desc.max_identifier_length,
@@ -948,17 +772,8 @@ impl DialectYaml {
 
 fn kind_name(kind: DialectKind) -> String {
     match kind {
-        DialectKind::Mysql => "MySQL",
         DialectKind::Postgres => "PostgreSQL",
-        DialectKind::Sqlite => "SQLite",
-        DialectKind::DuckDb => "DuckDB",
-        DialectKind::SqlServer => "SQL Server",
-        DialectKind::Oracle => "Oracle",
-        DialectKind::H2 => "H2",
-        DialectKind::ClickHouse => "ClickHouse",
-        DialectKind::ManticoreSearch => "ManticoreSearch",
-        DialectKind::Informix => "Informix",
-        DialectKind::Questdb => "QuestDB",
+        DialectKind::Opengauss => "openGauss",
         DialectKind::Unsupported => "Unsupported",
     }
     .to_string()
@@ -1192,7 +1007,7 @@ identifier_rules:
   max_length: 64
 "#;
         let parsed: DialectYaml = serde_yaml::from_str(yaml).unwrap();
-        let desc = parsed.to_descriptor(DialectKind::Mysql);
+        let desc = parsed.to_descriptor(DialectKind::Opengauss);
         assert!(desc.has_capability(CAP_ADD_COLUMN));
         assert!(desc.has_capability(CAP_RENAME_COLUMN));
         assert!(desc.has_capability(CAP_FOREIGN_KEY));
@@ -1273,17 +1088,6 @@ identifier_rules:
     }
 
     #[test]
-    fn from_descriptor_mysql_roundtrip() {
-        let yaml = DialectYaml::from_descriptor(DialectKind::Mysql);
-        assert_eq!(yaml.dialect.name, "MySQL");
-        assert!(yaml.ddl_capabilities.add_column);
-        assert!(yaml.ddl_capabilities.auto_increment);
-        assert!(!yaml.ddl_capabilities.transactional_ddl);
-        assert_eq!(yaml.identifier_rules.quote_char, "`");
-        assert_eq!(yaml.identifier_rules.max_length, 64);
-    }
-
-    #[test]
     fn from_descriptor_postgres_roundtrip() {
         let yaml = DialectYaml::from_descriptor(DialectKind::Postgres);
         assert_eq!(yaml.dialect.name, "PostgreSQL");
@@ -1299,16 +1103,7 @@ identifier_rules:
 
     #[test]
     fn from_descriptor_to_yaml_and_back() {
-        for kind in &[
-            DialectKind::Mysql,
-            DialectKind::Postgres,
-            DialectKind::Sqlite,
-            DialectKind::DuckDb,
-            DialectKind::SqlServer,
-            DialectKind::Oracle,
-            DialectKind::H2,
-            DialectKind::ClickHouse,
-        ] {
+        for kind in &[DialectKind::Postgres, DialectKind::Opengauss] {
             let yaml = DialectYaml::from_descriptor(*kind);
             let yaml_str = yaml.to_yaml_string().unwrap();
             let parsed: DialectYaml = serde_yaml::from_str(&yaml_str).unwrap();
@@ -1321,19 +1116,7 @@ identifier_rules:
 
     #[test]
     fn from_descriptor_all_core_dialects() {
-        let kinds = &[
-            DialectKind::Mysql,
-            DialectKind::Postgres,
-            DialectKind::Sqlite,
-            DialectKind::DuckDb,
-            DialectKind::SqlServer,
-            DialectKind::Oracle,
-            DialectKind::H2,
-            DialectKind::ClickHouse,
-            DialectKind::ManticoreSearch,
-            DialectKind::Informix,
-            DialectKind::Questdb,
-        ];
+        let kinds = &[DialectKind::Postgres, DialectKind::Opengauss];
         for kind in kinds {
             let yaml = DialectYaml::from_descriptor(*kind);
             assert!(!yaml.dialect.name.is_empty());

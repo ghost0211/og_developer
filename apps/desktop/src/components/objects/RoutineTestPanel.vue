@@ -76,7 +76,7 @@ const editorContainer = ref<HTMLDivElement>();
 const editorView = shallowRef<EditorView | null>(null);
 
 const resolvedDatabaseType = computed(() => props.databaseType ?? (props.connectionId ? effectiveDatabaseTypeForConnection(connectionStore.getConfig(props.connectionId)) : undefined));
-const isOpenGaussRoutine = computed(() => resolvedDatabaseType.value === "opengauss" || resolvedDatabaseType.value === "gaussdb");
+const isOpenGaussRoutine = computed(() => resolvedDatabaseType.value === "opengauss");
 
 const generatedSql = computed(() => {
   if (isOpenGaussRoutine.value) {

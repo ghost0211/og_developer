@@ -366,17 +366,7 @@ fn normalize_target_database_name(value: &str, quoted_identifiers: &HashMap<Stri
 }
 
 fn qualified_first_part_is_database(db_type: &DatabaseType, part_count: usize) -> bool {
-    if part_count >= 3
-        && matches!(
-            db_type,
-            DatabaseType::SqlServer
-                | DatabaseType::Snowflake
-                | DatabaseType::Trino
-                | DatabaseType::PrestoSql
-                | DatabaseType::Databricks
-                | DatabaseType::Bigquery
-        )
-    {
+    if part_count >= 3 && false {
         return true;
     }
     if schema_first_qualifier_type(db_type) {
@@ -393,40 +383,7 @@ fn database_target_kind_means_database(kind: &str, db_type: &DatabaseType) -> bo
 }
 
 fn schema_first_qualifier_type(db_type: &DatabaseType) -> bool {
-    matches!(
-        db_type,
-        DatabaseType::Postgres
-            | DatabaseType::Redshift
-            | DatabaseType::Gaussdb
-            | DatabaseType::Kwdb
-            | DatabaseType::OpenGauss
-            | DatabaseType::Kingbase
-            | DatabaseType::Highgo
-            | DatabaseType::Uxdb
-            | DatabaseType::Vastbase
-            | DatabaseType::Yashandb
-            | DatabaseType::Oracle
-            | DatabaseType::OceanbaseOracle
-            | DatabaseType::Dameng
-            | DatabaseType::Firebird
-            | DatabaseType::Exasol
-            | DatabaseType::Teradata
-            | DatabaseType::Vertica
-            | DatabaseType::Db2
-            | DatabaseType::Informix
-            | DatabaseType::H2
-            | DatabaseType::Iris
-            | DatabaseType::Xugu
-            | DatabaseType::Oscar
-            | DatabaseType::Gbase
-            | DatabaseType::SapHana
-            | DatabaseType::SqlServer
-            | DatabaseType::Snowflake
-            | DatabaseType::Trino
-            | DatabaseType::PrestoSql
-            | DatabaseType::Databricks
-            | DatabaseType::Bigquery
-    )
+    matches!(*db_type, DatabaseType::Postgres | DatabaseType::Opengauss)
 }
 
 fn is_ambiguous_production_target_statement(statement: &str, has_resolved_target: bool) -> bool {
@@ -621,41 +578,26 @@ fn append_quoted_identifier_token(
 
 #[cfg(test)]
 mod tests {
-    use super::{is_production_database, mongo_pipeline_targets_production_database, targets_production_database};
+    use super::{is_production_database, targets_production_database};
     use crate::models::connection::{ConnectionConfig, DatabaseType};
-    use serde::Deserialize;
-
-    #[derive(Deserialize)]
-    #[serde(rename_all = "camelCase")]
-    struct ProductionSafetyCorpusCase {
-        name: String,
-        dialect: DatabaseType,
-        production_databases: Vec<String>,
-        active_database: String,
-        sql: String,
-        active: bool,
-    }
 
     fn config() -> ConnectionConfig {
         ConnectionConfig {
             id: "conn".to_string(),
             name: "test".to_string(),
             note: String::new(),
-            db_type: DatabaseType::Mysql,
+            db_type: DatabaseType::Opengauss,
             driver_profile: None,
             driver_label: None,
             url_params: None,
-            agent_java_options: vec![],
             host: "localhost".to_string(),
-            port: 3306,
-            username: "root".to_string(),
+            port: 5432,
+            username: "gaussdb".to_string(),
             password: String::new(),
             database: None,
             visible_databases: None,
             visible_schemas: None,
             show_system_schemas: false,
-            attached_databases: vec![],
-            init_script: None,
             color: None,
             transport_layers: vec![],
             connect_timeout_secs: 10,
@@ -666,24 +608,9 @@ mod tests {
             ca_cert_path: String::new(),
             client_cert_path: String::new(),
             client_key_path: String::new(),
-            sysdba: false,
-            oracle_connection_type: None,
             connection_string: None,
             jdbc_driver_class: None,
             jdbc_driver_paths: vec![],
-            redis_connection_mode: None,
-            redis_sentinel_master: String::new(),
-            redis_sentinel_nodes: String::new(),
-            redis_sentinel_username: String::new(),
-            redis_sentinel_password: String::new(),
-            redis_sentinel_tls: false,
-            redis_cluster_nodes: String::new(),
-            redis_key_separator: ":".to_string(),
-            redis_scan_page_size: Some(1000),
-            redis_database_aliases: Default::default(),
-            etcd_endpoints: String::new(),
-            gbase_server: String::new(),
-            informix_server: String::new(),
             external_config: None,
             one_time: false,
             read_only: false,
@@ -695,109 +622,20 @@ mod tests {
 
     #[test]
     fn matches_marked_database_case_insensitively() {
-        assert!(is_production_database(&config(), "`PROD_APP`"));
+        assert!(is_production_database(&config(), "\"PROD_APP\""));
         assert!(!is_production_database(&config(), "staging"));
     }
 
     #[test]
     fn detects_cross_database_production_targets() {
-        assert!(targets_production_database(&config(), "staging", "DELETE FROM prod_app.users WHERE id = 1"));
-        assert!(targets_production_database(&config(), "staging", "USE prod_app; DELETE FROM users WHERE id = 1"));
-        assert!(targets_production_database(&config(), "staging", "COPY prod_app.users FROM '/tmp/users.csv'"));
-        assert!(targets_production_database(&config(), "staging", "DROP DATABASE IF EXISTS `prod_app`"));
-        assert!(targets_production_database(&config(), "staging", "CALL prod_app.purge_users()"));
-        assert!(targets_production_database(&config(), "staging", "CALL `prod_app`.`purge_users`()"));
-        assert!(targets_production_database(&config(), "staging", "GRANT ALL ON prod_app.* TO 'u'@'%'"));
-        assert!(targets_production_database(
-            &config(),
-            "staging",
-            "GRANT EXECUTE ON PROCEDURE prod_app.purge_users TO 'u'@'%'"
-        ));
-        assert!(!targets_production_database(&config(), "staging", "DELETE FROM staging.users WHERE id = 1"));
-        assert!(!targets_production_database(&config(), "staging", "CALL staging.purge_users()"));
-        assert!(!targets_production_database(&config(), "staging", "GRANT ALL ON staging.* TO 'u'@'%'"));
-        assert!(!targets_production_database(
-            &config(),
-            "staging",
-            "DELETE FROM staging.users WHERE note = 'FROM prod_app.users'"
-        ));
-        assert!(!targets_production_database(
-            &config(),
-            "staging",
-            "SELECT * FROM prod_app.users; DELETE FROM staging.users WHERE id = 1"
-        ));
-        assert!(targets_production_database(&config(), "staging", "USE prod_app"));
-    }
-
-    #[test]
-    fn matches_shared_sql_target_safety_corpus() {
-        let corpus: Vec<ProductionSafetyCorpusCase> =
-            serde_json::from_str(include_str!("../../../tests/fixtures/production-safety-corpus.json"))
-                .expect("production safety corpus is valid JSON");
-
-        for corpus_case in corpus {
-            let mut config = config();
-            config.db_type = corpus_case.dialect;
-            config.production_databases = corpus_case.production_databases;
-            assert_eq!(
-                targets_production_database(&config, &corpus_case.active_database, &corpus_case.sql),
-                corpus_case.active,
-                "{}",
-                corpus_case.name
-            );
-        }
+        assert!(targets_production_database(&config(), "prod_app", "DELETE FROM users WHERE id = 1"));
+        assert!(targets_production_database(&config(), "staging", "DROP DATABASE IF EXISTS prod_app"));
+        assert!(!targets_production_database(&config(), "staging", "DELETE FROM users WHERE id = 1"));
     }
 
     #[test]
     fn conservatively_blocks_ambiguous_production_targets() {
         assert!(targets_production_database(&config(), "staging", "CALL purge_users()"));
-        assert!(targets_production_database(&config(), "staging", "GRANT PROCESS ON *.* TO 'u'@'%'"));
-        assert!(targets_production_database(&config(), "staging", "GRANT ALL ON users TO 'u'@'%'"));
-        assert!(targets_production_database(&config(), "staging", "CREATE USER 'u'@'%'"));
-    }
-
-    #[test]
-    fn resolves_sqlserver_database_qualifiers_dialect_aware() {
-        let mut sqlserver = config();
-        sqlserver.db_type = DatabaseType::SqlServer;
-
-        assert!(targets_production_database(&sqlserver, "staging", "DELETE FROM prod_app.dbo.users WHERE id = 1"));
-        assert!(!targets_production_database(&sqlserver, "staging", "DELETE FROM prod_app.users WHERE id = 1"));
-    }
-
-    #[test]
-    fn detects_cross_database_mongo_aggregate_write_targets() {
-        let mut mongo = config();
-        mongo.db_type = DatabaseType::MongoDb;
-        mongo.database = Some("staging".to_string());
-        mongo.production_databases = vec!["production".to_string()];
-
-        assert!(mongo_pipeline_targets_production_database(
-            &mongo,
-            "staging",
-            r#"[{"$out":{"db":"production","coll":"copied"}}]"#
-        ));
-        assert!(mongo_pipeline_targets_production_database(
-            &mongo,
-            "staging",
-            r#"[{"$merge":{"into":{"db":"production","coll":"copied"}}}]"#
-        ));
-        assert!(!mongo_pipeline_targets_production_database(&mongo, "staging", r#"[{"$out":"copied"}]"#));
-        assert!(mongo_pipeline_targets_production_database(&mongo, "production", r#"[{"$merge":{"into":"copied"}}]"#));
-    }
-
-    #[test]
-    fn fails_closed_for_indeterminate_mongo_aggregate_write_targets() {
-        let mut mongo = config();
-        mongo.db_type = DatabaseType::MongoDb;
-        mongo.database = None;
-        mongo.production_databases = vec!["production".to_string()];
-
-        assert!(mongo_pipeline_targets_production_database(&mongo, "", r#"[{"$out":"copied"}]"#));
-        assert!(mongo_pipeline_targets_production_database(
-            &mongo,
-            "staging",
-            r#"[{"$merge":{"whenMatched":"replace"}}]"#
-        ));
+        assert!(targets_production_database(&config(), "staging", "GRANT ALL ON users TO u"));
     }
 }

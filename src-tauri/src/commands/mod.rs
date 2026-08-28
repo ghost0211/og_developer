@@ -12,21 +12,14 @@ pub mod database_export;
 pub mod deep_link;
 pub mod dialect_cmd;
 pub mod document_cmd;
-pub mod etcd_cmd;
 pub mod external_db;
 pub mod external_sql;
 pub mod fs_open;
 pub mod git;
-pub mod hbase_cmd;
 pub mod history;
 pub mod keychain;
 pub mod list_sql_files;
 pub mod mongo_cmd;
-#[cfg(feature = "mq-admin")]
-pub mod mq_cmd;
-#[cfg(feature = "mq-admin")]
-pub mod mqtt_cmd;
-pub mod nacos_cmd;
 pub mod opengauss_debug;
 pub mod plugins;
 pub mod prompt_template;
@@ -57,4 +50,3 @@ pub mod update;
 mod update_portable;
 pub mod window_controls;
 pub mod xlsx_export;
-pub mod zookeeper_cmd;

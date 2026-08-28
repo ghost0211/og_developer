@@ -27,13 +27,7 @@ export function useTauriEvents(deps: { openTableTarget: (target: NavigationTarge
             if (!config) return;
             connectionStore.activeConnectionId = connection_id;
             await connectionStore.ensureConnected(connection_id);
-            if (config.db_type === "redis") {
-              queryStore.createTab(connection_id, database || "0", `db${database || "0"}`, "redis");
-            } else if (config.db_type === "mongodb") {
-              queryStore.createTab(connection_id, database, table, "mongo");
-            } else {
-              deps.openTableTarget({ connectionId: connection_id, database, schema, tableName: table });
-            }
+            deps.openTableTarget({ connectionId: connection_id, database, schema, tableName: table });
             focusCurrentWindow();
           } catch (e) {
             console.error("[DBX] mcp-open-table error:", e);

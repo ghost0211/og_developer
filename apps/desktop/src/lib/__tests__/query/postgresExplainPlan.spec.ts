@@ -141,12 +141,11 @@ describe("PostgreSQL plain EXPLAIN parsing", () => {
 });
 
 describe("openGauss EXPLAIN support and parsing", () => {
-  it("declares support for openGauss and GaussDB explain plans", () => {
+  it("declares support for openGauss explain plans", () => {
     expect(supportsExplainPlan("opengauss")).toBe(true);
-    expect(supportsExplainPlan("gaussdb")).toBe(true);
   });
 
-  it.each(["opengauss", "gaussdb"] as const)("parses %s JSON explain plan using shared postgres parser", (databaseType) => {
+  it.each(["opengauss", "postgres"] as const)("parses %s JSON explain plan using shared postgres parser", (databaseType) => {
     const parsed = parseExplainResult(databaseType, explainResult(ANALYZE_PLAN));
     expect(parsed.databaseType).toBe(databaseType);
     expect(parsed.nodes).toHaveLength(1);

@@ -50,7 +50,7 @@ fn normalized_object_type(object_type: &str) -> String {
 async fn require_opengauss_config(state: &AppState, connection_id: &str) -> Result<ConnectionConfig, String> {
     let configs = state.configs.read().await;
     let config = configs.get(connection_id).cloned().ok_or("Connection config not found")?;
-    if matches!(config.db_type, DatabaseType::OpenGauss | DatabaseType::Gaussdb) {
+    if matches!(config.db_type, DatabaseType::OpenGauss) {
         Ok(config)
     } else {
         Err("Invalid-object maintenance requires an openGauss/GaussDB connection".to_string())

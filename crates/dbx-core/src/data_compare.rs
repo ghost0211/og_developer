@@ -11,8 +11,8 @@ use crate::models::connection::DatabaseType;
 use crate::query::{execute_sql_statement_with_options, QueryExecutionOptions};
 use crate::schema::get_columns_core;
 use crate::sql_dialect::{
-    build_count_table_sql, firebird_rows_clause, pagination_strategy, qualified_table_name, quote_table_identifier,
-    PaginationContext, TablePaginationStrategy,
+    build_count_table_sql, pagination_strategy, qualified_table_name, quote_table_identifier, PaginationContext,
+    TablePaginationStrategy,
 };
 use crate::transfer::{generate_comment_ddl, generate_create_table_ddl};
 
@@ -1057,7 +1057,7 @@ fn build_data_compare_select_sql(
                 .join(", ")
         )
     };
-    let order_expression = if key_columns.is_empty() {
+    let _order_expression = if key_columns.is_empty() {
         "(SELECT NULL)".to_string()
     } else {
         key_columns
@@ -1068,81 +1068,12 @@ fn build_data_compare_select_sql(
     };
 
     match pagination_strategy(Some(database_type), PaginationContext::BoundedRead) {
-        TablePaginationStrategy::Db2FetchFirst | TablePaginationStrategy::FetchFirst => {
-            let offset_sql = if offset > 0 { format!(" OFFSET {offset} ROWS") } else { String::new() };
-            format!("SELECT {select_columns} FROM {table}{order_by}{offset_sql} FETCH FIRST {row_limit} ROWS ONLY")
-        }
-        TablePaginationStrategy::Rownum => build_rownum_data_compare_select_sql(
-            database_type,
-            &table,
-            &select_columns,
-            &order_by,
-            columns,
-            row_limit,
-            offset,
-        ),
-        TablePaginationStrategy::SqlServerTop => {
-            if offset == 0 {
-                return format!("SELECT TOP ({row_limit}) {select_columns} FROM {table}{order_by}");
-            }
-            let page_alias = quote_table_identifier(Some(DatabaseType::SqlServer), "dbx_page");
-            let row_number_alias = quote_table_identifier(Some(DatabaseType::SqlServer), "__dbx_row_num");
-            let end = offset + row_limit;
-            format!(
-                "WITH {page_alias} AS (SELECT {select_columns}, ROW_NUMBER() OVER (ORDER BY {order_expression}) AS {row_number_alias} FROM {table}) SELECT {select_columns} FROM {page_alias} WHERE {row_number_alias} > {offset} AND {row_number_alias} <= {end} ORDER BY {row_number_alias}"
-            )
-        }
-        TablePaginationStrategy::IrisTop => format!("SELECT TOP {row_limit} {select_columns} FROM {table}{order_by}"),
-        TablePaginationStrategy::InformixFirst => {
-            let row_limit_clause =
-                if offset > 0 { format!("SKIP {offset} FIRST {row_limit}") } else { format!("FIRST {row_limit}") };
-            format!("SELECT {row_limit_clause} {select_columns} FROM {table}{order_by}")
-        }
-        TablePaginationStrategy::FirebirdRows => {
-            let rows = firebird_rows_clause(row_limit, offset);
-            format!("SELECT {select_columns} FROM {table}{order_by} {rows}")
-        }
         TablePaginationStrategy::AgentMaxRows => format!("SELECT {select_columns} FROM {table}{order_by};"),
-        TablePaginationStrategy::Unbounded => format!("SELECT {select_columns} FROM {table}{order_by}"),
-        TablePaginationStrategy::QuestDbLimit => {
-            if offset > 0 {
-                let upper_bound = offset + row_limit;
-                format!("SELECT {select_columns} FROM {table}{order_by} LIMIT {offset}, {upper_bound}")
-            } else {
-                format!("SELECT {select_columns} FROM {table}{order_by} LIMIT {row_limit}")
-            }
-        }
         TablePaginationStrategy::LimitOffset => {
             let offset_sql = if offset > 0 { format!(" OFFSET {offset}") } else { String::new() };
             format!("SELECT {select_columns} FROM {table}{order_by} LIMIT {row_limit}{offset_sql};")
         }
     }
-}
-
-fn build_rownum_data_compare_select_sql(
-    database_type: DatabaseType,
-    table: &str,
-    select_columns: &str,
-    order_by: &str,
-    columns: &[String],
-    row_limit: usize,
-    offset: usize,
-) -> String {
-    let base = format!("SELECT {select_columns} FROM {table}{order_by}");
-    if offset == 0 {
-        return format!("SELECT {select_columns} FROM ({base}) WHERE ROWNUM <= {row_limit}");
-    }
-
-    let row_number_alias = quote_table_identifier(Some(database_type), "__dbx_row_num");
-    let end = offset + row_limit;
-    let outer_columns = if columns.is_empty() {
-        "*".to_string()
-    } else {
-        columns.iter().map(|column| quote_table_identifier(Some(database_type), column)).collect::<Vec<_>>().join(", ")
-    };
-    format!(
-        "SELECT {outer_columns} FROM (SELECT dbx_inner.*, ROWNUM AS {row_number_alias} FROM ({base}) dbx_inner WHERE ROWNUM <= {end}) WHERE {row_number_alias} > {offset}"
-    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1400,32 +1331,8 @@ fn build_sampling_select_sql(
 
     match strategy {
         SamplingStrategy::Random => match database_type {
-            DatabaseType::Postgres | DatabaseType::Redshift | DatabaseType::DuckDb | DatabaseType::Databricks => {
+            DatabaseType::Postgres | DatabaseType::OpenGauss => {
                 format!("SELECT {select_columns} FROM {table} TABLESAMPLE SYSTEM (1) LIMIT {sample_size}")
-            }
-            DatabaseType::SqlServer => {
-                format!("SELECT TOP ({sample_size}) {select_columns} FROM {table} TABLESAMPLE ({sample_size} ROWS)")
-            }
-            DatabaseType::Mysql | DatabaseType::Doris | DatabaseType::StarRocks | DatabaseType::Goldendb => {
-                format!("SELECT {select_columns} FROM {table} ORDER BY RAND() LIMIT {sample_size}")
-            }
-            DatabaseType::Sqlite | DatabaseType::Rqlite | DatabaseType::Turso => {
-                format!("SELECT {select_columns} FROM {table} ORDER BY RANDOM() LIMIT {sample_size}")
-            }
-            DatabaseType::ClickHouse => {
-                format!("SELECT {select_columns} FROM {table} ORDER BY rand() LIMIT {sample_size}")
-            }
-            DatabaseType::Oracle | DatabaseType::OceanbaseOracle | DatabaseType::Dameng => {
-                format!("SELECT {select_columns} FROM (SELECT {select_columns} FROM {table} ORDER BY DBMS_RANDOM.VALUE) WHERE ROWNUM <= {sample_size}")
-            }
-            DatabaseType::Iris => {
-                format!("SELECT TOP {sample_size} {select_columns} FROM {table} ORDER BY RAND()")
-            }
-            DatabaseType::Questdb => {
-                format!("SELECT {select_columns} FROM {table} ORDER BY RAND() LIMIT {sample_size}")
-            }
-            DatabaseType::Informix => {
-                format!("SELECT FIRST {sample_size} {select_columns} FROM {table} ORDER BY RAND()")
             }
             _ => {
                 if key_columns.is_empty() {
@@ -1486,34 +1393,8 @@ fn build_sampling_select_sql(
             let tail_count = sample_size - random_count - head_count;
 
             let random_part = match database_type {
-                DatabaseType::Postgres | DatabaseType::Redshift | DatabaseType::DuckDb | DatabaseType::Databricks => {
+                DatabaseType::Postgres | DatabaseType::OpenGauss => {
                     format!("(SELECT {select_columns} FROM {table} TABLESAMPLE SYSTEM (1) LIMIT {random_count})")
-                }
-                DatabaseType::SqlServer => {
-                    format!(
-                        "(SELECT TOP ({random_count}) {select_columns} FROM {table} TABLESAMPLE ({random_count} ROWS))"
-                    )
-                }
-                DatabaseType::Mysql | DatabaseType::Doris | DatabaseType::StarRocks | DatabaseType::Goldendb => {
-                    format!("(SELECT {select_columns} FROM {table} ORDER BY RAND() LIMIT {random_count})")
-                }
-                DatabaseType::Sqlite | DatabaseType::Rqlite | DatabaseType::Turso => {
-                    format!("(SELECT {select_columns} FROM {table} ORDER BY RANDOM() LIMIT {random_count})")
-                }
-                DatabaseType::ClickHouse => {
-                    format!("(SELECT {select_columns} FROM {table} ORDER BY rand() LIMIT {random_count})")
-                }
-                DatabaseType::Oracle | DatabaseType::OceanbaseOracle | DatabaseType::Dameng => {
-                    format!("(SELECT {select_columns} FROM (SELECT {select_columns} FROM {table} ORDER BY DBMS_RANDOM.VALUE) WHERE ROWNUM <= {random_count})")
-                }
-                DatabaseType::Iris => {
-                    format!("(SELECT TOP {random_count} {select_columns} FROM {table} ORDER BY RAND())")
-                }
-                DatabaseType::Questdb => {
-                    format!("(SELECT {select_columns} FROM {table} ORDER BY RAND() LIMIT {random_count})")
-                }
-                DatabaseType::Informix => {
-                    format!("(SELECT FIRST {random_count} {select_columns} FROM {table} ORDER BY RAND())")
                 }
                 _ => {
                     format!("(SELECT {select_columns} FROM {table} LIMIT {random_count})")
@@ -1937,27 +1818,6 @@ mod tests {
     }
 
     #[test]
-    fn generates_mysql_bit_synchronization_literals_without_string_quotes() {
-        let preparation = prepare_data_compare(DataComparePreparationOptions {
-            table_name: "users".to_string(),
-            schema: None,
-            columns: vec!["id".to_string(), "enabled".to_string(), "flags".to_string()],
-            key_columns: vec!["id".to_string()],
-            column_info: vec![
-                data_compare_column("id", "int"),
-                data_compare_column("enabled", "bit(1)"),
-                data_compare_column("flags", "bit(8)"),
-            ],
-            source_rows: vec![vec![json!(1), json!("0"), json!("10101010")]],
-            target_rows: vec![vec![json!(1), json!("1"), json!("00000001")]],
-            database_type: Some(DatabaseType::Mysql),
-        })
-        .expect("data compare preparation should succeed");
-
-        assert_eq!(preparation.sync_sql, "UPDATE `users` SET `enabled` = 0, `flags` = b'10101010' WHERE `id` = 1;");
-    }
-
-    #[test]
     fn builds_batch_sync_plan_from_selected_diffs() {
         let plan = build_data_compare_sync_plan(DataCompareSyncPlanOptions {
             tables: vec![DataCompareSyncPlanTableOptions {
@@ -2087,7 +1947,7 @@ mod tests {
                         },
                     ],
                 },
-                database_type: Some(DatabaseType::Mysql),
+                database_type: Some(DatabaseType::Postgres),
                 pre_sync_statements: Vec::new(),
             }],
         });
@@ -2096,7 +1956,7 @@ mod tests {
         assert_eq!(plan.statement_count, 1);
         assert_eq!(
             plan.sync_sql,
-            "UPDATE `users` SET `name` = CASE WHEN `id` = 1 THEN 'Ada' WHEN `id` = 2 THEN 'Bob' ELSE `name` END, `active` = CASE WHEN `id` = 2 THEN FALSE ELSE `active` END WHERE (`id` = 1) OR (`id` = 2);"
+            "UPDATE \"users\" SET \"name\" = CASE WHEN \"id\" = 1 THEN 'Ada' WHEN \"id\" = 2 THEN 'Bob' ELSE \"name\" END, \"active\" = CASE WHEN \"id\" = 2 THEN FALSE ELSE \"active\" END WHERE (\"id\" = 1) OR (\"id\" = 2);"
         );
     }
 
@@ -2312,84 +2172,12 @@ mod tests {
     }
 
     #[test]
-    fn builds_backend_table_select_sql_for_sqlserver_limit_syntax() {
-        assert_eq!(
-            build_data_compare_select_sql(
-                DatabaseType::SqlServer,
-                "dbo",
-                "users",
-                &["id".to_string(), "name".to_string()],
-                &["id".to_string()],
-                50,
-                0,
-            ),
-            "SELECT TOP (50) [id], [name] FROM [dbo].[users] ORDER BY [id] ASC"
-        );
-    }
-
-    #[test]
-    fn builds_backend_table_select_sql_for_firebird_rows_syntax() {
-        assert_eq!(
-            build_data_compare_select_sql(
-                DatabaseType::Firebird,
-                "ignored",
-                "USERS",
-                &["ID".to_string(), "NAME".to_string()],
-                &["ID".to_string()],
-                25,
-                50,
-            ),
-            "SELECT \"ID\", \"NAME\" FROM \"USERS\" ORDER BY \"ID\" ASC ROWS 51 TO 75"
-        );
-    }
-
-    #[test]
-    fn builds_backend_table_select_sql_for_oceanbase_oracle_rownum_pages() {
-        assert_eq!(
-            build_data_compare_select_sql(
-                DatabaseType::OceanbaseOracle,
-                "APP",
-                "EVENTS",
-                &["ID".to_string(), "NAME".to_string()],
-                &["ID".to_string()],
-                25,
-                0,
-            ),
-            "SELECT \"ID\", \"NAME\" FROM (SELECT \"ID\", \"NAME\" FROM \"APP\".\"EVENTS\" ORDER BY \"ID\" ASC) WHERE ROWNUM <= 25"
-        );
-        assert_eq!(
-            build_data_compare_select_sql(
-                DatabaseType::OceanbaseOracle,
-                "APP",
-                "EVENTS",
-                &["ID".to_string(), "NAME".to_string()],
-                &["ID".to_string()],
-                25,
-                50,
-            ),
-            "SELECT \"ID\", \"NAME\" FROM (SELECT dbx_inner.*, ROWNUM AS \"__dbx_row_num\" FROM (SELECT \"ID\", \"NAME\" FROM \"APP\".\"EVENTS\" ORDER BY \"ID\" ASC) dbx_inner WHERE ROWNUM <= 75) WHERE \"__dbx_row_num\" > 50"
-        );
-    }
-
-    #[test]
     fn shared_sql_dialect_helpers_build_data_compare_table_sql() {
         use crate::sql_dialect::build_count_table_sql as build_shared_count_table_sql;
 
         assert_eq!(
             build_shared_count_table_sql(Some(DatabaseType::Postgres), Some("public"), "users"),
             "SELECT COUNT(*) AS row_count FROM \"public\".\"users\""
-        );
-        assert_eq!(
-            build_data_compare_select_sql(
-                DatabaseType::Oracle,
-                "APP",
-                "EVENTS",
-                &["ID".to_string(), "NAME".to_string()],
-                &["ID".to_string()],
-                25,
-                0,
-            ),
-            "SELECT \"ID\", \"NAME\" FROM \"APP\".\"EVENTS\" ORDER BY \"ID\" ASC FETCH FIRST 25 ROWS ONLY"
         );
     }
 

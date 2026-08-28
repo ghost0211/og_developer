@@ -64,17 +64,6 @@ test("builds schema-aware cursor table candidates", () => {
   });
 });
 
-test("builds SQL Server view candidates from bracket-quoted identifiers", () => {
-  const sql = "SELECT * FROM [sales].[v_city_sales]";
-  const tab = queryTab(sql, sql.length, undefined);
-
-  assert.deepEqual(queryCursorTableCandidate(tab, "sqlserver"), {
-    connectionId: "conn-1",
-    database: "app",
-    schema: "sales",
-    tableName: "v_city_sales",
-  });
-});
 
 test("builds database-qualified candidates for multi-database non-schema engines", () => {
   const tab = queryTab("select * from analytics.events", "select * from analytics.events".length, undefined);
@@ -98,33 +87,7 @@ test("builds three-part candidates at an explicit context-menu position", () => 
   });
 });
 
-test("folds unquoted Oracle-compatible identifiers before view-data quoting", () => {
-  for (const databaseType of ["oracle", "dameng"] as const) {
-    const sql = "select * from app.order_items";
-    const candidate = queryTableCandidateAtSqlPosition({ connectionId: "conn-1", database: "service", databaseType, sql, position: sql.indexOf("order") });
 
-    assert.deepEqual(candidate, {
-      connectionId: "conn-1",
-      database: "service",
-      schema: "APP",
-      tableName: "ORDER_ITEMS",
-    });
-    assert.equal(qualifiedTableName({ databaseType, schema: candidate?.schema, tableName: candidate?.tableName ?? "" }), '"APP"."ORDER_ITEMS"');
-  }
-});
-
-test("preserves explicitly quoted Oracle-compatible identifier case", () => {
-  const sql = 'select * from "App"."Order_Items"';
-  const candidate = queryTableCandidateAtSqlPosition({ connectionId: "conn-1", database: "service", databaseType: "oracle", sql, position: sql.indexOf("Order") });
-
-  assert.deepEqual(candidate, {
-    connectionId: "conn-1",
-    database: "service",
-    schema: "App",
-    tableName: "Order_Items",
-  });
-  assert.equal(qualifiedTableName({ databaseType: "oracle", schema: candidate?.schema, tableName: candidate?.tableName ?? "" }), '"App"."Order_Items"');
-});
 
 test("folds PostgreSQL unquoted identifiers without changing quoted names", () => {
   const unquotedSql = "select * from Reporting.Users";

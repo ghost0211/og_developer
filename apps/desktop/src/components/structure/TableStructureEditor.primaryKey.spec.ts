@@ -2,6 +2,7 @@
 
 import { createApp, nextTick, type App } from "vue";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { DatabaseType } from "@/types/database";
 
 const mocks = vi.hoisted(() => ({
   connection: {
@@ -239,7 +240,7 @@ function draft(isPrimaryKey = false) {
   };
 }
 
-async function mountEditor(databaseType: "dameng" | "oracle", isPrimaryKey = false) {
+async function mountEditor(databaseType: DatabaseType = "opengauss", isPrimaryKey = false) {
   mocks.connection.db_type = databaseType;
   mocks.connection.name = databaseType;
   mocks.connection.driver_label = databaseType;
@@ -314,8 +315,8 @@ afterEach(() => {
 });
 
 describe("TableStructureEditor primary key editing", () => {
-  it("enables the primary-key checkbox for an existing Dameng column and makes it not null", async () => {
-    const root = await mountEditor("dameng");
+  it("enables the primary-key checkbox for an existing openGauss column and makes it not null", async () => {
+    const root = await mountEditor("opengauss");
     const primaryKey = columnCheckbox(root, "structureEditor.primaryKey");
     const nullable = columnCheckbox(root, "structureEditor.nullable");
 
@@ -336,14 +337,8 @@ describe("TableStructureEditor primary key editing", () => {
     );
   });
 
-  it("keeps the primary-key checkbox disabled for an existing Oracle column", async () => {
-    const root = await mountEditor("oracle");
-
-    expect(columnCheckbox(root, "structureEditor.primaryKey").disabled).toBe(true);
-  });
-
-  it("allows an existing Dameng primary key to be cleared", async () => {
-    const root = await mountEditor("dameng", true);
+  it("allows an existing openGauss primary key to be cleared", async () => {
+    const root = await mountEditor("opengauss", true);
     const primaryKey = columnCheckbox(root, "structureEditor.primaryKey");
 
     expect(primaryKey.disabled).toBe(false);

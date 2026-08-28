@@ -3,16 +3,6 @@ import { describe, expect, it, vi } from "vitest";
 import { executableStatementRangeAtCursor, executableStatementRangeCacheForDoc, executableStatementRangeStartingAt, type ExecutableStatementRangeParser } from "@/lib/sql/executableStatementRangeCache";
 
 describe("executableStatementRangeCacheForDoc", () => {
-  it("tracks MongoDB commands for current-statement framing", () => {
-    const sql = 'db.users.find({})\n\ndb.getCollection("audit.logs").countDocuments({})';
-    const doc = Text.of(sql.split("\n"));
-    const cache = executableStatementRangeCacheForDoc(null, doc, "mongodb");
-
-    expect(executableStatementRangeAtCursor(cache, sql.indexOf("users"))?.sql).toBe("db.users.find({})");
-    expect(executableStatementRangeAtCursor(cache, sql.indexOf("audit.logs"))?.sql).toBe('db.getCollection("audit.logs").countDocuments({})');
-    expect(executableStatementRangeAtCursor(cache, doc.line(2).from)).toBeNull();
-  });
-
   it("reuses parsed executable statement ranges for the same document and database type", () => {
     const doc = Text.of(["SELECT 1;", "SELECT 2;"]);
     const parse = vi.fn<ExecutableStatementRangeParser>(() => [
@@ -20,8 +10,8 @@ describe("executableStatementRangeCacheForDoc", () => {
       { from: 10, to: 18, sql: "SELECT 2" },
     ]);
 
-    const first = executableStatementRangeCacheForDoc(null, doc, "mysql", parse);
-    const second = executableStatementRangeCacheForDoc(first, doc, "mysql", parse);
+    const first = executableStatementRangeCacheForDoc(null, doc, "opengauss", parse);
+    const second = executableStatementRangeCacheForDoc(first, doc, "opengauss", parse);
 
     expect(second).toBe(first);
     expect(parse).toHaveBeenCalledTimes(1);
@@ -31,16 +21,16 @@ describe("executableStatementRangeCacheForDoc", () => {
   it("resolves the exact multi-line statement for a gutter run button", () => {
     const doc = Text.of(["SELECT *", "FROM apis AS ap", "LIMIT 100;", "", "SELECT *", "FROM menus AS mn", "LIMIT 100;"]);
 
-    const cache = executableStatementRangeCacheForDoc(null, doc, "mysql");
+    const cache = executableStatementRangeCacheForDoc(null, doc, "opengauss");
     const secondStatementLine = doc.line(5);
 
     expect(executableStatementRangeStartingAt(cache, secondStatementLine.from)?.sql).toBe("SELECT *\nFROM menus AS mn\nLIMIT 100");
   });
 
-  it("keeps MyBatis parameters in a Kingbase gutter execution range", () => {
+  it("keeps MyBatis parameters in an openGauss gutter execution range", () => {
     const sql = ["SELECT sum(nvl(a.medfee_sumamt, 0)) AS medfee_sumamt, a.insutype", "FROM yd_org_decla_detail a", "WHERE a.busin_type = '1' AND a.clr_ym = #{ym}", "GROUP BY a.clr_ym, a.insutype;"].join("\n");
     const doc = Text.of(sql.split("\n"));
-    const cache = executableStatementRangeCacheForDoc(null, doc, "kingbase");
+    const cache = executableStatementRangeCacheForDoc(null, doc, "opengauss");
 
     expect(executableStatementRangeStartingAt(cache, doc.line(1).from)?.sql).toBe(sql.slice(0, -1));
   });
@@ -48,8 +38,8 @@ describe("executableStatementRangeCacheForDoc", () => {
   it("keeps a valid placeholder-only line executable and respects disabled MyBatis syntax", () => {
     const sql = ["SELECT *", "FROM t", "#{where_clause};"].join("\n");
     const doc = Text.of(sql.split("\n"));
-    const enabled = executableStatementRangeCacheForDoc(null, doc, "kingbase", { enabledSyntaxes: ["mybatis"] });
-    const disabled = executableStatementRangeCacheForDoc(enabled, doc, "kingbase", { enabledSyntaxes: ["shell"] });
+    const enabled = executableStatementRangeCacheForDoc(null, doc, "opengauss", { enabledSyntaxes: ["mybatis"] });
+    const disabled = executableStatementRangeCacheForDoc(enabled, doc, "opengauss", { enabledSyntaxes: ["shell"] });
 
     expect(executableStatementRangeAtCursor(enabled, doc.line(3).from + 2)?.sql).toBe(sql.slice(0, -1));
     expect(executableStatementRangeAtCursor(disabled, doc.line(3).from + 2)).toBeNull();
@@ -58,7 +48,7 @@ describe("executableStatementRangeCacheForDoc", () => {
 
   it("resolves statements with leading whitespace for gutter run buttons", () => {
     const doc = Text.of([" SELECT 1;", "  SELECT 2;", "\t SELECT 3;", "", "    "]);
-    const cache = executableStatementRangeCacheForDoc(null, doc, "mysql");
+    const cache = executableStatementRangeCacheForDoc(null, doc, "opengauss");
 
     expect(executableStatementRangeStartingAt(cache, doc.line(1).from)?.sql).toBe("SELECT 1");
     expect(executableStatementRangeStartingAt(cache, doc.line(2).from)?.sql).toBe("SELECT 2");
@@ -69,7 +59,7 @@ describe("executableStatementRangeCacheForDoc", () => {
 
   it("does not resolve gutter run buttons when non-whitespace precedes the statement on the same line", () => {
     const doc = Text.of(["/* comment */ SELECT 1;"]);
-    const cache = executableStatementRangeCacheForDoc(null, doc, "mysql");
+    const cache = executableStatementRangeCacheForDoc(null, doc, "opengauss");
 
     expect(executableStatementRangeStartingAt(cache, doc.line(1).from)).toBeNull();
     expect(executableStatementRangeStartingAt(cache, doc.toString().indexOf("SELECT"))?.sql).toBe("SELECT 1");
@@ -77,7 +67,7 @@ describe("executableStatementRangeCacheForDoc", () => {
 
   it("resolves the current statement from a cursor inside a continuation line", () => {
     const doc = Text.of(["SELECT *", "FROM apis AS ap", "LIMIT 100;", "", "SELECT *", "FROM menus AS mn", "LIMIT 100;"]);
-    const cache = executableStatementRangeCacheForDoc(null, doc, "mysql");
+    const cache = executableStatementRangeCacheForDoc(null, doc, "opengauss");
     const cursor = doc.toString().indexOf("menus");
 
     expect(executableStatementRangeAtCursor(cache, cursor)?.sql).toBe("SELECT *\nFROM menus AS mn\nLIMIT 100");
@@ -85,7 +75,7 @@ describe("executableStatementRangeCacheForDoc", () => {
 
   it("keeps indentation and same-line semicolon gaps attached to the current statement", () => {
     const doc = Text.of(["SELECT 1;", "    SELECT 2;"]);
-    const cache = executableStatementRangeCacheForDoc(null, doc, "mysql");
+    const cache = executableStatementRangeCacheForDoc(null, doc, "opengauss");
     const indentationCursor = doc.line(2).from + 2;
     const semicolonGapCursor = doc.toString().indexOf(";") + 1;
 
@@ -96,7 +86,7 @@ describe("executableStatementRangeCacheForDoc", () => {
   it("keeps a standalone next-line semicolon attached to the current statement", () => {
     const sql = "SELECT *\nFROM users\n;\n\nSELECT * FROM audit;";
     const doc = Text.of(sql.split("\n"));
-    const cache = executableStatementRangeCacheForDoc(null, doc, "mysql");
+    const cache = executableStatementRangeCacheForDoc(null, doc, "opengauss");
     const delimiterCursor = sql.indexOf(";");
 
     expect(executableStatementRangeAtCursor(cache, delimiterCursor)?.sql).toBe("SELECT *\nFROM users");
@@ -106,14 +96,14 @@ describe("executableStatementRangeCacheForDoc", () => {
   it("does not attach a semicolon after a blank line to the previous statement", () => {
     const sql = "SELECT 1\n\n;";
     const doc = Text.of(sql.split("\n"));
-    const cache = executableStatementRangeCacheForDoc(null, doc, "mysql");
+    const cache = executableStatementRangeCacheForDoc(null, doc, "opengauss");
 
     expect(executableStatementRangeAtCursor(cache, sql.indexOf(";"))).toBeNull();
   });
 
   it("returns null for blank and pure comment cursor lines", () => {
     const doc = Text.of(["SELECT 1;", "-- comment", "/* block comment */", "", "SELECT 2;"]);
-    const cache = executableStatementRangeCacheForDoc(null, doc, "mysql");
+    const cache = executableStatementRangeCacheForDoc(null, doc, "opengauss");
 
     expect(executableStatementRangeAtCursor(cache, doc.line(2).from + 3)).toBeNull();
     expect(executableStatementRangeAtCursor(cache, doc.line(3).from + 3)).toBeNull();
@@ -122,7 +112,7 @@ describe("executableStatementRangeCacheForDoc", () => {
 
   it("resolves SQL after a leading block comment on the same line", () => {
     const doc = Text.of(["/* comment */ SELECT 1;"]);
-    const cache = executableStatementRangeCacheForDoc(null, doc, "mysql");
+    const cache = executableStatementRangeCacheForDoc(null, doc, "opengauss");
 
     expect(executableStatementRangeAtCursor(cache, doc.toString().indexOf("SELECT"))?.sql).toBe("SELECT 1");
     expect(executableStatementRangeAtCursor(cache, doc.toString().indexOf("comment"))).toBeNull();
@@ -133,8 +123,8 @@ describe("executableStatementRangeCacheForDoc", () => {
     const secondDoc = Text.of(["SELECT 1;"]);
     const parse = vi.fn<ExecutableStatementRangeParser>(() => [{ from: 0, to: 8, sql: "SELECT 1" }]);
 
-    const first = executableStatementRangeCacheForDoc(null, firstDoc, "mysql", parse);
-    const second = executableStatementRangeCacheForDoc(first, secondDoc, "mysql", parse);
+    const first = executableStatementRangeCacheForDoc(null, firstDoc, "opengauss", parse);
+    const second = executableStatementRangeCacheForDoc(first, secondDoc, "opengauss", parse);
 
     expect(second).not.toBe(first);
     expect(parse).toHaveBeenCalledTimes(2);
@@ -144,10 +134,10 @@ describe("executableStatementRangeCacheForDoc", () => {
     const doc = Text.of(["SELECT 1;"]);
     const parse = vi.fn<ExecutableStatementRangeParser>(() => [{ from: 0, to: 8, sql: "SELECT 1" }]);
 
-    const mysql = executableStatementRangeCacheForDoc(null, doc, "mysql", parse);
-    const postgres = executableStatementRangeCacheForDoc(mysql, doc, "postgres", parse);
+    const openGauss = executableStatementRangeCacheForDoc(null, doc, "opengauss", parse);
+    const postgres = executableStatementRangeCacheForDoc(openGauss, doc, "postgres", parse);
 
-    expect(postgres).not.toBe(mysql);
+    expect(postgres).not.toBe(openGauss);
     expect(parse).toHaveBeenCalledTimes(2);
   });
 });

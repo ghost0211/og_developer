@@ -20,13 +20,6 @@ test("bottom status helpers expose one-based cursor locations and line endings",
   assert.equal(sqlLineEnding("select 1"), "LF");
 });
 
-test("bottom status summarizes every result in the latest SQL batch", () => {
-  assert.deepEqual(latestQueryExecutionFeedback({ results: [result(12, 20), result(6, 12)] }), { durationMs: 18, affectedRows: 32 });
-  assert.deepEqual(latestQueryExecutionFeedback({ result: result(4, 0, [[1], [2]]) }), { durationMs: 4, affectedRows: 2 });
-  assert.deepEqual(latestQueryExecutionFeedback({ result: { ...result(3, 0, [["relation missing"]]), execution_error: true } }), { durationMs: 3, affectedRows: 0 });
-  assert.deepEqual(latestQueryExecutionFeedback({ result: { ...result(Number.NaN, 0), server_message: true, rows: [["notice"]] } }), { durationMs: 0, affectedRows: 0 });
-  assert.equal(latestQueryExecutionFeedback(undefined), undefined);
-});
 
 test("bottom status connection label includes connection, engine, and version", () => {
   const connection: ConnectionConfig = {

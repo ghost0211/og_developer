@@ -15,10 +15,8 @@ export type BuildRoutineRenameObjectSourceInput = BuildEditableObjectSourceSqlIn
 
 export type ObjectSourceSaveExecutionMode = "single" | "script";
 
-const postgresLikeRoutineRenameTypes = new Set<DatabaseType>(["postgres", "redshift", "gaussdb", "kwdb", "kingbase", "highgo", "uxdb", "vastbase"]);
-const postgresLikeViewTypes = new Set<DatabaseType>(["postgres", "redshift", "gaussdb", "kwdb", "opengauss", "questdb", "kingbase", "highgo", "uxdb", "vastbase"]);
-const mysqlLikeRoutineRenameTypes = new Set<DatabaseType>(["mysql", "goldendb"]);
-const oracleLikeRoutineRenameTypes = new Set<DatabaseType>(["oracle", "dameng"]);
+const postgresLikeRoutineRenameTypes = new Set<DatabaseType>(["postgres"]);
+const postgresLikeViewTypes = new Set<DatabaseType>(["postgres", "opengauss"]);
 
 // SQLSTATE 42P16 covers unrelated invalid table definitions, so only match the
 // confirmed PostgreSQL view-column errors and their localized equivalents.
@@ -44,8 +42,8 @@ export function formatObjectSourceSaveError(error: unknown, databaseType: Databa
 
 export function supportsSourceBackedRoutineRename(databaseType: DatabaseType | undefined, objectType: ObjectSourceKind): boolean {
   if (objectType !== "FUNCTION" && objectType !== "PROCEDURE") return false;
-  if (!databaseType || databaseType === "sqlserver") return false;
-  return mysqlLikeRoutineRenameTypes.has(databaseType) || postgresLikeRoutineRenameTypes.has(databaseType) || oracleLikeRoutineRenameTypes.has(databaseType);
+  if (!databaseType) return false;
+  return postgresLikeRoutineRenameTypes.has(databaseType);
 }
 
 export function buildRoutineRenameObjectSourceStatements(input: BuildRoutineRenameObjectSourceInput): Promise<string[]> {
@@ -71,13 +69,6 @@ export function objectSourceSaveExecutionMode(_databaseType: DatabaseType): Obje
 export async function executeObjectSourceSave(connectionId: string, database: string, databaseType: DatabaseType, statements: string[], schema?: string): Promise<void> {
   const nonEmptyStatements = statements.filter((sql) => sql.trim().length > 0);
   if (nonEmptyStatements.length === 0) return;
-
-  if (databaseType === "informix" && nonEmptyStatements.length > 1) {
-    // Informix/GBase 8s view replacement is validate + drop/create; run it atomically
-    // so a failing final CREATE rolls back the original view instead of deleting it.
-    await api.executeInTransaction(connectionId, database, nonEmptyStatements, schema);
-    return;
-  }
 
   for (const sql of nonEmptyStatements) {
     if (objectSourceSaveExecutionMode(databaseType) === "single") {

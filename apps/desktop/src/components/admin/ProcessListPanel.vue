@@ -13,7 +13,7 @@ import { copyToClipboard } from "@/lib/common/clipboard";
 import type { ConnectionConfig } from "@/types/database";
 import * as api from "@/lib/backend/api";
 import { executeWithProductionSqlGuard } from "@/lib/database/productionExecutionGuard";
-import { clampInterval, createProcessListLoadCoordinator, DEFAULT_REFRESH_SECONDS, processListExecutionError } from "@/lib/database/mysqlProcessList";
+import { clampInterval, createProcessListLoadCoordinator, DEFAULT_REFRESH_SECONDS, processListExecutionError } from "@/lib/database/processListDrivers";
 import { resolveProcessListDriverForConnection, type ProcessRow } from "@/lib/database/processListDrivers";
 import type { BlockingLockRow, LockDetailRow } from "@/lib/database/postgresProcessList";
 
@@ -77,7 +77,7 @@ const supportsLocks = computed(() => !!driver.value?.blockingLocksSql || !!drive
 const currentDbUser = computed(() => props.connection.username?.trim() || "CURRENT_USER");
 const isPostgresOrOpenGauss = computed(() => {
   const t = props.connection.db_type;
-  return t === "opengauss" || t === "gaussdb" || t === "postgres" || t === "kingbase";
+  return t === "opengauss" || t === "postgres";
 });
 
 const isOnlyOwnSession = computed(() => {
@@ -88,7 +88,7 @@ const isOnlyOwnSession = computed(() => {
 
 const grantCommand = computed(() => {
   const user = currentDbUser.value;
-  if (props.connection.db_type === "opengauss" || props.connection.db_type === "gaussdb") {
+  if (props.connection.db_type === "opengauss") {
     return `GRANT monadmin TO ${user};`;
   }
   return `GRANT pg_read_all_stats TO ${user};`;
@@ -532,7 +532,7 @@ onBeforeUnmount(stopTimer);
       </div>
       <Button variant="outline" size="sm" class="h-6 gap-1 px-2 text-[11px] border-amber-500/40 hover:bg-amber-500/20 shrink-0" @click="copyGrantCommand">
         <Copy class="h-3 w-3" />
-        <span>复制授权 SQL ({{ props.connection.db_type === "opengauss" || props.connection.db_type === "gaussdb" ? "GRANT monadmin" : "GRANT pg_read_all_stats" }})</span>
+        <span>复制授权 SQL ({{ props.connection.db_type === "opengauss" ? "GRANT monadmin" : "GRANT pg_read_all_stats" }})</span>
       </Button>
     </div>
 

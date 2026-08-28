@@ -9,15 +9,11 @@ name = "dbx-web"
 path = "src/main.rs"
 
 [features]
-default = ["duckdb-sidecar", "mq-admin", "sqlite-sqlcipher", "system-fonts"]
-duckdb-sidecar = ["dbx-core/duckdb-sidecar"]
-mq-admin = ["dbx-core/mq-admin"]
-sqlite-sqlcipher = ["dbx-core/sqlite-sqlcipher"]
+default = ["system-fonts"]
 system-fonts = ["dbx-core/system-fonts"]
 
 [dependencies]
 dbx-core = { path = "../dbx-core", default-features = false, features = ["openapi"] }
-redis = { version = "0.32", features = ["tokio-comp"] }
 axum = { version = "0.8", features = ["multipart", "ws"] }
 tower-http = { version = "0.6", features = ["cors", "fs", "compression-gzip", "trace"] }
 tokio = { version = "1", features = ["full"] }

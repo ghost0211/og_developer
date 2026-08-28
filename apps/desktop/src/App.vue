@@ -42,22 +42,19 @@ import * as api from "@/lib/backend/api";
 import { connectionRedactedNameLabel } from "@/lib/connection/connectionPresentation";
 import { quickConnectionOpenTarget } from "@/lib/connection/connectionOpenTarget";
 import { resolveDefaultDatabase } from "@/lib/database/defaultDatabase";
-import { normalizeSqliteNamespace } from "@/lib/database/sqliteNamespace";
 import { findTreeNodeById, resolveNewQueryTarget, resolveNewQueryInitialSql } from "@/lib/sql/newQueryContext";
-import { isSqlObjectNavigationRoutineType, normalizeOracleNavigationTarget, sqlObjectNavigationSourceKind, sqlObjectNavigationSourceName, sqlObjectNavigationSourceSchema, sqlObjectNavigationTableType, type SqlObjectNavigationTarget } from "@/lib/sql/sqlNavigation";
+import { isSqlObjectNavigationRoutineType, sqlObjectNavigationSourceKind, sqlObjectNavigationSourceName, sqlObjectNavigationSourceSchema, sqlObjectNavigationTableType, type SqlObjectNavigationTarget } from "@/lib/sql/sqlNavigation";
 import { buildEditableObjectSource, buildExecutableObjectSourceStatements, executeObjectSourceSave } from "@/lib/table/objectSourceEditor";
 import { loadEditableObjectSourceForEditor } from "@/lib/table/objectSourceLoad";
-import { schemaAfterConnectionSwitch } from "@/lib/schema/connectionSchemaInitialization";
 import { resolveHistorySqlRestoreTarget } from "@/lib/history/historyRestoreTarget";
 import { resolveExecutableSql, resolveExecutableSqlWithBackend, type SqlExecutionSnapshot } from "@/lib/sql/sqlExecutionTarget";
-import { uuid } from "@/lib/common/utils";
 import { isMacOS, isWindows } from "@/lib/backend/platform";
 import { isTauriRuntime } from "@/lib/backend/tauriRuntime";
 import { downloadDebugLogs } from "@/lib/backend/debugLog";
 import { openQueryResultArchiveFile } from "@/lib/query/queryResultArchiveFile";
 import { rememberExternalSqlFileTarget, resolveExternalSqlFileTarget } from "@/lib/sql/externalSqlFileTarget";
 import { externalSqlFileOpenErrorMessage, readBrowserSqlFile, sqlFileTitleFromPath } from "@/lib/sql/sqlFileOpen";
-import type { ConnectionConfig, ObjectSourceKind, QueryTab } from "@/types/database";
+import type { ObjectSourceKind, QueryTab } from "@/types/database";
 import { parseConnectionDeepLink, type ConnectionDeepLinkDraft } from "@/lib/connection/connectionDeepLink";
 import {
   isBrowserReloadShortcut,
@@ -103,8 +100,6 @@ import { initSavedSqlEditorPositions } from "@/lib/app/savedSqlEditorPosition";
 import { isSchemaAware, isSingleDatabase, usesTreeSchemaMode } from "@/lib/database/databaseFeatureSupport";
 import { codeMirrorSqlDialect, connectionUsesDatabaseObjectTreeMode, effectiveDatabaseTypeForConnection } from "@/lib/database/jdbcDialect";
 import { sqlFormatDialectForDbType } from "@/lib/sql/sqlFormatter";
-import { detectDatabaseFileType } from "@/lib/database/databaseFileDetection";
-import { ensureJdbcxRuntimeDrivers } from "@/lib/database/jdbcxBuiltinDriver";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -141,7 +136,6 @@ const settingsStore = useSettingsStore();
 const savedSqlStore = useSavedSqlStore();
 const promptTemplateStore = usePromptTemplateStore();
 const gitStore = useGitStore();
-connectionStore.setBeforeConnectHandler((config) => ensureJdbcxRuntimeDrivers(config, api).then(() => undefined));
 const { message: toastMessage, visible: toastVisible, toast } = useToast();
 const { isDark, themeMode, applyTheme, setThemeMode } = useTheme();
 const { setupFileDrop } = useFileDrop();
@@ -290,7 +284,6 @@ async function resolveActiveExecutableSql(snapshot?: SqlExecutionSnapshot) {
     : "";
 }
 
-const blockDangerousRedisCommands = ref(true);
 const databaseRequiredSignal = ref(0);
 const databaseRequiredTabId = ref<string | null>(null);
 
@@ -326,7 +319,6 @@ const {
   executableSql,
   resolveExecutableSql: resolveActiveExecutableSql,
   activeOutputView,
-  blockDangerousRedisCommands,
   onMissingDatabase: promptActiveDatabaseSelection,
 });
 
@@ -658,8 +650,7 @@ function analyzeHistoryWithAi(entry: HistoryEntry) {
   }
 
   openAiPanel();
-  const storedDatabase = entry.database || activeTab.value?.database || resolveDefaultDatabase(config, []);
-  const database = config.db_type === "sqlite" ? normalizeSqliteNamespace(storedDatabase, config) : storedDatabase;
+  const database = entry.database || activeTab.value?.database || resolveDefaultDatabase(config, []);
   const title = t("history.aiAnalysisTab");
   const tabId = queryStore.createTab(connectionId, database || "", title, "query");
   queryStore.updateSql(tabId, entry.sql);
@@ -1228,63 +1219,12 @@ async function openPendingSqlFiles() {
   }
 }
 
-async function openDbFilePath(path: string) {
-  if (!isTauriRuntime()) return;
-  await connectionStore.initFromDisk();
-  try {
-    const name = path.split("/").pop()?.split("\\").pop() || path;
-    const dbType = await detectDatabaseFileType(path);
-    if (!dbType) return;
-
-    // Check for existing connection with the same file path
-    const existing = connectionStore.connections.find((c) => c.host === path);
-    if (existing) {
-      const { ask } = await import("@tauri-apps/plugin-dialog");
-      const switchTo = await ask(`A connection to "${path}" already exists. Switch to it?`, {
-        title: "Database Already Open",
-        kind: "info",
-      });
-      if (switchTo) {
-        connectionStore.activeConnectionId = existing.id;
-        connectionStore.ensureConnected(existing.id).catch(() => {});
-        const node = connectionStore.treeNodes.find((n) => n.id === existing.id);
-        if (node && !node.isExpanded) {
-          connectionStore.loadDatabases(existing.id);
-        }
-      }
-      return;
-    }
-
-    const config: ConnectionConfig = {
-      id: uuid(),
-      name,
-      db_type: dbType,
-      driver_profile: dbType,
-      driver_label: dbType === "duckdb" ? "DuckDB" : "SQLite",
-      url_params: "",
-      host: path,
-      port: 0,
-      username: "",
-      password: "",
-    };
-    await connectionStore.addConnection(config);
-    void connectionStore.connect(config);
-    toast(t("welcome.fileOpened", { name }));
-  } catch (e: any) {
-    toast(t("toolbar.sqlOpenFailed", { message: e?.message || String(e) }), 5000);
-  }
+async function openDbFilePath(_path: string) {
+  // openGauss desktop client does not open local db files
 }
 
 async function openPendingDbFiles() {
-  if (!isTauriRuntime()) return;
-  try {
-    const paths = await api.pendingOpenDbFiles();
-    for (const path of paths) {
-      await openDbFilePath(path);
-    }
-  } catch {
-    /* ignore startup file-open probing errors */
-  }
+  // openGauss desktop client does not open local db files
 }
 
 async function openConnectionDeepLink(url: string) {
@@ -1345,28 +1285,6 @@ async function newQuery() {
   const conn = connectionStore.getConfig(target.connectionId);
   if (!conn) return;
   connectionStore.activeConnectionId = target.connectionId;
-  const connectionTarget = quickConnectionOpenTarget(conn);
-  if (connectionTarget.kind !== "query") {
-    try {
-      await connectionStore.ensureConnected(target.connectionId);
-      if (connectionTarget.kind === "mq-admin") {
-        queryStore.openMqAdmin(target.connectionId);
-      } else if (connectionTarget.kind === "nacos-admin") {
-        await connectionStore.loadNacosNamespaces(target.connectionId);
-        queryStore.openNacosAdmin(target.connectionId);
-      } else {
-        queryStore.createTab(target.connectionId, "", `${conn.name}:keys`, connectionTarget.kind);
-      }
-    } catch (e: any) {
-      toast(
-        t("connection.connectFailed", {
-          message: translateBackendError(t, e),
-        }),
-        5000,
-      );
-    }
-    return;
-  }
   // Prefill the editor with `SELECT * FROM <focused table>` when enabled and a
   // table context (active data/structure tab or selected table node) is available.
   // Built before createTab so the tab opens with the content directly (no flash).
@@ -1406,40 +1324,7 @@ async function openConnectionQuery(connectionId: string) {
   const connection = connectionStore.getConfig(connectionId);
   if (!connection) return;
   connectionStore.activeConnectionId = connectionId;
-  const initialTarget = quickConnectionOpenTarget(connection);
-  if (initialTarget.kind === "mq-admin") {
-    queryStore.openMqAdmin(connectionId);
-    return;
-  }
-  if (initialTarget.kind === "nacos-admin") {
-    try {
-      await connectionStore.ensureConnected(connectionId);
-      await connectionStore.loadNacosNamespaces(connectionId);
-    } catch (e: any) {
-      toast(
-        t("connection.connectFailed", {
-          message: translateBackendError(t, e),
-        }),
-        5000,
-      );
-    }
-    return;
-  }
-  if (initialTarget.kind === "etcd" || initialTarget.kind === "zookeeper") {
-    try {
-      await connectionStore.ensureConnected(connectionId);
-      queryStore.createTab(connectionId, "", `${connection.name}:keys`, initialTarget.kind);
-    } catch (e: any) {
-      toast(
-        t("connection.connectFailed", {
-          message: translateBackendError(t, e),
-        }),
-        5000,
-      );
-    }
-    return;
-  }
-  const tabId = queryStore.createTab(connectionId, initialTarget.database);
+  const tabId = queryStore.createTab(connectionId, connection.database || "postgres");
   try {
     await connectionStore.ensureConnected(connectionId);
     const options = await getDatabaseOptions(connectionId);
@@ -1558,9 +1443,7 @@ function onEditTableStructure(table: SqlObjectNavigationTarget) {
 async function onOpenObjectSource(table: SqlObjectNavigationTarget, initialEditing: boolean) {
   const provisionalTarget = tableTargetFromActiveTab(table);
   if (!provisionalTarget) return;
-  const databaseType = effectiveDatabaseTypeForConnection(connectionStore.getConfig(provisionalTarget.connectionId));
-  // Oracle-family: unquoted → UPPER; quoted mixed-case keeps written case for ALL_SOURCE lookup.
-  const navigation = databaseType === "oracle" || databaseType === "dameng" || databaseType === "oceanbase-oracle" || databaseType === "yashandb" || databaseType === "oscar" ? normalizeOracleNavigationTarget(table) : table;
+  const navigation = table;
   const target = tableTargetFromActiveTab(navigation);
   const objectType = sqlObjectNavigationSourceKind(navigation);
   if (!target || !objectType) return;
@@ -1638,17 +1521,6 @@ async function changeActiveConnection(connectionId: string) {
     const options = await getDatabaseOptions(connectionId);
     const database = resolveDefaultDatabase(connection, options);
     queryStore.updateDatabase(tab.id, database);
-    if (connection.db_type === "oracle") {
-      try {
-        // Oracle returns the session's current schema first; preserve that order before toolbar sorting.
-        const schema = schemaAfterConnectionSwitch(connection.db_type, await api.listSchemas(connectionId, database));
-        if (schema && activeTab.value?.id === tab.id && activeTab.value.connectionId === connectionId) {
-          queryStore.updateSchema(tab.id, schema);
-        }
-      } catch {
-        // Schema metadata failure must not turn a successful connection switch into a connection error.
-      }
-    }
   } catch (e: any) {
     toast(
       t("connection.connectFailed", {
@@ -1804,24 +1676,7 @@ function ensureQueryTab(): string {
   return queryStore.createTab(connId, db, undefined, "query", schema, undefined, catalog);
 }
 
-function routeAiRedisCommand(command: string, execute: boolean): boolean {
-  if (activeConnection.value?.db_type !== "redis") return false;
-
-  // Redis has a dedicated console. Falling through to ensureQueryTab() would
-  // recreate the original bug by opening a SQL tab for a Redis command.
-  const routed = execute ? contentAreaRef.value?.executeRedisCommand(command) : contentAreaRef.value?.insertRedisCommand(command);
-  if (!routed) {
-    console.warn("[DBX] Redis AI command could not reach the active Redis console");
-    return true;
-  }
-  void routed.then((handled) => {
-    if (!handled) console.warn("[DBX] Redis AI command could not reach the active Redis console");
-  });
-  return true;
-}
-
 function onAiReplaceSql(sql: string) {
-  if (routeAiRedisCommand(sql, false)) return;
   const tabId = ensureQueryTab();
   queryStore.updateSql(tabId, sql);
 }
@@ -1832,20 +1687,17 @@ function runAiGeneratedSql(sql: string) {
 }
 
 function onAiExecuteSql(sql: string) {
-  if (routeAiRedisCommand(sql, true)) return;
   const tabId = ensureQueryTab();
   queryStore.updateSql(tabId, buildAppendedEditorSql(activeTab.value?.sql || "", sql));
   runAiGeneratedSql(sql);
 }
 
 function onAiTempRunSql(sql: string) {
-  if (routeAiRedisCommand(sql, true)) return;
   ensureQueryTab();
   runAiGeneratedSql(sql);
 }
 
 function onAiRequestAutoExecuteSql(sql: string) {
-  if (routeAiRedisCommand(sql, true)) return;
   const tabId = ensureQueryTab();
   queryStore.updateSql(tabId, buildAppendedEditorSql(activeTab.value?.sql || "", sql));
   selectedSql.value = "";
@@ -1929,24 +1781,7 @@ async function handleQuickOpenSelect(item: any) {
     // Tree node ID for connection is just the connectionId
     const connNode = findTreeNodeById(connectionStore.treeNodes, item.connectionId);
     if (connNode && !connNode.isExpanded) {
-      const config = connectionStore.getConfig(item.connectionId);
-      if (config?.db_type === "redis") {
-        await connectionStore.loadRedisDatabases(item.connectionId);
-      } else if (config?.db_type === "etcd") {
-        await connectionStore.loadEtcdRoot(item.connectionId);
-      } else if (config?.db_type === "zookeeper") {
-        await connectionStore.loadZooKeeperRoot(item.connectionId);
-      } else if (config?.db_type === "mongodb") {
-        await connectionStore.loadMongoDatabases(item.connectionId);
-      } else if (config?.db_type === "elasticsearch" || config?.db_type === "easysearch") {
-        await connectionStore.openElasticsearchConnectionTree(item.connectionId);
-      } else if (config?.db_type === "qdrant" || config?.db_type === "milvus" || config?.db_type === "weaviate" || config?.db_type === "chromadb") {
-        await connectionStore.loadVectorCollections(item.connectionId);
-      } else if (config?.db_type === "mq") {
-        await connectionStore.loadMqTenants(item.connectionId);
-      } else {
-        await connectionStore.loadDatabases(item.connectionId);
-      }
+      await connectionStore.loadDatabases(item.connectionId);
     }
     return;
   } else if (item.type === "database") {
@@ -1954,24 +1789,7 @@ async function handleQuickOpenSelect(item: any) {
     // Tree node ID for connection is just the connectionId
     const connNode = findTreeNodeById(connectionStore.treeNodes, item.connectionId);
     if (connNode && !connNode.isExpanded) {
-      const config = connectionStore.getConfig(item.connectionId);
-      if (config?.db_type === "redis") {
-        await connectionStore.loadRedisDatabases(item.connectionId);
-      } else if (config?.db_type === "etcd") {
-        await connectionStore.loadEtcdRoot(item.connectionId);
-      } else if (config?.db_type === "zookeeper") {
-        await connectionStore.loadZooKeeperRoot(item.connectionId);
-      } else if (config?.db_type === "mongodb") {
-        await connectionStore.loadMongoDatabases(item.connectionId);
-      } else if (config?.db_type === "elasticsearch" || config?.db_type === "easysearch") {
-        await connectionStore.openElasticsearchConnectionTree(item.connectionId);
-      } else if (config?.db_type === "qdrant" || config?.db_type === "milvus" || config?.db_type === "weaviate" || config?.db_type === "chromadb") {
-        await connectionStore.loadVectorCollections(item.connectionId);
-      } else if (config?.db_type === "mq") {
-        await connectionStore.loadMqTenants(item.connectionId);
-      } else {
-        await connectionStore.loadDatabases(item.connectionId);
-      }
+      await connectionStore.loadDatabases(item.connectionId);
     }
 
     // Expand database node
@@ -1981,9 +1799,7 @@ async function handleQuickOpenSelect(item: any) {
     if (dbNode && !dbNode.isExpanded) {
       const config = connectionStore.getConfig(item.connectionId);
       const effectiveDbType = effectiveDatabaseTypeForConnection(config);
-      if (config?.db_type === "sqlserver") {
-        await connectionStore.loadSqlServerDatabaseObjects(item.connectionId, item.database);
-      } else if (usesTreeSchemaMode(effectiveDbType) && !connectionUsesDatabaseObjectTreeMode(config)) {
+      if (usesTreeSchemaMode(effectiveDbType) && !connectionUsesDatabaseObjectTreeMode(config)) {
         await connectionStore.loadSchemas(item.connectionId, item.database);
       } else {
         await connectionStore.loadTables(item.connectionId, item.database);
@@ -2542,14 +2358,12 @@ onUnmounted(() => {
                     :active-connection="activeConnection"
                     :executable-sql="executableSql"
                     :explain-mode="explainMode"
-                    :block-dangerous-redis-commands="blockDangerousRedisCommands"
                     :sql-keyword-case="settingsStore.editorSettings.sqlFormatter.keywordCase"
                     :database-required-signal="databaseRequiredTabId === activeTab.id ? databaseRequiredSignal : 0"
                     :auto-commit="activeTab.autoCommit ?? true"
                     :txn-session-id="activeTab?.txnSessionId"
                     :txn-auto-rolled-back="activeTab?.txnAutoRolledBack"
                     @update:explain-mode="(m: 'explain' | 'autotrace') => (explainMode = m)"
-                    @update:block-dangerous-redis-commands="(v: boolean) => (blockDangerousRedisCommands = v)"
                     @update:auto-commit="
                       (v: boolean) => {
                         if (activeTab) queryStore.setAutoCommit(activeTab.id, v);
@@ -2587,7 +2401,6 @@ onUnmounted(() => {
                       :compress-sql-request="compressSqlRequest"
                       :selected-sql="selectedSql"
                       :cursor-pos="cursorPos"
-                      :block-dangerous-redis-commands="blockDangerousRedisCommands"
                       :app-version="appVersion"
                       :settings-initial-tab="settingsInitialTab"
                       :settings-initial-section="settingsInitialSection"
@@ -2696,8 +2509,6 @@ onUnmounted(() => {
                   @execute-sql="onAiExecuteSql"
                   @temp-run-sql="onAiTempRunSql"
                   @request-auto-execute-sql="onAiRequestAutoExecuteSql"
-                  @insert-redis-command="(command: string) => routeAiRedisCommand(command, false)"
-                  @execute-redis-command="(command: string) => routeAiRedisCommand(command, true)"
                   @open-explain-plan="onAiOpenExplainPlan"
                   @close="closeToolPanel('ai')"
                 />

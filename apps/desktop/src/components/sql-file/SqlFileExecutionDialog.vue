@@ -17,7 +17,6 @@ import { useConnectionStore } from "@/stores/connectionStore";
 import { useProductionSafetyStore } from "@/stores/productionSafetyStore";
 import { productionContextForDatabase } from "@/lib/database/productionSafety";
 import { fetchSqlFileTargetOptions } from "@/composables/useDatabaseOptions";
-import { requiresSqlFileTargetDatabaseSelection } from "@/lib/connection/connectionLevelDatabaseBootstrap";
 import { cancelSqlFileExecution, executeSqlFiles, listenSqlFileProgress, previewSqlFile, type SqlFilePreview, type SqlFileProgress, type SqlFileStatus } from "@/lib/backend/api";
 import { buildDisplayFileNames, tooltipText as computeTooltipText } from "./sqlFilePreviewLabel";
 import { useExportTracker } from "@/composables/useExportTracker";
@@ -113,20 +112,14 @@ function resetPerFileState() {
   currentFileName.value = "";
 }
 
-const sqlConnections = computed(() => store.connections.filter((c) => !["redis", "mongodb", "elasticsearch", "easysearch", "qdrant", "milvus", "weaviate", "chromadb", "etcd", "zookeeper", "mq", "nacos"].includes(c.db_type)));
+const sqlConnections = computed(() => store.connections);
 
 const selectedConnection = computed(() => sqlConnections.value.find((c) => c.id === connectionId.value));
 
 const canStart = computed(() => {
   const connection = selectedConnection.value;
   if (previews.value.length === 0 || !connection || running.value || loadingPreview.value || loadingDatabases.value) return false;
-  let hasDatabaseContext = false;
-  const canExecuteWithoutSelectedDatabase = previews.value.every((item) => {
-    if (!hasDatabaseContext && !item.canExecuteWithoutSelectedDatabase) return false;
-    hasDatabaseContext ||= item.establishesDatabaseContext === true;
-    return true;
-  });
-  return !!database.value.trim() || !requiresSqlFileTargetDatabaseSelection(connection, canExecuteWithoutSelectedDatabase);
+  return !!database.value.trim();
 });
 
 const statusTone = computed(() => {

@@ -162,16 +162,6 @@ describe("useNavigationTargets openTableTarget", () => {
     expect(mocks.tabs[0]?.tableMetaPending).toBe(true);
   });
 
-  it("uses the SQLite attached database as the table namespace when a target omits schema", async () => {
-    mocks.databaseType = "sqlite";
-
-    await useNavigationTargets(dialogs).openLineageTarget({ connectionId: "connection-1", database: "analytics", tableName: "events" });
-
-    expect(mocks.tabs[0]?.schema).toBe("analytics");
-    expect(mocks.tabs[0]?.tableMeta?.schema).toBe("analytics");
-    expect(mocks.getColumns.mock.calls.some(([connectionId, database, schema, tableName]) => connectionId === "connection-1" && database === "analytics" && schema === "analytics" && tableName === "events")).toBe(true);
-  });
-
   it("opens different targets in separate tabs even when sidebar data-tab reuse is enabled", async () => {
     const columnGates = new Map<string, (columns: unknown[]) => void>();
     mocks.getColumns.mockImplementation(
@@ -218,36 +208,5 @@ describe("useNavigationTargets openTableTarget", () => {
     columnGates.get("users")?.([column("id")]);
     await openA;
     expect(mocks.setTableMeta).not.toHaveBeenCalled();
-  });
-
-  it("skips the tdengine requery when a cancel was requested during the first execute", async () => {
-    // tdengine 无条件走元数据后的第二次查询。模拟：首次 executeTabSql 期间
-    // 用户点击停止，但取消返回 false（查询先完成），isCancelling 被清、
-    // 结果正常——重查仍然必须被跳过（不能替用户重跑他停掉的查询）
-    mocks.databaseType = "tdengine";
-    mocks.executeTabSql.mockImplementationOnce(async (id: string) => {
-      const tab = mocks.tabs.find((item) => item.id === id);
-      if (tab) {
-        // 用户在执行期间请求停止：计数单调递增；随后取消失败、状态被清
-        tab.cancelRequestCount = (tab.cancelRequestCount ?? 0) + 1;
-        tab.isCancelling = false;
-        tab.result = { columns: ["id"], rows: [[1]], affected_rows: 0, execution_time_ms: 1 };
-      }
-    });
-
-    await useNavigationTargets(dialogs).openLineageTarget({ connectionId: "connection-1", database: "app", schema: "public", tableName: "users" });
-
-    // 只有首次执行；tdengine 重查被取消请求拦下，元数据仍正常落地
-    expect(mocks.executeTabSql).toHaveBeenCalledTimes(1);
-    expect(mocks.tabs[0]?.tableMeta?.columns.length).toBeGreaterThan(0);
-  });
-
-  it("runs the tdengine requery normally when no cancel was requested", async () => {
-    mocks.databaseType = "tdengine";
-
-    await useNavigationTargets(dialogs).openLineageTarget({ connectionId: "connection-1", database: "app", schema: "public", tableName: "users" });
-
-    // 无取消请求：元数据落地后按既有行为执行第二次查询
-    expect(mocks.executeTabSql).toHaveBeenCalledTimes(2);
   });
 });

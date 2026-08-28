@@ -53,14 +53,6 @@ describe("extractSqlParameters", () => {
     expect(extractSqlParameters("select @amount/2, @total / 4")).toEqual(["amount", "total"]);
   });
 
-  it("ignores Oracle database links while preserving standalone at-sign placeholders", () => {
-    const sql = 'SELECT * FROM HR.EMPLOYEES@REMOTE_DB, "AUDIT_LOG"@ARCHIVE_DB WHERE tenant_id = @tenant_id';
-    expect(extractSqlParameters("SELECT 1 FROM DUAL@WDHIS160;", { databaseType: "oracle" })).toEqual([]);
-    expect(extractSqlParameters(sql, { databaseType: "oracle" })).toEqual(["tenant_id"]);
-    expect(substituteSqlParameters(sql, { tenant_id: { kind: "number", value: "7" } }, { databaseType: "oracle" })).toBe('SELECT * FROM HR.EMPLOYEES@REMOTE_DB, "AUDIT_LOG"@ARCHIVE_DB WHERE tenant_id = 7');
-    expect(extractSqlParameters("SELECT * FROM EMPLOYEES@REMOTE_DB", { databaseType: "postgres" })).toEqual(["REMOTE_DB"]);
-  });
-
   it("describes each placeholder syntax for the parameter dialog", () => {
     const sql = "select ? as a, :named as b, ${shell_name} as c, #{mybatis_name} as d, @sql_server_name as e";
     expect(extractSqlParameterDescriptors(sql)).toEqual([
@@ -261,66 +253,6 @@ describe("extractSqlParameters", () => {
     expect(substituteSqlParameters(sql, { real: { kind: "number", value: "7" } }, { databaseType: "doris" })).toBe("create table `broken` (value struct<field:int,\nselect 7;");
   });
 
-  it("ignores DuckDB compact struct literal field separators", () => {
-    const sql = `
-      select {
-        'compact':column,
-        'spaced' : other_column,
-        bare_key:third_column,
-        'nested':{'inner':nested_column},
-        'listed':[{'item':list_column}],
-        'mapped':map(['entry'], [{'value':mapped_column}])
-      }
-      from t
-    `;
-
-    expect(extractSqlParameters(sql, { databaseType: "duckdb" })).toEqual([]);
-    expect(substituteSqlParameters(sql, {}, { databaseType: "duckdb" })).toBe(sql);
-  });
-
-  it("keeps real DuckDB named placeholders in struct values and outside structs", () => {
-    const sql = "select {'key': :value, 'nested': {'inner':coalesce(:nested_value, fallback_column)}}, :outside from t";
-
-    expect(extractSqlParameters(sql, { databaseType: "duckdb" })).toEqual(["value", "nested_value", "outside"]);
-    expect(
-      substituteSqlParameters(
-        sql,
-        {
-          value: { kind: "number", value: "1" },
-          nested_value: { kind: "number", value: "2" },
-          outside: { kind: "number", value: "3" },
-        },
-        { databaseType: "duckdb" },
-      ),
-    ).toBe("select {'key': 1, 'nested': {'inner':coalesce(2, fallback_column)}}, 3 from t");
-  });
-
-  it("does not globally hide DuckDB named placeholders inside braces", () => {
-    const sql = "select {'key':column}, {fn coalesce(:inside, 1)}, :outside";
-
-    expect(extractSqlParameters(sql, { databaseType: "duckdb" })).toEqual(["inside", "outside"]);
-    expect(extractSqlParameters(sql, { databaseType: "postgres" })).toEqual(["column", "inside", "outside"]);
-  });
-
-  it("ignores DuckDB struct separators around comments and quoted values", () => {
-    const sql = `
-      select {
-        'key' /* field separator */ :column,
-        'text':'literal :ignored',
-        'call':coalesce(:value, {'inner':inner_column})
-      }, :outside
-      -- {'comment':comment_column}
-    `;
-
-    expect(extractSqlParameters(sql, { databaseType: "duckdb" })).toEqual(["value", "outside"]);
-  });
-
-  it("falls back conservatively for an unterminated DuckDB struct literal", () => {
-    const sql = "select {'key':column, 'nested':{'inner':nested_column}\nunion all select :later";
-
-    expect(extractSqlParameters(sql, { databaseType: "duckdb" })).toEqual(["column", "nested_column", "later"]);
-  });
-
   it("ignores Doris VARIANT field type separators", () => {
     const sql = `
       create table \`events\` (
@@ -352,102 +284,6 @@ describe("extractSqlParameters", () => {
         >
       );
     `);
-  });
-
-  it("ignores HANA SQLScript variable references", () => {
-    const sql = "DO BEGIN Dummy1 = SELECT 1 FROM DUMMY; SELECT * FROM :Dummy1; END";
-    expect(extractSqlParameters(sql, { databaseType: "saphana" })).toEqual([]);
-  });
-});
-
-describe("Oracle and Dameng trigger pseudo-records", () => {
-  it("ignores Oracle default pseudo-record fields while keeping ordinary parameters", () => {
-    const sql = `
-      CREATE OR REPLACE TRIGGER audit_orders
-      BEFORE UPDATE ON orders
-      FOR EACH ROW
-      BEGIN
-        :NEW.updated_at := current_timestamp;
-        audit_change(:old.id, :PaReNt.order_id, :tenant_id);
-      END;
-    `;
-
-    expect(extractSqlParameters(sql, { databaseType: "oracle" })).toEqual(["tenant_id"]);
-  });
-
-  it("ignores Dameng default pseudo-record fields case-insensitively", () => {
-    const sql = `
-      create trigger audit_orders after update on orders
-      for each row
-      begin
-        insert into order_audit values (:new.id, :OLD.status, :EventInfo.event_type, :actor_id);
-      end;
-    `;
-
-    expect(extractSqlParameters(sql, { databaseType: "dameng" })).toEqual(["actor_id"]);
-  });
-
-  it("parses REFERENCING aliases without disabling default pseudo-records", () => {
-    const sql = `
-      create or replace trigger audit_orders
-      before update on orders
-      referencing old row as previous new as current
-      for each row
-      begin
-        audit_change(:previous.id, :CURRENT.status, :old.id, :new.status, :reason);
-      end;
-    `;
-
-    expect(extractSqlParameters(sql, { databaseType: "oracle" })).toEqual(["reason"]);
-  });
-
-  it("replaces ordinary trigger parameters but preserves pseudo-record fields", () => {
-    const sql = `create trigger audit_orders before update on orders
-      referencing new as inserted old as deleted
-      for each row begin
-        :inserted.updated_by := :user_id;
-        audit_change(:deleted.id, :NEW.id, :note);
-      end;`;
-
-    expect(
-      substituteSqlParameters(
-        sql,
-        {
-          user_id: { kind: "number", value: "42" },
-          note: { kind: "string", value: "manual" },
-        },
-        { databaseType: "dameng" },
-      ),
-    ).toBe(`create trigger audit_orders before update on orders
-      referencing new as inserted old as deleted
-      for each row begin
-        :inserted.updated_by := 42;
-        audit_change(:deleted.id, :NEW.id, 'manual');
-      end;`);
-  });
-
-  it("does not apply trigger rules to other databases or statements outside triggers", () => {
-    const oracleScript = `create trigger audit_orders before update on orders
-      for each row begin :new.id := :value; end;
-      /
-      select :new, :outside_value from dual;`;
-
-    expect(extractSqlParameters(oracleScript, { databaseType: "oracle" })).toEqual(["value", "new", "outside_value"]);
-    expect(extractSqlParameters("create trigger t before update on x begin :NEW.id := :value; end;", { databaseType: "postgres" })).toEqual(["NEW", "value"]);
-    expect(extractSqlParameters("create trigger t before update on x begin NEW.id := :value; end;", { databaseType: "postgres" })).toEqual(["value"]);
-  });
-
-  it("keeps assignment, casts, comments, strings, and non-field pseudo-record tokens unchanged", () => {
-    const sql = `create trigger audit_orders before update on orders
-      for each row begin
-        :new := :actual_value;
-        value := :NEW.id;
-        select value::int into :target_value from dual;
-        -- :OLD.comment_field
-        note := ':EVENTINFO.string_field';
-      end;`;
-
-    expect(extractSqlParameters(sql, { databaseType: "dameng" })).toEqual(["new", "actual_value", "target_value"]);
   });
 });
 
@@ -607,11 +443,6 @@ DEALLOCATE PREPARE stmt;`;
       }),
     ).toBe("exec dbo.search_orders @date_start = '2026-07-04', @status = 'paid', @tenant_id = 7");
   });
-
-  it("keeps HANA SQLScript variable references while replacing template parameters", () => {
-    const sql = "DO BEGIN Dummy1 = SELECT * FROM ORDERS WHERE TENANT_ID = ${tenant_id}; SELECT * FROM :Dummy1; END";
-    expect(substituteSqlParameters(sql, { tenant_id: { kind: "number", value: "42" } }, { databaseType: "saphana" })).toBe("DO BEGIN Dummy1 = SELECT * FROM ORDERS WHERE TENANT_ID = 42; SELECT * FROM :Dummy1; END");
-  });
 });
 
 describe("enabledSyntaxes option", () => {
@@ -642,14 +473,6 @@ describe("enabledSyntaxes option", () => {
   it("keeps #{name} out of hash-comment handling when mybatis is disabled", () => {
     expect(extractSqlParameters("select #{mybatis_name} from t", { enabledSyntaxes: ["shell"] })).toEqual([]);
     expect(substituteSqlParameters("select #{mybatis_name} from t", {}, { enabledSyntaxes: ["shell"] })).toBe("select #{mybatis_name} from t");
-  });
-
-  it("intersects the enabled set with the saphana named-parameter rule", () => {
-    const sql = "select :named as a, ${shell_name} as b";
-    // saphana already disables :name; enabling named cannot re-enable it.
-    expect(extractSqlParameters(sql, { databaseType: "saphana", enabledSyntaxes: ["named", "shell"] })).toEqual(["shell_name"]);
-    // A non-saphana database with named disabled also drops :name.
-    expect(extractSqlParameters(sql, { enabledSyntaxes: ["shell"] })).toEqual(["shell_name"]);
   });
 
   it("respects enabledSyntaxes for exact quoted braced placeholders", () => {

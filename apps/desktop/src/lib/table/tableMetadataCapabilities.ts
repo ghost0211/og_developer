@@ -16,84 +16,9 @@ const defaultCapabilities: TableMetadataCapabilities = {
   ddl: true,
 };
 
-const capabilityByType: Partial<Record<DatabaseType, Partial<TableMetadataCapabilities>>> = {
-  mongodb: {
-    columns: false,
-    foreignKeys: false,
-    triggers: false,
-    ddl: false,
-  },
-  clickhouse: {
-    foreignKeys: false,
-    triggers: false,
-  },
-  manticoresearch: {
-    foreignKeys: false,
-    triggers: false,
-  },
-  elasticsearch: {
-    indexes: false,
-    foreignKeys: false,
-    triggers: false,
-    ddl: false,
-  },
-  easysearch: {
-    indexes: false,
-    foreignKeys: false,
-    triggers: false,
-    ddl: false,
-  },
-  hbase: {
-    indexes: false,
-    foreignKeys: false,
-    triggers: false,
-    ddl: false,
-  },
-  qdrant: {
-    indexes: false,
-    foreignKeys: false,
-    triggers: false,
-    ddl: false,
-  },
-  milvus: {
-    indexes: false,
-    foreignKeys: false,
-    triggers: false,
-    ddl: false,
-  },
-  weaviate: {
-    indexes: false,
-    foreignKeys: false,
-    triggers: false,
-    ddl: false,
-  },
-  chromadb: {
-    indexes: false,
-    foreignKeys: false,
-    triggers: false,
-    ddl: false,
-  },
-  influxdb: {
-    indexes: false,
-    foreignKeys: false,
-    triggers: false,
-    ddl: false,
-  },
-  victoriametrics: {
-    indexes: false,
-    foreignKeys: false,
-    triggers: false,
-    ddl: false,
-  },
-  questdb: {
-    indexes: true,
-    foreignKeys: false,
-    triggers: false,
-  },
-};
-
 export function getTableMetadataCapabilities(dbType?: DatabaseType): TableMetadataCapabilities {
-  return { ...defaultCapabilities, ...(dbType ? capabilityByType[dbType] : undefined) };
+  void dbType;
+  return { ...defaultCapabilities };
 }
 
 export function firstStructureMetadataTab(capabilities: TableMetadataCapabilities, isCreateMode: boolean): TableInfoTab {

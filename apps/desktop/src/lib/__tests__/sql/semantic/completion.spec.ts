@@ -13,7 +13,7 @@ function mergeColumns(...maps: Array<Map<string, SqlCompletionColumn[]> | undefi
   return merged;
 }
 
-function semanticCompletion(markedSql: string, input: Partial<SqlCompletionProviderInput> = {}, options: { databaseType?: DatabaseType; dialect?: "mysql" | "postgres" | "sqlserver" } = {}) {
+function semanticCompletion(markedSql: string, input: Partial<SqlCompletionProviderInput> = {}, options: { databaseType?: DatabaseType; dialect?: "postgres" } = {}) {
   const { sql, cursor } = sqlFixtureCursor(markedSql);
   const model = buildSqlSemanticModel(sql, cursor, options);
   const context = sqlCompletionContextFromSemantic(model, getSqlCompletionContext(sql, cursor, options));
@@ -86,13 +86,13 @@ describe("semantic SQL completion candidates", () => {
     expect(items.filter((item) => item.type === "column").map((item) => item.label)).toEqual(["current_id"]);
   });
 
-  it("loads nested alias columns through the database-qualified metadata key", () => {
+  it("loads nested alias columns through the schema-qualified metadata key", () => {
     const { context, items } = semanticCompletion(
       "SELECT * FROM aa.tb t WHERE EXISTS (SELECT 1 FROM aa.tb1 t1, aa.tb2 t2 WHERE t1.|)",
       {
         columnsByTable: new Map([["aa.tb1", [{ name: "id", table: "tb1", schema: "aa" }]]]),
       },
-      { databaseType: "mysql", dialect: "mysql" },
+      { databaseType: "postgres", dialect: "postgres" },
     );
 
     expect(context.referencedTables).toEqual(expect.arrayContaining([expect.objectContaining({ name: "tb1", schema: "aa", alias: "t1" })]));
@@ -100,95 +100,13 @@ describe("semantic SQL completion candidates", () => {
   });
 
   it("suggests nested tables after a qualified comma", () => {
-    const { context, items } = semanticCompletion("SELECT * FROM aa.tb t WHERE EXISTS (SELECT 1 FROM aa.tb1 t1, aa.|)", { tables: [{ name: "tb2", schema: "aa", type: "table" }] }, { databaseType: "mysql", dialect: "mysql" });
+    const { context, items } = semanticCompletion("SELECT * FROM aa.tb t WHERE EXISTS (SELECT 1 FROM aa.tb1 t1, aa.|)", { tables: [{ name: "tb2", schema: "aa", type: "table" }] }, { databaseType: "postgres", dialect: "postgres" });
 
     expect(context.contextKind).toBe("table");
     expect(items).toEqual(expect.arrayContaining([expect.objectContaining({ label: "tb2", type: "table" })]));
   });
 
-  it.each([
-    ["ordinary lowercase", "SELECT * FROM orders_alias a WHERE a.|", "ORDERS_ALIAS", false],
-    ["quoted lowercase", 'SELECT * FROM "orders_alias" a WHERE a.|', "orders_alias", true],
-    ["quoted mixed case", 'SELECT * FROM "Orders_Alias" a WHERE a.|', "Orders_Alias", true],
-  ] as const)("preserves Oracle identifier semantics for %s aliases", (_label, markedSql, expectedName, expectedQuoted) => {
-    const { context } = semanticCompletion(markedSql, {}, { databaseType: "oracle" });
-
-    expect(context.referencedTables).toEqual([expect.objectContaining({ name: expectedName, nameQuoted: expectedQuoted, alias: "A" })]);
-  });
-
-  it("isolates SQL Server columns for database-qualified tables with the same schema and name", () => {
-    const columnsByTable = new Map<string, SqlCompletionColumn[]>([
-      ["DatabaseA.OUT.orders", [{ name: "source_marker", table: "orders", schema: "OUT" }]],
-      ["DatabaseB.OUT.orders", [{ name: "target_marker", table: "orders", schema: "OUT" }]],
-    ]);
-    const { context, items } = semanticCompletion("SELECT * FROM [DatabaseA].[OUT].[orders] a LEFT JOIN [DatabaseB].[OUT].[orders] b ON b.|", { columnsByTable }, { databaseType: "sqlserver", dialect: "sqlserver" });
-
-    expect(context.referencedTables).toEqual(expect.arrayContaining([expect.objectContaining({ name: "orders", database: "DatabaseB", schema: "OUT", alias: "b" })]));
-    expect(items.filter((item) => item.type === "column").map((item) => item.label)).toEqual(["target_marker"]);
-  });
-
-  it("resolves columns after a full SQL Server database.schema.table qualifier", () => {
-    const columnsByTable = new Map<string, SqlCompletionColumn[]>([["DatabaseB.OUT.orders", [{ name: "target_marker", table: "orders", schema: "OUT" }]]]);
-    const { context, items } = semanticCompletion("SELECT * FROM [DatabaseB].[OUT].[orders] WHERE [DatabaseB].[OUT].[orders].|", { columnsByTable }, { databaseType: "sqlserver", dialect: "sqlserver" });
-
-    expect(context.qualifierParts).toEqual(["DatabaseB", "OUT", "orders"]);
-    expect(items.filter((item) => item.type === "column").map((item) => item.label)).toEqual(["target_marker"]);
-  });
-
-  it("completes SQL Server tables from the database dbo schema after a double dot", () => {
-    const { context, items } = semanticCompletion(
-      "SELECT * FROM BarDB..|",
-      {
-        tables: [{ name: "orders", database: "BarDB", schema: "dbo", type: "table" }],
-      },
-      { databaseType: "sqlserver", dialect: "sqlserver" },
-    );
-
-    expect(context).toMatchObject({
-      prefix: "",
-      qualifier: "BarDB.dbo",
-      qualifierParts: ["BarDB", "dbo"],
-    });
-    expect(items.filter((item) => item.type === "table")).toEqual([expect.objectContaining({ label: "orders", apply: "orders" })]);
-  });
-
-  it("completes SQL Server alias columns from the exact double-dot metadata target", () => {
-    const columnsByTable = new Map<string, SqlCompletionColumn[]>([
-      ["FooDB.dbo.orders", [{ name: "wrong_database", table: "orders", schema: "dbo" }]],
-      ["BarDB.sales.orders", [{ name: "wrong_schema", table: "orders", schema: "sales" }]],
-      ["BarDB.dbo.orders", [{ name: "target_marker", table: "orders", schema: "dbo" }]],
-    ]);
-    const { model, context, items } = semanticCompletion("SELECT * FROM BarDB..orders AS o WHERE o.|", { columnsByTable }, { databaseType: "sqlserver", dialect: "sqlserver" });
-
-    expect(model.rowSources).toEqual([
-      expect.objectContaining({
-        name: "orders",
-        qualifierParts: ["BarDB", "dbo"],
-        alias: "o",
-        metadataTarget: { database: "BarDB", schema: "dbo", table: "orders" },
-      }),
-    ]);
-    expect(context.referencedTables).toEqual([expect.objectContaining({ name: "orders", database: "BarDB", schema: "dbo", alias: "o" })]);
-    expect(items.filter((item) => item.type === "column").map((item) => item.label)).toEqual(["target_marker"]);
-  });
-
-  it("completes unqualified SQL Server columns from the exact double-dot metadata target", () => {
-    const columnsByTable = new Map<string, SqlCompletionColumn[]>([
-      ["FooDB.dbo.orders", [{ name: "wrong_database", table: "orders", schema: "dbo" }]],
-      ["BarDB.sales.orders", [{ name: "wrong_schema", table: "orders", schema: "sales" }]],
-      ["BarDB.dbo.orders", [{ name: "target_marker", table: "orders", schema: "dbo" }]],
-    ]);
-    const { context, items } = semanticCompletion("SELECT * FROM BarDB..orders WHERE tar|", { columnsByTable }, { databaseType: "sqlserver", dialect: "sqlserver" });
-
-    expect(context.referencedTables).toEqual([expect.objectContaining({ name: "orders", database: "BarDB", schema: "dbo" })]);
-    expect(items.filter((item) => item.type === "column").map((item) => item.label)).toEqual(["target_marker"]);
-  });
-
-  it.each([
-    ["MySQL ORDER BY", "SELECT * FROM t LIMIT 100 or|", "mysql", "mysql", "ORDER BY"],
-    ["PostgreSQL ON CONFLICT", "INSERT INTO t VALUES (1) on|", "postgres", "postgres", "ON CONFLICT"],
-    ["Oracle EXECUTE IMMEDIATE", "exec|", "oracle", undefined, "EXECUTE IMMEDIATE"],
-  ] as const)("keeps the longer %s keyword available before the current token is committed", (_label, sql, databaseType, dialect, expectedKeyword) => {
+  it.each([["PostgreSQL ON CONFLICT", "INSERT INTO t VALUES (1) on|", "postgres", "postgres", "ON CONFLICT"]] as const)("keeps the longer %s keyword available before the current token is committed", (_label, sql, databaseType, dialect, expectedKeyword) => {
     const { context, items } = semanticCompletion(sql, {}, { databaseType, dialect });
 
     expect(context.suggestKeywords).toBe(false);
@@ -197,7 +115,7 @@ describe("semantic SQL completion candidates", () => {
 
   it("does not offer keyword continuations for qualified column prefixes", () => {
     const columnsByTable = new Map<string, SqlCompletionColumn[]>([["t", [{ name: "order_number", table: "t" }]]]);
-    const { context, items } = semanticCompletion("SELECT * FROM t WHERE t.or|", { columnsByTable }, { databaseType: "mysql", dialect: "mysql" });
+    const { context, items } = semanticCompletion("SELECT * FROM t WHERE t.or|", { columnsByTable }, { databaseType: "postgres", dialect: "postgres" });
 
     expect(context.qualifier).toBe("t");
     expect(items.some((item) => item.label === "ORDER BY")).toBe(false);
@@ -205,7 +123,7 @@ describe("semantic SQL completion candidates", () => {
 
   it("stops offering ORDER BY as a prefix continuation after OR is committed with whitespace", () => {
     const columnsByTable = new Map<string, SqlCompletionColumn[]>([["t", [{ name: "id", table: "t" }]]]);
-    const { context, items } = semanticCompletion("SELECT * FROM t WHERE id = 1 OR |", { columnsByTable }, { databaseType: "mysql", dialect: "mysql" });
+    const { context, items } = semanticCompletion("SELECT * FROM t WHERE id = 1 OR |", { columnsByTable }, { databaseType: "postgres", dialect: "postgres" });
 
     expect(context.prefix).toBe("");
     expect(items.some((item) => item.label === "ORDER BY")).toBe(false);
@@ -267,10 +185,7 @@ describe("semantic SQL completion candidates", () => {
     expect(items.filter((item) => item.type === "column").map((item) => item.label)).toEqual(["id", "customer_name", "total_amount"]);
   });
 
-  it.each([
-    ["PostgreSQL", "postgres", "postgres"],
-    ["SQL Server", "sqlserver", "sqlserver"],
-  ] as const)("uses row-source aliases for %s self-join column collisions", (_label, databaseType, dialect) => {
+  it.each([["PostgreSQL", "postgres", "postgres"]] as const)("uses row-source aliases for %s self-join column collisions", (_label, databaseType, dialect) => {
     const columnsByTable = new Map<string, SqlCompletionColumn[]>([["users", ["id", "name"].map((name) => ({ name, table: "users" }))]]);
 
     const { items } = semanticCompletion("SELECT * FROM users u JOIN users v ON u.id = v.id WHERE |", { columnsByTable }, { databaseType, dialect });
@@ -307,7 +222,7 @@ FROM tb_kpi_set_score a,
   tb_kpi_set_score_detail b
 WHERE a.id = b.fk_kpi_set_score_id`,
       { columnsByTable },
-      { databaseType: "mysql", dialect: "mysql" },
+      { databaseType: "postgres", dialect: "postgres" },
     );
 
     expect(context.referencedTables).toEqual(expect.arrayContaining([expect.objectContaining({ name: "tb_kpi_set_score_detail", alias: "b" })]));
@@ -342,14 +257,6 @@ WHERE a.id = b.fk_kpi_set_score_id`,
     expect(items.filter((item) => item.type === "column").map((item) => item.label)).toEqual(["id", "label"]);
   });
 
-  it("loads real SQL Server columns after aliased table hints", () => {
-    const columnsByTable = new Map<string, SqlCompletionColumn[]>([["users", ["id", "name", "email"].map((name) => ({ name, table: "users" }))]]);
-
-    const { items } = semanticCompletion("SELECT * FROM users u (NOLOCK) WHERE u.|", { columnsByTable }, { databaseType: "sqlserver", dialect: "sqlserver" });
-
-    expect(items.filter((item) => item.type === "column").map((item) => item.label)).toEqual(["id", "name", "email"]);
-  });
-
   it("merges partial PostgreSQL correlation names with metadata positionally", () => {
     const columnsByTable = new Map<string, SqlCompletionColumn[]>([["users", ["id", "name", "email"].map((name) => ({ name, table: "users" }))]]);
 
@@ -359,10 +266,10 @@ WHERE a.id = b.fk_kpi_set_score_id`,
     expect(items.filter((item) => item.type === "column").map((item) => item.label)).toEqual(["user_id", "name", "email"]);
   });
 
-  it("completes an unquoted SQL Server table named lateral", () => {
+  it("completes an unquoted PostgreSQL table named lateral", () => {
     const columnsByTable = new Map<string, SqlCompletionColumn[]>([["lateral", ["id", "value"].map((name) => ({ name, table: "lateral" }))]]);
 
-    const { context, items } = semanticCompletion("SELECT * FROM lateral l WHERE l.|", { columnsByTable }, { databaseType: "sqlserver", dialect: "sqlserver" });
+    const { context, items } = semanticCompletion("SELECT * FROM lateral l WHERE l.|", { columnsByTable }, { databaseType: "postgres", dialect: "postgres" });
 
     expect(context.referencedTables).toEqual(expect.arrayContaining([expect.objectContaining({ name: "lateral", alias: "l" })]));
     expect(items.filter((item) => item.type === "column").map((item) => item.label)).toEqual(["id", "value"]);
@@ -475,10 +382,6 @@ WHERE a.id = b.fk_kpi_set_score_id`,
     ["PostgreSQL quoted schema.table", 'SELECT * FROM "public"."users" wh|', "postgres", "postgres"],
     ["PostgreSQL quoted keyword table", 'SELECT * FROM "from" wh|', "postgres", "postgres"],
     ["PostgreSQL quoted schema.keyword table", 'SELECT * FROM "public"."from" wh|', "postgres", "postgres"],
-    ["MySQL backtick table", "SELECT * FROM `users` wh|", "mysql", "mysql"],
-    ["MySQL backtick keyword table", "SELECT * FROM `join` wh|", "mysql", "mysql"],
-    ["SQL Server bracket table", "SELECT * FROM [users] wh|", "sqlserver", "sqlserver"],
-    ["SQL Server bracket keyword table", "SELECT * FROM [update] wh|", "sqlserver", "sqlserver"],
   ] as const)("offers WHERE keyword completion after a quoted prefilled table (%s)", (_label, markedSql, databaseType, dialect) => {
     const { context, items } = semanticCompletion(markedSql, {}, { databaseType, dialect });
 

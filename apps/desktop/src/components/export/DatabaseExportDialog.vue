@@ -64,7 +64,7 @@ const dropTableIfExists = ref(false);
 const omitAutoIncrement = ref(false);
 // `AUTO_INCREMENT` stripping is a MySQL-only DDL transform (backend gates on
 // db_type == mysql, which also covers MariaDB / TiDB / OceanBase-MySQL-mode).
-const isMysqlFamily = computed(() => store.getConfig(connectionId.value)?.db_type === "mysql");
+const isMysqlFamily = computed(() => false);
 
 // Export state
 const isExporting = ref(false);
@@ -304,7 +304,7 @@ async function startExport() {
       {
         connectionId: connectionId.value,
         database: database.value,
-        enabled: includeData.value && (connectionType === "mysql" || connectionType === "postgres"),
+        enabled: includeData.value && (connectionType === "opengauss" || connectionType === "postgres"),
       },
       async (snapshotSessionId) => {
         const request: api.DatabaseExportRequest = {
@@ -438,7 +438,7 @@ async function startAllDatabasesExport() {
         {
           connectionId: connectionId.value,
           database: item.database,
-          enabled: includeData.value && (connectionType === "mysql" || connectionType === "postgres"),
+          enabled: includeData.value && (connectionType === "opengauss" || connectionType === "postgres"),
         },
         (snapshotSessionId) =>
           runDatabaseExportUntilTerminal(

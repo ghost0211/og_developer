@@ -11,7 +11,6 @@ import { canApplyDataTabMetadata, dataTabMetadataNeedsRefresh, findExistingDataT
 import type { SidebarDataOpenRequest } from "@/lib/sidebar/sidebarDataOpenCoordinator";
 import { hasTreeNodeDatabaseContext } from "@/lib/sidebar/treeNodeContext";
 import { buildTableSelectSql } from "@/lib/table/tableSelectSql";
-import { usesSyntheticRowIdKey } from "@/lib/table/tableEditing";
 import { tableOpenPageLimit } from "@/lib/table/tableOpenPageLimit";
 import { canActivateExistingDataTableTab } from "@/lib/tabs/dataTabActivation";
 import { beginDataTabNavigation, endDataTabNavigation, isCurrentDataTabNavigation } from "@/lib/tabs/dataTabNavigationGeneration";
@@ -31,12 +30,6 @@ export function useSidebarDataOpenRuntime() {
     if (!(node.type === "table" || node.type === "view" || node.type === "materialized_view") || !hasNodeDatabaseContext(node)) return;
     const config = connectionStore.getConfig(node.connectionId);
     const reuseMode = options.reuseMode ?? settingsStore.editorSettings.dataTabReuseMode;
-    if (config?.db_type === "hbase") {
-      await connectionStore.ensureConnected(node.connectionId);
-      const tabId = queryStore.createTab(node.connectionId, node.database, node.label, "hbase", undefined, node.label, undefined, { forceNew: openMode === "new-tab" || reuseMode === "always-new" });
-      queryStore.updateSql(tabId, node.label);
-      return;
-    }
     const traceId = uuid().slice(0, 8);
     const startedAt = performance.now();
     let lastPhaseAt = startedAt;
@@ -140,8 +133,6 @@ export function useSidebarDataOpenRuntime() {
       tab.resultSortDirection = undefined;
       tab.resultSortMode = undefined;
       tab.resultLocalSortOriginalRows = undefined;
-      tab.resultLocalSortOriginalMongoDocuments = undefined;
-      tab.resultLocalSortOriginalMongoCopyDocuments = undefined;
       tab.resultSortedSql = undefined;
       tab.resultPageSql = undefined;
       tab.resultPageLimit = undefined;
@@ -277,8 +268,7 @@ export function useSidebarDataOpenRuntime() {
 
       const limit = tableOpenPageLimit(settingsStore.editorSettings.tableOpenPageSize);
       const shouldRefreshTableMeta = !cachedTableMeta;
-      // Dameng metadata calls must remain serialized behind the table query.
-      const deferTableMetaRefresh = effectiveDbType === "dameng";
+      const deferTableMetaRefresh = false;
       if (cachedTableMeta) {
         openDataLog("info", "metadata:cache-hit", {
           traceId,
@@ -304,7 +294,6 @@ export function useSidebarDataOpenRuntime() {
 
       const columns = cachedTableMeta?.columns ?? [];
       const primaryKeys = cachedTableMeta?.primaryKeys ?? [];
-      const includeRowId = usesSyntheticRowIdKey(effectiveDbType, primaryKeys, tableType);
       const sql = await buildTableSelectSql({
         databaseType: effectiveDbType,
         identifierQuote: connectionStore.connectionIdentifierQuote?.(node.connectionId),
@@ -316,7 +305,6 @@ export function useSidebarDataOpenRuntime() {
         columns: columns.map((column) => column.name),
         primaryKeys,
         limit,
-        includeRowId,
       });
       // SQL 构建是异步后端调用：期间更晚的导航（openData/openTableTarget）
       // 接管会替换 executionId，旧流程不得再覆盖 SQL/启动查询
@@ -327,7 +315,6 @@ export function useSidebarDataOpenRuntime() {
       openDataLog("info", "sql-built", {
         traceId,
         primaryKeyCount: primaryKeys.length,
-        includeRowId,
         sqlLength: sql.length,
         elapsed: elapsed(),
       });

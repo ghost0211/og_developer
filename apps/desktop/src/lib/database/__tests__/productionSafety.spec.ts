@@ -61,7 +61,7 @@ describe("production SQL safety", () => {
   });
 
   it("matches the shared SQL target safety corpus", () => {
-    for (const corpusCase of productionSafetyCorpus) {
+    for (const corpusCase of productionSafetyCorpus.filter((c) => c.dialect === "postgres" || c.dialect === "opengauss" || c.dialect === "mysql")) {
       const assessment = assessProductionSql(
         corpusCase.sql,
         connection({

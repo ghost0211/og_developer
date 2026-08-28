@@ -203,15 +203,7 @@
           # ── Step 2: vendor Cargo dependencies ───────────────────────────── #
           cargoVendorDir = craneLib.vendorCargoDeps {
             cargoLock = ./Cargo.lock;
-            # Pin Git checkouts by their complete Cargo source identity. Unlike
-            # package-name/version keys, these remain stable when a package
-            # version inside the same checkout changes.
-            outputHashes = {
-              "git+https://github.com/t8y2/rust_mysql_common.git?rev=47740d85a8277167a5717afac785d37b46a36296#47740d85a8277167a5717afac785d37b46a36296" =
-                "sha256-fw1rDLNh0BByLHjS8Cgc7KQxdj3N51HVMHXvRyETsas=";
-              "git+https://github.com/t8y2/mysql_async.git?rev=b615bb0b10b5975182a4aa069cabc3d09021f6ab#b615bb0b10b5975182a4aa069cabc3d09021f6ab" =
-                "sha256-WNp8cdlnoyE4nzwGDhibqLYQbRz9YrsITis59TId5K0=";
-            };
+            outputHashes = {};
           };
 
           # ── Native build tools (available during build, not linked) ──────── #
@@ -250,16 +242,14 @@
             icon = "dbx";
             desktopName = "DBX";
             genericName = "Database Management Tool";
-            comment = "Open-source database management tool for 70+ databases";
+            comment = "openGauss database development tool";
             categories = [ "Development" "Database" ];
             keywords = [
               "database"
               "sql"
               "client"
-              "mysql"
               "postgresql"
-              "mongodb"
-              "redis"
+              "opengauss"
             ];
             startupWMClass = "DBX";
             terminal = false;

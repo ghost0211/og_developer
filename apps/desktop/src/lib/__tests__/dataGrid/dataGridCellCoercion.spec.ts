@@ -2,32 +2,22 @@ import { describe, expect, it } from "vitest";
 import { coerceDataGridCellValue, dataGridCellDisplayText } from "@/lib/dataGrid/dataGridCellCoercion";
 
 describe("dataGridCellDisplayText", () => {
-  it("formats Oracle DATE values without RFC3339 separators", () => {
+  it("formats PostgreSQL array values", () => {
+    expect(
+      dataGridCellDisplayText({
+        value: ["a", "b"],
+        databaseType: "postgres",
+        columnInfo: { data_type: "text[]" },
+      }),
+    ).toBe("{a,b}");
+  });
+
+  it("returns undefined for non-array values", () => {
     expect(
       dataGridCellDisplayText({
         value: "2022-08-25T09:58:43Z",
-        databaseType: "oracle",
-        columnInfo: { data_type: "DATE" },
-      }),
-    ).toBe("2022-08-25 09:58:43");
-  });
-
-  it("formats midnight Oracle DATE values as a date", () => {
-    expect(
-      dataGridCellDisplayText({
-        value: "2022-08-25T00:00:00Z",
-        databaseType: "oracle",
-        columnInfo: { data_type: "DATE" },
-      }),
-    ).toBe("2022-08-25");
-  });
-
-  it("does not format non-date Oracle strings", () => {
-    expect(
-      dataGridCellDisplayText({
-        value: "2022-08-25T09:58:43Z",
-        databaseType: "oracle",
-        columnInfo: { data_type: "VARCHAR2(64)" },
+        databaseType: "opengauss",
+        columnInfo: { data_type: "VARCHAR(64)" },
       }),
     ).toBeUndefined();
   });
@@ -39,7 +29,7 @@ describe("coerceDataGridCellValue", () => {
       coerceDataGridCellValue({
         value,
         oldValue: null,
-        databaseType: "mysql",
+        databaseType: "opengauss",
         columnInfo: { data_type: "varchar(255)" },
       }),
     ).toBe(value);
@@ -58,7 +48,7 @@ describe("coerceDataGridCellValue", () => {
     const options = {
       value: "",
       oldValue: null,
-      databaseType: "mysql" as const,
+      databaseType: "opengauss" as const,
       columnInfo: { data_type: "varchar(255)" },
     };
 
@@ -71,7 +61,7 @@ describe("coerceDataGridCellValue", () => {
       coerceDataGridCellValue({
         value: "1,234.50",
         oldValue: 1234.5,
-        databaseType: "sqlserver",
+        databaseType: "postgres",
         columnInfo: { data_type: "float" },
       }),
     ).toBe(1234.5);
@@ -80,7 +70,7 @@ describe("coerceDataGridCellValue", () => {
       coerceDataGridCellValue({
         value: "1,234,567",
         oldValue: 1234567,
-        databaseType: "sqlserver",
+        databaseType: "postgres",
         columnInfo: { data_type: "int" },
       }),
     ).toBe(1234567);
@@ -89,7 +79,7 @@ describe("coerceDataGridCellValue", () => {
       coerceDataGridCellValue({
         value: "-10,000.00",
         oldValue: "-10000.00",
-        databaseType: "sqlserver",
+        databaseType: "postgres",
         columnInfo: { data_type: "decimal(18,2)" },
       }),
     ).toBe("-10000.00");
@@ -100,7 +90,7 @@ describe("coerceDataGridCellValue", () => {
       coerceDataGridCellValue({
         value: "10,000.00",
         oldValue: "10000.50",
-        databaseType: "sqlserver",
+        databaseType: "opengauss",
         columnInfo: { data_type: "decimal(18,2)" },
       }),
     ).toBe("10000.00");
@@ -111,7 +101,7 @@ describe("coerceDataGridCellValue", () => {
       coerceDataGridCellValue({
         value: "1,234.50e2",
         oldValue: "0",
-        databaseType: "sqlserver",
+        databaseType: "opengauss",
         columnInfo: { data_type: "decimal(18,2)" },
       }),
     ).toBe("1234.50e2");
@@ -120,7 +110,7 @@ describe("coerceDataGridCellValue", () => {
       coerceDataGridCellValue({
         value: "-1,234.5E-2",
         oldValue: "0",
-        databaseType: "sqlserver",
+        databaseType: "opengauss",
         columnInfo: { data_type: "decimal(18,2)" },
       }),
     ).toBe("-1234.5E-2");
@@ -131,7 +121,7 @@ describe("coerceDataGridCellValue", () => {
       coerceDataGridCellValue({
         value: "9,007,199,254,740,993",
         oldValue: 9007199254740992,
-        databaseType: "mysql",
+        databaseType: "opengauss",
         columnInfo: { data_type: "bigint" },
       }),
     ).toBe("9007199254740993");
@@ -142,7 +132,7 @@ describe("coerceDataGridCellValue", () => {
       coerceDataGridCellValue({
         value: "10,000",
         oldValue: 10000,
-        databaseType: "sqlserver",
+        databaseType: "opengauss",
         columnInfo: { data_type: "int" },
       }),
     ).toBe("10,000");
@@ -151,7 +141,7 @@ describe("coerceDataGridCellValue", () => {
       coerceDataGridCellValue({
         value: "1,000e3",
         oldValue: 1000000,
-        databaseType: "sqlserver",
+        databaseType: "opengauss",
         columnInfo: { data_type: "float" },
       }),
     ).toBe("1,000e3");
@@ -162,7 +152,7 @@ describe("coerceDataGridCellValue", () => {
       coerceDataGridCellValue({
         value: "10,000.00",
         oldValue: "10,000.00",
-        databaseType: "sqlserver",
+        databaseType: "opengauss",
         columnInfo: { data_type: "varchar(255)" },
       }),
     ).toBe("10,000.00");
@@ -173,7 +163,7 @@ describe("coerceDataGridCellValue", () => {
       coerceDataGridCellValue({
         value: "1,23",
         oldValue: 123,
-        databaseType: "sqlserver",
+        databaseType: "opengauss",
         columnInfo: { data_type: "decimal(18,2)" },
       }),
     ).toBe("1,23");

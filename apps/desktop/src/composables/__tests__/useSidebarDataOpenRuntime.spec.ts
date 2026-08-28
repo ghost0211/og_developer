@@ -278,66 +278,6 @@ describe("useSidebarDataOpenRuntime", () => {
     });
   });
 
-  it("keeps Dameng metadata deferred until after the table query", async () => {
-    mocks.databaseType = "dameng";
-
-    await useSidebarDataOpenRuntime().openData(tableNode);
-
-    await vi.waitFor(() => {
-      expect(mocks.callOrder).toEqual(["query", "metadata"]);
-      expect(mocks.tabs[0]?.tableMeta?.primaryKeys).toEqual(["id"]);
-    });
-  });
-
-  it("keeps MySQL data-tab identity unqualified after metadata loads", async () => {
-    mocks.databaseType = "mysql";
-    mocks.loadTableMetadata.mockImplementation(async (request: { database: string; schema?: string; tableName: string; tableType?: string }) => ({
-      metadata: {
-        schema: request.schema,
-        tableName: request.tableName,
-        tableType: request.tableType,
-        database: request.database,
-        columns: [{ name: "id", data_type: "bigint", is_nullable: false, column_default: null, is_primary_key: true, extra: null }],
-        indexes: [],
-        primaryKeys: ["id"],
-        cachedAt: Date.now(),
-      },
-      cacheStatus: "miss",
-      ageMs: 0,
-    }));
-
-    await useSidebarDataOpenRuntime().openData(mysqlTableNode);
-
-    await vi.waitFor(() => expect(mocks.tabs[0]?.tableMeta?.primaryKeys).toEqual(["id"]));
-    expect(mocks.loadTableMetadata).toHaveBeenCalledWith(expect.objectContaining({ database: "yf_db", schema: "yf_db" }));
-    expect(mocks.buildTableSelectSql).toHaveBeenCalledWith(expect.objectContaining({ database: "yf_db", schema: undefined, tableName: "zcyy_write_off_record" }));
-    expect(mocks.tabs[0]?.tableMeta).toMatchObject({ database: "yf_db", schema: undefined, tableName: "zcyy_write_off_record" });
-  });
-
-  it("keeps cached MySQL table metadata unqualified", async () => {
-    mocks.databaseType = "mysql";
-    mocks.cachedMetadata = {
-      metadata: {
-        schema: "yf_db",
-        tableName: "zcyy_write_off_record",
-        tableType: "TABLE",
-        database: "yf_db",
-        columns: [{ name: "id", data_type: "bigint", is_nullable: false, column_default: null, is_primary_key: true, extra: null }],
-        indexes: [],
-        primaryKeys: ["id"],
-        cachedAt: Date.now(),
-      },
-      cacheStatus: "hit",
-      ageMs: 0,
-    };
-
-    await useSidebarDataOpenRuntime().openData(mysqlTableNode);
-
-    expect(mocks.loadTableMetadata).not.toHaveBeenCalled();
-    expect(mocks.buildTableSelectSql).toHaveBeenCalledWith(expect.objectContaining({ database: "yf_db", schema: undefined, tableName: "zcyy_write_off_record" }));
-    expect(mocks.tabs[0]?.tableMeta).toMatchObject({ database: "yf_db", schema: undefined, tableName: "zcyy_write_off_record" });
-  });
-
   it("keeps row identity pending while delayed metadata is in flight and the query finishes first", async () => {
     // 元数据延迟：查询先返回，元数据仍挂起
     let releaseMetadata: () => void = () => {};

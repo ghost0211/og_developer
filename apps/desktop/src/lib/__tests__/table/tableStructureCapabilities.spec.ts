@@ -2,29 +2,8 @@ import { describe, expect, it } from "vitest";
 import { getTableStructureCapabilities, hasLocalTableColumnOrderChange, isPhysicalTableColumnOrderChange, sanitizeStructureIndexesForCapabilities, supportsLocalTableColumnReorder } from "@/lib/table/tableStructureCapabilities";
 
 describe("tableStructureCapabilities", () => {
-  it("uses table rebuilds only for native SQLite connections", () => {
-    expect(getTableStructureCapabilities("sqlite", "sqlite")).toMatchObject({
-      alterStrategy: "sqlite-rebuild",
-      alterExistingColumn: true,
-      alterType: true,
-    });
-
-    for (const [databaseType, connectionType] of [
-      ["rqlite", "rqlite"],
-      ["turso", "turso"],
-      ["sqlite", "jdbc"],
-      ["sqlite", undefined],
-    ] as const) {
-      expect(getTableStructureCapabilities(databaseType, connectionType)).toMatchObject({
-        alterStrategy: "none",
-        alterExistingColumn: false,
-        alterType: false,
-      });
-    }
-  });
-
-  it("marks databases with native ALTER COLUMN support as direct", () => {
-    expect(getTableStructureCapabilities("mysql", "mysql").alterStrategy).toBe("direct");
+  it("marks openGauss and PostgreSQL with native ALTER COLUMN support as direct", () => {
+    expect(getTableStructureCapabilities("opengauss", "opengauss").alterStrategy).toBe("direct");
     expect(getTableStructureCapabilities("postgres", "postgres").alterStrategy).toBe("direct");
   });
 
@@ -35,7 +14,6 @@ describe("tableStructureCapabilities", () => {
     expect(getTableStructureCapabilities("postgres", "postgres", "PostgreSQL 16.14").indexInclude).toBe(true);
     expect(getTableStructureCapabilities("postgres", "postgres", undefined).indexInclude).toBe(true);
     expect(getTableStructureCapabilities("postgres", "postgres", "unknown").indexInclude).toBe(true);
-    expect(getTableStructureCapabilities("sqlserver", "sqlserver", "10.0").indexInclude).toBe(true);
   });
 
   it("removes unsupported included columns before SQL generation", () => {
@@ -62,42 +40,14 @@ describe("tableStructureCapabilities", () => {
     expect(postgres11Indexes).toBe(indexes);
   });
 
-  it("disables persisted comment editing for IRIS without disabling other structure changes", () => {
-    expect(getTableStructureCapabilities("iris", "iris")).toMatchObject({
-      comment: false,
-      addColumn: true,
-      dropColumn: true,
-      renameColumn: true,
-      alterType: true,
-      alterNullability: true,
-      alterDefault: true,
-    });
-    expect(getTableStructureCapabilities("oracle", "oracle").comment).toBe(true);
-    expect(getTableStructureCapabilities("oceanbase-oracle", "oceanbase-oracle").comment).toBe(true);
-    expect(getTableStructureCapabilities("dameng", "dameng").comment).toBe(true);
-  });
-
-  it("enables alter primary key for Dameng without enabling it for Oracle", () => {
-    expect(getTableStructureCapabilities("dameng", "dameng").alterPrimaryKey).toBe(true);
-    expect(getTableStructureCapabilities("oracle", "oracle").alterPrimaryKey).toBe(false);
-    expect(getTableStructureCapabilities("oceanbase-oracle", "oceanbase-oracle").alterPrimaryKey).toBe(false);
-  });
-
-  it("uses local-only column reordering for editable databases without physical reorder support", () => {
-    for (const databaseType of ["sqlserver", "postgres", "sqlite", "oracle", "dameng", "duckdb", "informix"] as const) {
-      expect(supportsLocalTableColumnReorder(databaseType, databaseType)).toBe(true);
-    }
-
-    for (const databaseType of ["mysql", "gbase", "clickhouse"] as const) {
-      expect(supportsLocalTableColumnReorder(databaseType, databaseType)).toBe(false);
-    }
-    expect(supportsLocalTableColumnReorder("influxdb", "influxdb")).toBe(false);
+  it("uses local-only column reordering for openGauss and Postgres", () => {
+    expect(supportsLocalTableColumnReorder("opengauss", "opengauss")).toBe(true);
+    expect(supportsLocalTableColumnReorder("postgres", "postgres")).toBe(true);
   });
 
   it("does not treat local-only reordering as a database structure change", () => {
-    expect(isPhysicalTableColumnOrderChange("sqlserver", "sqlserver", 0, 2)).toBe(false);
+    expect(isPhysicalTableColumnOrderChange("opengauss", "opengauss", 0, 2)).toBe(false);
     expect(isPhysicalTableColumnOrderChange("postgres", "postgres", 0, 2)).toBe(false);
-    expect(isPhysicalTableColumnOrderChange("mysql", "mysql", 0, 2)).toBe(true);
   });
 
   it("detects local order changes including newly added columns", () => {

@@ -14,62 +14,8 @@ function schemaFilterShowSystemSchemas(connection: Partial<Pick<ConnectionConfig
 }
 
 const SYSTEM_DATABASE_RULES: Partial<Record<DatabaseType, ReadonlySet<string>>> = {
-  mysql: new Set(["information_schema", "mysql", "performance_schema", "sys"]),
-  doris: new Set(["information_schema", "mysql", "performance_schema", "sys"]),
-  starrocks: new Set(["information_schema", "mysql", "performance_schema", "sys"]),
-  manticoresearch: new Set(["information_schema", "mysql", "performance_schema", "sys"]),
-  goldendb: new Set(["information_schema", "mysql", "performance_schema", "sys"]),
-  gbase: new Set(["information_schema", "mysql", "performance_schema", "sys"]),
   postgres: new Set(["template0", "template1"]),
-  gaussdb: new Set(["template0", "template1"]),
-  kwdb: new Set(["template0", "template1"]),
   opengauss: new Set(["template0", "template1"]),
-  questdb: new Set(["template0", "template1"]),
-  kingbase: new Set(["template0", "template1"]),
-  highgo: new Set(["template0", "template1"]),
-  uxdb: new Set(["template0", "template1"]),
-  vastbase: new Set(["template0", "template1"]),
-  redshift: new Set(["template0", "template1"]),
-  clickhouse: new Set(["information_schema", "system"]),
-  tdengine: new Set(["information_schema", "performance_schema"]),
-  sqlserver: new Set(["master", "model", "msdb", "tempdb"]),
-  mongodb: new Set(["admin", "config", "local"]),
-  oracle: new Set([
-    "anonymous",
-    "appqossys",
-    "audsys",
-    "ctxsys",
-    "dbsnmp",
-    "dvf",
-    "dvsys",
-    "exfsys",
-    "flows_files",
-    "gsmadmin_internal",
-    "mddata",
-    "mdsys",
-    "mgmt_view",
-    "olapsys",
-    "orddata",
-    "ordplugins",
-    "ordsys",
-    "outln",
-    "owbsys",
-    "remote_scheduler_agent",
-    "si_informtn_schema",
-    "sys",
-    "sysback",
-    "sysdg",
-    "syskm",
-    "system",
-    "wmsys",
-    "xdb",
-    "xs$null",
-  ]),
-  dameng: new Set(["_sys_statistics", "ctisys", "dba", "sys", "sys_dba", "sys_phm", "sysauditor", "sysdba", "sysdbo", "syssso", "system"]),
-  saphana: new Set(["_sys_afl", "_sys_bi", "_sys_bic", "_sys_repo", "_sys_statistics", "sys"]),
-  cassandra: new Set(["system", "system_auth", "system_distributed", "system_schema", "system_traces", "system_views", "system_virtual_schema"]),
-  neo4j: new Set(["system"]),
-  snowflake: new Set(["snowflake", "snowflake_sample_data"]),
 };
 
 const POSTGRES_LIKE_SYSTEM_SCHEMA_RULES: SystemNameRules = {
@@ -78,63 +24,19 @@ const POSTGRES_LIKE_SYSTEM_SCHEMA_RULES: SystemNameRules = {
 };
 
 const SYSTEM_SCHEMA_RULES: Partial<Record<DatabaseType, SystemNameRules>> = {
-  oracle: {
-    exact: new Set([
-      "anonymous",
-      "appqossys",
-      "audsys",
-      "ctxsys",
-      "dbsnmp",
-      "dvf",
-      "dvsys",
-      "exfsys",
-      "flows_files",
-      "gsmadmin_internal",
-      "mddata",
-      "mdsys",
-      "mgmt_view",
-      "olapsys",
-      "orddata",
-      "ordplugins",
-      "ordsys",
-      "outln",
-      "owbsys",
-      "remote_scheduler_agent",
-      "si_informtn_schema",
-      "sys",
-      "sysback",
-      "sysdg",
-      "syskm",
-      "system",
-      "wmsys",
-      "xdb",
-      "xs$null",
-    ]),
-  },
-  dameng: {
-    exact: new Set(["_sys_statistics", "ctisys", "dba", "sys", "sys_dba", "sys_phm", "sysauditor", "sysdba", "sysdbo", "syssso", "system"]),
-  },
   postgres: POSTGRES_LIKE_SYSTEM_SCHEMA_RULES,
-  gaussdb: {
-    exact: new Set(["blockchain", "coverage", "cstore", "db4ai", "dbe_perf", "dbe_pldebugger", "dbe_pldeveloper", "dbe_sql_util", "information_schema", "pg_catalog", "pg_toast", "pkg_service", "snapshot", "sqladvisor", "xmltype"]),
-    prefixes: ["pg_temp_", "pg_toast_temp_", "dbe_"],
-  },
-  kwdb: POSTGRES_LIKE_SYSTEM_SCHEMA_RULES,
   opengauss: {
     exact: new Set(["blockchain", "coverage", "cstore", "db4ai", "dbe_perf", "dbe_pldebugger", "dbe_pldeveloper", "dbe_sql_util", "information_schema", "pg_catalog", "pg_toast", "pkg_service", "snapshot", "sqladvisor", "xmltype"]),
     prefixes: ["pg_temp_", "pg_toast_temp_", "dbe_"],
   },
-  questdb: POSTGRES_LIKE_SYSTEM_SCHEMA_RULES,
-  kingbase: {
-    exact: new Set(["anon", "dbms_job", "dbms_scheduler", "dbms_sql", "information_schema", "kdb_schedule", "perf", "pg_bitmapindex", "pg_catalog", "pg_toast", "src_restrict", "sys", "sys_catalog", "sys_hm", "sysaudit", "sysmac", "wmsys"]),
-    prefixes: ["dbms_", "pg_temp_", "pg_toast_temp_", "sys_temp_", "sys_toast_temp_", "xlog_"],
-  },
-  highgo: POSTGRES_LIKE_SYSTEM_SCHEMA_RULES,
-  vastbase: POSTGRES_LIKE_SYSTEM_SCHEMA_RULES,
 };
 
 export function visibleDatabaseFilterIsEnabled(visibleDatabases: string[] | undefined): boolean {
   return Array.isArray(visibleDatabases);
+}
+
+export function connectionUsesVisibleSchemaFilter(_connection?: Partial<ConnectionConfig>): boolean {
+  return false;
 }
 
 export function canSaveVisibleDatabaseSelection(selectedNames: string[]): boolean {
@@ -180,9 +82,6 @@ export function filterDatabaseNamesForConnection(databaseNames: string[], connec
 }
 
 export function filterDatabaseNamesForVisiblePicker(databaseNames: string[], connection: Pick<ConnectionConfig, "db_type" | "driver_profile"> | undefined): string[] {
-  if (connection?.db_type === "gbase" && connection.driver_profile === "gbase8s") {
-    return databaseNames;
-  }
   return databaseNames.filter((name) => !isSystemDatabaseName(connection?.db_type, name));
 }
 
@@ -190,10 +89,6 @@ export function filterSchemaNamesForVisiblePicker(schemaNames: string[], connect
   if (schemaFilterShowSystemSchemas(connection, options)) return schemaNames;
   const currentSchema = connection?.username?.trim().toLowerCase();
   return schemaNames.filter((name) => name.toLowerCase() === currentSchema || !isSystemSchemaName(connection?.db_type, name));
-}
-
-export function connectionUsesVisibleSchemaFilter(connection: Pick<ConnectionConfig, "db_type"> | undefined): boolean {
-  return connection?.db_type === "oracle" || connection?.db_type === "dameng" || connection?.db_type === "oceanbase-oracle";
 }
 
 export function visibleSchemaFilterIsEnabled(visibleSchemas: Record<string, string[]> | undefined, database: string): boolean {
@@ -208,9 +103,6 @@ export function filterSchemaNamesForConnection(
 ): string[] {
   const visibleSchemas = connection?.visible_schemas;
   if (!visibleSchemaFilterIsEnabled(visibleSchemas, database)) {
-    if (connectionUsesVisibleSchemaFilter(connection) && visibleDatabaseFilterIsEnabled(connection?.visible_databases)) {
-      return filterVisibleDatabaseNames(schemaNames, connection?.visible_databases);
-    }
     return filterSchemaNamesForVisiblePicker(schemaNames, connection, options);
   }
   const visible = new Set(visibleSchemas![database]);

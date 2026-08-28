@@ -1,8 +1,7 @@
 import type { SqlExecutionCandidate } from "@/lib/sql/sqlExecutionTarget";
 import { cursorBelongsToTrailingStatementDelimiter } from "@/lib/sql/statementDelimiter";
-import { splitMongoCommandRanges } from "@/lib/mongo/mongoShellCommand";
 import { readSqlBracedParameterAt, type SqlParameterOptions } from "@/lib/sql/sqlParameters";
-import { isElasticsearchCompatibleDatabaseType, type DatabaseType } from "@/types/database";
+import type { DatabaseType } from "@/types/database";
 
 /**
  * A contiguous range of SQL text expressed as document offsets plus the
@@ -14,24 +13,11 @@ export interface SqlTextRange {
   sql: string;
 }
 
-const ELASTICSEARCH_REST_REQUEST = /^(?:GET|POST|PUT|DELETE|HEAD)\s+\S+/i;
-
-export function elasticsearchRestRequestRanges(sql: string, databaseType?: DatabaseType): SqlTextRange[] {
-  if (!isElasticsearchCompatibleDatabaseType(databaseType)) return [];
-  const requests = splitSqlStatementRanges(sql, databaseType);
-  return requests.length > 0 && requests.every((request) => ELASTICSEARCH_REST_REQUEST.test(request.sql)) ? requests : [];
-}
-
-const NON_SQL_EXECUTION_TARGET_TYPES: ReadonlySet<DatabaseType> = new Set(["mongodb", "elasticsearch", "easysearch", "qdrant", "milvus", "weaviate", "chromadb", "etcd", "zookeeper", "mq", "neo4j", "victoriametrics"]);
-
 export function supportsExecutionTargetPicker(databaseType?: DatabaseType): boolean {
-  return !!databaseType && (databaseType === "redis" || isElasticsearchCompatibleDatabaseType(databaseType) || !NON_SQL_EXECUTION_TARGET_TYPES.has(databaseType));
+  return !!databaseType;
 }
 
 export function hasMultipleExecutionTargets(sql: string, databaseType?: DatabaseType, parameterOptions?: SqlParameterOptions): boolean {
-  if (databaseType === "redis") {
-    return redisExecutableCommandCount(sql) > 1;
-  }
   return splitSqlStatementRanges(sql, databaseType, parameterOptions).length > 1;
 }
 
@@ -44,150 +30,6 @@ interface RawStatement {
   to: number;
   /** The statement text, sliced from the source document. */
   sql: string;
-}
-
-interface ElasticsearchRequestLine {
-  from: number;
-  to: number;
-  text: string;
-}
-
-interface ElasticsearchRequestLineCandidate {
-  lineIndex: number;
-  from: number;
-}
-
-export interface ElasticsearchRestRequestTarget {
-  method: "GET" | "POST" | "PUT" | "DELETE" | "HEAD";
-  path: string;
-}
-
-const ELASTICSEARCH_REST_REQUEST_LINE = /^\s*(?:GET|POST|PUT|DELETE|HEAD)\s+\S+/i;
-
-function leadingElasticsearchPreambleEnd(value: string): number {
-  let offset = 0;
-  while (offset < value.length) {
-    while (offset < value.length && /\s/.test(value[offset] ?? "")) offset += 1;
-    if (offset >= value.length) return offset;
-
-    if (value[offset] === "#" || value.startsWith("//", offset)) {
-      const newline = value.indexOf("\n", offset);
-      offset = newline < 0 ? value.length : newline + 1;
-      continue;
-    }
-
-    if (value.startsWith("/*", offset)) {
-      const close = value.indexOf("*/", offset + 2);
-      offset = close < 0 ? value.length : close + 2;
-      continue;
-    }
-
-    break;
-  }
-  return offset;
-}
-
-export function stripLeadingElasticsearchComments(value: string): string {
-  return value.slice(leadingElasticsearchPreambleEnd(value)).trimStart();
-}
-
-function isElasticsearchRequestPreamble(value: string): boolean {
-  return leadingElasticsearchPreambleEnd(value) === value.length;
-}
-
-function elasticsearchRequestLines(sql: string): ElasticsearchRequestLine[] {
-  const lines: ElasticsearchRequestLine[] = [];
-  let from = 0;
-  while (from <= sql.length) {
-    const newline = sql.indexOf("\n", from);
-    const to = newline >= 0 ? newline : sql.length;
-    lines.push({ from, to, text: sql.slice(from, to) });
-    if (newline < 0) break;
-    from = newline + 1;
-  }
-  return lines;
-}
-
-function elasticsearchRequestLineCandidates(lines: ElasticsearchRequestLine[]): ElasticsearchRequestLineCandidate[] {
-  const candidates: ElasticsearchRequestLineCandidate[] = [];
-  let inBlockComment = false;
-
-  for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
-    const line = lines[lineIndex];
-    let offset = 0;
-
-    while (offset < line.text.length) {
-      if (inBlockComment) {
-        const close = line.text.indexOf("*/", offset);
-        if (close < 0) break;
-        inBlockComment = false;
-        offset = close + 2;
-        continue;
-      }
-
-      while (offset < line.text.length && /\s/.test(line.text[offset] ?? "")) offset += 1;
-      if (offset >= line.text.length) break;
-      if (line.text.startsWith("/*", offset)) {
-        inBlockComment = true;
-        offset += 2;
-        continue;
-      }
-      if (line.text[offset] === "#" || line.text.startsWith("//", offset)) break;
-      if (ELASTICSEARCH_REST_REQUEST_LINE.test(line.text.slice(offset))) {
-        candidates.push({ lineIndex, from: line.from + offset });
-      }
-      break;
-    }
-  }
-
-  return candidates;
-}
-
-export function parseElasticsearchRestRequestTarget(value: string): ElasticsearchRestRequestTarget | null {
-  const requestLine = stripLeadingElasticsearchComments(value).split("\n", 1)[0]?.trim() ?? "";
-  const match = requestLine.match(/^(GET|POST|PUT|DELETE|HEAD)\s+(\S+)/i);
-  if (!match) return null;
-  return {
-    method: match[1].toUpperCase() as ElasticsearchRestRequestTarget["method"],
-    path: match[2].startsWith("/") ? match[2] : `/${match[2]}`,
-  };
-}
-
-export function isElasticsearchRestRequestText(value: string): boolean {
-  return parseElasticsearchRestRequestTarget(value) !== null;
-}
-
-function splitElasticsearchRestRequestRanges(sql: string): RawStatement[] | undefined {
-  const lines = elasticsearchRequestLines(sql);
-  const candidates = elasticsearchRequestLineCandidates(lines);
-  const firstRequestIndex = candidates.findIndex((candidate) => isElasticsearchRequestPreamble(sql.slice(0, candidate.from)));
-  if (firstRequestIndex < 0) return undefined;
-  const requests = candidates.slice(firstRequestIndex);
-
-  const hitFroms = requests.map((request, requestIndex) => {
-    const previousRequestLine = requestIndex > 0 ? requests[requestIndex - 1].lineIndex : -1;
-    let hitFrom = request.from;
-    for (let preambleLine = previousRequestLine + 1; preambleLine < request.lineIndex; preambleLine += 1) {
-      const candidateFrom = lines[preambleLine].from;
-      if (isElasticsearchRequestPreamble(sql.slice(candidateFrom, request.from))) {
-        hitFrom = candidateFrom;
-        break;
-      }
-    }
-    return hitFrom;
-  });
-
-  return requests.map((request, requestIndex) => {
-    const from = request.from;
-    const rawTo = requestIndex + 1 < requests.length ? hitFroms[requestIndex + 1] : sql.length;
-    const to = trimRangeEnd(sql, from, rawTo);
-    return {
-      hitFrom: hitFroms[requestIndex],
-      from,
-      to,
-      sql: sql.slice(from, to),
-    };
-  });
 }
 
 type QuoteState = "none" | "single" | "double" | "backtick" | "bracket" | "dollar";
@@ -228,29 +70,8 @@ const COMMON_SOFT_STATEMENT_START_KEYWORDS = [
 ] as const;
 
 const DATABASE_SOFT_STATEMENT_KEYWORDS: Partial<Record<DatabaseType, readonly string[]>> = {
-  mysql: ["HANDLER", "LOAD", "OPTIMIZE", "REPAIR"],
   postgres: ["DO", "LISTEN", "NOTIFY", "UNLISTEN"],
-  sqlite: ["ATTACH", "DETACH", "REINDEX"],
-  duckdb: ["ATTACH", "DETACH", "EXPORT", "IMPORT", "INSTALL", "LOAD"],
-  clickhouse: ["ATTACH", "CHECK", "DETACH", "EXCHANGE", "KILL", "OPTIMIZE", "SYSTEM"],
-  sqlserver: ["BACKUP", "DBCC", "DENY", "RESTORE"],
-  saphana: ["DO"],
-  oracle: ["FLASHBACK", "LOCK", "PURGE"],
-  dameng: ["FLASHBACK", "LOCK", "PURGE"],
-  gaussdb: ["DO", "LOCK"],
   opengauss: ["DO", "LOCK"],
-  "oceanbase-oracle": ["FLASHBACK", "LOCK", "PURGE"],
-  redis: [],
-  mongodb: [],
-  elasticsearch: [],
-  easysearch: [],
-  qdrant: [],
-  milvus: [],
-  weaviate: [],
-  chromadb: [],
-  mq: [],
-  etcd: [],
-  zookeeper: [],
 };
 
 const WITH_MAIN_STATEMENT_KEYWORDS = new Set(["SELECT", "INSERT", "UPDATE", "DELETE", "MERGE"]);
@@ -258,21 +79,14 @@ const EXPLAIN_STATEMENT_KEYWORDS = new Set(["SELECT", "WITH", "INSERT", "UPDATE"
 const CREATE_BODY_KEYWORDS = new Set(["SELECT", "WITH", "BEGIN", "DECLARE"]);
 const INSERT_BODY_KEYWORDS = new Set(["SELECT", "WITH"]);
 const ALTER_BODY_KEYWORDS = new Set(["ADD", "ALTER", "COMMENT", "DROP", "MODIFY", "RENAME", "SET"]);
-const CLICKHOUSE_ALTER_TABLE_HEADER = /^ALTER\s+TABLE\s+(?:(?:[A-Za-z_][\w$]*|`(?:``|[^`])+`|"(?:""|[^"])+")\s*\.\s*)?(?:[A-Za-z_][\w$]*|`(?:``|[^`])+`|"(?:""|[^"])+")(?:\s+ON\s+CLUSTER\s+(?:[A-Za-z_][\w$]*|`(?:``|[^`])+`|"(?:""|[^"])+"|'(?:''|[^'])+'))?\s*$/i;
 const SET_OPERATION_KEYWORDS = new Set(["UNION", "INTERSECT", "EXCEPT", "MINUS"]);
 const SET_OPERATION_MODIFIER_KEYWORDS = new Set(["ALL", "DISTINCT"]);
-const ORACLE_LIKE_PL_SQL_DATABASES: ReadonlySet<DatabaseType> = new Set(["oracle", "dameng", "gaussdb", "opengauss", "yashandb", "oscar", "oceanbase-oracle", "xugu"]);
-const MYSQL_ROUTINE_BLOCK_DATABASES: ReadonlySet<DatabaseType> = new Set(["mysql", "doris", "starrocks", "manticoresearch", "goldendb"]);
-const MYSQL_CREATE_TABLE_OPTION_DATABASES: ReadonlySet<DatabaseType> = new Set(["mysql", "doris", "starrocks", "manticoresearch", "goldendb", "gbase"]);
-const MYSQL_ROUTINE_OBJECT_TYPES = new Set(["PROCEDURE", "FUNCTION", "TRIGGER", "EVENT"]);
-const MYSQL_NON_ROUTINE_CREATE_TYPES = new Set(["DATABASE", "INDEX", "LOGFILE", "ROLE", "SCHEMA", "SERVER", "SPATIAL", "TABLE", "TEMPORARY", "UNIQUE", "USER", "VIEW"]);
-const MYSQL_CONTROL_BLOCK_SUFFIXES = new Set(["IF", "LOOP", "CASE", "REPEAT", "WHILE"]);
+const ORACLE_LIKE_PL_SQL_DATABASES: ReadonlySet<DatabaseType> = new Set(["opengauss"]);
 const ORACLE_PL_SQL_BLOCK_STARTERS = new Set(["DECLARE", "BEGIN"]);
 // Plain CREATE TYPE ... AS OBJECT (...); ends with ");" and is not a PL/SQL block.
 // Only PACKAGE (spec), PACKAGE/TYPE BODY, and routine/trigger objects are PL/SQL blocks.
 const ORACLE_PL_SQL_CREATE_OBJECT_TYPES = new Set(["FUNCTION", "PROCEDURE", "TRIGGER", "PACKAGE"]);
 const ORACLE_PL_SQL_TERMINATORS = new Set(["IF", "LOOP", "CASE"]);
-const SAP_HANA_SCRIPT_BLOCK_TERMINATORS = new Set(["IF", "FOR", "WHILE"]);
 
 /**
  * Parse the SQL document into top-level statement ranges delimited by `;`.
@@ -285,24 +99,17 @@ const SAP_HANA_SCRIPT_BLOCK_TERMINATORS = new Set(["IF", "FOR", "WHILE"]);
  * whitespace are excluded so editor highlights stay tight).
  */
 export function splitSqlStatementRanges(sql: string, databaseType?: DatabaseType, parameterOptions?: SqlParameterOptions): RawStatement[] {
-  if (isElasticsearchCompatibleDatabaseType(databaseType)) {
-    const requests = splitElasticsearchRestRequestRanges(sql);
-    if (requests) return requests;
-  }
-
   const statements: RawStatement[] = [];
   const len = sql.length;
-  const supportsDelimiterCommands = databaseType === "mysql";
 
   let statementStart = -1;
   let statementEnd = -1;
   let statementHitStart = 0;
   let pendingHintStart = -1;
-  let customDelimiter: string | null = null;
   let state: QuoteState = "none";
   let dollarTag = "";
-  let postgresDollarQuotedRoutine = false;
   let oraclePlSqlStatementEnd: number | null | undefined;
+  let postgresDollarQuotedRoutine = false;
   let i = 0;
 
   const isWhitespace = (ch: string) => ch === " " || ch === "\t" || ch === "\r" || ch === "\n";
@@ -319,8 +126,8 @@ export function splitSqlStatementRanges(sql: string, databaseType?: DatabaseType
     if (statementStart === -1) {
       statementEnd = -1;
       pendingHintStart = -1;
-      postgresDollarQuotedRoutine = false;
       oraclePlSqlStatementEnd = undefined;
+      postgresDollarQuotedRoutine = false;
       return;
     }
     const trimmedTo = trimRangeEnd(sql, statementStart, to);
@@ -330,8 +137,8 @@ export function splitSqlStatementRanges(sql: string, databaseType?: DatabaseType
     statementStart = -1;
     statementEnd = -1;
     pendingHintStart = -1;
-    postgresDollarQuotedRoutine = false;
     oraclePlSqlStatementEnd = undefined;
+    postgresDollarQuotedRoutine = false;
   };
 
   while (i < len) {
@@ -413,17 +220,6 @@ export function splitSqlStatementRanges(sql: string, databaseType?: DatabaseType
     }
 
     // state === "none"
-    if (supportsDelimiterCommands && isAtLineStart(sql, i) && startsDelimiterCommand(sql, i)) {
-      const lineEnd = findLineEnd(sql, i);
-      const delimiter = parseDelimiterCommand(sql.slice(i, lineEnd));
-      if (delimiter !== null) {
-        flush();
-        customDelimiter = delimiter === ";" ? null : delimiter;
-        i = nextLineStart(sql, lineEnd);
-        statementHitStart = i;
-        continue;
-      }
-    }
     if (isOracleLikeDatabase(databaseType) && isAtLineStart(sql, i) && isSlashLine(sql, i)) {
       const lineEnd = findLineEnd(sql, i);
       flush(i);
@@ -438,7 +234,7 @@ export function splitSqlStatementRanges(sql: string, databaseType?: DatabaseType
       i = newline === -1 ? len : newline + 1;
       continue;
     }
-    if (startsHashLineComment(sql, i, databaseType, parameterOptions)) {
+    if (startsHashLineComment(sql, i, parameterOptions)) {
       const newline = sql.indexOf("\n", i);
       i = newline === -1 ? len : newline + 1;
       continue;
@@ -449,14 +245,6 @@ export function splitSqlStatementRanges(sql: string, databaseType?: DatabaseType
       if (statementStart === -1 && pendingHintStart === -1 && (hintMarker === "+" || hintMarker === "@")) pendingHintStart = i;
       const close = sql.indexOf("*/", i + 2);
       i = close === -1 ? len : close + 2;
-      continue;
-    }
-
-    if (supportsSqlServerGoCommands(databaseType) && isAtLineStart(sql, i) && isSqlServerGoLine(sql, i)) {
-      const lineEnd = findLineEnd(sql, i);
-      flush(i);
-      i = nextLineStart(sql, lineEnd);
-      statementHitStart = i;
       continue;
     }
 
@@ -485,11 +273,11 @@ export function splitSqlStatementRanges(sql: string, databaseType?: DatabaseType
       continue;
     }
     // Postgres dollar quoting: $tag$ ... $tag$ (tag may be empty, i.e. $$)
-    if (!customDelimiter && ch === "$") {
+    if (ch === "$") {
       const tagMatch = /^\$[A-Za-z_0-9]*\$/.exec(sql.slice(i));
       if (tagMatch) {
         markContent(i);
-        if (databaseType === "gaussdb" && statementStart !== -1 && startsWithPostgresDollarQuotedRoutinePrefix(sql.slice(statementStart, i))) {
+        if (statementStart !== -1 && startsWithPostgresDollarQuotedRoutinePrefix(sql.slice(statementStart, i))) {
           postgresDollarQuotedRoutine = true;
         }
         dollarTag = tagMatch[0].slice(1, -1);
@@ -499,46 +287,21 @@ export function splitSqlStatementRanges(sql: string, databaseType?: DatabaseType
       }
     }
 
-    if (customDelimiter) {
-      if (sql.startsWith(customDelimiter, i)) {
-        flush(i);
-        i += customDelimiter.length;
-        statementHitStart = i;
-        continue;
+    if (ch === ";") {
+      if (oraclePlSqlStatementEnd === undefined && isOracleLikeDatabase(databaseType) && !postgresDollarQuotedRoutine && statementStart !== -1) {
+        const statementSoFar = sql.slice(statementStart, i);
+        oraclePlSqlStatementEnd = startsWithOraclePlSqlBlock(statementSoFar) ? statementStart + (oraclePlSqlBlockEnd(sql.slice(statementStart)) ?? sql.length - statementStart) : null;
       }
-    } else if (ch === ";") {
-      const isMysqlRoutineBlock = isMysqlRoutineBlockDatabase(databaseType) && statementStart !== -1 && startsWithMysqlRoutineBlock(sql.slice(statementStart, i), parameterOptions);
-      if (isMysqlRoutineBlock) {
-        if (!mysqlRoutineBlockIsComplete(sql.slice(statementStart, i + 1), parameterOptions)) {
-          markContent(i);
+      const resolvedOraclePlSqlStatementEnd = oraclePlSqlStatementEnd;
+      if (typeof resolvedOraclePlSqlStatementEnd === "number") {
+        markContent(i);
+        if (i + 1 < resolvedOraclePlSqlStatementEnd) {
           i += 1;
           continue;
         }
-        // The final semicolon is the client-side statement delimiter.
-        // Internal semicolons remain part of the routine body.
-        flush();
+        flush(i + 1);
       } else {
-        if (oraclePlSqlStatementEnd === undefined && isOracleLikeDatabase(databaseType) && !postgresDollarQuotedRoutine && statementStart !== -1) {
-          const statementSoFar = sql.slice(statementStart, i);
-          oraclePlSqlStatementEnd = startsWithOraclePlSqlBlock(statementSoFar) ? statementStart + (oraclePlSqlBlockEnd(sql.slice(statementStart)) ?? sql.length - statementStart) : null;
-        }
-        const resolvedOraclePlSqlStatementEnd = oraclePlSqlStatementEnd;
-        const isOraclePlSql = typeof resolvedOraclePlSqlStatementEnd === "number";
-        const isSapHanaScriptBlock = isSapHanaScriptBlockDatabase(databaseType) && statementStart !== -1 && startsWithSapHanaScriptBlock(sql.slice(statementStart, i));
-        if (isOraclePlSql || isSapHanaScriptBlock) {
-          markContent(i);
-          if (isOraclePlSql && i + 1 < resolvedOraclePlSqlStatementEnd) {
-            i += 1;
-            continue;
-          }
-          if (isSapHanaScriptBlock && !sapHanaScriptBlockIsComplete(sql.slice(statementStart, i + 1))) {
-            i += 1;
-            continue;
-          }
-          flush(i + 1);
-        } else {
-          flush();
-        }
+        flush();
       }
       statementHitStart = i + 1;
       i += 1;
@@ -586,7 +349,7 @@ export function statementRangeAtCursor(sql: string, cursorPos: number, databaseT
     // Cursor in indentation or inter-statement whitespace immediately before
     // the statement should still target that statement, while the returned
     // execution range remains tight around the SQL text itself.
-    if (pos >= statement.hitFrom && pos < statement.from && (sql.slice(pos, statement.from).trim() === "" || (isElasticsearchCompatibleDatabaseType(databaseType) && isElasticsearchRequestPreamble(sql.slice(statement.hitFrom, statement.from))))) {
+    if (pos >= statement.hitFrom && pos < statement.from && sql.slice(pos, statement.from).trim() === "") {
       const previous = statements[index - 1];
       if (previous && isCursorInTrailingDelimiterGap(sql, previous.to, pos)) {
         const previousSoftRanges = splitStatementRangeAtSoftStarts(sql, previous, databaseType, parameterOptions);
@@ -600,26 +363,6 @@ export function statementRangeAtCursor(sql: string, cursorPos: number, databaseT
       if (softRange) return softRange;
       if (isCursorOnStatementLine(sql, pos, statement)) return rangeFor(statement, sql);
     }
-  }
-
-  return null;
-}
-
-export function mongoCommandRangeAtCursor(sql: string, cursorPos: number): SqlTextRange | null {
-  const pos = clampCursor(sql, cursorPos);
-  if (isCursorOnBlankLine(sql, pos)) return null;
-
-  const commands = splitMongoCommandRanges(sql);
-  for (let index = 0; index < commands.length; index += 1) {
-    const command = commands[index];
-    const range = { from: command.from, to: command.to, sql: command.text };
-
-    if (pos >= command.from && pos <= command.to) return range;
-
-    const next = commands[index + 1];
-    if (pos > command.to && (!next || pos < next.from) && isCursorInTrailingDelimiterGap(sql, command.to, pos)) return range;
-
-    if (pos < command.from && sql.slice(pos, command.from).trim() === "" && isCursorOnStatementLine(sql, pos, command)) return range;
   }
 
   return null;
@@ -650,16 +393,13 @@ function rangeForCursorInSoftRanges(sql: string, ranges: RawStatement[], pos: nu
 
 function splitStatementRangeAtSoftStarts(sql: string, statement: RawStatement, databaseType?: DatabaseType, parameterOptions?: SqlParameterOptions): RawStatement[] {
   if (isOraclePlSqlStatement(statement.sql, databaseType)) return [statement];
-  if (isSapHanaScriptBlockStatement(statement.sql, databaseType)) return [statement];
-  // Routine bodies contain top-level-looking SET/INSERT/SELECT lines that are not independent statements.
-  if (isMysqlRoutineBlockDatabase(databaseType) && startsWithMysqlRoutineBlock(statement.sql, parameterOptions)) return [statement];
 
   const lineStarts = topLevelSoftStatementLineStarts(sql, statement, databaseType, parameterOptions);
   if (lineStarts.length <= 1) return [statement];
 
   const boundaries: Array<{ hitFrom: number; from: number; keyword: string }> = [];
   let currentKeyword = softStatementKeywordAt(sql, statement.from, databaseType, parameterOptions);
-  let currentExplainTargetKeyword = explainLikeTargetKeywordAt(sql, statement.from, databaseType, parameterOptions);
+  let currentExplainTargetKeyword = explainLikeTargetKeywordAt(sql, statement.from, parameterOptions);
   let currentBodyKeyword = currentExplainTargetKeyword ?? currentKeyword;
   let consumedWithMainStatement = false;
   let consumedExplainStatement = false;
@@ -678,7 +418,7 @@ function splitStatementRangeAtSoftStarts(sql: string, statement: RawStatement, d
       continue;
     }
 
-    if (isSetOperationQueryContinuation(sql, statement.from, lineStart.from, lineStart.keyword, databaseType, parameterOptions)) {
+    if (isSetOperationQueryContinuation(sql, statement.from, lineStart.from, lineStart.keyword, parameterOptions)) {
       continue;
     }
 
@@ -689,10 +429,6 @@ function splitStatementRangeAtSoftStarts(sql: string, statement: RawStatement, d
     }
 
     if (currentBodyKeyword === "CREATE" && CREATE_BODY_KEYWORDS.has(lineStart.keyword)) {
-      continue;
-    }
-
-    if (currentBodyKeyword === "CREATE" && isMysqlCreateTableOptionContinuation(sql, statement.from, lineStart.from, lineStart.keyword, databaseType)) {
       continue;
     }
 
@@ -708,23 +444,13 @@ function splitStatementRangeAtSoftStarts(sql: string, statement: RawStatement, d
       continue;
     }
 
-    if (currentBodyKeyword === "ALTER" && isClickHouseAlterTableUpdateContinuation(sql, boundaries[boundaries.length - 1].from, lineStart.from, lineStart.keyword, databaseType)) {
-      // ClickHouse mutations use UPDATE as the first ALTER TABLE action, not as
-      // a standalone statement. Keep this dialect-specific to preserve soft boundaries elsewhere.
-      continue;
-    }
-
-    if (currentBodyKeyword === "ALTER" && isMysqlAlterTableTruncatePartitionContinuation(sql, boundaries[boundaries.length - 1].from, lineStart.from, lineStart.keyword, databaseType)) {
-      continue;
-    }
-
     if (currentBodyKeyword === "ALTER" && ALTER_BODY_KEYWORDS.has(lineStart.keyword)) {
       continue;
     }
 
     boundaries.push(lineStart);
     currentKeyword = lineStart.keyword;
-    currentExplainTargetKeyword = explainLikeTargetKeywordAt(sql, lineStart.from, databaseType, parameterOptions);
+    currentExplainTargetKeyword = explainLikeTargetKeywordAt(sql, lineStart.from, parameterOptions);
     currentBodyKeyword = currentExplainTargetKeyword ?? currentKeyword;
     consumedWithMainStatement = false;
     consumedExplainStatement = false;
@@ -736,7 +462,7 @@ function splitStatementRangeAtSoftStarts(sql: string, statement: RawStatement, d
   for (let index = 0; index < boundaries.length; index += 1) {
     const boundary = boundaries[index];
     const next = boundaries[index + 1];
-    const to = next ? trimRangeEndBeforeNextBoundary(sql, boundary.from, next.from, databaseType, parameterOptions) : trimRangeEnd(sql, boundary.from, statement.to);
+    const to = next ? trimRangeEndBeforeNextBoundary(sql, boundary.from, next.from, parameterOptions) : trimRangeEnd(sql, boundary.from, statement.to);
     if (to > boundary.from) {
       ranges.push({
         hitFrom: boundary.hitFrom,
@@ -756,7 +482,7 @@ function topLevelSoftStatementLineStarts(sql: string, statement: RawStatement, d
   const explainOptionsStart = explainOptionsParenAt(sql, statement.from);
   // Recover soft statement boundaries while the user is still typing an
   // EXPLAIN option list; otherwise its unmatched opener hides every later line.
-  const unclosedExplainOptionsStart = explainOptionsStart !== null && skipBalancedParens(sql, explainOptionsStart, databaseType, parameterOptions) === null ? explainOptionsStart : null;
+  const unclosedExplainOptionsStart = explainOptionsStart !== null && skipBalancedParens(sql, explainOptionsStart, parameterOptions) === null ? explainOptionsStart : null;
   let state: QuoteState | "lineComment" | "blockComment" = "none";
   let dollarTag = "";
   let parenDepth = 0;
@@ -768,7 +494,7 @@ function topLevelSoftStatementLineStarts(sql: string, statement: RawStatement, d
     const ch = sql[i];
     const next = sql[i + 1] ?? "";
 
-    if (state === "none" && firstNonWhitespaceOnLine === -1 && ch !== "\n" && ch !== "\r" && !isSqlWhitespace(ch) && !startsLineComment(sql, i, databaseType, parameterOptions) && !startsBlockComment(sql, i)) {
+    if (state === "none" && firstNonWhitespaceOnLine === -1 && ch !== "\n" && ch !== "\r" && !isSqlWhitespace(ch) && !startsLineComment(sql, i, parameterOptions) && !startsBlockComment(sql, i)) {
       firstNonWhitespaceOnLine = i;
       if (parenDepth === 0) {
         const keyword = softStatementKeywordAt(sql, i, databaseType, parameterOptions);
@@ -867,7 +593,7 @@ function topLevelSoftStatementLineStarts(sql: string, statement: RawStatement, d
       i += 2;
       continue;
     }
-    if (startsHashLineComment(sql, i, databaseType, parameterOptions)) {
+    if (startsHashLineComment(sql, i, parameterOptions)) {
       state = "lineComment";
       i += 1;
       continue;
@@ -924,7 +650,7 @@ function softStatementKeywordAt(sql: string, pos: number, databaseType?: Databas
   if (keyword === "REPLACE" && nextNonWhitespaceChar(sql, pos + match[0].length) === "(") return null;
   // COMMENT is also a common column name. Only COMMENT ON starts a standalone
   // SQL command; otherwise a line-start projection column must stay in SELECT.
-  if (keyword === "COMMENT" && nextSqlWord(sql, pos + match[0].length, databaseType, parameterOptions) !== "ON") return null;
+  if (keyword === "COMMENT" && nextSqlWord(sql, pos + match[0].length, parameterOptions) !== "ON") return null;
   return softStatementStartKeywords(databaseType).has(keyword) ? keyword : null;
 }
 
@@ -932,9 +658,9 @@ function softStatementStartKeywords(databaseType?: DatabaseType): Set<string> {
   return new Set([...COMMON_SOFT_STATEMENT_START_KEYWORDS, ...(databaseType ? (DATABASE_SOFT_STATEMENT_KEYWORDS[databaseType] ?? []) : [])]);
 }
 
-function isSetOperationQueryContinuation(sql: string, from: number, to: number, keyword: string, databaseType?: DatabaseType, parameterOptions?: SqlParameterOptions): boolean {
+function isSetOperationQueryContinuation(sql: string, from: number, to: number, keyword: string, parameterOptions?: SqlParameterOptions): boolean {
   if (keyword !== "SELECT" && keyword !== "WITH") return false;
-  const words = topLevelWordsBefore(sql, from, to, 3, databaseType, parameterOptions);
+  const words = topLevelWordsBefore(sql, from, to, 3, parameterOptions);
   const last = words[words.length - 1];
   if (last && SET_OPERATION_KEYWORDS.has(last)) return true;
   if (last && SET_OPERATION_MODIFIER_KEYWORDS.has(last)) {
@@ -944,32 +670,7 @@ function isSetOperationQueryContinuation(sql: string, from: number, to: number, 
   return false;
 }
 
-function isMysqlCreateTableOptionContinuation(sql: string, statementFrom: number, lineStartFrom: number, keyword: string, databaseType?: DatabaseType): boolean {
-  if (databaseType && !MYSQL_CREATE_TABLE_OPTION_DATABASES.has(databaseType)) return false;
-  if (keyword !== "COMMENT") return false;
-  if (!startsWithMysqlCreateTable(sql, statementFrom)) return false;
-
-  const next = nextNonWhitespaceChar(sql, lineStartFrom + keyword.length);
-  return next === "=" || next === "'" || next === '"';
-}
-
-function isClickHouseAlterTableUpdateContinuation(sql: string, statementFrom: number, lineStartFrom: number, keyword: string, databaseType?: DatabaseType): boolean {
-  if (databaseType !== "clickhouse" || keyword !== "UPDATE") return false;
-  return CLICKHOUSE_ALTER_TABLE_HEADER.test(sql.slice(statementFrom, lineStartFrom));
-}
-
-function isMysqlAlterTableTruncatePartitionContinuation(sql: string, statementFrom: number, lineStartFrom: number, keyword: string, databaseType?: DatabaseType): boolean {
-  if (databaseType !== "mysql" || keyword !== "TRUNCATE") return false;
-  if (!startsWithSqlWords(sql, statementFrom, ["ALTER", "TABLE"], databaseType)) return false;
-  return nextSqlWord(sql, lineStartFrom + keyword.length, databaseType) === "PARTITION";
-}
-
-function startsWithMysqlCreateTable(sql: string, statementFrom: number): boolean {
-  const text = sql.slice(statementFrom, statementFrom + 256);
-  return /^CREATE\s+(?:TEMPORARY\s+)?TABLE\b/i.test(text);
-}
-
-function topLevelWordsBefore(sql: string, from: number, to: number, limit: number, databaseType?: DatabaseType, parameterOptions?: SqlParameterOptions): string[] {
+function topLevelWordsBefore(sql: string, from: number, to: number, limit: number, parameterOptions?: SqlParameterOptions): string[] {
   const words: string[] = [];
   let state: QuoteState | "lineComment" | "blockComment" = "none";
   let dollarTag = "";
@@ -1061,7 +762,7 @@ function topLevelWordsBefore(sql: string, from: number, to: number, limit: numbe
       i += 2;
       continue;
     }
-    if (startsHashLineComment(sql, i, databaseType, parameterOptions)) {
+    if (startsHashLineComment(sql, i, parameterOptions)) {
       state = "lineComment";
       i += 1;
       continue;
@@ -1131,21 +832,11 @@ function nextNonWhitespaceChar(sql: string, pos: number): string | null {
   return i < sql.length ? sql[i] : null;
 }
 
-function nextSqlWord(sql: string, pos: number, databaseType?: DatabaseType, parameterOptions?: SqlParameterOptions): string | null {
-  return nextSqlWordToken(sql, pos, databaseType, parameterOptions)?.word ?? null;
+function nextSqlWord(sql: string, pos: number, parameterOptions?: SqlParameterOptions): string | null {
+  return nextSqlWordToken(sql, pos, parameterOptions)?.word ?? null;
 }
 
-function startsWithSqlWords(sql: string, pos: number, expectedWords: readonly string[], databaseType?: DatabaseType, parameterOptions?: SqlParameterOptions): boolean {
-  let i = pos;
-  for (const expectedWord of expectedWords) {
-    const token = nextSqlWordToken(sql, i, databaseType, parameterOptions);
-    if (token?.word !== expectedWord) return false;
-    i = token.end;
-  }
-  return true;
-}
-
-function nextSqlWordToken(sql: string, pos: number, databaseType?: DatabaseType, parameterOptions?: SqlParameterOptions): { word: string; end: number } | null {
+function nextSqlWordToken(sql: string, pos: number, parameterOptions?: SqlParameterOptions): { word: string; end: number } | null {
   let i = pos;
   // SQL comments may legally appear anywhere whitespace can separate keywords.
   while (i < sql.length) {
@@ -1158,7 +849,7 @@ function nextSqlWordToken(sql: string, pos: number, databaseType?: DatabaseType,
       while (i < sql.length && sql[i] !== "\n" && sql[i] !== "\r") i += 1;
       continue;
     }
-    if (startsHashLineComment(sql, i, databaseType, parameterOptions)) {
+    if (startsHashLineComment(sql, i, parameterOptions)) {
       i += 1;
       while (i < sql.length && sql[i] !== "\n" && sql[i] !== "\r") i += 1;
       continue;
@@ -1190,7 +881,7 @@ function explainOptionsParenAt(sql: string, pos: number): number | null {
   return sql[i] === "(" ? i : null;
 }
 
-function explainLikeTargetKeywordAt(sql: string, pos: number, databaseType?: DatabaseType, parameterOptions?: SqlParameterOptions): string | null {
+function explainLikeTargetKeywordAt(sql: string, pos: number, parameterOptions?: SqlParameterOptions): string | null {
   const prefixMatch = /^[A-Za-z_][\w$]*/.exec(sql.slice(pos));
   const prefix = prefixMatch?.[0]?.toUpperCase();
   if (!isExplainLikeKeyword(prefix ?? null)) return null;
@@ -1201,7 +892,7 @@ function explainLikeTargetKeywordAt(sql: string, pos: number, databaseType?: Dat
   // sit between the keyword and its target statement. DESC/DESCRIBE take no
   // options — a paren there is a subquery (ClickHouse `DESCRIBE (SELECT ...)`).
   if (prefix === "EXPLAIN" && sql[i] === "(") {
-    const optionsEnd = skipBalancedParens(sql, i, databaseType, parameterOptions);
+    const optionsEnd = skipBalancedParens(sql, i, parameterOptions);
     if (optionsEnd === null) return null;
     i = optionsEnd;
     while (i < sql.length && isSqlWhitespace(sql[i])) i += 1;
@@ -1211,7 +902,7 @@ function explainLikeTargetKeywordAt(sql: string, pos: number, databaseType?: Dat
   return targetKeyword && EXPLAIN_STATEMENT_KEYWORDS.has(targetKeyword) ? targetKeyword : null;
 }
 
-function skipBalancedParens(sql: string, pos: number, databaseType?: DatabaseType, parameterOptions?: SqlParameterOptions): number | null {
+function skipBalancedParens(sql: string, pos: number, parameterOptions?: SqlParameterOptions): number | null {
   let state: "none" | "single" | "double" | "lineComment" | "blockComment" = "none";
   let depth = 0;
   let i = pos;
@@ -1258,7 +949,7 @@ function skipBalancedParens(sql: string, pos: number, databaseType?: DatabaseTyp
       i += 2;
       continue;
     }
-    if (startsHashLineComment(sql, i, databaseType, parameterOptions)) {
+    if (startsHashLineComment(sql, i, parameterOptions)) {
       state = "lineComment";
       i += 1;
       continue;
@@ -1289,12 +980,12 @@ function skipBalancedParens(sql: string, pos: number, databaseType?: DatabaseTyp
   return null;
 }
 
-function startsLineComment(sql: string, pos: number, databaseType?: DatabaseType, parameterOptions?: SqlParameterOptions): boolean {
-  return (sql[pos] === "-" && sql[pos + 1] === "-") || startsHashLineComment(sql, pos, databaseType, parameterOptions);
+function startsLineComment(sql: string, pos: number, parameterOptions?: SqlParameterOptions): boolean {
+  return (sql[pos] === "-" && sql[pos + 1] === "-") || startsHashLineComment(sql, pos, parameterOptions);
 }
 
-function startsHashLineComment(sql: string, pos: number, databaseType?: DatabaseType, parameterOptions?: SqlParameterOptions): boolean {
-  if (databaseType === "sqlserver" || sql[pos] !== "#") return false;
+function startsHashLineComment(sql: string, pos: number, parameterOptions?: SqlParameterOptions): boolean {
+  if (sql[pos] !== "#") return false;
   return readSqlBracedParameterAt(sql, pos, parameterOptions)?.syntax !== "mybatis";
 }
 
@@ -1310,7 +1001,7 @@ function trimRangeEnd(sql: string, from: number, to: number): number {
   return end;
 }
 
-function trimRangeEndBeforeNextBoundary(sql: string, from: number, nextBoundaryFrom: number, databaseType?: DatabaseType, parameterOptions?: SqlParameterOptions): number {
+function trimRangeEndBeforeNextBoundary(sql: string, from: number, nextBoundaryFrom: number, parameterOptions?: SqlParameterOptions): number {
   let state: QuoteState | "lineComment" | "blockComment" = "none";
   let dollarTag = "";
   let lastContentEnd = from;
@@ -1411,7 +1102,7 @@ function trimRangeEndBeforeNextBoundary(sql: string, from: number, nextBoundaryF
       i += 2;
       continue;
     }
-    if (startsHashLineComment(sql, i, databaseType, parameterOptions)) {
+    if (startsHashLineComment(sql, i, parameterOptions)) {
       state = "lineComment";
       i += 1;
       continue;
@@ -1477,173 +1168,15 @@ export function isOraclePlSqlStatement(sql: string, databaseType?: DatabaseType)
   return isOracleLikeDatabase(databaseType) && startsWithOraclePlSqlBlock(sql);
 }
 
-function isSapHanaScriptBlockDatabase(databaseType?: DatabaseType): boolean {
-  return databaseType === "saphana";
-}
-
-function isSapHanaScriptBlockStatement(sql: string, databaseType?: DatabaseType): boolean {
-  return isSapHanaScriptBlockDatabase(databaseType) && startsWithSapHanaScriptBlock(sql);
-}
-
-function isMysqlRoutineBlockDatabase(databaseType?: DatabaseType): boolean {
-  return !!databaseType && MYSQL_ROUTINE_BLOCK_DATABASES.has(databaseType);
-}
-
-function startsWithMysqlRoutineBlock(sql: string, parameterOptions?: SqlParameterOptions): boolean {
-  return isMysqlRoutineDdlStart(sql, parameterOptions) && mysqlRoutineTokens(sql, parameterOptions).some((token) => token.kind === "word" && token.value === "BEGIN");
-}
-
-function isMysqlRoutineDdlStart(sql: string, parameterOptions?: SqlParameterOptions): boolean {
-  const words = mysqlRoutineWords(sql, parameterOptions).slice(0, 16);
-  if (words[0] !== "CREATE") return false;
-
-  for (const word of words.slice(1)) {
-    if (MYSQL_ROUTINE_OBJECT_TYPES.has(word)) return true;
-    if (MYSQL_NON_ROUTINE_CREATE_TYPES.has(word)) return false;
-  }
-  return false;
-}
-
-function mysqlRoutineBlockIsComplete(sql: string, parameterOptions?: SqlParameterOptions): boolean {
-  if (!startsWithMysqlRoutineBlock(sql, parameterOptions)) return false;
-
-  const tokens = mysqlRoutineTokens(sql, parameterOptions);
-  let beginDepth = 0;
-  let sawBegin = false;
-
-  for (let index = 0; index < tokens.length; index += 1) {
-    const token = tokens[index];
-    if (token.kind !== "word") continue;
-    if (token.value === "BEGIN") {
-      if (previousWordToken(tokens, index) === "END") continue;
-      sawBegin = true;
-      beginDepth += 1;
-      continue;
-    }
-    if (token.value === "END" && sawBegin) {
-      if (MYSQL_CONTROL_BLOCK_SUFFIXES.has(nextWordToken(tokens, index) ?? "")) continue;
-      beginDepth = Math.max(0, beginDepth - 1);
-    }
-  }
-
-  return sawBegin && beginDepth === 0 && tokens[tokens.length - 1]?.kind === "semicolon";
-}
-
-function mysqlRoutineWords(sql: string, parameterOptions?: SqlParameterOptions): string[] {
-  return mysqlRoutineTokens(sql, parameterOptions)
-    .filter((token): token is { kind: "word"; value: string } => token.kind === "word")
-    .map((token) => token.value);
-}
-
-function mysqlRoutineTokens(sql: string, parameterOptions?: SqlParameterOptions): Array<{ kind: "word" | "semicolon"; value: string }> {
-  const tokens: Array<{ kind: "word" | "semicolon"; value: string }> = [];
-  let state: QuoteState | "lineComment" | "blockComment" = "none";
-  let i = 0;
-
-  while (i < sql.length) {
-    const ch = sql[i];
-    const next = sql[i + 1] ?? "";
-
-    if (state === "lineComment") {
-      if (ch === "\n") state = "none";
-      i += 1;
-      continue;
-    }
-    if (state === "blockComment") {
-      if (ch === "*" && next === "/") {
-        state = "none";
-        i += 2;
-        continue;
-      }
-      i += 1;
-      continue;
-    }
-    if (state === "single") {
-      if (ch === "\\" && next) {
-        i += 2;
-        continue;
-      }
-      if (ch === "'" && next === "'") {
-        i += 2;
-        continue;
-      }
-      if (ch === "'") state = "none";
-      i += 1;
-      continue;
-    }
-    if (state === "double") {
-      if (ch === "\\" && next) {
-        i += 2;
-        continue;
-      }
-      if (ch === '"' && next === '"') {
-        i += 2;
-        continue;
-      }
-      if (ch === '"') state = "none";
-      i += 1;
-      continue;
-    }
-    if (state === "backtick") {
-      if (ch === "`" && next === "`") {
-        i += 2;
-        continue;
-      }
-      if (ch === "`") state = "none";
-      i += 1;
-      continue;
-    }
-
-    if (ch === "-" && next === "-") {
-      state = "lineComment";
-      i += 2;
-      continue;
-    }
-    if (startsHashLineComment(sql, i, undefined, parameterOptions)) {
-      state = "lineComment";
-      i += 1;
-      continue;
-    }
-    if (ch === "/" && next === "*") {
-      state = "blockComment";
-      i += 2;
-      continue;
-    }
-    if (ch === "'") {
-      state = "single";
-      i += 1;
-      continue;
-    }
-    if (ch === '"') {
-      state = "double";
-      i += 1;
-      continue;
-    }
-    if (ch === "`") {
-      state = "backtick";
-      i += 1;
-      continue;
-    }
-    if (ch === ";") {
-      tokens.push({ kind: "semicolon", value: ";" });
-      i += 1;
-      continue;
-    }
-
-    const word = /^[A-Za-z_][\w$]*/.exec(sql.slice(i))?.[0];
-    if (word) {
-      tokens.push({ kind: "word", value: word.toUpperCase() });
-      i += word.length;
-      continue;
-    }
-    i += 1;
-  }
-
-  return tokens;
-}
-
 function startsWithOraclePlSqlBlock(sql: string): boolean {
   return startsWithOraclePlSqlBlockWords(oraclePlSqlWords(sql));
+}
+
+function startsWithPostgresDollarQuotedRoutinePrefix(sql: string): boolean {
+  const words = oraclePlSqlWords(sql);
+  if (words[0] !== "CREATE") return false;
+  const objectIndex = skipOraclePlSqlCreateModifiers(words, 1);
+  return (words[objectIndex] === "FUNCTION" || words[objectIndex] === "PROCEDURE") && words[words.length - 1] === "AS";
 }
 
 function startsWithOraclePlSqlBlockWords(words: readonly string[]): boolean {
@@ -1661,13 +1194,6 @@ function startsWithOraclePlSqlBlockWords(words: readonly string[]): boolean {
   return ORACLE_PL_SQL_CREATE_OBJECT_TYPES.has(words[index] ?? "");
 }
 
-function startsWithPostgresDollarQuotedRoutinePrefix(sql: string): boolean {
-  const words = oraclePlSqlWords(sql);
-  if (words[0] !== "CREATE") return false;
-  const objectIndex = skipOraclePlSqlCreateModifiers(words, 1);
-  return (words[objectIndex] === "FUNCTION" || words[objectIndex] === "PROCEDURE") && words[words.length - 1] === "AS";
-}
-
 /** Skip OR REPLACE / FORCE / NOFORCE / EDITIONABLE modifiers after CREATE. */
 function skipOraclePlSqlCreateModifiers(words: readonly string[], startIndex: number): number {
   let index = startIndex;
@@ -1683,42 +1209,6 @@ function skipOraclePlSqlCreateModifiers(words: readonly string[], startIndex: nu
     break;
   }
   return index;
-}
-
-function startsWithSapHanaScriptBlock(sql: string): boolean {
-  return oraclePlSqlWords(sql)[0] === "DO";
-}
-
-function sapHanaScriptBlockIsComplete(sql: string): boolean {
-  if (!startsWithSapHanaScriptBlock(sql)) return false;
-
-  const tokens = oraclePlSqlTokens(sql);
-  const stack: string[] = [];
-  let sawBegin = false;
-
-  for (let index = 0; index < tokens.length; index += 1) {
-    const token = tokens[index];
-    if (token.kind !== "word") continue;
-
-    if (token.value === "BEGIN") {
-      if (previousWordToken(tokens, index) === "END") continue;
-      stack.push("BLOCK");
-      sawBegin = true;
-      continue;
-    }
-    if (token.value === "IF" || token.value === "FOR" || token.value === "WHILE" || token.value === "CASE") {
-      if (previousWordToken(tokens, index) !== "END") stack.push(token.value);
-      continue;
-    }
-    if (token.value === "END") {
-      const next = nextWordToken(tokens, index);
-      const top = stack[stack.length - 1];
-      const target = SAP_HANA_SCRIPT_BLOCK_TERMINATORS.has(next ?? "") ? next : top === "CASE" ? "CASE" : "BLOCK";
-      if (top === target) stack.pop();
-    }
-  }
-
-  return sawBegin && stack.length === 0 && tokens[tokens.length - 1]?.kind === "semicolon";
 }
 
 function oraclePlSqlBlockEnd(sql: string): number | null {
@@ -1930,26 +1420,6 @@ function isSlashLine(sql: string, pos: number): boolean {
   return sql.slice(pos, lineEnd).trim() === "/";
 }
 
-function supportsSqlServerGoCommands(databaseType?: DatabaseType): boolean {
-  return databaseType === "sqlserver";
-}
-
-function isSqlServerGoLine(sql: string, pos: number): boolean {
-  const lineEnd = findLineEnd(sql, pos);
-  return /^go(?:\s+\d+)?$/i.test(sql.slice(pos, lineEnd).trim());
-}
-
-function startsDelimiterCommand(sql: string, pos: number): boolean {
-  const prefix = sql.slice(pos, pos + 9);
-  return prefix.toLowerCase() === "delimiter" && (sql[pos + 9] === " " || sql[pos + 9] === "\t");
-}
-
-function parseDelimiterCommand(line: string): string | null {
-  const match = /^delimiter[ \t]+(.+)$/i.exec(line.trim());
-  const delimiter = match?.[1]?.trim();
-  return delimiter ? delimiter : null;
-}
-
 function findLineEnd(sql: string, pos: number): number {
   const newline = sql.indexOf("\n", pos);
   const carriageReturn = sql.indexOf("\r", pos);
@@ -2016,14 +1486,10 @@ function normalizeSql(sql: string): string {
  * that case only a single candidate is returned to avoid duplicates.
  */
 export function executableStatementRanges(sql: string, databaseType?: DatabaseType, parameterOptions?: SqlParameterOptions): SqlTextRange[] {
-  if (databaseType === "redis") return redisExecutableCommandRanges(sql);
-  if (databaseType === "mongodb") return splitMongoCommandRanges(sql).map(({ from, to, text }) => ({ from, to, sql: text }));
   return splitSqlStatementRanges(sql, databaseType, parameterOptions).flatMap((statement) => splitStatementRangeAtSoftStarts(sql, statement, databaseType, parameterOptions).map((range) => rangeFor(range, sql)));
 }
 
 export function currentExecutableStatementRange(sql: string, cursorPos: number, databaseType?: DatabaseType, parameterOptions?: SqlParameterOptions): SqlTextRange | null {
-  if (databaseType === "redis") return redisCommandRangeAtCursor(sql, cursorPos);
-  if (databaseType === "mongodb") return mongoCommandRangeAtCursor(sql, cursorPos);
   return statementRangeAtCursor(sql, cursorPos, databaseType, parameterOptions);
 }
 
@@ -2033,81 +1499,27 @@ export function buildExecutionCandidates(sql: string, cursorPos: number, databas
 
   if (!full && !cursorStatement) return [];
   if (!full) {
-    return cursorStatement ? [candidateFromRange(cursorStatement, "cursor", databaseType)] : [];
+    return cursorStatement ? [candidateFromRange(cursorStatement, "cursor")] : [];
   }
   if (!cursorStatement) {
-    return [candidateFromRange(full, "all", databaseType)];
+    return [candidateFromRange(full, "all")];
   }
 
   const sameContent = normalizeSql(cursorStatement.sql) === normalizeSql(full.sql);
   if (sameContent) {
-    return [candidateFromRange(full, "all", databaseType, ["cursor", "all"])];
+    return [candidateFromRange(full, "all", ["cursor", "all"])];
   }
 
-  return [candidateFromRange(cursorStatement, "cursor", databaseType), candidateFromRange(full, "all", databaseType)];
+  return [candidateFromRange(cursorStatement, "cursor"), candidateFromRange(full, "all")];
 }
 
-function candidateFromRange(range: SqlTextRange, kind: SqlExecutionCandidate["kind"], databaseType?: DatabaseType, supportedKinds: SqlExecutionCandidate["supportedKinds"] = [kind]): SqlExecutionCandidate {
-  const isRedis = databaseType === "redis";
+function candidateFromRange(range: SqlTextRange, kind: SqlExecutionCandidate["kind"], supportedKinds: SqlExecutionCandidate["supportedKinds"] = [kind]): SqlExecutionCandidate {
   return {
     kind,
     supportedKinds,
-    label: kind === "cursor" ? (isRedis ? "currentCommand" : "currentStatement") : isRedis ? "allCommands" : "allStatements",
+    label: kind === "cursor" ? "currentStatement" : "allStatements",
     sql: range.sql,
     from: range.from,
     to: range.to,
-  };
-}
-
-function redisExecutableCommandCount(sql: string): number {
-  let count = 0;
-  for (const range of redisExecutableCommandRanges(sql)) {
-    if (!range.sql.trim()) continue;
-    count += 1;
-    if (count > 1) return count;
-  }
-  return count;
-}
-
-function redisExecutableCommandRanges(sql: string): SqlTextRange[] {
-  const ranges: SqlTextRange[] = [];
-  let lineStart = 0;
-  while (lineStart <= sql.length) {
-    let lineEnd = sql.indexOf("\n", lineStart);
-    if (lineEnd === -1) lineEnd = sql.length;
-    const rawLine = sql.slice(lineStart, lineEnd);
-    const leadingWhitespace = rawLine.length - rawLine.trimStart().length;
-    const trailingWhitespace = rawLine.length - rawLine.trimEnd().length;
-    const trimmedLine = rawLine.trim();
-    if (trimmedLine && !trimmedLine.startsWith("#")) {
-      const from = lineStart + leadingWhitespace;
-      const to = lineStart + rawLine.length - trailingWhitespace;
-      ranges.push({ from, to, sql: sql.slice(from, to) });
-    }
-    if (lineEnd >= sql.length) break;
-    lineStart = lineEnd + 1;
-  }
-  return ranges;
-}
-
-function redisCommandRangeAtCursor(sql: string, cursorPos: number): SqlTextRange | null {
-  const pos = clampCursor(sql, cursorPos);
-  if (isCursorOnBlankLine(sql, pos)) return null;
-
-  const lineStart = sql.lastIndexOf("\n", pos - 1) + 1;
-  let lineEnd = sql.indexOf("\n", pos);
-  if (lineEnd === -1) lineEnd = sql.length;
-
-  const rawLine = sql.slice(lineStart, lineEnd);
-  const leadingWhitespace = rawLine.length - rawLine.trimStart().length;
-  const trimmedLine = rawLine.trim();
-  if (!trimmedLine || trimmedLine.startsWith("#")) return null;
-
-  const from = lineStart + leadingWhitespace;
-  const to = lineStart + rawLine.length - (rawLine.length - rawLine.trimEnd().length);
-  return {
-    from,
-    to,
-    sql: sql.slice(from, to),
   };
 }

@@ -45,7 +45,6 @@ pub async fn save_desktop_settings(
     settings: DesktopSettings,
 ) -> Result<(), String> {
     state.storage.save_desktop_settings(&settings).await?;
-    state.apply_duckdb_worker_process_isolation(settings.duckdb_worker_process_isolation).await;
     apply_debug_log_level(settings.debug_logging_enabled);
     if let Err(err) = apply_desktop_settings(&app, &settings) {
         eprintln!("Failed to apply desktop settings: {err}");
@@ -174,7 +173,7 @@ pub async fn get_driver_store_path(state: State<'_, Arc<AppState>>) -> Result<Dr
         plugin_store_dir: settings.plugin_store_dir,
         agent_store_dir: settings.agent_store_dir,
         plugins_dir: state.plugins.root_dir().to_string_lossy().to_string(),
-        agents_dir: state.agent_manager.base_dir().to_string_lossy().to_string(),
+        agents_dir: state.plugins.root_dir().to_string_lossy().to_string(),
     })
 }
 
@@ -186,7 +185,7 @@ pub async fn set_driver_store_dir(
 ) -> Result<DriverStoreMigrationResult, String> {
     let new_dir = normalize_store_dir(new_dir);
     let current_plugins_dir = state.plugins.root_dir().to_path_buf();
-    let current_agents_dir = state.agent_manager.base_dir().clone();
+    let current_agents_dir = state.plugins.root_dir().to_path_buf();
     let (target_plugins_dir, target_agents_dir) = match new_dir.as_ref() {
         Some(dir) => {
             let driver_base = PathBuf::from(dir);
@@ -195,7 +194,6 @@ pub async fn set_driver_store_dir(
         None => default_store_dirs(&app)?,
     };
 
-    state.agent_manager.stop_daemons().await;
     let migrated_plugins = migrate_store_directory(&current_plugins_dir, &target_plugins_dir)?;
     let migrated_agents = migrate_store_directory(&current_agents_dir, &target_agents_dir)?;
 
@@ -222,7 +220,7 @@ pub async fn set_plugin_store_dir(
 ) -> Result<DriverStoreMigrationResult, String> {
     let new_dir = normalize_store_dir(new_dir);
     let current_plugins_dir = state.plugins.root_dir().to_path_buf();
-    let current_agents_dir = state.agent_manager.base_dir().clone();
+    let current_agents_dir = state.plugins.root_dir().to_path_buf();
     let target_plugins_dir = match new_dir.as_ref() {
         Some(dir) => PathBuf::from(dir),
         None => default_plugin_store_dir(&app)?,
@@ -246,13 +244,12 @@ pub async fn set_agent_store_dir(
 ) -> Result<DriverStoreMigrationResult, String> {
     let new_dir = normalize_store_dir(new_dir);
     let current_plugins_dir = state.plugins.root_dir().to_path_buf();
-    let current_agents_dir = state.agent_manager.base_dir().clone();
+    let current_agents_dir = state.plugins.root_dir().to_path_buf();
     let target_agents_dir = match new_dir.as_ref() {
         Some(dir) => PathBuf::from(dir),
         None => default_agent_store_dir(&app)?,
     };
 
-    state.agent_manager.stop_daemons().await;
     let migrated_agents = migrate_store_directory(&current_agents_dir, &target_agents_dir)?;
 
     let mut settings = state.storage.load_desktop_settings().await.unwrap_or_default();

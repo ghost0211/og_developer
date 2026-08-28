@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildSelectAllSql, isNewQueryPrefillSupported, resolveNewQueryInitialSql, resolveNewQueryTable, resolveNewQueryTarget } from "@/lib/sql/newQueryContext";
+import { buildSelectAllSql, resolveNewQueryInitialSql, resolveNewQueryTable, resolveNewQueryTarget } from "@/lib/sql/newQueryContext";
 import type { ResolveNewQueryTableInput } from "@/lib/sql/newQueryContext";
 import type { QueryTab, TreeNode } from "@/types/database";
 
@@ -15,77 +15,59 @@ function dataTab(overrides: Partial<Pick<QueryTab, "mode" | "connectionId" | "da
   };
 }
 
-function tableNode(overrides: Partial<Pick<TreeNode, "type" | "connectionId" | "database" | "schema" | "catalog" | "tableName" | "label">> = {}): ResolveNewQueryTableInput["selectedTreeNode"] {
+function tableNode(overrides: Partial<Pick<TreeNode, "type" | "connectionId" | "database" | "schema" | "tableName" | "label">> = {}): ResolveNewQueryTableInput["selectedTreeNode"] {
   return { type: "table", connectionId: "conn-1", database: "app_db", schema: "public", tableName: "orders", label: "orders", ...overrides };
 }
 
 describe("resolveNewQueryTarget", () => {
-  it("inherits an external catalog from the active object browser", () => {
+  it("resolves the target from the active tab", () => {
     expect(
       resolveNewQueryTarget({
         activeTab: {
           connectionId: "conn-1",
-          database: "bi",
-          objectBrowser: { catalog: "paimon_catalog" },
+          database: "app_db",
+          schema: "public",
         },
-        connections: [{ id: "conn-1", host: "localhost", database: "", db_type: "starrocks" }],
+        connections: [{ id: "conn-1", host: "localhost", database: "app_db", db_type: "postgres" }],
         preferredSource: "tab",
       }),
     ).toEqual({
       connectionId: "conn-1",
-      database: "bi",
-      schema: undefined,
-      catalog: "paimon_catalog",
-      shouldRefreshDefaultDatabase: false,
-    });
-  });
-
-  it("inherits an external catalog from active table metadata", () => {
-    expect(
-      resolveNewQueryTarget({
-        activeTab: {
-          connectionId: "conn-1",
-          database: "bi",
-          tableMeta: {
-            catalog: "paimon_catalog",
-            tableName: "events",
-            columns: [],
-            primaryKeys: [],
-          },
-        },
-        connections: [{ id: "conn-1", host: "localhost", database: "", db_type: "starrocks" }],
-      })?.catalog,
-    ).toBe("paimon_catalog");
-  });
-
-  it("repairs a stale SQLite file path inherited from an active tab", () => {
-    expect(
-      resolveNewQueryTarget({
-        activeTab: {
-          connectionId: "conn-sqlite",
-          database: "/tmp/stale.sqlite",
-        },
-        connections: [{ id: "conn-sqlite", host: "/tmp/stale.sqlite", database: "/tmp/stale.sqlite", db_type: "sqlite" }],
-      }),
-    ).toEqual({
-      connectionId: "conn-sqlite",
-      database: "main",
-      schema: undefined,
+      database: "app_db",
+      schema: "public",
       catalog: undefined,
       shouldRefreshDefaultDatabase: false,
     });
   });
 
-  it("preserves an attached SQLite database alias inherited from an active tab", () => {
+  it("inherits the schema from active table metadata", () => {
     expect(
       resolveNewQueryTarget({
         activeTab: {
-          connectionId: "conn-sqlite",
-          database: "analytics.db",
+          connectionId: "conn-1",
+          database: "app_db",
+          tableMeta: {
+            schema: "analytics",
+            tableName: "events",
+            columns: [],
+            primaryKeys: [],
+          },
         },
-        connections: [{ id: "conn-sqlite", host: "primary.db", database: undefined, db_type: "sqlite" }],
-      })?.database,
-    ).toBe("analytics.db");
+        connections: [{ id: "conn-1", host: "localhost", database: "app_db", db_type: "opengauss" }],
+      })?.schema,
+    ).toBe("analytics");
+  });
+
+  it("falls back to the first connection with its default database", () => {
+    expect(
+      resolveNewQueryTarget({
+        connections: [{ id: "conn-1", host: "localhost", database: "", db_type: "postgres" }],
+      }),
+    ).toEqual({
+      connectionId: "conn-1",
+      database: "postgres",
+      shouldRefreshDefaultDatabase: true,
+    });
   });
 });
 
@@ -96,7 +78,7 @@ describe("resolveNewQueryTable", () => {
   });
 
   it("returns null when a data tab has no loaded tableMeta (still loading or errored)", () => {
-    // A data tab's title is schema/catalog-qualified (e.g. "public.events"), so it must
+    // A data tab's title is schema-qualified (e.g. "public.events"), so it must
     // not be used as a bare table name - require the loaded tableMeta instead.
     const table = resolveNewQueryTable({
       activeTab: { mode: "data", connectionId: "conn-1", database: "app_db", schema: "public", title: "public.events" },
@@ -169,51 +151,20 @@ describe("resolveNewQueryTable", () => {
 });
 
 describe("buildSelectAllSql", () => {
-  it("builds a MetricsQL range query for VictoriaMetrics metrics", () => {
-    expect(buildSelectAllSql("victoriametrics", { tableName: "flag" })).toBe('{__name__="flag"}[1h]');
-  });
-
-  it("quotes a MySQL table with backticks", () => {
-    expect(buildSelectAllSql("mysql", { tableName: "users" })).toBe("SELECT * FROM `users`");
-  });
-
-  it("ignores the schema for non-schema-aware databases like MySQL", () => {
-    expect(buildSelectAllSql("mysql", { schema: "mydb", tableName: "users" })).toBe("SELECT * FROM `users`");
-  });
-
   it("qualifies and quotes a PostgreSQL table with its schema", () => {
     expect(buildSelectAllSql("postgres", { schema: "public", tableName: "users" })).toBe('SELECT * FROM "public"."users"');
   });
 
-  it("bracket-quotes a SQL Server table", () => {
-    expect(buildSelectAllSql("sqlserver", { schema: "dbo", tableName: "users" })).toBe("SELECT * FROM [dbo].[users]");
-    expect(buildSelectAllSql("sqlserver", { tableName: "users" })).toBe("SELECT * FROM [users]");
+  it("qualifies and quotes an openGauss table with its schema", () => {
+    expect(buildSelectAllSql("opengauss", { schema: "public", tableName: "users" })).toBe('SELECT * FROM "public"."users"');
+  });
+
+  it("passes a JDBC table name through unquoted", () => {
+    expect(buildSelectAllSql("jdbc", { tableName: "users" })).toBe("SELECT * FROM users");
   });
 
   it("escapes embedded quote characters", () => {
-    expect(buildSelectAllSql("mysql", { tableName: "a`b" })).toBe("SELECT * FROM `a``b`");
     expect(buildSelectAllSql("postgres", { tableName: 'a"b' })).toBe('SELECT * FROM "a""b"');
-  });
-  it("qualifies a StarRocks external-catalog table with catalog and database", () => {
-    expect(buildSelectAllSql("starrocks", { catalog: "paimon_catalog", database: "bi", tableName: "events" })).toBe("SELECT * FROM `paimon_catalog`.`bi`.`events`");
-  });
-});
-
-describe("isNewQueryPrefillSupported", () => {
-  it("disables the prefill for Neo4j (Cypher, not SQL)", () => {
-    expect(isNewQueryPrefillSupported("neo4j")).toBe(false);
-  });
-
-  it("enables the prefill for standard SQL databases", () => {
-    expect(isNewQueryPrefillSupported("mysql")).toBe(true);
-    expect(isNewQueryPrefillSupported("postgres")).toBe(true);
-    expect(isNewQueryPrefillSupported("sqlserver")).toBe(true);
-    expect(isNewQueryPrefillSupported("sqlite")).toBe(true);
-    expect(isNewQueryPrefillSupported("clickhouse")).toBe(true);
-  });
-
-  it("enables the prefill when the database type is unknown", () => {
-    expect(isNewQueryPrefillSupported(undefined)).toBe(true);
   });
 });
 
@@ -263,7 +214,7 @@ describe("resolveNewQueryInitialSql", () => {
         prefillEnabled: true,
         targetConnectionId: "conn-1",
         targetDatabase: "db_a",
-        databaseType: "mysql",
+        databaseType: "postgres",
       }),
     ).toBeUndefined();
   });
@@ -275,18 +226,6 @@ describe("resolveNewQueryInitialSql", () => {
         targetConnectionId: "conn-1",
         targetDatabase: "app_db",
         databaseType: "postgres",
-      }),
-    ).toBeUndefined();
-  });
-
-  it("does not prefill for unsupported database types (e.g. Neo4j)", () => {
-    expect(
-      resolveNewQueryInitialSql({
-        activeTab: dataTab(),
-        prefillEnabled: true,
-        targetConnectionId: "conn-1",
-        targetDatabase: "app_db",
-        databaseType: "neo4j",
       }),
     ).toBeUndefined();
   });

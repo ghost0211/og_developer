@@ -2,29 +2,12 @@ import { describe, expect, it } from "vitest";
 import { filterSchemaNamesForConnection, filterSchemaNamesForVisiblePicker, isSystemSchemaName } from "@/lib/database/visibleDatabases";
 
 describe("visibleDatabases schema filtering", () => {
-  it("hides common Kingbase system schemas by default", () => {
-    expect(filterSchemaNamesForVisiblePicker(["anon", "dbms_job", "information_schema", "pg_catalog", "public", "sys", "sys_catalog", "wmsys", "xlog_record_read"], { db_type: "kingbase", username: "test" })).toEqual(["public"]);
-  });
-
-  it("keeps the current schema visible even when it matches a system schema name", () => {
-    expect(
-      filterSchemaNamesForVisiblePicker(["public", "sys", "sys_catalog"], {
-        db_type: "kingbase",
-        username: "sys",
-      }),
-    ).toEqual(["public", "sys"]);
-  });
-
-  it("keeps Oracle DIP visible while hiding default system schemas", () => {
-    expect(filterSchemaNamesForConnection(["DBX_TEST", "DIP", "SYSTEM"], { db_type: "oracle", database: "XE" }, "XE")).toEqual(["DBX_TEST", "DIP"]);
-  });
-
-  it("keeps the Dameng login schema visible while hiding default system schemas", () => {
-    expect(filterSchemaNamesForConnection(["APP", "SYS", "SYSDBA", "SYSDBO", "SYSAUDITOR"], { db_type: "dameng", username: "SYSDBA" }, "")).toEqual(["APP", "SYSDBA"]);
-  });
-
   it("hides openGauss system schemas and prefixes while keeping user schemas", () => {
     expect(filterSchemaNamesForVisiblePicker(["blockchain", "cstore", "db4ai", "dbe_perf", "dbe_pldeveloper", "dbe_sql_util", "information_schema", "pg_catalog", "public", "snapshot", "sqladvisor", "xmltype"], { db_type: "opengauss", username: "app_user" })).toEqual(["public"]);
+  });
+
+  it("hides PostgreSQL system schemas by default", () => {
+    expect(filterSchemaNamesForVisiblePicker(["information_schema", "pg_catalog", "pg_toast", "public", "app_schema"], { db_type: "postgres", username: "app_user" })).toEqual(["public", "app_schema"]);
   });
 
   it("keeps all schemas visible when show-system-schemas is enabled", () => {
@@ -34,19 +17,21 @@ describe("visibleDatabases schema filtering", () => {
   it("respects explicit visible schema configuration after default filtering", () => {
     expect(
       filterSchemaNamesForConnection(
-        ["public", "sys_catalog", "reporting"],
+        ["public", "reporting", "analytics"],
         {
-          db_type: "kingbase",
-          visible_schemas: { test: ["sys_catalog"] },
+          db_type: "opengauss",
+          visible_schemas: { test: ["reporting"] },
         },
         "test",
       ),
-    ).toEqual(["sys_catalog"]);
+    ).toEqual(["reporting"]);
   });
 
   it("matches prefix-based system schema rules", () => {
-    expect(isSystemSchemaName("kingbase", "xlog_record_read")).toBe(true);
     expect(isSystemSchemaName("opengauss", "dbe_pldeveloper")).toBe(true);
-    expect(isSystemSchemaName("kingbase", "public")).toBe(false);
+    expect(isSystemSchemaName("opengauss", "dbe_perf")).toBe(true);
+    expect(isSystemSchemaName("opengauss", "public")).toBe(false);
+    expect(isSystemSchemaName("postgres", "pg_catalog")).toBe(true);
+    expect(isSystemSchemaName("postgres", "public")).toBe(false);
   });
 });

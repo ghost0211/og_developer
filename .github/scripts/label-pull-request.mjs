@@ -333,7 +333,7 @@ export function parseMavenDependencyNames(source) {
 }
 
 function dependencySide(file) {
-  if (file === "package.json" || file === "docs/package.json" || file === "packages/mongo-shell/package.json") {
+  if (file === "package.json" || file === "docs/package.json") {
     return "frontend";
   }
   if (/^packages\/(?:cli(?:-|\/)|mcp(?:-|server\/)).*\/package\.json$/.test(file)

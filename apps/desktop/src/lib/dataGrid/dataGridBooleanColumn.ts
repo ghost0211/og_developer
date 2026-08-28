@@ -2,12 +2,10 @@ import type { DatabaseType } from "@/types/database";
 
 export const BOOLEAN_CELL_EDITOR_VALUES = ["true", "false"];
 
-export function isBooleanColumnType(dataType: string | undefined, databaseType?: DatabaseType): boolean {
+export function isBooleanColumnType(dataType: string | undefined, _databaseType?: DatabaseType): boolean {
   if (!dataType) return false;
   const normalized = dataType.trim().toLowerCase();
-  if (normalized === "boolean" || normalized === "bool") return true;
-  if (databaseType === "sqlserver") return normalized === "bit";
-  return false;
+  return normalized === "boolean" || normalized === "bool";
 }
 
 export function normalizeBooleanCellValue(value: unknown): boolean | null {

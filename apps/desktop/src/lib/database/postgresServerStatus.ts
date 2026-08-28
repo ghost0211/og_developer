@@ -1,6 +1,5 @@
 import type { ConnectionConfig, DatabaseType, QueryResult } from "@/types/database";
 import { effectiveDatabaseTypeForConnection } from "@/lib/database/jdbcDialect";
-import { isMissingKingbaseSysFunction, isMissingKingbaseSysRelation } from "@/lib/database/kingbaseCatalogCompatibility";
 import { computeRate, formatBytes, formatBytesPerSec, formatNumber, formatRate, formatUptime, statusEntries, statusNumber, type StatusEntry, type StatusMap, type StatusSample } from "@/lib/database/serverMetrics";
 
 /**
@@ -8,11 +7,8 @@ import { computeRate, formatBytes, formatBytesPerSec, formatNumber, formatRate, 
  * and formatting can be unit-tested; the dashboard component owns the polling
  * loop and ring buffer, and feeds samples through these functions.
  *
- * The MySQL family lives in `./mysqlServerStatus`; the two engines' status
- * shapes differ (cumulative name/value pairs vs. a single aggregate row), so
- * the SQL/mapping/gates stay separate, but the sample/rate math and formatting
- * are identical and shared from `./serverMetrics` — re-exported here so
- * existing callers keep one import path.
+ * The sample/rate math and formatting are shared from `./serverMetrics` —
+ * re-exported here so existing callers keep one import path.
  *
  * Data comes from one aggregate query over `pg_stat_database` / `pg_stat_activity`
  * / WAL position (`PG_STATUS_SQL`) and a one-shot settings query
@@ -142,54 +138,6 @@ export const OPENGAUSS_STATUS_FALLBACK_SQL = OPENGAUSS_STATUS_SQL.replace("(pg_l
 
 export const OPENGAUSS_VARIABLES_SQL = "SELECT current_setting('max_connections') AS max_connections, version() AS version";
 
-/**
- * KingbaseES exposes monitoring under sys_* names. Epoch values are subtracted
- * numerically because MySQL mode types CURRENT_TIMESTAMP as datetime while the
- * monitoring functions return timestamp with time zone.
- */
-function buildKingbaseStatusSql(catalog: "sys_catalog" | "pg_catalog", prefix: "sys" | "pg"): string {
-  return `WITH db_stats AS (
-  SELECT
-    coalesce(sum(xact_commit),0) AS xact_commit,
-    coalesce(sum(xact_rollback),0) AS xact_rollback,
-    coalesce(sum(blks_hit),0) AS blks_hit,
-    coalesce(sum(blks_read),0) AS blks_read,
-    coalesce(sum(tup_returned),0) AS tup_returned,
-    coalesce(sum(tup_fetched),0) AS tup_fetched,
-    coalesce(sum(tup_inserted),0) AS tup_inserted,
-    coalesce(sum(tup_updated),0) AS tup_updated,
-    coalesce(sum(tup_deleted),0) AS tup_deleted,
-    coalesce(sum(deadlocks),0) AS deadlocks,
-    coalesce(sum(temp_files),0) AS temp_files
-  FROM ${catalog}.${prefix}_stat_database
-), activity_stats AS (
-  SELECT
-    coalesce(sum(CASE WHEN state IS NOT NULL THEN 1 ELSE 0 END),0) AS connections,
-    coalesce(sum(CASE WHEN state = 'active' THEN 1 ELSE 0 END),0) AS active_connections,
-    coalesce(sum(CASE WHEN state = 'idle' THEN 1 ELSE 0 END),0) AS idle_connections
-  FROM ${catalog}.${prefix}_stat_activity
-  WHERE pid <> ${prefix}_backend_pid()
-)
-SELECT
-  db_stats.*,
-  activity_stats.*,
-  coalesce(CASE WHEN ${prefix}_is_in_recovery()
-    THEN ${prefix}_wal_lsn_diff(${prefix}_last_wal_replay_lsn(), '0/0')
-    ELSE ${prefix}_wal_lsn_diff(${prefix}_current_wal_lsn(), '0/0')
-  END, 0) AS wal_bytes,
-  CAST(floor(
-    extract(epoch FROM CAST(CURRENT_TIMESTAMP AS TIMESTAMP))
-    - extract(epoch FROM CAST(${prefix}_postmaster_start_time() AS TIMESTAMP))
-  ) AS BIGINT) AS uptime_seconds
-FROM db_stats
-CROSS JOIN activity_stats`;
-}
-
-export const KINGBASE_STATUS_SQL = buildKingbaseStatusSql("sys_catalog", "sys");
-export const KINGBASE_PG_STATUS_SQL = buildKingbaseStatusSql("pg_catalog", "pg");
-
-export const KINGBASE_VARIABLES_SQL = "SELECT current_setting('max_connections') AS max_connections, version() AS version";
-
 export interface PgServerStatusDriver {
   statusSql: string;
   variablesSql: string;
@@ -228,10 +176,6 @@ export function isOpenGaussReplayRecordError(error: unknown): boolean {
   return /\blsn\b/i.test(message) && /(?:composite|record data type|column notation|identify column)/i.test(message);
 }
 
-export function isKingbaseStatusCatalogCompatibilityError(error: unknown): boolean {
-  return isMissingKingbaseSysRelation(error, ["sys_catalog.sys_stat_database", "sys_catalog.sys_stat_activity"]) || isMissingKingbaseSysFunction(error, ["sys_backend_pid", "sys_is_in_recovery", "sys_wal_lsn_diff", "sys_last_wal_replay_lsn", "sys_current_wal_lsn", "sys_postmaster_start_time"]);
-}
-
 const POSTGRES_STATUS_DRIVER: PgServerStatusDriver = {
   statusSql: PG_STATUS_SQL,
   variablesSql: PG_VARIABLES_SQL,
@@ -246,25 +190,16 @@ const OPENGAUSS_STATUS_DRIVER: PgServerStatusDriver = {
   shouldUseFallbackStatusSql: isOpenGaussReplayRecordError,
 };
 
-const KINGBASE_STATUS_DRIVER: PgServerStatusDriver = {
-  statusSql: KINGBASE_STATUS_SQL,
-  variablesSql: KINGBASE_VARIABLES_SQL,
-  fallbackStatusSql: KINGBASE_PG_STATUS_SQL,
-  shouldUseFallbackStatusSql: isKingbaseStatusCatalogCompatibilityError,
-};
-
 /** Resolve the SQL contract used by the shared PostgreSQL-family dashboard. */
 export function resolveServerDashboardDriver(dbType: DatabaseType | undefined): PgServerStatusDriver | null {
   if (dbType === "postgres") return POSTGRES_STATUS_DRIVER;
   if (dbType === "opengauss") return OPENGAUSS_STATUS_DRIVER;
-  if (dbType === "kingbase") return KINGBASE_STATUS_DRIVER;
   return null;
 }
 
 export function resolveServerDashboardDriverForConnection(connection: ConnectionConfig | undefined): PgServerStatusDriver | null {
   if (!connection) return null;
   const dbType = effectiveDatabaseTypeForConnection(connection);
-  if (dbType === "gaussdb" && connection.driver_profile?.toLowerCase() === "opengauss") return OPENGAUSS_STATUS_DRIVER;
   return resolveServerDashboardDriver(dbType);
 }
 
@@ -299,7 +234,7 @@ export function pgCacheHitRatio(status: StatusMap): number | null {
   return Math.max(0, Math.min(100, ratio));
 }
 
-/** Connection-aware gate (mirrors the MySQL server-dashboard gate). */
+/** Connection-aware gate for the server dashboard. */
 export function connectionSupportsServerDashboard(connection: ConnectionConfig | undefined): boolean {
   return resolveServerDashboardDriverForConnection(connection) !== null;
 }

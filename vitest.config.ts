@@ -7,7 +7,6 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "apps/desktop/src"),
-      "@dbx-app/mongo-shell": path.resolve(__dirname, "packages/mongo-shell/src/index.ts"),
     },
   },
   test: {

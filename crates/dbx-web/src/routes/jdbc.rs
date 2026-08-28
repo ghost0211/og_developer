@@ -3,9 +3,9 @@ use std::sync::Arc;
 
 use axum::extract::{Multipart, Path, State};
 use axum::Json;
-use dbx_core::agent_service::AgentProgressEvent;
 use dbx_core::jdbc::{
-    self, JdbcDriverInfo, JdbcLocalBundleInfo, JdbcMavenBundleInfo, JdbcMavenInstallRequest, JdbcPluginStatus,
+    self, AgentProgressEvent, JdbcDriverInfo, JdbcLocalBundleInfo, JdbcMavenBundleInfo, JdbcMavenInstallRequest,
+    JdbcPluginStatus,
 };
 use dbx_core::plugins::PluginRuntimeEnv;
 use tokio::sync::broadcast;

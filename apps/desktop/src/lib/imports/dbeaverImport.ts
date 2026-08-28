@@ -1,6 +1,5 @@
 import type { ConnectionConfig, DatabaseType, SidebarLayout } from "@/types/database";
 import { uuid } from "@/lib/common/utils";
-import { JDBCX_JDBC_DRIVER_CLASS } from "@/lib/database/jdbcxBuiltinDriver";
 import { buildSidebarLayoutFromFolderPaths } from "@/lib/sidebar/sidebarLayout";
 
 type PartialConnection = Omit<ConnectionConfig, "id">;
@@ -37,32 +36,11 @@ type ConnectionProfile = {
 const dbeaverKey = new Uint8Array([186, 187, 74, 159, 119, 74, 184, 83, 201, 108, 45, 101, 61, 254, 84, 74]);
 
 const profileMap: Record<string, ConnectionProfile> = {
-  mysql: { dbType: "mysql", profile: "mysql", label: "MySQL", port: 3306, user: "root" },
-  mariadb: { dbType: "mysql", profile: "mariadb", label: "MariaDB", port: 3306, user: "root" },
   postgresql: { dbType: "postgres", profile: "postgres", label: "PostgreSQL", port: 5432, user: "postgres" },
   postgres: { dbType: "postgres", profile: "postgres", label: "PostgreSQL", port: 5432, user: "postgres" },
-  cloudberry: { dbType: "postgres", profile: "cloudberry", label: "Apache Cloudberry", port: 5432, user: "postgres" },
-  sqlite: { dbType: "sqlite", profile: "sqlite", label: "SQLite", port: 0, user: "" },
-  sqlserver: { dbType: "sqlserver", profile: "sqlserver", label: "SQL Server", port: 1433, user: "sa" },
-  mssql: { dbType: "sqlserver", profile: "sqlserver", label: "SQL Server", port: 1433, user: "sa" },
-  oracle: { dbType: "oracle", profile: "oracle", label: "Oracle", port: 1521, user: "system" },
-  clickhouse: { dbType: "clickhouse", profile: "clickhouse", label: "ClickHouse", port: 8123, user: "default" },
-  duckdb: { dbType: "duckdb", profile: "duckdb", label: "DuckDB", port: 0, user: "" },
-  mongodb: { dbType: "mongodb", profile: "mongodb", label: "MongoDB", port: 27017, user: "" },
-  mongo: { dbType: "mongodb", profile: "mongodb", label: "MongoDB", port: 27017, user: "" },
-  redshift: { dbType: "redshift", profile: "redshift", label: "Redshift", port: 5439, user: "awsuser" },
-  elasticsearch: { dbType: "elasticsearch", profile: "elasticsearch", label: "Elasticsearch", port: 9200, user: "" },
-  easysearch: { dbType: "easysearch", profile: "easysearch", label: "Easysearch", port: 9200, user: "" },
-  doris: { dbType: "doris", profile: "doris", label: "Doris", port: 9030, user: "root" },
-  starrocks: { dbType: "starrocks", profile: "starrocks", label: "StarRocks", port: 9030, user: "root" },
-  dameng: { dbType: "dameng", profile: "dm", label: "达梦 Dameng", port: 5236, user: "SYSDBA" },
-  dm: { dbType: "dameng", profile: "dm", label: "达梦 Dameng", port: 5236, user: "SYSDBA" },
-  gaussdb: { dbType: "gaussdb", profile: "gaussdb", label: "GaussDB", port: 5432, user: "gaussdb" },
-  kwdb: { dbType: "kwdb", profile: "kwdb", label: "KWDB", port: 26257, user: "root" },
-  opengauss: { dbType: "gaussdb", profile: "opengauss", label: "openGauss", port: 5432, user: "gaussdb" },
-  questdb: { dbType: "questdb", profile: "questdb", label: "QuestDB", port: 8812, user: "questdb" },
-  influxdb: { dbType: "influxdb", profile: "influxdb", label: "InfluxDB", port: 8086, user: "" },
-  jdbcx: { dbType: "jdbc", profile: "jdbcx", label: "JDBCX", port: 0, user: "" },
+  gaussdb: { dbType: "opengauss", profile: "opengauss", label: "openGauss", port: 5432, user: "gaussdb" },
+  opengauss: { dbType: "opengauss", profile: "opengauss", label: "openGauss", port: 5432, user: "gaussdb" },
+  jdbc: { dbType: "jdbc", profile: "jdbc", label: "JDBC", port: 5432, user: "" },
 };
 
 function normalizeKey(value: unknown) {
@@ -81,7 +59,7 @@ function getNumber(value: unknown) {
 }
 
 function inferProfile(entry: DbeaverConnectionEntry): ConnectionProfile {
-  if (/^jdbcx:/i.test(getString(entry.configuration?.url))) return profileMap.jdbcx;
+  if (/^jdbcx:/i.test(getString(entry.configuration?.url))) return profileMap.jdbc;
   const driverProfile = profileMap[normalizeKey(entry.driver)];
   if (driverProfile) return driverProfile;
   const candidates = [entry.provider, entry.driver, entry.configuration?.url, entry.name].map(normalizeKey).join(" ");
@@ -222,8 +200,8 @@ function buildConnection(entry: DbeaverConnectionEntry, credentials: ReturnType<
   const url = getString(config.url);
   const parsedUrl = parseJdbcUrl(url, profile);
   const configuredDatabase = getString(config.database || config["database-name"] || config.schema || parsedUrl.database);
-  const host = getString(config.host || config["host-name"] || parsedUrl.host || (profile.dbType === "sqlite" ? configuredDatabase : "127.0.0.1"));
-  const database = profile.dbType === "sqlite" ? "" : configuredDatabase;
+  const host = getString(config.host || config["host-name"] || parsedUrl.host || "127.0.0.1");
+  const database = configuredDatabase;
   const name = getString(entry.name || database || host || profile.label);
   if (!entry.id || !name) return null;
 
@@ -243,9 +221,8 @@ function buildConnection(entry: DbeaverConnectionEntry, credentials: ReturnType<
     connect_timeout_secs: 10,
     query_timeout_secs: 30,
     ssl: false,
-    oracle_connection_type: profile.dbType === "oracle" ? parsedUrl.oracleConnectionType || "service_name" : undefined,
-    connection_string: profile.dbType === "jdbc" || profile.dbType === "mongodb" ? url || undefined : undefined,
-    jdbc_driver_class: profile.dbType === "jdbc" ? getString(config["driver-class"] || (profile.profile === "jdbcx" ? JDBCX_JDBC_DRIVER_CLASS : entry.driver)) || undefined : undefined,
+    connection_string: profile.dbType === "jdbc" ? url || undefined : undefined,
+    jdbc_driver_class: profile.dbType === "jdbc" ? getString(config["driver-class"] || entry.driver) || undefined : undefined,
     jdbc_driver_paths: [],
   };
 

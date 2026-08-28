@@ -28,7 +28,7 @@ const props = withDefaults(
     signature?: string;
     objectType: ObjectSourceKind;
     databaseType?: DatabaseType;
-    dialect: "mysql" | "postgres" | "sqlserver";
+    dialect: "postgres";
     formatDialect?: SqlFormatDialect;
     initialEditing?: boolean;
   }>(),

@@ -200,7 +200,7 @@ const searchableObjectGroupTypes = new Set<TreeNodeType>([
   "group-schedulers",
   "group-types",
 ]);
-const simpleObjectParentTypes = new Set<TreeNodeType>(["database", "schema", "linked-server-schema"]);
+const simpleObjectParentTypes = new Set<TreeNodeType>(["database", "schema"]);
 const simpleObjectChildTypes = new Set<TreeNodeType>(["table", "view", "materialized_view", "procedure", "function", "trigger", "sequence", "synonym", "package", "package-body", "type", "type-body", "job", "scheduler", "load-more"]);
 
 function isSimpleObjectSearchParent(node: TreeNode): boolean {
@@ -248,9 +248,9 @@ const isRootListPartial = computed(() => sidebarFilterGuards.value.isRootListPar
 
 const SEARCH_SCOPE_TO_NODE_TYPES: Record<SearchScope, TreeNodeType[]> = {
   connection: ["connection"],
-  database: ["database", "redis-db", "mq-tenant", "nacos-namespace", "mongo-db"],
+  database: ["database"],
   schema: ["schema"],
-  table: ["table", "mongo-collection", "mongo-bucket", "vector-collection", "elasticsearch-index"],
+  table: ["table"],
   view: ["view"],
 };
 
@@ -386,7 +386,7 @@ function focusTableSearchInput(parentNodeId: string) {
 const displayedTreeNodes = computed(() => sortConnectionListForDisplay(store.treeNodes, settingsStore.editorSettings.sidebarConnectionSortMode));
 const localTableSearchResults = ref<Record<string, TableInfo[] | null>>({});
 
-const localTableSearchParentTypes = new Set<TreeNodeType>(["database", "schema", "linked-server-schema", "group-tables"]);
+const localTableSearchParentTypes = new Set<TreeNodeType>(["database", "schema", "group-tables"]);
 const localTableSearchChildTypes = new Set<TreeNodeType>(["table", "view", "materialized_view"]);
 
 function filterLocallySearchedTables(nodes: TreeNode[]): TreeNode[] {
@@ -457,7 +457,7 @@ const sidebarCommentLabelWidths = shallowRef(new Map<string, number>());
 let sidebarCommentMeasureFrame = 0;
 const sidebarTreeContentWidth = ref(0);
 let sidebarTreeContentMeasureFrame = 0;
-const sidebarTableNameDisplayTypes = new Set<TreeNodeType>(["table", "view", "materialized_view", "mongo-collection", "vector-collection", "elasticsearch-index"]);
+const sidebarTableNameDisplayTypes = new Set<TreeNodeType>(["table", "view", "materialized_view"]);
 const sidebarStorageDisplayTypes = new Set<TreeNodeType>(["database", "table", "materialized_view"]);
 
 function sidebarCommentLabel(node: TreeNode): string {
@@ -1073,7 +1073,7 @@ function resolveLoadedLocateTarget(target: ActiveTabSidebarTarget, candidate: Qu
 }
 
 async function ensureTreeLoadedForTarget(target: ActiveTabSidebarTarget, opts?: { force?: boolean }) {
-  if (target.type === "saved-sql-file" || target.type === "etcd-root" || target.type === "etcd-dashboard" || target.type === "etcd-access-control" || target.type === "zookeeper-root") return;
+  if (target.type === "saved-sql-file") return;
   const connId = target.connectionId;
   if (!connId) return;
 
@@ -1091,27 +1091,12 @@ async function ensureTreeLoadedForTarget(target: ActiveTabSidebarTarget, opts?: 
   const connNode = store.treeNodes.find((n) => n.id === connId);
   if (connNode && (force || !connNode.children || connNode.children.length === 0)) {
     try {
-      if (config.db_type === "redis") {
-        await store.loadRedisDatabases(connId);
-      } else if (config.db_type === "mongodb") {
-        await store.loadMongoDatabases(connId);
-      } else if (config.db_type === "elasticsearch" || config.db_type === "easysearch") {
-        await store.loadElasticsearchIndices(connId);
-      } else if (config.db_type === "qdrant" || config.db_type === "milvus" || config.db_type === "weaviate" || config.db_type === "chromadb") {
-        await store.loadVectorCollections(connId);
-      } else if (config.db_type === "mq") {
-        await store.loadMqTenants(connId, loadOptions);
-      } else if (config.db_type === "nacos") {
-        await store.loadNacosNamespaces(connId, loadOptions);
-      } else {
-        await store.loadDatabases(connId, loadOptions);
-      }
+      await store.loadDatabases(connId, loadOptions);
     } catch {
       return;
     }
   }
 
-  if (config.db_type === "mq" || config.db_type === "nacos") return;
   if (!("database" in target) || !target.database) return;
 
   // Find the database node
@@ -1126,17 +1111,7 @@ async function ensureTreeLoadedForTarget(target: ActiveTabSidebarTarget, opts?: 
 
   // Load database contents
   try {
-    if (config.db_type === "sqlserver") {
-      if (force || !databaseChildrenLoaded) {
-        await store.loadSqlServerDatabaseObjects(connId, target.database, loadOptions);
-      }
-      if (targetSchema) {
-        const schemaNode = findSchemaNode(store.treeNodes, connId, target.database, targetSchema);
-        if (schemaNode && (force || !schemaNode.children || schemaNode.children.length === 0)) {
-          await store.loadTables(connId, target.database, targetSchema, loadOptions);
-        }
-      }
-    } else if (usesSchemaTree) {
+    if (usesSchemaTree) {
       if (force || !databaseChildrenLoaded) {
         await store.loadSchemas(connId, target.database, loadOptions);
       }

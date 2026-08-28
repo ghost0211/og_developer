@@ -5,40 +5,18 @@ describe("defaultDatabase selectable values", () => {
   it("encodes empty tree-schema databases with the default database sentinel", () => {
     expect(encodeSelectableDatabaseValue("postgres", "")).toBe(TREE_SCHEMA_DEFAULT_DATABASE_SELECT_VALUE);
     expect(decodeSelectableDatabaseValue("postgres", TREE_SCHEMA_DEFAULT_DATABASE_SELECT_VALUE)).toBe("");
-  });
-
-  it("encodes empty non-tree-schema databases with a non-empty sentinel", () => {
-    expect(encodeSelectableDatabaseValue("access", "")).toBe(EMPTY_DATABASE_SELECT_VALUE);
-    expect(decodeSelectableDatabaseValue("access", EMPTY_DATABASE_SELECT_VALUE)).toBe("");
+    expect(encodeSelectableDatabaseValue("opengauss", "")).toBe(TREE_SCHEMA_DEFAULT_DATABASE_SELECT_VALUE);
+    expect(decodeSelectableDatabaseValue("opengauss", TREE_SCHEMA_DEFAULT_DATABASE_SELECT_VALUE)).toBe("");
   });
 
   it("preserves non-empty database names", () => {
-    expect(encodeSelectableDatabaseValue("access", "653128SXB.mdb")).toBe("653128SXB.mdb");
-    expect(decodeSelectableDatabaseValue("access", "653128SXB.mdb")).toBe("653128SXB.mdb");
-  });
-
-  it("uses main for SQLite connections with stale file paths", () => {
-    expect(resolveDefaultDatabase({ db_type: "sqlite", database: "/tmp/stale.sqlite" }, [])).toBe("main");
-    expect(resolveDefaultDatabase({ db_type: "sqlite", database: "C:\\data\\stale.db" }, [])).toBe("main");
-    expect(resolveDefaultDatabase({ db_type: "sqlite", database: "file:/tmp/stale.sqlite" }, [])).toBe("main");
-    expect(resolveDefaultDatabase({ db_type: "sqlite", database: ":memory:" }, [])).toBe("main");
-    expect(isDefaultDatabase({ db_type: "sqlite", database: "/tmp/stale.sqlite" }, "main")).toBe(true);
-    expect(resolveDefaultDatabase({ db_type: "sqlite", host: "relative.sqlite", database: undefined }, ["relative.sqlite"])).toBe("main");
-    expect(resolveDefaultDatabase({ db_type: "sqlite", host: "legacyfile", database: undefined }, ["legacyfile"])).toBe("main");
-  });
-
-  it("preserves a SQLite attached database alias", () => {
-    expect(resolveDefaultDatabase({ db_type: "sqlite", database: "analytics" }, ["main", "analytics"])).toBe("analytics");
-    expect(isDefaultDatabase({ db_type: "sqlite", database: "analytics" }, "analytics")).toBe(true);
-    expect(resolveDefaultDatabase({ db_type: "sqlite", host: "primary.db", database: undefined }, ["analytics.db"])).toBe("analytics.db");
+    expect(encodeSelectableDatabaseValue("opengauss", "testdb")).toBe("testdb");
+    expect(decodeSelectableDatabaseValue("opengauss", "testdb")).toBe("testdb");
   });
 
   it("matches PostgreSQL backend defaults when the configured database is empty", () => {
     expect(resolveDefaultDatabase({ db_type: "postgres", database: "" }, [])).toBe("postgres");
-    expect(resolveDefaultDatabase({ db_type: "postgres", driver_profile: "cockroachdb", database: " " }, [])).toBe("defaultdb");
     expect(resolveDefaultDatabase({ db_type: "opengauss", database: "" }, [])).toBe("postgres");
-    expect(resolveDefaultDatabase({ db_type: "gaussdb", database: undefined }, [])).toBe("postgres");
-    expect(resolveDefaultDatabase({ db_type: "kwdb", database: undefined }, [])).toBe("defaultdb");
-    expect(resolveDefaultDatabase({ db_type: "highgo", database: undefined }, [])).toBe("highgo");
+    expect(resolveDefaultDatabase({ db_type: "opengauss", database: "app" }, ["app"])).toBe("app");
   });
 });

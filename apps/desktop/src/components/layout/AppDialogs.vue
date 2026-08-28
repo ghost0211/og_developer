@@ -148,7 +148,7 @@ watch(
     v-if="showDangerDialog"
     :open="showDangerDialog"
     :sql="dangerSql"
-    :show-suppress-toggle="activeDatabaseType !== 'redis'"
+    :show-suppress-toggle="true"
     :suppress-future-prompts="suppressDangerConfirm"
     @update:open="emit('update:showDangerDialog', $event)"
     @update:suppress-future-prompts="emit('update:suppressDangerConfirm', $event)"

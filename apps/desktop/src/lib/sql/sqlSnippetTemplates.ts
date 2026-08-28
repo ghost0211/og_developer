@@ -129,62 +129,25 @@ interface BuiltinSqlSnippetRule {
   buildBody: BuiltinSqlSnippetBodyBuilder;
 }
 
-type SelectSnippetLimitStyle = "limit" | "top" | "first" | "fetch-first" | "rows" | "rownum" | "unbounded";
+type SelectSnippetLimitStyle = "limit" | "unbounded";
 
 const SELECT_SNIPPET_LIMIT_STYLE_BY_DATABASE: Partial<Record<DatabaseType, SelectSnippetLimitStyle>> = {
-  oracle: "rownum",
-  "oceanbase-oracle": "rownum",
-  oscar: "rownum",
-  dameng: "fetch-first",
-  db2: "fetch-first",
-  sqlserver: "top",
-  access: "top",
-  iris: "top",
-  teradata: "top",
-  informix: "first",
-  firebird: "rows",
   // An unknown JDBC driver may expose any SQL dialect. Known JDBC profiles are
   // converted to their effective database type before reaching the editor.
   jdbc: "unbounded",
 };
 
-const PARENTHESIZED_ADD_COLUMN_DATABASES = new Set<DatabaseType>(["oracle", "oceanbase-oracle", "yashandb", "xugu", "dameng", "iris", "informix"]);
-const ADD_COLUMN_WITHOUT_COLUMN_KEYWORD_DATABASES = new Set<DatabaseType>(["sqlserver", "kingbase", "cassandra", "teradata"]);
-
 function buildSelectSnippetBody(databaseType?: DatabaseType): string {
   const style = databaseType ? (SELECT_SNIPPET_LIMIT_STYLE_BY_DATABASE[databaseType] ?? "limit") : "limit";
-  switch (style) {
-    case "top":
-      return `SELECT TOP ${DEFAULT_SELECT_ROW_LIMIT} *\nFROM table;`;
-    case "first":
-      return `SELECT FIRST ${DEFAULT_SELECT_ROW_LIMIT} *\nFROM table;`;
-    case "fetch-first":
-      return `SELECT *\nFROM table\nFETCH FIRST ${DEFAULT_SELECT_ROW_LIMIT} ROWS ONLY;`;
-    case "rows":
-      return `SELECT *\nFROM table\nROWS ${DEFAULT_SELECT_ROW_LIMIT};`;
-    case "rownum":
-      return `SELECT *\nFROM table\nWHERE ROWNUM <= ${DEFAULT_SELECT_ROW_LIMIT};`;
-    case "unbounded":
-      return "SELECT *\nFROM table;";
-    case "limit":
-      return `SELECT *\nFROM table\nLIMIT ${DEFAULT_SELECT_ROW_LIMIT};`;
-  }
+  if (style === "unbounded") return "SELECT *\nFROM table;";
+  return `SELECT *\nFROM table\nLIMIT ${DEFAULT_SELECT_ROW_LIMIT};`;
 }
 
-function buildUpdateSnippetBody(databaseType?: DatabaseType): string {
-  if (databaseType === "clickhouse") {
-    return "ALTER TABLE table\nUPDATE column = value\nWHERE condition;";
-  }
+function buildUpdateSnippetBody(): string {
   return "UPDATE table\nSET column = value\nWHERE condition;";
 }
 
-function buildAlterTableAddColumnSnippetBody(databaseType?: DatabaseType): string {
-  if (databaseType && PARENTHESIZED_ADD_COLUMN_DATABASES.has(databaseType)) {
-    return "ALTER TABLE table\nADD (column type);";
-  }
-  if (databaseType && ADD_COLUMN_WITHOUT_COLUMN_KEYWORD_DATABASES.has(databaseType)) {
-    return "ALTER TABLE table\nADD column type;";
-  }
+function buildAlterTableAddColumnSnippetBody(): string {
   return "ALTER TABLE table\nADD COLUMN column type;";
 }
 

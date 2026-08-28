@@ -1,8 +1,6 @@
 use dbx_core::connection::AppState;
 use dbx_core::models::connection::{ConnectionConfig, DatabaseType};
-use dbx_core::query::{
-    begin_manual_transaction, commit_manual_transaction, execute_in_manual_transaction, rollback_manual_transaction,
-};
+use dbx_core::query::{begin_manual_transaction, commit_manual_transaction, execute_in_manual_transaction};
 use dbx_core::storage::Storage;
 
 fn live_config(prefix: &str, db_type: DatabaseType, default_port: u16) -> ConnectionConfig {
@@ -47,7 +45,7 @@ async fn live_manual_transaction_postgres_preserves_typed_selects_and_empty_meta
     let database = config.database.clone().expect("database");
     let (state, db_path) = app_state_with_config(config.clone()).await;
 
-    let txn = begin_manual_transaction(&state, &config.id, &database, None, None).await.expect("begin");
+    let txn = begin_manual_transaction(&state, &config.id, &database, None).await.expect("begin");
     let typed = execute_in_manual_transaction(
         &state,
         &txn,
@@ -75,31 +73,5 @@ async fn live_manual_transaction_postgres_preserves_typed_selects_and_empty_meta
     assert!(empty[0].rows.is_empty());
 
     commit_manual_transaction(&state, &txn).await.expect("commit");
-    let _ = std::fs::remove_file(db_path);
-}
-
-#[tokio::test]
-#[ignore = "requires DBX_LIVE_MANUAL_TXN_MYSQL_* env vars pointing at writable MySQL"]
-async fn live_manual_transaction_mysql_streams_with_row_limit() {
-    let config = live_config("DBX_LIVE_MANUAL_TXN_MYSQL", DatabaseType::Mysql, 3306);
-    let database = config.database.clone().expect("database");
-    let (state, db_path) = app_state_with_config(config.clone()).await;
-
-    let txn = begin_manual_transaction(&state, &config.id, &database, None, None).await.expect("begin");
-    let limited = execute_in_manual_transaction(
-        &state,
-        &txn,
-        "SELECT 1 AS id UNION ALL SELECT 2 UNION ALL SELECT 3",
-        &database,
-        None,
-        Some(2),
-    )
-    .await
-    .expect("limited select");
-    assert_eq!(limited[0].columns, vec!["id"]);
-    assert_eq!(limited[0].rows.len(), 2);
-    assert!(limited[0].truncated);
-
-    rollback_manual_transaction(&state, &txn).await.expect("rollback");
     let _ = std::fs::remove_file(db_path);
 }

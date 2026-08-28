@@ -165,7 +165,7 @@ impl InputResolver {
             target_rules: Vec::new(),
             source_owners: Vec::new(),
             target_owners: Vec::new(),
-            database_type: crate::models::connection::DatabaseType::Mysql,
+            database_type: crate::models::connection::DatabaseType::Postgres,
             target_schema: None,
             ignore_comments: false,
             cascade_delete: false,
@@ -186,14 +186,9 @@ impl InputResolver {
 
 fn dialect_to_database_type(dialect: &str) -> crate::models::connection::DatabaseType {
     match dialect.to_ascii_lowercase().as_str() {
-        "mysql" | "mariadb" | "tidb" => crate::models::connection::DatabaseType::Mysql,
-        "postgres" | "postgresql" => crate::models::connection::DatabaseType::Postgres,
-        "sqlite" => crate::models::connection::DatabaseType::Sqlite,
-        "sqlserver" | "mssql" => crate::models::connection::DatabaseType::SqlServer,
-        "clickhouse" => crate::models::connection::DatabaseType::ClickHouse,
-        "duckdb" => crate::models::connection::DatabaseType::DuckDb,
-        "oracle" => crate::models::connection::DatabaseType::Oracle,
-        _ => crate::models::connection::DatabaseType::Mysql,
+        "opengauss" | "gaussdb" => crate::models::connection::DatabaseType::OpenGauss,
+        "jdbc" => crate::models::connection::DatabaseType::Jdbc,
+        _ => crate::models::connection::DatabaseType::Postgres,
     }
 }
 

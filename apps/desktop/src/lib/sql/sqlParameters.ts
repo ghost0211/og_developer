@@ -27,15 +27,7 @@ interface ParameterOccurrence extends SqlParameterDescriptor {
   replacement?: "string-fragment";
 }
 
-interface DuckDbStructLiteralContext {
-  bracketDepth: number;
-  parenthesisDepth: number;
-  separators: Set<number>;
-  valid: boolean;
-}
-
 type ComplexTypeDeclarationKind = "struct" | "variant";
-type TriggerPseudoRecordName = "new" | "old" | "parent" | "eventinfo";
 
 export interface SqlParameterOptions {
   databaseType?: DatabaseType;
@@ -111,12 +103,9 @@ export function sqlParameterLiteral(input: SqlParameterInput): string {
 function findSqlParameterOccurrences(sql: string, options?: SqlParameterOptions): ParameterOccurrence[] {
   const occurrences: ParameterOccurrence[] = [];
   const nativeSqlServerParameters = collectNativeSqlServerParameters(sql);
-  const supportsNamedParameters = options?.databaseType !== "saphana";
   const enabledSyntaxes = options?.enabledSyntaxes ? new Set(options.enabledSyntaxes) : null;
   const isSyntaxEnabled = (syntax: SqlParameterSyntax) => !enabledSyntaxes || enabledSyntaxes.has(syntax);
-  const complexTypeFieldSeparators = supportsNamedParameters && isSyntaxEnabled("named") ? collectComplexTypeFieldSeparators(sql) : new Set<number>();
-  const duckDbStructFieldSeparators = supportsNamedParameters && isSyntaxEnabled("named") && options?.databaseType === "duckdb" ? collectDuckDbStructFieldSeparators(sql) : new Set<number>();
-  const triggerPseudoRecordFieldStarts = supportsNamedParameters && isSyntaxEnabled("named") ? collectTriggerPseudoRecordFieldStarts(sql, options?.databaseType) : new Set<number>();
+  const complexTypeFieldSeparators = isSyntaxEnabled("named") ? collectComplexTypeFieldSeparators(sql) : new Set<number>();
   let i = 0;
   let dollarQuoteEnd = "";
   let positionalIndex = 0;
@@ -174,9 +163,9 @@ function findSqlParameterOccurrences(sql: string, options?: SqlParameterOptions)
       i += 1;
       continue;
     }
-    if (ch === ":" && supportsNamedParameters && isSyntaxEnabled("named")) {
+    if (ch === ":" && isSyntaxEnabled("named")) {
       const name = readParameterName(sql, i + 1);
-      if (name && sql[i - 1] !== ":" && sql[i + 1] !== "=" && !complexTypeFieldSeparators.has(i) && !duckDbStructFieldSeparators.has(i) && !triggerPseudoRecordFieldStarts.has(i)) {
+      if (name && sql[i - 1] !== ":" && sql[i + 1] !== "=" && !complexTypeFieldSeparators.has(i)) {
         occurrences.push({
           key: name,
           name,
@@ -203,7 +192,7 @@ function findSqlParameterOccurrences(sql: string, options?: SqlParameterOptions)
     }
     if (ch === "@" && isSyntaxEnabled("sqlserver")) {
       const name = readParameterName(sql, i + 1);
-      if (name && next !== "@" && sql[i - 1] !== "@" && !isOracleDatabaseLinkMarker(sql, i, options?.databaseType) && !isJdbcxMcpScopedPackage(sql, i, i + 1 + name.length) && !nativeSqlServerParameters.declared.has(name.toLowerCase()) && !nativeSqlServerParameters.ignoredStarts.has(i)) {
+      if (name && next !== "@" && sql[i - 1] !== "@" && !isJdbcxMcpScopedPackage(sql, i, i + 1 + name.length) && !nativeSqlServerParameters.declared.has(name.toLowerCase()) && !nativeSqlServerParameters.ignoredStarts.has(i)) {
         occurrences.push({
           key: name,
           name,
@@ -228,256 +217,6 @@ function findSqlParameterOccurrences(sql: string, options?: SqlParameterOptions)
   }
 
   return occurrences;
-}
-
-function isOracleDatabaseLinkMarker(sql: string, index: number, databaseType: DatabaseType | undefined): boolean {
-  if (databaseType !== "oracle" || index === 0) return false;
-  const previous = sql[index - 1];
-  return PARAMETER_NAME_CHAR_RE.test(previous) || previous === "$" || previous === "#" || previous === '"';
-}
-
-function collectDuckDbStructFieldSeparators(sql: string): Set<number> {
-  const separators = new Set<number>();
-  const contexts: DuckDbStructLiteralContext[] = [];
-  let cursor = 0;
-  let dollarQuoteEnd = "";
-
-  while (cursor < sql.length) {
-    if (dollarQuoteEnd) {
-      const end = sql.indexOf(dollarQuoteEnd, cursor);
-      if (end === -1) break;
-      cursor = end + dollarQuoteEnd.length;
-      dollarQuoteEnd = "";
-      continue;
-    }
-
-    const ch = sql[cursor];
-    const next = sql[cursor + 1];
-    if (ch === "'" || ch === '"' || ch === "`") {
-      cursor = skipQuoted(sql, cursor, ch);
-      continue;
-    }
-    if (ch === "-" && next === "-") {
-      cursor = skipLine(sql, cursor + 2);
-      continue;
-    }
-    if (ch === "/" && next === "*") {
-      cursor = skipBlockComment(sql, cursor + 2);
-      continue;
-    }
-    if (isHashLineComment(sql, cursor)) {
-      cursor = skipLine(sql, cursor + 1);
-      continue;
-    }
-    if (ch === "$") {
-      const marker = readDollarQuoteMarker(sql, cursor);
-      if (marker) {
-        dollarQuoteEnd = marker;
-        cursor += marker.length;
-        continue;
-      }
-    }
-    if (ch === "{") {
-      const separator = readDuckDbStructFieldSeparator(sql, cursor + 1);
-      contexts.push({
-        bracketDepth: 0,
-        parenthesisDepth: 0,
-        separators: new Set(separator === null ? [] : [separator]),
-        valid: separator !== null,
-      });
-      cursor += 1;
-      continue;
-    }
-    if (ch === "}") {
-      const context = contexts.pop();
-      if (context?.valid) {
-        const parent = contexts[contexts.length - 1];
-        const destination = parent ? parent.separators : separators;
-        for (const separator of context.separators) destination.add(separator);
-      }
-      cursor += 1;
-      continue;
-    }
-
-    const context = contexts[contexts.length - 1];
-    if (!context) {
-      cursor += 1;
-      continue;
-    }
-    if (ch === "(") context.parenthesisDepth += 1;
-    else if (ch === ")" && context.parenthesisDepth > 0) context.parenthesisDepth -= 1;
-    else if (ch === "[") context.bracketDepth += 1;
-    else if (ch === "]" && context.bracketDepth > 0) context.bracketDepth -= 1;
-    else if (ch === "," && context.valid && context.parenthesisDepth === 0 && context.bracketDepth === 0) {
-      const separator = readDuckDbStructFieldSeparator(sql, cursor + 1);
-      if (separator !== null) context.separators.add(separator);
-    }
-    cursor += 1;
-  }
-
-  return separators;
-}
-
-function readDuckDbStructFieldSeparator(sql: string, start: number): number | null {
-  const fieldStart = skipSqlWhitespaceAndComments(sql, start);
-  const ch = sql[fieldStart];
-  let fieldNameEnd = fieldStart;
-
-  if (ch === "'" || ch === '"' || ch === "`") fieldNameEnd = skipQuoted(sql, fieldStart, ch);
-  else {
-    const fieldName = readParameterName(sql, fieldStart);
-    if (!fieldName) return null;
-    fieldNameEnd += fieldName.length;
-  }
-
-  const separator = skipSqlWhitespaceAndComments(sql, fieldNameEnd);
-  return sql[separator] === ":" ? separator : null;
-}
-
-// Oracle and Dameng expose trigger rows through colon-prefixed pseudo-records,
-// unlike PostgreSQL's unprefixed NEW/OLD records. Keep ordinary :name binds enabled.
-function collectTriggerPseudoRecordFieldStarts(sql: string, databaseType?: DatabaseType): Set<number> {
-  const starts = new Set<number>();
-  const defaults = triggerPseudoRecordDefaults(databaseType);
-  if (!defaults) return starts;
-
-  let aliases: Set<string> | null = null;
-  let i = 0;
-  let dollarQuoteEnd = "";
-
-  while (i < sql.length) {
-    if (dollarQuoteEnd) {
-      const end = sql.indexOf(dollarQuoteEnd, i);
-      if (end === -1) break;
-      i = end + dollarQuoteEnd.length;
-      dollarQuoteEnd = "";
-      continue;
-    }
-
-    const ch = sql[i];
-    const next = sql[i + 1];
-    if (ch === "'" || ch === '"' || ch === "`") {
-      i = skipQuoted(sql, i, ch);
-      continue;
-    }
-    if (ch === "[") {
-      i = skipBracketIdentifier(sql, i);
-      continue;
-    }
-    if (ch === "-" && next === "-") {
-      i = skipLine(sql, i + 2);
-      continue;
-    }
-    if (ch === "/" && next === "*") {
-      i = skipBlockComment(sql, i + 2);
-      continue;
-    }
-    if (isHashLineComment(sql, i)) {
-      i = skipLine(sql, i + 1);
-      continue;
-    }
-    if (ch === "$") {
-      const marker = readDollarQuoteMarker(sql, i);
-      if (marker) {
-        dollarQuoteEnd = marker;
-        i += marker.length;
-        continue;
-      }
-    }
-
-    if (aliases && ch === "/" && isStandaloneSlashDelimiter(sql, i)) {
-      aliases = null;
-      i += 1;
-      continue;
-    }
-    if (!aliases && matchesWord(sql, i, "create")) {
-      const triggerStart = readCreateTriggerEnd(sql, i);
-      if (triggerStart !== null) {
-        aliases = new Set(defaults);
-        i = triggerStart;
-        continue;
-      }
-    }
-    if (aliases && matchesWord(sql, i, "referencing")) {
-      i = collectTriggerReferencingAliases(sql, i + "referencing".length, aliases, defaults);
-      continue;
-    }
-    if (aliases && ch === ":") {
-      const name = readParameterName(sql, i + 1);
-      if (name && aliases.has(name.toLowerCase()) && isTriggerPseudoRecordFieldReference(sql, i + 1 + name.length)) {
-        starts.add(i);
-        i += 1 + name.length;
-        continue;
-      }
-    }
-    i += 1;
-  }
-
-  return starts;
-}
-
-function triggerPseudoRecordDefaults(databaseType?: DatabaseType): readonly TriggerPseudoRecordName[] | null {
-  if (databaseType === "oracle") return ["new", "old", "parent"];
-  if (databaseType === "dameng") return ["new", "old", "eventinfo"];
-  return null;
-}
-
-function readCreateTriggerEnd(sql: string, start: number): number | null {
-  let keyword = readNextKeyword(sql, start + "create".length);
-  if (!keyword) return null;
-  if (keyword.word === "or") {
-    keyword = readNextKeyword(sql, keyword.end);
-    if (keyword?.word !== "replace") return null;
-    keyword = readNextKeyword(sql, keyword.end);
-  }
-  return keyword?.word === "trigger" ? keyword.end : null;
-}
-
-function collectTriggerReferencingAliases(sql: string, start: number, aliases: Set<string>, defaults: readonly TriggerPseudoRecordName[]): number {
-  const supported = new Set<string>(defaults);
-  let i = start;
-
-  while (i < sql.length) {
-    const source = readNextKeyword(sql, i);
-    if (!source || isTriggerReferencingBoundary(source.word)) return i;
-    if (!supported.has(source.word)) {
-      i = source.end;
-      continue;
-    }
-
-    let alias = readNextKeyword(sql, source.end);
-    if (alias?.word === "row") alias = readNextKeyword(sql, alias.end);
-    if (alias?.word === "as") alias = readNextKeyword(sql, alias.end);
-    if (!alias || supported.has(alias.word) || isTriggerReferencingBoundary(alias.word)) {
-      i = source.end;
-      continue;
-    }
-
-    aliases.add(alias.word);
-    i = alias.end;
-  }
-
-  return i;
-}
-
-function isTriggerReferencingBoundary(word: string): boolean {
-  return ["before", "after", "instead", "for", "when", "begin", "declare", "call", "enable", "disable"].includes(word);
-}
-
-function isTriggerPseudoRecordFieldReference(sql: string, nameEnd: number): boolean {
-  if (sql[nameEnd] !== ".") return false;
-  const fieldStart = nameEnd + 1;
-  return PARAMETER_NAME_START_RE.test(sql[fieldStart] ?? "") || sql[fieldStart] === '"';
-}
-
-function isStandaloneSlashDelimiter(sql: string, start: number): boolean {
-  let before = start - 1;
-  while (before >= 0 && (sql[before] === " " || sql[before] === "\t" || sql[before] === "\r")) before -= 1;
-  if (before >= 0 && sql[before] !== "\n") return false;
-
-  let after = start + 1;
-  while (after < sql.length && (sql[after] === " " || sql[after] === "\t" || sql[after] === "\r")) after += 1;
-  return after === sql.length || sql[after] === "\n";
 }
 
 // JDBCX MCP commands accept npm scoped packages in their unquoted args value,

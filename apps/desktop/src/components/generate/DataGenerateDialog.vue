@@ -75,10 +75,6 @@ function tableInfo(schema: string, table: string): TableInfo | undefined {
   return schemaTables[schema]?.find((item) => item.name === table);
 }
 
-function isTdengineTagColumn(column: ColumnInfo): boolean {
-  return (column.extra ?? "").toUpperCase().includes("TAG") || (column.comment ?? "").toUpperCase() === "TAG";
-}
-
 // Derived state for template
 const activeCfg = computed(() => {
   const k = panelTableKey.value;
@@ -148,7 +144,6 @@ async function loadSchemas() {
                     gKey,
                   ),
                   isAutoIncrement: isAI,
-                  isTag: isTdengineTagColumn(c),
                   columnDefault: c.column_default,
                 };
               }),
@@ -246,7 +241,6 @@ async function loadColumns(schema: string, table: string) {
           gKey,
         ),
         isAutoIncrement: isAI,
-        isTag: isTdengineTagColumn(c),
         columnDefault: c.column_default,
       };
     }),

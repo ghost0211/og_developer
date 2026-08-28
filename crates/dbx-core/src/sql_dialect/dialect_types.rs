@@ -28,17 +28,8 @@ fn list_dialect_type_names_in(dialect_name: &str, registry: &DialectRegistry) ->
 
 fn core_catalog_name(kind: DialectKind) -> &'static str {
     match kind {
-        DialectKind::Mysql => "MySQL",
         DialectKind::Postgres => "PostgreSQL",
-        DialectKind::Sqlite => "SQLite",
-        DialectKind::DuckDb => "DuckDB",
-        DialectKind::SqlServer => "SQL Server",
-        DialectKind::Oracle => "Oracle",
-        DialectKind::H2 => "H2",
-        DialectKind::ClickHouse => "ClickHouse",
-        DialectKind::ManticoreSearch => "ManticoreSearch",
-        DialectKind::Informix => "Informix",
-        DialectKind::Questdb => "QuestDB",
+        DialectKind::Opengauss => "openGauss",
         DialectKind::Unsupported => "Unsupported",
     }
 }
@@ -83,17 +74,17 @@ mod tests {
     }
 
     #[test]
-    fn list_mysql_types() {
-        let registry = make_registry_with_types("MySQL", &["VARCHAR", "INT", "BIGINT"]);
-        let types = list_dialect_type_names_in("MySQL", &registry);
+    fn list_postgres_types() {
+        let registry = make_registry_with_types("PostgreSQL", &["VARCHAR", "INT", "BIGINT"]);
+        let types = list_dialect_type_names_in("PostgreSQL", &registry);
         assert_eq!(types, vec!["VARCHAR", "INT", "BIGINT"]);
         assert!(types.contains(&"VARCHAR".to_string()));
     }
 
     #[test]
-    fn list_dameng_types() {
+    fn list_opengauss_types() {
         let registry = make_registry_with_types(
-            "Dameng",
+            "openGauss",
             &[
                 "VARCHAR",
                 "VARCHAR2",
@@ -109,8 +100,8 @@ mod tests {
                 "TEXT",
             ],
         );
-        let types = list_dialect_type_names_in("Dameng", &registry);
-        assert!(!types.is_empty(), "Dameng should have types");
+        let types = list_dialect_type_names_in("openGauss", &registry);
+        assert!(!types.is_empty(), "openGauss should have types");
         assert!(types.contains(&"VARCHAR2".to_string()));
         assert_eq!(types.len(), 12);
     }

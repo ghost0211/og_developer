@@ -2,8 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::models::connection::DatabaseType;
 use crate::sql_dialect::{
-    is_postgres_reserved_identifier, is_schema_aware, is_simple_lower_identifier, profile_for, qualified_table_name,
-    quote_table_identifier,
+    is_postgres_reserved_identifier, is_schema_aware, is_simple_lower_identifier, quote_table_identifier,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -74,14 +73,6 @@ pub enum DatabaseCreationTarget {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-#[cfg(feature = "duckdb-sidecar")]
-pub struct DuckDbAttachDatabaseSqlOptions {
-    pub path: String,
-    pub name: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct SqliteAttachDatabaseSqlOptions {
     pub path: String,
     pub name: String,
@@ -100,7 +91,7 @@ pub struct DropObjectSqlOptions {
     pub signature: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct TableAdminSqlOptions {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -205,19 +196,8 @@ pub struct CopyTableDataSqlOptions {
     pub normalize_new_target_name: bool,
 }
 
-const MYSQL_COMPATIBLE_PROFILES: &[&str] = &["mysql", "mariadb", "tidb", "oceanbase", "custom_mysql"];
-const CREATE_DATABASE_CHARSET_UNSUPPORTED_PROFILES: &[&str] = &["doris", "selectdb", "starrocks"];
-
-pub fn supports_create_database_charset(database_type: Option<DatabaseType>, driver_profile: Option<&str>) -> bool {
-    let normalized_profile = driver_profile.map(str::to_ascii_lowercase);
-    if normalized_profile
-        .as_deref()
-        .is_some_and(|profile| CREATE_DATABASE_CHARSET_UNSUPPORTED_PROFILES.contains(&profile))
-    {
-        return false;
-    }
-    matches!(database_type, Some(DatabaseType::Mysql | DatabaseType::Goldendb))
-        || normalized_profile.as_deref().is_some_and(|profile| MYSQL_COMPATIBLE_PROFILES.contains(&profile))
+pub fn supports_create_database_charset(_database_type: Option<DatabaseType>, _driver_profile: Option<&str>) -> bool {
+    false
 }
 
 pub fn build_create_database_sql(options: CreateDatabaseSqlOptions) -> Result<String, String> {
@@ -247,114 +227,44 @@ fn build_create_database_statement(options: &CreateDatabaseSqlOptions) -> Result
     Ok(format!("CREATE DATABASE {name} CHARACTER SET {charset}{collate_clause};"))
 }
 
+fn database_label(database_type: Option<DatabaseType>) -> String {
+    match database_type {
+        Some(DatabaseType::Postgres) => "PostgreSQL".to_string(),
+        Some(DatabaseType::Opengauss) => "openGauss".to_string(),
+        Some(DatabaseType::Jdbc) => "JDBC".to_string(),
+        None => "Database".to_string(),
+    }
+}
+
+fn comment_literal(comment: Option<&str>) -> String {
+    match comment {
+        Some(c) => format!("'{}'", c.replace('\'', "''")),
+        None => "NULL".to_string(),
+    }
+}
+
+fn quote_sql_string(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "''"))
+}
+
 pub fn supports_create_database_target(database_type: Option<DatabaseType>) -> bool {
-    matches!(
-        database_type,
-        Some(
-            DatabaseType::Mysql
-                | DatabaseType::Doris
-                | DatabaseType::StarRocks
-                | DatabaseType::Goldendb
-                | DatabaseType::ClickHouse
-                | DatabaseType::SqlServer
-                | DatabaseType::InfluxDb
-                | DatabaseType::Databend
-                | DatabaseType::Snowflake
-                | DatabaseType::Tdengine
-                | DatabaseType::Postgres
-                | DatabaseType::Redshift
-                | DatabaseType::Gaussdb
-                | DatabaseType::Kwdb
-                | DatabaseType::OpenGauss
-                | DatabaseType::Vastbase
-                | DatabaseType::Highgo
-                | DatabaseType::Kingbase
-                | DatabaseType::Yashandb
-        )
-    )
+    matches!(database_type, Some(DatabaseType::Postgres | DatabaseType::Opengauss))
 }
 
 pub fn supports_create_schema_target(database_type: Option<DatabaseType>) -> bool {
-    matches!(
-        database_type,
-        Some(
-            DatabaseType::Postgres
-                | DatabaseType::Redshift
-                | DatabaseType::SqlServer
-                | DatabaseType::Db2
-                | DatabaseType::Gaussdb
-                | DatabaseType::Kwdb
-                | DatabaseType::Kingbase
-                | DatabaseType::Highgo
-                | DatabaseType::Uxdb
-                | DatabaseType::Vastbase
-                | DatabaseType::Yashandb
-                | DatabaseType::Dameng
-                | DatabaseType::Databricks
-                | DatabaseType::SapHana
-                | DatabaseType::Teradata
-                | DatabaseType::Vertica
-                | DatabaseType::Exasol
-                | DatabaseType::OpenGauss
-                | DatabaseType::Gbase
-                | DatabaseType::Trino
-                | DatabaseType::PrestoSql
-                | DatabaseType::H2
-                | DatabaseType::Informix
-                | DatabaseType::Xugu
-                | DatabaseType::Oscar
-                | DatabaseType::Iris
-                | DatabaseType::Snowflake
-        )
-    )
+    matches!(database_type, Some(DatabaseType::Postgres | DatabaseType::Opengauss))
 }
 
-pub fn supports_database_property_charset(database_type: Option<DatabaseType>, driver_profile: Option<&str>) -> bool {
-    supports_create_database_charset(database_type, driver_profile)
-        && matches!(database_type, Some(DatabaseType::Mysql | DatabaseType::Goldendb))
+pub fn supports_database_property_charset(_database_type: Option<DatabaseType>, _driver_profile: Option<&str>) -> bool {
+    false
 }
 
 pub fn supports_database_property_comment(database_type: Option<DatabaseType>) -> bool {
-    matches!(
-        database_type,
-        Some(
-            DatabaseType::Postgres
-                | DatabaseType::Gaussdb
-                | DatabaseType::Kwdb
-                | DatabaseType::Kingbase
-                | DatabaseType::Highgo
-                | DatabaseType::Uxdb
-                | DatabaseType::Vastbase
-                | DatabaseType::OpenGauss
-                | DatabaseType::Yashandb
-        )
-    )
+    matches!(database_type, Some(DatabaseType::Postgres | DatabaseType::Opengauss))
 }
 
-#[cfg(feature = "duckdb-sidecar")]
-pub fn build_duckdb_attach_database_sql(options: DuckDbAttachDatabaseSqlOptions) -> String {
-    format!(
-        "ATTACH {} AS {};",
-        quote_sql_string(&options.path),
-        quote_table_identifier(Some(DatabaseType::DuckDb), &options.name)
-    )
-}
-
-pub fn build_sqlite_attach_database_sql(options: SqliteAttachDatabaseSqlOptions) -> String {
-    format!(
-        "ATTACH DATABASE {} AS {};",
-        quote_sql_string(&options.path),
-        quote_table_identifier(Some(DatabaseType::Sqlite), &options.name)
-    )
-}
-
-pub fn build_create_user_sql(username: &str, password: &str, tablespace: &str) -> String {
-    format!(
-        "CREATE USER {} IDENTIFIED BY {} DEFAULT TABLESPACE {};",
-        quote_table_identifier(Some(DatabaseType::Dameng), username),
-        quote_sql_string(password),
-        quote_table_identifier(Some(DatabaseType::Dameng), tablespace)
-    )
+pub fn build_create_user_sql(username: &str, password: &str, _tablespace: &str) -> String {
+    format!("CREATE USER \"{}\" WITH PASSWORD {};", username.replace('"', "\"\""), quote_sql_string(password),)
 }
 
 pub fn build_drop_object_sql(options: DropObjectSqlOptions) -> String {
@@ -424,12 +334,6 @@ fn quote_admin_identifier(database_type: Option<DatabaseType>, name: &str) -> St
 
 pub fn build_drop_table_sql(options: TableAdminSqlOptions) -> String {
     let table = qualified_name(options.database_type, options.schema.as_deref(), &options.table_name);
-    if matches!(options.database_type, Some(DatabaseType::Iotdb)) {
-        return format!("DELETE TIMESERIES {};", iotdb_timeseries_pattern(&table));
-    } else if matches!(options.database_type, Some(DatabaseType::InfluxDb)) {
-        return format!("DROP MEASUREMENT {};", table);
-    }
-    // CASCADE is valid for PostgreSQL-family dialects; keep default RESTRICT behavior elsewhere.
     let cascade = if options.cascade.unwrap_or(false) && supports_drop_table_cascade(options.database_type) {
         " CASCADE"
     } else {
@@ -442,21 +346,8 @@ fn supports_drop_table_cascade(database_type: Option<DatabaseType>) -> bool {
     database_type.is_some_and(is_postgres_family_database)
 }
 
-/// Database servers that share PostgreSQL's `DROP <obj> [IF EXISTS] <name>[(args)]`
-/// grammar (and thus accept an argument list on DROP FUNCTION/PROCEDURE).
 pub(crate) fn is_postgres_family_database(database_type: DatabaseType) -> bool {
-    matches!(
-        database_type,
-        DatabaseType::Postgres
-            | DatabaseType::Redshift
-            | DatabaseType::Gaussdb
-            | DatabaseType::Kwdb
-            | DatabaseType::Kingbase
-            | DatabaseType::Highgo
-            | DatabaseType::Uxdb
-            | DatabaseType::Vastbase
-            | DatabaseType::OpenGauss
-    )
+    matches!(database_type, DatabaseType::Postgres | DatabaseType::Opengauss)
 }
 
 pub fn build_drop_table_child_object_sql(options: DropTableChildObjectSqlOptions) -> Result<String, String> {
@@ -466,119 +357,34 @@ pub fn build_drop_table_child_object_sql(options: DropTableChildObjectSqlOptions
     match options.object_type {
         TableChildObjectType::Column => Ok(format!("ALTER TABLE {table} DROP COLUMN {name};")),
         TableChildObjectType::Index => {
-            if matches!(database_type, Some(DatabaseType::ClickHouse | DatabaseType::Redshift)) {
-                return Err(format!("Dropping indexes is not supported for {}.", database_label(database_type)));
-            }
-            if matches!(database_type, Some(DatabaseType::Mysql | DatabaseType::Goldendb | DatabaseType::SqlServer)) {
-                return Ok(format!("DROP INDEX {name} ON {table};"));
-            }
-            if matches!(
-                database_type,
-                Some(
-                    DatabaseType::Postgres
-                        | DatabaseType::Gaussdb
-                        | DatabaseType::Kwdb
-                        | DatabaseType::OpenGauss
-                        | DatabaseType::Questdb
-                        | DatabaseType::Highgo
-                        | DatabaseType::Uxdb
-                        | DatabaseType::Vastbase
-                        | DatabaseType::Kingbase
-                        | DatabaseType::Oracle
-                        | DatabaseType::Dameng
-                        | DatabaseType::OceanbaseOracle
-                        | DatabaseType::Iris
-                        | DatabaseType::Sqlite
-                )
-            ) && options.schema.as_deref().is_some_and(|schema| !schema.is_empty())
-            {
+            if options.schema.as_deref().is_some_and(|schema| !schema.is_empty()) {
                 let schema = quote_admin_identifier(database_type, options.schema.as_deref().unwrap());
                 return Ok(format!("DROP INDEX {schema}.{name};"));
             }
             Ok(format!("DROP INDEX {name};"))
         }
-        TableChildObjectType::ForeignKey => {
-            if matches!(database_type, Some(DatabaseType::Mysql | DatabaseType::Goldendb)) {
-                Ok(format!("ALTER TABLE {table} DROP FOREIGN KEY {name};"))
-            } else {
-                Ok(format!("ALTER TABLE {table} DROP CONSTRAINT {name};"))
-            }
-        }
-        TableChildObjectType::Trigger => {
-            if matches!(
-                database_type,
-                Some(
-                    DatabaseType::Postgres
-                        | DatabaseType::Gaussdb
-                        | DatabaseType::Kwdb
-                        | DatabaseType::OpenGauss
-                        | DatabaseType::Questdb
-                        | DatabaseType::Highgo
-                        | DatabaseType::Uxdb
-                        | DatabaseType::Vastbase
-                        | DatabaseType::Kingbase
-                )
-            ) {
-                Ok(format!("DROP TRIGGER {name} ON {table};"))
-            } else if matches!(database_type, Some(DatabaseType::SqlServer)) {
-                Ok(format!("DROP TRIGGER {name};"))
-            } else if database_type.is_some_and(is_schema_aware)
-                && options.schema.as_deref().is_some_and(|schema| !schema.is_empty())
-                && !matches!(database_type, Some(DatabaseType::Mysql | DatabaseType::Goldendb))
-            {
-                let schema = quote_admin_identifier(database_type, options.schema.as_deref().unwrap());
-                Ok(format!("DROP TRIGGER {schema}.{name};"))
-            } else {
-                Ok(format!("DROP TRIGGER {name};"))
-            }
-        }
+        TableChildObjectType::ForeignKey => Ok(format!("ALTER TABLE {table} DROP CONSTRAINT {name};")),
+        TableChildObjectType::Trigger => Ok(format!("DROP TRIGGER {name} ON {table};")),
     }
 }
 
 pub fn build_empty_table_sql(options: TableAdminSqlOptions) -> String {
     let table = qualified_name(options.database_type, options.schema.as_deref(), &options.table_name);
-    match options.database_type {
-        Some(DatabaseType::ClickHouse) => format!("ALTER TABLE {table} DELETE WHERE 1 = 1;"),
-        Some(DatabaseType::Bigquery) => format!("DELETE FROM {table} WHERE TRUE;"),
-        Some(DatabaseType::Cassandra | DatabaseType::Hive | DatabaseType::Kylin | DatabaseType::Questdb) => {
-            format!("TRUNCATE TABLE {table};")
-        }
-        Some(DatabaseType::Iotdb) => format!("DELETE FROM {};", iotdb_timeseries_pattern(&table)),
-        _ => format!("DELETE FROM {table};"),
-    }
+    format!("DELETE FROM {table};")
 }
 
 pub fn build_truncate_table_sql(options: TableAdminSqlOptions) -> String {
     let table = qualified_name(options.database_type, options.schema.as_deref(), &options.table_name);
-    if matches!(options.database_type, Some(DatabaseType::Iotdb)) {
-        format!("DELETE FROM {};", iotdb_timeseries_pattern(&table))
-    } else if matches!(options.database_type, Some(DatabaseType::Sqlite | DatabaseType::DuckDb)) {
-        format!("DELETE FROM {table};")
+    let cascade = if options.cascade.unwrap_or(false) && supports_truncate_table_cascade(options.database_type) {
+        " CASCADE"
     } else {
-        // TRUNCATE CASCADE is PostgreSQL-family syntax; other dialects keep their existing default.
-        let cascade = if options.cascade.unwrap_or(false) && supports_truncate_table_cascade(options.database_type) {
-            " CASCADE"
-        } else {
-            ""
-        };
-        format!("TRUNCATE TABLE {table}{cascade};")
-    }
+        ""
+    };
+    format!("TRUNCATE TABLE {table}{cascade};")
 }
 
 fn supports_truncate_table_cascade(database_type: Option<DatabaseType>) -> bool {
-    matches!(
-        database_type,
-        Some(
-            DatabaseType::Postgres
-                | DatabaseType::Gaussdb
-                | DatabaseType::Kwdb
-                | DatabaseType::Kingbase
-                | DatabaseType::Highgo
-                | DatabaseType::Uxdb
-                | DatabaseType::Vastbase
-                | DatabaseType::OpenGauss
-        )
-    )
+    matches!(database_type, Some(DatabaseType::Postgres | DatabaseType::Opengauss))
 }
 
 pub fn build_drop_database_sql(options: DatabaseNameSqlOptions) -> String {
@@ -597,6 +403,10 @@ pub fn build_update_database_properties_sql(options: DatabasePropertyEditSqlOpti
             build_schema_comment_sql(options.database_type, &options.name, options.comment.as_deref())
         }
     }
+}
+
+fn clean_sql_option(value: Option<&str>) -> String {
+    value.unwrap_or("").trim().to_string()
 }
 
 fn build_database_charset_sql(options: &DatabasePropertyEditSqlOptions) -> Result<String, String> {
@@ -653,33 +463,18 @@ pub fn build_create_schema_sql(options: SchemaNameSqlOptions) -> Result<String, 
 
 pub fn build_drop_schema_sql(options: SchemaNameSqlOptions) -> String {
     let schema = quote_admin_identifier(options.database_type, &options.name);
-    if matches!(
-        options.database_type,
-        Some(DatabaseType::Postgres | DatabaseType::Gaussdb | DatabaseType::Kwdb | DatabaseType::Dameng)
-    ) {
-        format!("DROP SCHEMA {schema} CASCADE;")
-    } else {
-        format!("DROP SCHEMA {schema};")
-    }
+    format!("DROP SCHEMA {schema} CASCADE;")
+}
+
+fn quote_duplicate_table_comment(_database_type: DatabaseType, comment: &str) -> String {
+    format!("'{}'", comment.replace('\'', "''"))
 }
 
 pub fn build_duplicate_table_structure_sql(options: DuplicateTableStructureSqlOptions) -> String {
     let source = qualified_name(options.database_type, options.schema.as_deref(), &options.source_name);
     let target =
         qualified_duplicate_target_name(options.database_type, options.schema.as_deref(), &options.target_name);
-    let structure_sql = if options.database_type == Some(DatabaseType::Mysql) {
-        format!("CREATE TABLE {target} LIKE {source};")
-    } else if options.database_type == Some(DatabaseType::Questdb) {
-        format!("CREATE TABLE {target} (LIKE {source});")
-    } else if options.database_type.is_some_and(is_postgres_like_structure_copy) {
-        format!("CREATE TABLE {target} (LIKE {source} INCLUDING ALL);")
-    } else if options.database_type == Some(DatabaseType::SqlServer) {
-        format!("SELECT TOP 0 * INTO {target} FROM {source};")
-    } else if options.database_type.is_some_and(uses_false_predicate_duplicate_structure) {
-        format!("CREATE TABLE {target} AS SELECT * FROM {source} WHERE 1=0")
-    } else {
-        format!("CREATE TABLE {target} AS SELECT * FROM {source} WHERE 0;")
-    };
+    let structure_sql = format!("CREATE TABLE {target} (LIKE {source} INCLUDING ALL);");
 
     let mut comment_sql = Vec::new();
     if let Some(database_type) =
@@ -691,15 +486,6 @@ pub fn build_duplicate_table_structure_sql(options: DuplicateTableStructureSqlOp
                 quote_duplicate_table_comment(database_type, comment)
             ));
         }
-    }
-    if options.database_type == Some(DatabaseType::Dameng) {
-        comment_sql.extend(options.column_comments.iter().filter_map(|column| {
-            if column.comment.trim().is_empty() {
-                return None;
-            }
-            let column_name = quote_table_identifier(options.database_type, &column.name);
-            Some(format!("COMMENT ON COLUMN {target}.{column_name} IS {}", quote_sql_string(&column.comment)))
-        }));
     }
     if comment_sql.is_empty() {
         return structure_sql;
@@ -723,38 +509,21 @@ pub fn build_copy_table_data_sql(options: CopyTableDataSqlOptions) -> String {
         .collect::<Vec<_>>()
         .join(", ");
     let postgres_override = if options.postgres_overriding_system_value
-        && matches!(options.database_type, Some(DatabaseType::Postgres | DatabaseType::Gaussdb | DatabaseType::Kwdb))
+        && matches!(options.database_type, Some(DatabaseType::Postgres | DatabaseType::Opengauss))
     {
         " OVERRIDING SYSTEM VALUE"
     } else {
         ""
     };
-    let insert_sql =
-        format!("INSERT INTO {target} ({column_list}){postgres_override} SELECT {column_list} FROM {source};");
-    if options.sqlserver_identity_insert && options.database_type == Some(DatabaseType::SqlServer) {
-        return format!("SET IDENTITY_INSERT {target} ON;\n{insert_sql}\nSET IDENTITY_INSERT {target} OFF;");
-    }
-    insert_sql
+    format!("INSERT INTO {target} ({column_list}){postgres_override} SELECT {column_list} FROM {source};")
 }
 
 pub fn supports_object_rename(database_type: Option<DatabaseType>, object_type: DatabaseObjectType) -> bool {
     let Some(database_type) = database_type else {
         return false;
     };
-    if database_type == DatabaseType::SqlServer {
-        return true;
-    }
     if matches!(object_type, DatabaseObjectType::Procedure | DatabaseObjectType::Function) {
         return false;
-    }
-    if matches!(
-        database_type,
-        DatabaseType::Sqlite | DatabaseType::Rqlite | DatabaseType::Turso | DatabaseType::CloudflareD1
-    ) {
-        return object_type == DatabaseObjectType::Table;
-    }
-    if matches!(database_type, DatabaseType::Mysql | DatabaseType::Goldendb) {
-        return matches!(object_type, DatabaseObjectType::Table | DatabaseObjectType::View);
     }
     if is_postgres_like_rename(database_type) || is_oracle_like_rename(database_type) {
         return matches!(
@@ -772,33 +541,6 @@ pub fn build_rename_object_sql(options: RenameObjectSqlOptions) -> Result<String
             "Renaming {} is not supported for {}.",
             object_type_keyword(options.object_type),
             database_label(database_type)
-        ));
-    }
-
-    if database_type == Some(DatabaseType::SqlServer) {
-        return Ok(format!(
-            "EXEC sp_rename {}, {}, N'OBJECT';",
-            sqlserver_string(&sqlserver_object_name(options.schema.as_deref(), &options.old_name)),
-            sqlserver_string(&options.new_name)
-        ));
-    }
-
-    if matches!(database_type, Some(DatabaseType::Mysql | DatabaseType::Goldendb)) {
-        return Ok(format!(
-            "RENAME TABLE {} TO {};",
-            qualified_name(database_type, options.schema.as_deref(), &options.old_name),
-            qualified_name(database_type, options.schema.as_deref(), &options.new_name)
-        ));
-    }
-
-    if matches!(
-        database_type,
-        Some(DatabaseType::Sqlite | DatabaseType::Rqlite | DatabaseType::Turso | DatabaseType::CloudflareD1)
-    ) {
-        return Ok(format!(
-            "ALTER TABLE {} RENAME TO {};",
-            qualified_name(database_type, options.schema.as_deref(), &options.old_name),
-            quote_rename_identifier(database_type, &options.new_name)
         ));
     }
 
@@ -821,66 +563,22 @@ pub fn build_rename_object_sql(options: RenameObjectSqlOptions) -> Result<String
 }
 
 fn is_postgres_like_rename(database_type: DatabaseType) -> bool {
-    matches!(
-        database_type,
-        DatabaseType::Postgres
-            | DatabaseType::Redshift
-            | DatabaseType::Gaussdb
-            | DatabaseType::Kwdb
-            | DatabaseType::Kingbase
-            | DatabaseType::Highgo
-            | DatabaseType::Uxdb
-            | DatabaseType::Vastbase
-    )
+    matches!(database_type, DatabaseType::Postgres | DatabaseType::Opengauss)
 }
 
 fn is_oracle_like_rename(database_type: DatabaseType) -> bool {
-    matches!(database_type, DatabaseType::Oracle | DatabaseType::Dameng)
-}
-
-fn is_postgres_like_structure_copy(database_type: DatabaseType) -> bool {
-    matches!(
-        database_type,
-        DatabaseType::Postgres
-            | DatabaseType::Redshift
-            | DatabaseType::Gaussdb
-            | DatabaseType::Kwdb
-            | DatabaseType::OpenGauss
-            | DatabaseType::Questdb
-    )
+    matches!(database_type, DatabaseType::Opengauss)
 }
 
 fn supports_duplicate_table_comment(database_type: DatabaseType) -> bool {
-    matches!(
-        database_type,
-        DatabaseType::Postgres
-            | DatabaseType::Redshift
-            | DatabaseType::Gaussdb
-            | DatabaseType::Kwdb
-            | DatabaseType::OpenGauss
-    )
-}
-
-fn uses_false_predicate_duplicate_structure(database_type: DatabaseType) -> bool {
-    matches!(database_type, DatabaseType::Oracle | DatabaseType::Dameng | DatabaseType::Iris)
-}
-
-fn sqlserver_string(value: &str) -> String {
-    format!("N'{}'", value.replace('\'', "''"))
+    matches!(database_type, DatabaseType::Postgres | DatabaseType::Opengauss)
 }
 
 fn quote_rename_identifier(database_type: Option<DatabaseType>, name: &str) -> String {
-    if matches!(database_type, Some(DatabaseType::Mysql | DatabaseType::Goldendb)) {
-        format!("`{}`", name.replace('`', "``"))
-    } else {
-        quote_table_identifier(database_type, name)
-    }
+    quote_table_identifier(database_type, name)
 }
 
 fn qualified_name(database_type: Option<DatabaseType>, schema: Option<&str>, name: &str) -> String {
-    if matches!(database_type, Some(DatabaseType::Iotdb)) {
-        return qualified_table_name(database_type, schema, name);
-    }
     if database_type.is_some_and(is_schema_aware) && schema.is_some_and(|schema| !schema.is_empty()) {
         format!(
             "{}.{}",
@@ -893,31 +591,7 @@ fn qualified_name(database_type: Option<DatabaseType>, schema: Option<&str>, nam
 }
 
 fn qualified_duplicate_target_name(database_type: Option<DatabaseType>, schema: Option<&str>, name: &str) -> String {
-    if database_type != Some(DatabaseType::Dameng) {
-        return qualified_name(database_type, schema, name);
-    }
-    let target = profile_for(DatabaseType::Dameng).quote_ident(name);
-    if schema.is_some_and(|schema| !schema.is_empty()) {
-        format!("{}.{}", quote_rename_identifier(database_type, schema.unwrap()), target)
-    } else {
-        target
-    }
-}
-
-fn iotdb_timeseries_pattern(path: &str) -> String {
-    let path = path.trim().trim_end_matches(';');
-    if path.ends_with(".*") || path.ends_with(".**") {
-        path.to_string()
-    } else {
-        format!("{path}.*")
-    }
-}
-
-fn sqlserver_object_name(schema: Option<&str>, name: &str) -> String {
-    schema
-        .filter(|schema| !schema.is_empty())
-        .map(|schema| format!("{schema}.{name}"))
-        .unwrap_or_else(|| name.to_string())
+    qualified_name(database_type, schema, name)
 }
 
 fn object_type_keyword(object_type: DatabaseObjectType) -> &'static str {
@@ -938,123 +612,12 @@ fn object_type_keyword(object_type: DatabaseObjectType) -> &'static str {
     }
 }
 
-fn clean_sql_option(value: Option<&str>) -> String {
-    value.unwrap_or("").trim().replace([';', ' ', '\n', '\r', '\t'], "")
-}
-
-fn quote_sql_string(value: &str) -> String {
-    format!("'{}'", value.replace('\'', "''"))
-}
-
-fn quote_duplicate_table_comment(database_type: DatabaseType, value: &str) -> String {
-    if !value.contains('\\') && !value.chars().any(|character| character.is_ascii_control()) {
-        return quote_sql_string(value);
-    }
-
-    let mut escaped = String::with_capacity(value.len());
-    for character in value.chars() {
-        match character {
-            '\\' => escaped.push_str("\\\\"),
-            '\n' => escaped.push_str("\\n"),
-            '\r' => escaped.push_str("\\r"),
-            '\t' => escaped.push_str("\\t"),
-            '\x08' => escaped.push_str("\\b"),
-            '\x0c' => escaped.push_str("\\f"),
-            '\'' => escaped.push_str("\\'"),
-            character if character.is_ascii_control() => {
-                const HEX: &[u8; 16] = b"0123456789ABCDEF";
-                let byte = character as u8;
-                escaped.push_str("\\x");
-                escaped.push(HEX[(byte >> 4) as usize] as char);
-                escaped.push(HEX[(byte & 0x0F) as usize] as char);
-            }
-            character => escaped.push(character),
-        }
-    }
-
-    let prefix = if database_type == DatabaseType::Redshift { "" } else { "E" };
-    format!("{prefix}'{escaped}'")
-}
-
-fn comment_literal(value: Option<&str>) -> String {
-    match value.map(str::trim).filter(|value| !value.is_empty()) {
-        Some(value) => quote_sql_string(value),
-        None => "NULL".to_string(),
-    }
-}
-
-fn database_label(database_type: Option<DatabaseType>) -> String {
-    database_type
-        .and_then(|database_type| serde_json::to_value(database_type).ok())
-        .and_then(|value| value.as_str().map(str::to_string))
-        .unwrap_or_else(|| "this database".to_string())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn builds_mysql_create_database_sql_with_charset_and_collation() {
-        assert_eq!(
-            build_create_database_sql(CreateDatabaseSqlOptions {
-                database_type: Some(DatabaseType::Mysql),
-                driver_profile: Some("mysql".to_string()),
-                target: None,
-                parent: None,
-                name: "app db".to_string(),
-                charset: Some("utf8mb4".to_string()),
-                collation: Some("utf8mb4_unicode_ci".to_string()),
-            })
-            .unwrap(),
-            "CREATE DATABASE `app db` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
-        );
-    }
-
-    #[test]
-    fn builds_goldendb_create_database_sql_with_mysql_charset_options() {
-        assert_eq!(
-            build_create_database_sql(CreateDatabaseSqlOptions {
-                database_type: Some(DatabaseType::Goldendb),
-                driver_profile: Some("goldendb".to_string()),
-                target: None,
-                parent: None,
-                name: "app_db".to_string(),
-                charset: Some("utf8mb4".to_string()),
-                collation: Some("utf8mb4_unicode_ci".to_string()),
-            })
-            .unwrap(),
-            "CREATE DATABASE `app_db` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
-        );
-    }
-
-    #[test]
-    fn omits_create_database_charset_for_doris_family() {
-        for (database_type, driver_profile) in [
-            (DatabaseType::Doris, None),
-            (DatabaseType::StarRocks, None),
-            (DatabaseType::Mysql, Some("doris")),
-            (DatabaseType::Mysql, Some("selectdb")),
-            (DatabaseType::Mysql, Some("starrocks")),
-        ] {
-            assert_eq!(
-                build_create_database_sql(CreateDatabaseSqlOptions {
-                    database_type: Some(database_type),
-                    driver_profile: driver_profile.map(str::to_string),
-                    target: None,
-                    parent: None,
-                    name: "analytics".to_string(),
-                    charset: Some("utf8mb4".to_string()),
-                    collation: Some("utf8mb4_unicode_ci".to_string()),
-                })
-                .unwrap(),
-                "CREATE DATABASE `analytics`;"
-            );
-        }
-    }
-
-    #[test]
-    fn omits_create_database_charset_for_non_mysql_types() {
+    fn builds_postgres_create_database_sql() {
         assert_eq!(
             build_create_database_sql(CreateDatabaseSqlOptions {
                 database_type: Some(DatabaseType::Postgres),
@@ -1062,8 +625,8 @@ mod tests {
                 target: None,
                 parent: None,
                 name: "analytics".to_string(),
-                charset: Some("utf8mb4".to_string()),
-                collation: Some("utf8mb4_unicode_ci".to_string()),
+                charset: None,
+                collation: None,
             })
             .unwrap(),
             "CREATE DATABASE analytics;"
@@ -1071,1121 +634,46 @@ mod tests {
     }
 
     #[test]
-    fn builds_vastbase_create_database_sql_without_mysql_charset_options() {
+    fn builds_opengauss_create_database_sql() {
         assert_eq!(
             build_create_database_sql(CreateDatabaseSqlOptions {
-                database_type: Some(DatabaseType::Vastbase),
-                driver_profile: Some("vastbase".to_string()),
-                target: None,
-                parent: None,
-                name: "app_db".to_string(),
-                charset: Some("utf8mb4".to_string()),
-                collation: Some("utf8mb4_unicode_ci".to_string()),
-            })
-            .unwrap(),
-            "CREATE DATABASE app_db;"
-        );
-    }
-
-    #[test]
-    fn builds_additional_verified_create_database_targets() {
-        assert_eq!(
-            build_create_database_sql(CreateDatabaseSqlOptions {
-                database_type: Some(DatabaseType::SqlServer),
+                database_type: Some(DatabaseType::Opengauss),
                 driver_profile: None,
                 target: None,
                 parent: None,
-                name: "analytics db".to_string(),
+                name: "analytics".to_string(),
                 charset: None,
                 collation: None,
             })
             .unwrap(),
-            "CREATE DATABASE [analytics db];"
-        );
-        assert_eq!(
-            build_create_database_sql(CreateDatabaseSqlOptions {
-                database_type: Some(DatabaseType::Snowflake),
-                driver_profile: None,
-                target: None,
-                parent: None,
-                name: "analytics db".to_string(),
-                charset: None,
-                collation: None,
-            })
-            .unwrap(),
-            "CREATE DATABASE \"analytics db\";"
-        );
-        assert_eq!(
-            build_create_database_sql(CreateDatabaseSqlOptions {
-                database_type: Some(DatabaseType::Databend),
-                driver_profile: None,
-                target: None,
-                parent: None,
-                name: "analytics db".to_string(),
-                charset: None,
-                collation: None,
-            })
-            .unwrap(),
-            "CREATE DATABASE `analytics db`;"
-        );
-        assert_eq!(
-            build_create_database_sql(CreateDatabaseSqlOptions {
-                database_type: Some(DatabaseType::Tdengine),
-                driver_profile: None,
-                target: None,
-                parent: None,
-                name: "analytics db".to_string(),
-                charset: None,
-                collation: None,
-            })
-            .unwrap(),
-            "CREATE DATABASE `analytics db`;"
+            "CREATE DATABASE analytics;"
         );
     }
 
     #[test]
-    fn rejects_unsupported_create_database_targets() {
-        assert!(build_create_database_sql(CreateDatabaseSqlOptions {
-            database_type: Some(DatabaseType::Oracle),
-            driver_profile: None,
-            target: None,
-            parent: None,
-            name: "analytics".to_string(),
-            charset: None,
-            collation: None,
-        })
-        .unwrap_err()
-        .contains("Creating databases is not supported"));
-        assert!(build_create_database_sql(CreateDatabaseSqlOptions {
-            database_type: Some(DatabaseType::Jdbc),
-            driver_profile: None,
-            target: None,
-            parent: None,
-            name: "analytics".to_string(),
-            charset: None,
-            collation: None,
-        })
-        .unwrap_err()
-        .contains("Creating databases is not supported"));
-    }
-
-    #[test]
-    fn builds_mysql_database_property_charset_sql() {
-        assert_eq!(
-            build_update_database_properties_sql(DatabasePropertyEditSqlOptions {
-                database_type: Some(DatabaseType::Mysql),
-                driver_profile: Some("mysql".to_string()),
-                target: DatabasePropertyTarget::Database,
-                name: "app db".to_string(),
-                charset: Some("utf8mb4".to_string()),
-                collation: Some("utf8mb4_unicode_ci".to_string()),
-                comment: None,
-            })
-            .unwrap(),
-            "ALTER DATABASE `app db` DEFAULT CHARACTER SET utf8mb4 DEFAULT COLLATE utf8mb4_unicode_ci;"
-        );
-        assert_eq!(
-            build_update_database_properties_sql(DatabasePropertyEditSqlOptions {
-                database_type: Some(DatabaseType::Goldendb),
-                driver_profile: None,
-                target: DatabasePropertyTarget::Database,
-                name: "app".to_string(),
-                charset: Some("utf8mb4".to_string()),
-                collation: None,
-                comment: None,
-            })
-            .unwrap(),
-            "ALTER DATABASE `app` DEFAULT CHARACTER SET utf8mb4;"
-        );
-    }
-
-    #[test]
-    fn builds_postgres_style_database_and_schema_comment_sql() {
-        assert_eq!(
-            build_update_database_properties_sql(DatabasePropertyEditSqlOptions {
-                database_type: Some(DatabaseType::Postgres),
-                driver_profile: None,
-                target: DatabasePropertyTarget::Database,
-                name: "app db".to_string(),
-                charset: None,
-                collation: None,
-                comment: Some("owner's app".to_string()),
-            })
-            .unwrap(),
-            "COMMENT ON DATABASE \"app db\" IS 'owner''s app';"
-        );
-        assert_eq!(
-            build_update_database_properties_sql(DatabasePropertyEditSqlOptions {
-                database_type: Some(DatabaseType::Kingbase),
-                driver_profile: None,
-                target: DatabasePropertyTarget::Schema,
-                name: "public".to_string(),
-                charset: None,
-                collation: None,
-                comment: Some("".to_string()),
-            })
-            .unwrap(),
-            "COMMENT ON SCHEMA public IS NULL;"
-        );
-    }
-
-    #[test]
-    fn rejects_unsupported_database_property_sql() {
-        assert!(build_update_database_properties_sql(DatabasePropertyEditSqlOptions {
-            database_type: Some(DatabaseType::SqlServer),
-            driver_profile: None,
-            target: DatabasePropertyTarget::Database,
-            name: "master".to_string(),
-            charset: Some("utf8mb4".to_string()),
-            collation: None,
-            comment: None,
-        })
-        .unwrap_err()
-        .contains("charset/collation is not supported"));
-        assert!(build_update_database_properties_sql(DatabasePropertyEditSqlOptions {
-            database_type: Some(DatabaseType::Mysql),
-            driver_profile: None,
-            target: DatabasePropertyTarget::Database,
-            name: "app".to_string(),
-            charset: None,
-            collation: None,
-            comment: Some("comment".to_string()),
-        })
-        .unwrap_err()
-        .contains("database comments is not supported"));
-        assert!(build_update_database_properties_sql(DatabasePropertyEditSqlOptions {
-            database_type: Some(DatabaseType::DuckDb),
-            driver_profile: None,
-            target: DatabasePropertyTarget::Schema,
-            name: "main".to_string(),
-            charset: None,
-            collation: None,
-            comment: Some("comment".to_string()),
-        })
-        .unwrap_err()
-        .contains("schema comments is not supported"));
-    }
-
-    #[test]
-    fn recognizes_mysql_compatible_create_database_profiles() {
-        assert!(supports_create_database_charset(Some(DatabaseType::Mysql), Some("oceanbase")));
-        assert!(supports_create_database_charset(Some(DatabaseType::Goldendb), Some("goldendb")));
-        assert!(!supports_create_database_charset(Some(DatabaseType::Mysql), Some("doris")));
-        assert!(!supports_create_database_charset(Some(DatabaseType::Doris), None));
-        assert!(!supports_create_database_charset(Some(DatabaseType::StarRocks), None));
-        assert!(!supports_create_database_charset(Some(DatabaseType::Postgres), None));
-    }
-
-    #[cfg(feature = "duckdb-sidecar")]
-    #[test]
-    fn builds_duckdb_attach_sql() {
-        assert_eq!(
-            build_duckdb_attach_database_sql(DuckDbAttachDatabaseSqlOptions {
-                path: "/Users/me/O'Reilly analytics.duckdb".to_string(),
-                name: "report db".to_string(),
-            }),
-            "ATTACH '/Users/me/O''Reilly analytics.duckdb' AS \"report db\";"
-        );
-    }
-
-    #[test]
-    fn builds_sqlite_attach_sql() {
-        assert_eq!(
-            build_sqlite_attach_database_sql(SqliteAttachDatabaseSqlOptions {
-                path: "/Users/me/O'Reilly data.sqlite".to_string(),
-                name: "report db".to_string(),
-            }),
-            "ATTACH DATABASE '/Users/me/O''Reilly data.sqlite' AS \"report db\";"
-        );
-    }
-
-    #[test]
-    fn builds_dameng_create_user_sql_with_escaped_values() {
-        assert_eq!(
-            build_create_user_sql("app\"user", "pa'ss", "main\"space"),
-            "CREATE USER \"app\"\"user\" IDENTIFIED BY 'pa''ss' DEFAULT TABLESPACE \"main\"\"space\";"
-        );
-    }
-
-    #[test]
-    fn builds_drop_and_clear_table_sql() {
-        let options = TableAdminSqlOptions {
-            database_type: Some(DatabaseType::Postgres),
-            schema: Some("public".to_string()),
-            table_name: "events".to_string(),
-            cascade: None,
-        };
-        assert_eq!(build_drop_table_sql(options.clone()), "DROP TABLE public.events;");
+    fn builds_drop_table_sql_for_postgres() {
         assert_eq!(
             build_drop_table_sql(TableAdminSqlOptions {
                 database_type: Some(DatabaseType::Postgres),
                 schema: Some("public".to_string()),
-                table_name: "events".to_string(),
+                table_name: "users".to_string(),
                 cascade: Some(true),
+                ..Default::default()
             }),
-            "DROP TABLE public.events CASCADE;"
+            "DROP TABLE public.users CASCADE;"
         );
-        assert_eq!(
-            build_drop_table_sql(TableAdminSqlOptions {
-                database_type: Some(DatabaseType::Mysql),
-                schema: None,
-                table_name: "events".to_string(),
-                cascade: Some(true),
-            }),
-            "DROP TABLE `events`;"
-        );
-        assert_eq!(build_empty_table_sql(options.clone()), "DELETE FROM public.events;");
-        assert_eq!(build_truncate_table_sql(options.clone()), "TRUNCATE TABLE public.events;");
+    }
+
+    #[test]
+    fn builds_truncate_table_sql_for_postgres() {
         assert_eq!(
             build_truncate_table_sql(TableAdminSqlOptions {
                 database_type: Some(DatabaseType::Postgres),
                 schema: Some("public".to_string()),
-                table_name: "events".to_string(),
-                cascade: Some(true),
+                table_name: "users".to_string(),
+                ..Default::default()
             }),
-            "TRUNCATE TABLE public.events CASCADE;"
+            "TRUNCATE TABLE public.users;"
         );
-        assert_eq!(
-            build_truncate_table_sql(TableAdminSqlOptions {
-                database_type: Some(DatabaseType::Mysql),
-                schema: None,
-                table_name: "events".to_string(),
-                cascade: Some(true),
-            }),
-            "TRUNCATE TABLE `events`;"
-        );
-        assert_eq!(
-            build_empty_table_sql(TableAdminSqlOptions {
-                database_type: Some(DatabaseType::ClickHouse),
-                schema: None,
-                table_name: "PresetSubjectInfo".to_string(),
-                cascade: None,
-            }),
-            "ALTER TABLE `PresetSubjectInfo` DELETE WHERE 1 = 1;"
-        );
-        assert_eq!(
-            build_truncate_table_sql(TableAdminSqlOptions {
-                database_type: Some(DatabaseType::ClickHouse),
-                schema: None,
-                table_name: "PresetSubjectInfo".to_string(),
-                cascade: None,
-            }),
-            "TRUNCATE TABLE `PresetSubjectInfo`;"
-        );
-        assert_eq!(
-            build_empty_table_sql(TableAdminSqlOptions {
-                database_type: Some(DatabaseType::Bigquery),
-                schema: None,
-                table_name: "events".to_string(),
-                cascade: None,
-            }),
-            "DELETE FROM `events` WHERE TRUE;"
-        );
-        assert_eq!(
-            build_empty_table_sql(TableAdminSqlOptions {
-                database_type: Some(DatabaseType::Cassandra),
-                schema: None,
-                table_name: "events".to_string(),
-                cascade: None,
-            }),
-            "TRUNCATE TABLE \"events\";"
-        );
-        assert_eq!(
-            build_truncate_table_sql(TableAdminSqlOptions {
-                database_type: Some(DatabaseType::DuckDb),
-                schema: None,
-                table_name: "events".to_string(),
-                cascade: None,
-            }),
-            "DELETE FROM \"events\";"
-        );
-        assert_eq!(
-            build_drop_table_sql(TableAdminSqlOptions {
-                database_type: Some(DatabaseType::Iotdb),
-                schema: Some("root.test".to_string()),
-                table_name: "DCU_101".to_string(),
-                cascade: None,
-            }),
-            "DELETE TIMESERIES root.test.DCU_101.*;"
-        );
-        assert_eq!(
-            build_empty_table_sql(TableAdminSqlOptions {
-                database_type: Some(DatabaseType::Iotdb),
-                schema: Some("root.test".to_string()),
-                table_name: "root.test.DCU_101".to_string(),
-                cascade: None,
-            }),
-            "DELETE FROM root.test.DCU_101.*;"
-        );
-        assert_eq!(
-            build_truncate_table_sql(TableAdminSqlOptions {
-                database_type: Some(DatabaseType::Iotdb),
-                schema: Some("root.test".to_string()),
-                table_name: "DCU_101".to_string(),
-                cascade: None,
-            }),
-            "DELETE FROM root.test.DCU_101.*;"
-        );
-
-        assert_eq!(
-            build_empty_table_sql(TableAdminSqlOptions {
-                database_type: Some(DatabaseType::Questdb),
-                schema: None,
-                table_name: "table_sample".to_string(),
-                cascade: None,
-            }),
-            "TRUNCATE TABLE `table_sample`;"
-        );
-        assert_eq!(
-            build_truncate_table_sql(TableAdminSqlOptions {
-                database_type: Some(DatabaseType::Questdb),
-                schema: None,
-                table_name: "table_sample".to_string(),
-                cascade: None,
-            }),
-            "TRUNCATE TABLE `table_sample`;"
-        );
-    }
-
-    #[test]
-    fn builds_drop_object_database_and_schema_sql() {
-        assert_eq!(
-            build_drop_object_sql(DropObjectSqlOptions {
-                database_type: Some(DatabaseType::SqlServer),
-                object_type: DatabaseObjectType::Procedure,
-                schema: Some("dbo".to_string()),
-                name: "refresh_cache".to_string(),
-                signature: None,
-            }),
-            "DROP PROCEDURE [dbo].[refresh_cache];"
-        );
-        assert_eq!(
-            build_drop_object_sql(DropObjectSqlOptions {
-                database_type: Some(DatabaseType::Postgres),
-                object_type: DatabaseObjectType::Function,
-                schema: Some("public".to_string()),
-                name: "calc".to_string(),
-                signature: Some("integer, integer".to_string()),
-            }),
-            "DROP FUNCTION public.calc(integer, integer);"
-        );
-        // Overload-aware signature is emitted for every PG-family server, not just
-        // PostgreSQL itself, so overloaded routine drops do not fail with
-        // "is not unique"/"asks parameters".
-        for database_type in [
-            DatabaseType::OpenGauss,
-            DatabaseType::Gaussdb,
-            DatabaseType::Kingbase,
-            DatabaseType::Highgo,
-            DatabaseType::Uxdb,
-            DatabaseType::Vastbase,
-            DatabaseType::Kwdb,
-        ] {
-            assert_eq!(
-                build_drop_object_sql(DropObjectSqlOptions {
-                    database_type: Some(database_type),
-                    object_type: DatabaseObjectType::Function,
-                    schema: Some("public".to_string()),
-                    name: "calc".to_string(),
-                    signature: Some("a integer, b text".to_string()),
-                }),
-                "DROP FUNCTION public.calc(a integer, b text);",
-                "expected overload-aware drop for {database_type:?}"
-            );
-        }
-        // A zero-argument routine still emits explicit empty parens.
-        assert_eq!(
-            build_drop_object_sql(DropObjectSqlOptions {
-                database_type: Some(DatabaseType::OpenGauss),
-                object_type: DatabaseObjectType::Function,
-                schema: Some("public".to_string()),
-                name: "calc".to_string(),
-                signature: Some(String::new()),
-            }),
-            "DROP FUNCTION public.calc();"
-        );
-        // Mixed-case, special-character and reserved-word identifiers must stay
-        // quoted even on PG-family servers so the DDL round-trips exactly.
-        assert_eq!(
-            build_drop_object_sql(DropObjectSqlOptions {
-                database_type: Some(DatabaseType::Postgres),
-                object_type: DatabaseObjectType::Function,
-                schema: Some("public".to_string()),
-                name: "GetUser".to_string(),
-                signature: Some("integer".to_string()),
-            }),
-            "DROP FUNCTION public.\"GetUser\"(integer);"
-        );
-        assert_eq!(
-            build_drop_object_sql(DropObjectSqlOptions {
-                database_type: Some(DatabaseType::OpenGauss),
-                object_type: DatabaseObjectType::Procedure,
-                schema: Some("my schema".to_string()),
-                name: "refresh_cache".to_string(),
-                signature: None,
-            }),
-            "DROP PROCEDURE \"my schema\".refresh_cache;"
-        );
-        assert_eq!(
-            build_drop_object_sql(DropObjectSqlOptions {
-                database_type: Some(DatabaseType::Postgres),
-                object_type: DatabaseObjectType::Function,
-                schema: Some("public".to_string()),
-                name: "select".to_string(),
-                signature: Some(String::new()),
-            }),
-            "DROP FUNCTION public.\"select\"();"
-        );
-        assert_eq!(
-            build_drop_database_sql(DatabaseNameSqlOptions {
-                database_type: Some(DatabaseType::Mysql),
-                name: "app db".to_string(),
-            }),
-            "DROP DATABASE `app db`;"
-        );
-        assert_eq!(
-            build_create_schema_sql(SchemaNameSqlOptions {
-                database_type: Some(DatabaseType::Postgres),
-                name: "analytics".to_string(),
-            })
-            .unwrap(),
-            "CREATE SCHEMA analytics;"
-        );
-        assert_eq!(
-            build_create_schema_sql(SchemaNameSqlOptions {
-                database_type: Some(DatabaseType::SqlServer),
-                name: "analytics".to_string(),
-            })
-            .unwrap(),
-            "CREATE SCHEMA [analytics];"
-        );
-        assert_eq!(
-            build_create_schema_sql(SchemaNameSqlOptions {
-                database_type: Some(DatabaseType::Dameng),
-                name: "analytics".to_string(),
-            })
-            .unwrap(),
-            "CREATE SCHEMA \"analytics\";"
-        );
-        assert_eq!(
-            build_create_schema_sql(SchemaNameSqlOptions {
-                database_type: Some(DatabaseType::Db2),
-                name: "analytics".to_string(),
-            })
-            .unwrap(),
-            "CREATE SCHEMA \"analytics\";"
-        );
-        assert!(build_create_schema_sql(SchemaNameSqlOptions {
-            database_type: Some(DatabaseType::DuckDb),
-            name: "analytics".to_string(),
-        })
-        .unwrap_err()
-        .contains("Creating schemas is not supported"));
-        assert_eq!(
-            build_drop_schema_sql(SchemaNameSqlOptions {
-                database_type: Some(DatabaseType::Kwdb),
-                name: "analytics".to_string(),
-            }),
-            "DROP SCHEMA analytics CASCADE;"
-        );
-        assert_eq!(
-            build_drop_schema_sql(SchemaNameSqlOptions {
-                database_type: Some(DatabaseType::Dameng),
-                name: "analytics".to_string(),
-            }),
-            "DROP SCHEMA \"analytics\" CASCADE;"
-        );
-    }
-
-    #[test]
-    fn builds_drop_sequence_sql() {
-        assert_eq!(
-            build_drop_object_sql(DropObjectSqlOptions {
-                database_type: Some(DatabaseType::OpenGauss),
-                object_type: DatabaseObjectType::Sequence,
-                schema: Some("public".to_string()),
-                name: "user_seq".to_string(),
-                signature: None,
-            }),
-            "DROP SEQUENCE public.user_seq;"
-        );
-        assert_eq!(
-            build_drop_object_sql(DropObjectSqlOptions {
-                database_type: Some(DatabaseType::Postgres),
-                object_type: DatabaseObjectType::Sequence,
-                schema: Some("public".to_string()),
-                name: "UserSeq".to_string(),
-                signature: None,
-            }),
-            "DROP SEQUENCE public.\"UserSeq\";"
-        );
-        assert_eq!(
-            build_drop_object_sql(DropObjectSqlOptions {
-                database_type: Some(DatabaseType::Mysql),
-                object_type: DatabaseObjectType::Sequence,
-                schema: None,
-                name: "user_seq".to_string(),
-                signature: None,
-            }),
-            "DROP SEQUENCE `user_seq`;"
-        );
-        assert_eq!(
-            build_drop_object_sql(DropObjectSqlOptions {
-                database_type: Some(DatabaseType::OpenGauss),
-                object_type: DatabaseObjectType::Synonym,
-                schema: Some("public".to_string()),
-                name: "emp_alias".to_string(),
-                signature: None,
-            }),
-            "DROP SYNONYM public.emp_alias;"
-        );
-        assert_eq!(
-            build_drop_object_sql(DropObjectSqlOptions {
-                database_type: Some(DatabaseType::OpenGauss),
-                object_type: DatabaseObjectType::Synonym,
-                schema: Some("public".to_string()),
-                name: "EmpAlias".to_string(),
-                signature: None,
-            }),
-            "DROP SYNONYM public.\"EmpAlias\";"
-        );
-        assert_eq!(
-            build_drop_object_sql(DropObjectSqlOptions {
-                database_type: Some(DatabaseType::OpenGauss),
-                object_type: DatabaseObjectType::Package,
-                schema: Some("public".to_string()),
-                name: "sal_mgr".to_string(),
-                signature: None,
-            }),
-            "DROP PACKAGE public.sal_mgr;"
-        );
-        assert_eq!(
-            build_drop_object_sql(DropObjectSqlOptions {
-                database_type: Some(DatabaseType::OpenGauss),
-                object_type: DatabaseObjectType::PackageBody,
-                schema: Some("public".to_string()),
-                name: "sal_mgr".to_string(),
-                signature: None,
-            }),
-            "DROP PACKAGE BODY public.sal_mgr;"
-        );
-        assert_eq!(
-            build_drop_object_sql(DropObjectSqlOptions {
-                database_type: Some(DatabaseType::OpenGauss),
-                object_type: DatabaseObjectType::Type,
-                schema: Some("public".to_string()),
-                name: "address_typ".to_string(),
-                signature: None,
-            }),
-            "DROP TYPE public.address_typ;"
-        );
-        assert_eq!(
-            build_drop_object_sql(DropObjectSqlOptions {
-                database_type: Some(DatabaseType::OpenGauss),
-                object_type: DatabaseObjectType::TypeBody,
-                schema: Some("public".to_string()),
-                name: "address_typ".to_string(),
-                signature: None,
-            }),
-            "DROP TYPE BODY public.address_typ;"
-        );
-        assert_eq!(
-            build_drop_object_sql(DropObjectSqlOptions {
-                database_type: Some(DatabaseType::OpenGauss),
-                object_type: DatabaseObjectType::Job,
-                schema: Some("public".to_string()),
-                name: "15659".to_string(),
-                signature: None,
-            }),
-            "SELECT pkg_service.job_cancel(job_id) FROM pg_job WHERE (nspname = 'public' OR (nspname IS NULL AND 'public' = 'public')) AND dbname = current_database() AND job_id::text = '15659';"
-        );
-        assert_eq!(
-            build_drop_object_sql(DropObjectSqlOptions {
-                database_type: Some(DatabaseType::OpenGauss),
-                object_type: DatabaseObjectType::Scheduler,
-                schema: Some("public".to_string()),
-                name: "night_batch_scheduler".to_string(),
-                signature: None,
-            }),
-            "CALL dbms_scheduler.drop_job('night_batch_scheduler');"
-        );
-    }
-
-    #[test]
-    fn builds_drop_table_child_object_sql() {
-        assert_eq!(
-            build_drop_table_child_object_sql(DropTableChildObjectSqlOptions {
-                database_type: Some(DatabaseType::Postgres),
-                object_type: TableChildObjectType::Column,
-                schema: Some("public".to_string()),
-                table_name: "orders".to_string(),
-                name: "status".to_string(),
-            })
-            .unwrap(),
-            "ALTER TABLE public.orders DROP COLUMN status;"
-        );
-        assert_eq!(
-            build_drop_table_child_object_sql(DropTableChildObjectSqlOptions {
-                database_type: Some(DatabaseType::Mysql),
-                object_type: TableChildObjectType::Index,
-                schema: None,
-                table_name: "orders".to_string(),
-                name: "idx_orders_status".to_string(),
-            })
-            .unwrap(),
-            "DROP INDEX `idx_orders_status` ON `orders`;"
-        );
-        assert_eq!(
-            build_drop_table_child_object_sql(DropTableChildObjectSqlOptions {
-                database_type: Some(DatabaseType::Postgres),
-                object_type: TableChildObjectType::Index,
-                schema: Some("public".to_string()),
-                table_name: "orders".to_string(),
-                name: "idx_orders_status".to_string(),
-            })
-            .unwrap(),
-            "DROP INDEX public.idx_orders_status;"
-        );
-        assert_eq!(
-            build_drop_table_child_object_sql(DropTableChildObjectSqlOptions {
-                database_type: Some(DatabaseType::Sqlite),
-                object_type: TableChildObjectType::Index,
-                schema: Some("analytics".to_string()),
-                table_name: "orders".to_string(),
-                name: "idx_orders_status".to_string(),
-            })
-            .unwrap(),
-            "DROP INDEX \"analytics\".\"idx_orders_status\";"
-        );
-        assert_eq!(
-            build_drop_table_child_object_sql(DropTableChildObjectSqlOptions {
-                database_type: Some(DatabaseType::Mysql),
-                object_type: TableChildObjectType::ForeignKey,
-                schema: None,
-                table_name: "orders".to_string(),
-                name: "fk_orders_user".to_string(),
-            })
-            .unwrap(),
-            "ALTER TABLE `orders` DROP FOREIGN KEY `fk_orders_user`;"
-        );
-        assert_eq!(
-            build_drop_table_child_object_sql(DropTableChildObjectSqlOptions {
-                database_type: Some(DatabaseType::SqlServer),
-                object_type: TableChildObjectType::ForeignKey,
-                schema: Some("dbo".to_string()),
-                table_name: "orders".to_string(),
-                name: "fk_orders_user".to_string(),
-            })
-            .unwrap(),
-            "ALTER TABLE [dbo].[orders] DROP CONSTRAINT [fk_orders_user];"
-        );
-        assert_eq!(
-            build_drop_table_child_object_sql(DropTableChildObjectSqlOptions {
-                database_type: Some(DatabaseType::Postgres),
-                object_type: TableChildObjectType::Trigger,
-                schema: Some("public".to_string()),
-                table_name: "orders".to_string(),
-                name: "orders_audit".to_string(),
-            })
-            .unwrap(),
-            "DROP TRIGGER orders_audit ON public.orders;"
-        );
-
-        assert_eq!(
-            build_drop_table_child_object_sql(DropTableChildObjectSqlOptions {
-                database_type: Some(DatabaseType::Questdb),
-                object_type: TableChildObjectType::Column,
-                schema: Some("public".to_string()),
-                table_name: "orders".to_string(),
-                name: "status".to_string(),
-            })
-            .unwrap(),
-            "ALTER TABLE `orders` DROP COLUMN `status`;"
-        );
-    }
-
-    #[test]
-    fn builds_duplicate_table_structure_sql() {
-        assert_eq!(
-            build_duplicate_table_structure_sql(DuplicateTableStructureSqlOptions {
-                database_type: Some(DatabaseType::Mysql),
-                schema: None,
-                source_name: "users".to_string(),
-                target_name: "users_copy".to_string(),
-                table_comment: None,
-                column_comments: vec![],
-            }),
-            "CREATE TABLE `users_copy` LIKE `users`;"
-        );
-        assert_eq!(
-            build_duplicate_table_structure_sql(DuplicateTableStructureSqlOptions {
-                database_type: Some(DatabaseType::Postgres),
-                schema: Some("public".to_string()),
-                source_name: "users".to_string(),
-                target_name: "users_copy".to_string(),
-                table_comment: None,
-                column_comments: vec![],
-            }),
-            "CREATE TABLE public.users_copy (LIKE public.users INCLUDING ALL);"
-        );
-        assert_eq!(
-            build_duplicate_table_structure_sql(DuplicateTableStructureSqlOptions {
-                database_type: Some(DatabaseType::Postgres),
-                schema: Some("public".to_string()),
-                source_name: "customer_orders".to_string(),
-                target_name: "customer_orders_copy".to_string(),
-                table_comment: Some("  Customer's orders; archive  ".to_string()),
-                column_comments: vec![],
-            }),
-            "CREATE TABLE public.customer_orders_copy (LIKE public.customer_orders INCLUDING ALL);\nCOMMENT ON TABLE public.customer_orders_copy IS '  Customer''s orders; archive  ';"
-        );
-        assert_eq!(
-            build_duplicate_table_structure_sql(DuplicateTableStructureSqlOptions {
-                database_type: Some(DatabaseType::Kwdb),
-                schema: Some("public".to_string()),
-                source_name: "users".to_string(),
-                target_name: "users_copy".to_string(),
-                table_comment: None,
-                column_comments: vec![],
-            }),
-            "CREATE TABLE public.users_copy (LIKE public.users INCLUDING ALL);"
-        );
-        assert_eq!(
-            build_duplicate_table_structure_sql(DuplicateTableStructureSqlOptions {
-                database_type: Some(DatabaseType::SqlServer),
-                schema: Some("dbo".to_string()),
-                source_name: "users".to_string(),
-                target_name: "users_copy".to_string(),
-                table_comment: None,
-                column_comments: vec![],
-            }),
-            "SELECT TOP 0 * INTO [dbo].[users_copy] FROM [dbo].[users];"
-        );
-        assert_eq!(
-            build_duplicate_table_structure_sql(DuplicateTableStructureSqlOptions {
-                database_type: Some(DatabaseType::Oracle),
-                schema: Some("HR".to_string()),
-                source_name: "USERS".to_string(),
-                target_name: "USERS_COPY".to_string(),
-                table_comment: None,
-                column_comments: vec![],
-            }),
-            "CREATE TABLE \"HR\".\"USERS_COPY\" AS SELECT * FROM \"HR\".\"USERS\" WHERE 1=0"
-        );
-        let dameng_sql = build_duplicate_table_structure_sql(DuplicateTableStructureSqlOptions {
-            database_type: Some(DatabaseType::Dameng),
-            schema: Some("APP".to_string()),
-            source_name: "USERS".to_string(),
-            target_name: "users_copy".to_string(),
-            table_comment: None,
-            column_comments: vec![
-                DuplicateTableColumnComment {
-                    name: "DISPLAY\"NAME".to_string(),
-                    comment: "  Owner's; display name".to_string(),
-                },
-                DuplicateTableColumnComment { name: "STATUS".to_string(), comment: "active  ".to_string() },
-                DuplicateTableColumnComment { name: "EMPTY".to_string(), comment: " \t\n".to_string() },
-            ],
-        });
-        assert_eq!(
-            dameng_sql,
-            "CREATE TABLE \"APP\".USERS_COPY AS SELECT * FROM \"APP\".\"USERS\" WHERE 1=0;\nCOMMENT ON COLUMN \"APP\".USERS_COPY.\"DISPLAY\"\"NAME\" IS '  Owner''s; display name';\nCOMMENT ON COLUMN \"APP\".USERS_COPY.\"STATUS\" IS 'active  ';"
-        );
-        assert_eq!(
-            crate::sql::split_sql_statements_for_database(&dameng_sql, DatabaseType::Dameng),
-            vec![
-                "CREATE TABLE \"APP\".USERS_COPY AS SELECT * FROM \"APP\".\"USERS\" WHERE 1=0".to_string(),
-                "COMMENT ON COLUMN \"APP\".USERS_COPY.\"DISPLAY\"\"NAME\" IS '  Owner''s; display name'".to_string(),
-                "COMMENT ON COLUMN \"APP\".USERS_COPY.\"STATUS\" IS 'active  '".to_string(),
-            ]
-        );
-        assert_eq!(
-            build_duplicate_table_structure_sql(DuplicateTableStructureSqlOptions {
-                database_type: Some(DatabaseType::Dameng),
-                schema: Some("APP".to_string()),
-                source_name: "USERS".to_string(),
-                target_name: "UsersCopy".to_string(),
-                table_comment: None,
-                column_comments: vec![],
-            }),
-            "CREATE TABLE \"APP\".\"UsersCopy\" AS SELECT * FROM \"APP\".\"USERS\" WHERE 1=0"
-        );
-        for database_type in [
-            DatabaseType::Postgres,
-            DatabaseType::Redshift,
-            DatabaseType::Gaussdb,
-            DatabaseType::Kwdb,
-            DatabaseType::OpenGauss,
-        ] {
-            let sql = build_duplicate_table_structure_sql(DuplicateTableStructureSqlOptions {
-                database_type: Some(database_type),
-                schema: Some("public".to_string()),
-                source_name: "source".to_string(),
-                target_name: "copy".to_string(),
-                table_comment: Some("owner\\'s; archive".to_string()),
-                column_comments: vec![],
-            });
-            let expected_literal = if database_type == DatabaseType::Redshift {
-                "'owner\\\\\\'s; archive'"
-            } else {
-                "E'owner\\\\\\'s; archive'"
-            };
-            assert!(sql.ends_with(&format!("COMMENT ON TABLE public.copy IS {expected_literal};")));
-            assert_eq!(
-                crate::sql::split_sql_statements_for_database(&sql, database_type),
-                vec![
-                    "CREATE TABLE public.copy (LIKE public.source INCLUDING ALL)".to_string(),
-                    format!("COMMENT ON TABLE public.copy IS {expected_literal}"),
-                ]
-            );
-        }
-        assert_eq!(
-            build_duplicate_table_structure_sql(DuplicateTableStructureSqlOptions {
-                database_type: Some(DatabaseType::Iris),
-                schema: Some("SQLUSER".to_string()),
-                source_name: "tb_a".to_string(),
-                target_name: "tb_a_copy".to_string(),
-                table_comment: None,
-                column_comments: vec![],
-            }),
-            "CREATE TABLE \"SQLUSER\".\"tb_a_copy\" AS SELECT * FROM \"SQLUSER\".\"tb_a\" WHERE 1=0"
-        );
-        assert_eq!(
-            build_duplicate_table_structure_sql(DuplicateTableStructureSqlOptions {
-                database_type: Some(DatabaseType::Questdb),
-                schema: None,
-                source_name: "users".to_string(),
-                target_name: "users_copy".to_string(),
-                table_comment: Some("ignored by QuestDB".to_string()),
-                column_comments: vec![],
-            }),
-            "CREATE TABLE `users_copy` (LIKE `users`);"
-        );
-    }
-
-    #[test]
-    fn builds_copy_table_data_sql() {
-        assert_eq!(
-            build_copy_table_data_sql(CopyTableDataSqlOptions {
-                database_type: Some(DatabaseType::Sqlite),
-                schema: None,
-                source_name: "users".to_string(),
-                target_name: "users_copy".to_string(),
-                columns: None,
-                postgres_overriding_system_value: false,
-                sqlserver_identity_insert: false,
-                normalize_new_target_name: false,
-            }),
-            "INSERT INTO \"users_copy\" SELECT * FROM \"users\";"
-        );
-        assert_eq!(
-            build_copy_table_data_sql(CopyTableDataSqlOptions {
-                database_type: Some(DatabaseType::Mysql),
-                schema: None,
-                source_name: "users".to_string(),
-                target_name: "users_copy".to_string(),
-                columns: Some(vec!["id".to_string(), "name".to_string()]),
-                postgres_overriding_system_value: false,
-                sqlserver_identity_insert: false,
-                normalize_new_target_name: false,
-            }),
-            "INSERT INTO `users_copy` (`id`, `name`) SELECT `id`, `name` FROM `users`;"
-        );
-        assert_eq!(
-            build_copy_table_data_sql(CopyTableDataSqlOptions {
-                database_type: Some(DatabaseType::Postgres),
-                schema: Some("public".to_string()),
-                source_name: "users".to_string(),
-                target_name: "users_copy".to_string(),
-                columns: Some(vec!["id".to_string(), "name".to_string()]),
-                postgres_overriding_system_value: true,
-                sqlserver_identity_insert: false,
-                normalize_new_target_name: false,
-            }),
-            "INSERT INTO public.users_copy (id, name) OVERRIDING SYSTEM VALUE SELECT id, name FROM public.users;"
-        );
-        assert_eq!(
-            build_copy_table_data_sql(CopyTableDataSqlOptions {
-                database_type: Some(DatabaseType::SqlServer),
-                schema: Some("dbo".to_string()),
-                source_name: "users".to_string(),
-                target_name: "users_copy".to_string(),
-                columns: Some(vec!["id".to_string(), "name".to_string()]),
-                postgres_overriding_system_value: false,
-                sqlserver_identity_insert: true,
-                normalize_new_target_name: false,
-            }),
-            "SET IDENTITY_INSERT [dbo].[users_copy] ON;\nINSERT INTO [dbo].[users_copy] ([id], [name]) SELECT [id], [name] FROM [dbo].[users];\nSET IDENTITY_INSERT [dbo].[users_copy] OFF;"
-        );
-        assert_eq!(
-            build_copy_table_data_sql(CopyTableDataSqlOptions {
-                database_type: Some(DatabaseType::Dameng),
-                schema: Some("APP".to_string()),
-                source_name: "users".to_string(),
-                target_name: "users_copy".to_string(),
-                columns: None,
-                postgres_overriding_system_value: false,
-                sqlserver_identity_insert: false,
-                normalize_new_target_name: true,
-            }),
-            "INSERT INTO \"APP\".USERS_COPY SELECT * FROM \"APP\".\"users\";"
-        );
-        assert_eq!(
-            build_copy_table_data_sql(CopyTableDataSqlOptions {
-                database_type: Some(DatabaseType::Dameng),
-                schema: Some("APP".to_string()),
-                source_name: "users".to_string(),
-                target_name: "users_copy".to_string(),
-                columns: None,
-                postgres_overriding_system_value: false,
-                sqlserver_identity_insert: false,
-                normalize_new_target_name: false,
-            }),
-            "INSERT INTO \"APP\".\"users_copy\" SELECT * FROM \"APP\".\"users\";"
-        );
-    }
-
-    #[test]
-    fn builds_mysql_table_and_view_rename_sql() {
-        assert_eq!(
-            build_rename_object_sql(RenameObjectSqlOptions {
-                database_type: Some(DatabaseType::Mysql),
-                object_type: DatabaseObjectType::Table,
-                schema: None,
-                old_name: "users".to_string(),
-                new_name: "app users".to_string(),
-            })
-            .unwrap(),
-            "RENAME TABLE `users` TO `app users`;"
-        );
-        assert_eq!(
-            build_rename_object_sql(RenameObjectSqlOptions {
-                database_type: Some(DatabaseType::Goldendb),
-                object_type: DatabaseObjectType::View,
-                schema: None,
-                old_name: "active_users".to_string(),
-                new_name: "enabled_users".to_string(),
-            })
-            .unwrap(),
-            "RENAME TABLE `active_users` TO `enabled_users`;"
-        );
-    }
-
-    #[test]
-    fn builds_sqlite_protocol_table_rename_sql() {
-        for database_type in
-            [DatabaseType::Sqlite, DatabaseType::Rqlite, DatabaseType::Turso, DatabaseType::CloudflareD1]
-        {
-            let expected = if database_type == DatabaseType::Sqlite {
-                "ALTER TABLE \"main\".\"users\" RENAME TO \"app users\";"
-            } else {
-                "ALTER TABLE \"users\" RENAME TO \"app users\";"
-            };
-            assert!(supports_object_rename(Some(database_type), DatabaseObjectType::Table));
-            assert!(!supports_object_rename(Some(database_type), DatabaseObjectType::View));
-            assert_eq!(
-                build_rename_object_sql(RenameObjectSqlOptions {
-                    database_type: Some(database_type),
-                    object_type: DatabaseObjectType::Table,
-                    schema: Some("main".to_string()),
-                    old_name: "users".to_string(),
-                    new_name: "app users".to_string(),
-                })
-                .unwrap(),
-                expected
-            );
-        }
-    }
-
-    #[test]
-    fn builds_postgres_table_and_view_rename_sql() {
-        assert_eq!(
-            build_rename_object_sql(RenameObjectSqlOptions {
-                database_type: Some(DatabaseType::Postgres),
-                object_type: DatabaseObjectType::Table,
-                schema: Some("public".to_string()),
-                old_name: "orders".to_string(),
-                new_name: "archived orders".to_string(),
-            })
-            .unwrap(),
-            "ALTER TABLE public.orders RENAME TO \"archived orders\";"
-        );
-        assert_eq!(
-            build_rename_object_sql(RenameObjectSqlOptions {
-                database_type: Some(DatabaseType::Postgres),
-                object_type: DatabaseObjectType::View,
-                schema: Some("public".to_string()),
-                old_name: "active_users".to_string(),
-                new_name: "enabled_users".to_string(),
-            })
-            .unwrap(),
-            "ALTER VIEW public.active_users RENAME TO enabled_users;"
-        );
-    }
-
-    #[test]
-    fn builds_sqlserver_routine_rename_sql() {
-        assert_eq!(
-            build_rename_object_sql(RenameObjectSqlOptions {
-                database_type: Some(DatabaseType::SqlServer),
-                object_type: DatabaseObjectType::Function,
-                schema: Some("dbo".to_string()),
-                old_name: "fn_total".to_string(),
-                new_name: "fn_order_total".to_string(),
-            })
-            .unwrap(),
-            "EXEC sp_rename N'dbo.fn_total', N'fn_order_total', N'OBJECT';"
-        );
-        assert!(supports_object_rename(Some(DatabaseType::SqlServer), DatabaseObjectType::Procedure));
-    }
-
-    #[test]
-    fn builds_oracle_family_table_and_view_rename_sql() {
-        assert_eq!(
-            build_rename_object_sql(RenameObjectSqlOptions {
-                database_type: Some(DatabaseType::Oracle),
-                object_type: DatabaseObjectType::Table,
-                schema: Some("HR".to_string()),
-                old_name: "EMPLOYEES".to_string(),
-                new_name: "STAFF".to_string(),
-            })
-            .unwrap(),
-            "ALTER TABLE \"HR\".\"EMPLOYEES\" RENAME TO \"STAFF\";"
-        );
-        assert_eq!(
-            build_rename_object_sql(RenameObjectSqlOptions {
-                database_type: Some(DatabaseType::Dameng),
-                object_type: DatabaseObjectType::View,
-                schema: Some("SYSDBA".to_string()),
-                old_name: "ACTIVE_USERS".to_string(),
-                new_name: "ENABLED_USERS".to_string(),
-            })
-            .unwrap(),
-            "ALTER VIEW \"SYSDBA\".\"ACTIVE_USERS\" RENAME TO \"ENABLED_USERS\";"
-        );
-    }
-
-    #[test]
-    fn rejects_unsupported_direct_routine_renames() {
-        assert!(!supports_object_rename(Some(DatabaseType::Oracle), DatabaseObjectType::Function));
-        assert!(!supports_object_rename(Some(DatabaseType::Dameng), DatabaseObjectType::Procedure));
-        assert!(build_rename_object_sql(RenameObjectSqlOptions {
-            database_type: Some(DatabaseType::Dameng),
-            object_type: DatabaseObjectType::Procedure,
-            schema: Some("SYSDBA".to_string()),
-            old_name: "REFRESH_CACHE".to_string(),
-            new_name: "REFRESH_CACHE_V2".to_string(),
-        })
-        .unwrap_err()
-        .contains("Renaming PROCEDURE is not supported"));
-        assert!(build_rename_object_sql(RenameObjectSqlOptions {
-            database_type: Some(DatabaseType::Mysql),
-            object_type: DatabaseObjectType::Procedure,
-            schema: None,
-            old_name: "refresh_cache".to_string(),
-            new_name: "refresh_cache_v2".to_string(),
-        })
-        .unwrap_err()
-        .contains("Renaming PROCEDURE is not supported"));
     }
 }

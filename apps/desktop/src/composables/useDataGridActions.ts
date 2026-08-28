@@ -5,14 +5,12 @@ import { useQueryStore } from "@/stores/queryStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { buildTableSelectSql, quoteTableDataIdentifier } from "@/lib/table/tableSelectSql";
 import { tableOpenPageLimit } from "@/lib/table/tableOpenPageLimit";
-import { usesSyntheticRowIdKey } from "@/lib/table/tableEditing";
 import { tableMetaForDataTab } from "@/lib/table/tableDataTabMeta";
 import * as api from "@/lib/backend/api";
 import type { QueryTab } from "@/types/database";
 import { useToast } from "@/composables/useToast";
 import { effectiveDatabaseTypeForConnection, metadataSchemaForConnection } from "@/lib/database/jdbcDialect";
 import { loadTableMetadata, TABLE_METADATA_CACHE_TTL_MS } from "@/lib/metadata/tableMetadataCache";
-import { applyMongoFindSort } from "@/lib/mongo/mongoShellCommand";
 import { uuid } from "@/lib/common/utils";
 import { simpleDataGridOrderByReferencesMissingColumn, type DataGridSortMode } from "@/lib/dataGrid/dataGridSort";
 import type { DataGridReloadIntent } from "@/lib/dataGrid/dataGridToolbar";
@@ -50,7 +48,6 @@ export function useDataGridActions(activeTab: ComputedRef<QueryTab | undefined>)
     const effectiveDbType = effectiveDatabaseTypeForConnection(config);
     const tableMeta = tableMetaForDataTab(tab);
     const primaryKeys = tab.tableMeta ? tab.tableMeta.primaryKeys : (tableMeta?.primaryKeys ?? []);
-    const useRowId = usesSyntheticRowIdKey(effectiveDbType, primaryKeys, tableMeta?.tableType);
     // 列投影只信任真实元数据列：tableMetaForDataTab 的 fallback 列来自查询
     // 结果（可能是失败结果的 ["Error"]），进入 SQL 会生成非法投影；
     // 真实列缺失时省略 columns 让 builder 生成 SELECT *
@@ -65,7 +62,6 @@ export function useDataGridActions(activeTab: ComputedRef<QueryTab | undefined>)
       catalog: tableMeta?.catalog,
       columns: realColumns?.map((column) => column.name),
       primaryKeys,
-      includeRowId: useRowId,
       limit: options.limit ?? tab.resultPageLimit ?? tableOpenPageLimit(settingsStore.editorSettings.tableOpenPageSize),
       ...options,
     });
@@ -158,9 +154,7 @@ export function useDataGridActions(activeTab: ComputedRef<QueryTab | undefined>)
       // 不能据此跳过刷新，否则恢复/失败后的重试会被 TTL 卡住
       const hasRealTableMetaColumns = !!tab.tableMeta?.columns.length;
       const shouldRefreshMetadata = !hasRealTableMetaColumns || metadataAgeMs > DATA_TAB_METADATA_TTL_MS;
-      // Dameng 元数据必须与数据查询串行（同 useSidebarDataOpenRuntime），
-      // 延后到查询完成后再启动
-      const deferMetadataRefresh = effectiveDatabaseTypeForConnection(connectionStore.getConfig(tab.connectionId)) === "dameng";
+      const deferMetadataRefresh = false;
       const startMetadataRefresh = () => {
         console.info("[DBX][reloadData:metadata:background:start]", { traceId, elapsed: elapsed(), reason: hasRealTableMetaColumns ? "stale" : "missing", metadataAgeMs });
         void refreshDataTabTableMeta(tab, { traceId, elapsed })
@@ -316,9 +310,8 @@ export function useDataGridActions(activeTab: ComputedRef<QueryTab | undefined>)
     if (tab.mode === "data") {
       if (!tableMetaForDataTab(tab)) return;
       tab.whereInput = whereInput ?? "";
-      const config = connectionStore.getConfig(tab.connectionId);
       const quotedColumn = quoteIdent(tab, column);
-      const orderBy = direction ? `${config?.db_type === "neo4j" ? `n.${quotedColumn}` : quotedColumn} ${direction.toUpperCase()}` : undefined;
+      const orderBy = direction ? `${quotedColumn} ${direction.toUpperCase()}` : undefined;
       const sql = await buildTableSql(tab, { orderBy, whereInput });
       queryStore.updateSql(tab.id, sql);
       await queryStore.executeTabSql(tab.id, sql, { preserveResultDuringExecution: true });
@@ -340,23 +333,6 @@ export function useDataGridActions(activeTab: ComputedRef<QueryTab | undefined>)
     }
 
     const config = connectionStore.getConfig(tab.connectionId);
-    if (effectiveDatabaseTypeForConnection(config) === "mongodb") {
-      const sortedSql = applyMongoFindSort(baseSql, column, direction);
-      if (!sortedSql) {
-        toast(t("grid.sortUnsupported"), 5000);
-        return;
-      }
-      queryStore.updateSql(tab.id, sortedSql);
-      await queryStore.executeTabSql(tab.id, sortedSql, {
-        resultBaseSql: baseSql,
-        resultSortedSql: sortedSql,
-        preserveResultDuringExecution: true,
-        preserveTotalRowCountDuringExecution: true,
-        replaceActiveResultInGroup: true,
-      });
-      return;
-    }
-
     const sortColumns = visibleQuerySortColumns(tab.result?.columns ?? [], tab.result?.hidden_column_indexes, columnIndex);
     if (!sortColumns) {
       toast(t("grid.sortUnsupported"), 5000);

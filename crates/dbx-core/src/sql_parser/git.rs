@@ -31,8 +31,7 @@ impl GitDiffScanner {
             return Err("Git commit refs cannot be empty".into());
         }
         let git_path = repo_path.join(".git");
-        let is_git_repo =
-            git_path.is_dir() || (git_path.is_file() && git_path.exists()) || repo_path.join("../.git").exists();
+        let is_git_repo = git_path.is_dir() || (git_path.is_file() && git_path.exists());
         if !is_git_repo {
             return Err(format!("Not a git repository: {}", repo_path.display()));
         }

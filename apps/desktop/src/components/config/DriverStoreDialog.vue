@@ -30,7 +30,6 @@ import {
   updatePerDriverProgress,
   type DriverInstallProgress,
 } from "@/lib/connection/driverInstallProgressUi";
-import { PRESTOSQL_DRIVER_DB_TYPE, prestoSqlBuiltinDriverRow, prestoSqlMavenBundle } from "@/lib/database/prestoSqlBuiltinDriver";
 import type { DriverStoreFocus } from "@/lib/connection/agentDriverInstallHint";
 import { isOfflineDriverPackage, webDriverImportAccept } from "@/lib/driverStore/driverImportSelection";
 import { translateBackendError } from "@/i18n/backend-errors";
@@ -347,11 +346,7 @@ function getJreReinstallTitle(fallback: string): string {
   return formatProgressText(jreReinstallProgress.value) || fallback;
 }
 
-function isPrestoSqlBuiltinDriver(dbType: string): boolean {
-  return dbType === PRESTOSQL_DRIVER_DB_TYPE;
-}
-
-const builtinDriverRows = computed<AgentDriverInfo[]>(() => [...drivers.value, prestoSqlBuiltinDriverRow(jdbcMavenBundles.value)]);
+const builtinDriverRows = computed<AgentDriverInfo[]>(() => [...drivers.value]);
 
 function driverLabel(dbType: string): string {
   return builtinDriverRows.value.find((d) => d.db_type === dbType)?.label ?? dbType;
@@ -469,17 +464,6 @@ async function runDriverInstall(dbType: string) {
   activeAgentOperationId.value = uuid();
   resetAgentInstallProgress();
   try {
-    if (isPrestoSqlBuiltinDriver(dbType)) {
-      if (!jdbcPluginStatus.value?.installed || !jdbcPluginStatus.value.compatible) {
-        jdbcPluginStatus.value = await api.installJdbcPlugin();
-        emitDriverUpdateCount();
-      }
-      jdbcDrivers.value = await api.installPrestoSqlJdbcDriver();
-      jdbcMavenBundles.value = await api.listJdbcMavenBundles();
-      void loadDriverStoreUsage();
-      toast(t("driverStore.driverInstallSuccess", { label }));
-      return;
-    }
     const blockers = await api.checkAgentUpdateBlockers([dbType]);
     if (blockers.length > 0) {
       toast(t("driverStore.driverUpdateBlocked", { labels: blockers.map((blocker) => blocker.label).join(", ") }));
@@ -544,15 +528,6 @@ async function upgradeAll() {
 async function uninstallDriver(dbType: string) {
   const label = driverLabel(dbType);
   try {
-    if (isPrestoSqlBuiltinDriver(dbType)) {
-      const bundle = prestoSqlMavenBundle(jdbcMavenBundles.value);
-      if (!bundle) return;
-      jdbcDrivers.value = await api.deleteJdbcMavenBundle(bundle.id);
-      jdbcMavenBundles.value = await api.listJdbcMavenBundles();
-      void loadDriverStoreUsage();
-      toast(t("driverStore.driverUninstallSuccess", { label }));
-      return;
-    }
     const blockers = await api.checkAgentUpdateBlockers([dbType]);
     if (blockers.length > 0) {
       toast(t("driverStore.driverUpdateBlocked", { labels: blockers.map((blocker) => blocker.label).join(", ") }));
@@ -642,10 +617,6 @@ async function importOfflineZip() {
 async function importDriverFile(driver: AgentDriverInfo) {
   if (agentImportBusy.value) return;
   const dbType = driver.db_type;
-  if (isPrestoSqlBuiltinDriver(dbType)) {
-    await importJdbcDrivers();
-    return;
-  }
   const blockers = await api.checkAgentUpdateBlockers([dbType]);
   if (blockers.length > 0) {
     toast(t("driverStore.driverUpdateBlocked", { labels: blockers.map((blocker) => blocker.label).join(", ") }));
@@ -1267,12 +1238,7 @@ onMounted(async () => {
     const incoming = payload as DriverInstallProgress;
     if (!isDriverInstallProgressForOperation(incoming, activeAgentOperationId.value)) return;
     const channel = driverInstallProgressChannel(incoming);
-    const jdbcProgressBelongsToPrestoSql = channel === "jdbc-plugin" && installing.value === PRESTOSQL_DRIVER_DB_TYPE && !isInstallingJdbcPlugin.value;
-    if (jdbcProgressBelongsToPrestoSql) {
-      // PrestoSQL is shown as a built-in driver but installs through the JDBC plugin pipeline.
-      // Route its events into the per-driver map using the presto key.
-      updatePerDriverProgress(agentProgressByDbType, { ...incoming, db_type: PRESTOSQL_DRIVER_DB_TYPE });
-    } else if (channel === "agent") {
+    if (channel === "agent") {
       if (incoming.db_type) {
         updatePerDriverProgress(agentProgressByDbType, incoming);
         // Track completions for the batch counter.
@@ -1473,7 +1439,7 @@ watch(driverStoreTab, (tab) => {
                     {{ t("driverStore.install") }}
                   </Button>
                   <Button
-                    v-if="!driver.installed && !isPrestoSqlBuiltinDriver(driver.db_type) && !isDriverProgressActive(driver.db_type) && !isDriverQueued(driver.db_type)"
+                    v-if="!driver.installed && !isDriverProgressActive(driver.db_type) && !isDriverQueued(driver.db_type)"
                     size="sm"
                     variant="ghost"
                     class="h-7 w-7 rounded-md text-xs text-muted-foreground"
@@ -1591,7 +1557,7 @@ watch(driverStoreTab, (tab) => {
                             {{ t("driverStore.install") }}
                           </Button>
                           <Button
-                            v-if="!driver.installed && !isPrestoSqlBuiltinDriver(driver.db_type) && !isDriverProgressActive(driver.db_type) && !isDriverQueued(driver.db_type)"
+                            v-if="!driver.installed && !isDriverProgressActive(driver.db_type) && !isDriverQueued(driver.db_type)"
                             size="sm"
                             variant="ghost"
                             class="h-7 w-7 rounded-md text-xs text-muted-foreground"
@@ -1675,7 +1641,7 @@ watch(driverStoreTab, (tab) => {
                         {{ t("driverStore.install") }}
                       </Button>
                       <Button
-                        v-if="!driver.installed && !isPrestoSqlBuiltinDriver(driver.db_type) && !isDriverProgressActive(driver.db_type) && !isDriverQueued(driver.db_type)"
+                        v-if="!driver.installed && !isDriverProgressActive(driver.db_type) && !isDriverQueued(driver.db_type)"
                         size="sm"
                         variant="ghost"
                         class="h-7 w-7 rounded-md text-xs text-muted-foreground"

@@ -355,7 +355,6 @@ mod tests {
         build_update_info, is_newer_version, normalize_version, system_proxy_url_from_scutil_output,
         system_proxy_url_from_windows_registry_output, GithubReleaseMetadata, TauriRelease,
     };
-
     #[test]
     fn normalizes_tag_versions() {
         assert_eq!(normalize_version("v1.2.3"), "1.2.3");

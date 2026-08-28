@@ -34,17 +34,3 @@ test("fetchTableDataForExport pages past the 10000 row export boundary", async (
   assert.equal(exported.truncated, false);
 });
 
-test("fetchTableDataForExport executes a VictoriaMetrics range query once", async () => {
-  const sqls: string[] = [];
-  const exported = await fetchTableDataForExport({
-    databaseType: "victoriametrics",
-    tableName: "flag",
-    executePage: async (sql) => {
-      sqls.push(sql);
-      return result([[1], [2]]);
-    },
-  });
-
-  assert.deepEqual(sqls, ['{__name__="flag"}[1h]']);
-  assert.equal(exported.rows.length, 2);
-});

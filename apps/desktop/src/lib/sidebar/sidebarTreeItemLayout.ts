@@ -9,16 +9,6 @@ const leafTypes: Set<TreeNodeType> = new Set([
   "scheduler",
   "type-body",
   "object-browser",
-  "redis-db",
-  "mq-tenant",
-  "etcd-root",
-  "etcd-dashboard",
-  "etcd-access-control",
-  "zookeeper-root",
-  "mongo-gridfs",
-  "mongo-bucket",
-  "vector-collection",
-  "elasticsearch-index",
   "user-admin",
   "saved-sql-file",
   "table-search-control",
@@ -30,32 +20,13 @@ const leafTypes: Set<TreeNodeType> = new Set([
   "sequence",
 ]);
 
-const fullWidthLabelTypes: Set<TreeNodeType> = new Set(["table", "view", "materialized_view", "mongo-collection", "mongo-bucket", "vector-collection", "elasticsearch-index"]);
+const fullWidthLabelTypes: Set<TreeNodeType> = new Set(["table", "view", "materialized_view"]);
 
 const emptyContainerTypes: Set<TreeNodeType> = new Set(["saved-sql-root", "saved-sql-folder"]);
 
-const pinnableTypes: Set<TreeNodeType> = new Set([
-  "connection-group",
-  "database",
-  "linked-server",
-  "linked-server-catalog",
-  "linked-server-schema",
-  "doris-catalog",
-  "schema",
-  "table",
-  "view",
-  "materialized_view",
-  "redis-db",
-  "mongo-db",
-  "mongo-gridfs",
-  "mongo-bucket",
-  "mongo-collection",
-  "vector-collection",
-  "elasticsearch-index",
-  "nacos-namespace",
-]);
+const pinnableTypes: Set<TreeNodeType> = new Set(["connection-group", "database", "schema", "table", "view", "materialized_view"]);
 
-const commentTypes: Set<TreeNodeType> = new Set(["connection", "schema", "table", "view", "materialized_view", "column", "mongo-collection", "vector-collection", "elasticsearch-index"]);
+const commentTypes: Set<TreeNodeType> = new Set(["connection", "schema", "table", "view", "materialized_view", "column"]);
 
 export function treeItemPaddingLeft(depth: number): string {
   return `${depth * 16 + 8}px`;

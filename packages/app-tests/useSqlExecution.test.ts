@@ -67,21 +67,4 @@ test("complex SELECT with joins and functions is not dangerous", () => {
   assert.equal(isDangerousSql(sql), false);
 });
 
-test("distinguishes Elasticsearch REST paths from SQL template parameters", () => {
-  assert.equal(supportsSqlTemplateParameters({ db_type: "elasticsearch" }, "GET /_search?pretty"), false);
-  assert.equal(supportsSqlTemplateParameters({ db_type: "elasticsearch" }, '/* request */\nPOST /orders/_search\n{"query":{"term":{"id":":id"}}}'), false);
-  assert.equal(supportsSqlTemplateParameters({ db_type: "elasticsearch" }, "SELECT * FROM orders WHERE customer_id = :customer_id"), true);
-  assert.equal(supportsSqlTemplateParameters({ db_type: "easysearch" }, "GET /_search?pretty"), false);
-  assert.equal(supportsSqlTemplateParameters({ db_type: "easysearch" }, "SELECT * FROM orders WHERE customer_id = :customer_id"), true);
-  assert.equal(supportsSqlTemplateParameters({ db_type: "mysql" }), true);
-});
 
-test("detects destructive Elasticsearch requests across a parsed request list", () => {
-  assert.equal(isDangerousSql("GET /_cluster/health\n\nDELETE /production-index", "elasticsearch"), true);
-  assert.equal(isDangerousSql("GET /_cluster/health\n\nPOST /orders/_delete_by_query\n{}", "elasticsearch"), true);
-  assert.equal(isDangerousSql('POST /_bulk\n{"delete":{"_index":"orders","_id":"1"}}', "elasticsearch"), true);
-  assert.equal(isDangerousSql('PUT /orders/_mapping\n{"properties":{}}', "elasticsearch"), true);
-  assert.equal(isDangerousSql("GET /_cluster/health\n\n/* DELETE /production-index */\nGET /_cat/indices", "elasticsearch"), false);
-  assert.equal(isDangerousSql('DELETE /_search/scroll\n{"scroll_id":"abc"}', "elasticsearch"), false);
-  assert.equal(isDangerousSql("DELETE /production-index", "easysearch"), true);
-});

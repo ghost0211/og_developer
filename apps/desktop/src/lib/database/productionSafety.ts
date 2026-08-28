@@ -32,41 +32,8 @@ const PRIVILEGE_DATABASE_TARGET_RE = new RegExp(String.raw`\b(?:GRANT|REVOKE|DEN
 const GLOBAL_PRIVILEGE_TARGET_RE = /\b(?:GRANT|REVOKE|DENY)\b[\s\S]*?\bON\s+\*\s*\.\s*\*/i;
 const GLOBAL_DDL_TARGET_RE = /^\s*(?:CREATE|ALTER|DROP)\s+(?:USER|ROLE|LOGIN|SERVER|TABLESPACE|RESOURCE|PROFILE|ACCOUNT)\b/i;
 const MULTI_TARGET_MUTATION_RE = /^\s*(?:DROP\s+(?:TEMPORARY\s+)?TABLE\b[\s\S]*,|RENAME\s+TABLE\b[\s\S]*,)/i;
-const THREE_PART_DATABASE_QUALIFIER_TYPES = new Set<DatabaseType>(["sqlserver", "snowflake", "trino", "prestosql", "databricks", "bigquery"]);
 const TRANSACTION_KEYWORDS = new Set(["begin", "start", "commit", "rollback", "abort", "savepoint", "release"]);
-const SCHEMA_FIRST_QUALIFIER_TYPES = new Set<DatabaseType>([
-  "postgres",
-  "redshift",
-  "gaussdb",
-  "kwdb",
-  "opengauss",
-  "kingbase",
-  "highgo",
-  "uxdb",
-  "vastbase",
-  "yashandb",
-  "oracle",
-  "oceanbase-oracle",
-  "dameng",
-  "firebird",
-  "exasol",
-  "teradata",
-  "vertica",
-  "db2",
-  "informix",
-  "h2",
-  "iris",
-  "xugu",
-  "oscar",
-  "gbase",
-  "saphana",
-  "sqlserver",
-  "snowflake",
-  "trino",
-  "prestosql",
-  "databricks",
-  "bigquery",
-]);
+const SCHEMA_FIRST_QUALIFIER_TYPES = new Set<DatabaseType>(["postgres", "opengauss"]);
 
 interface ReferencedDatabaseAssessment {
   databases: string[];
@@ -211,7 +178,6 @@ function normalizeTargetDatabase(value: string | undefined, quotedIdentifiers: M
 }
 
 function qualifiedFirstPartIsDatabase(dbType: DatabaseType, partCount: number): boolean {
-  if (partCount >= 3 && THREE_PART_DATABASE_QUALIFIER_TYPES.has(dbType)) return true;
   if (SCHEMA_FIRST_QUALIFIER_TYPES.has(dbType)) return false;
   return partCount >= 2;
 }

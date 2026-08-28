@@ -110,12 +110,6 @@ export interface DataGridCountSqlOptions {
   whereInput?: string;
 }
 
-export interface HiveTablePropertiesSqlOptions {
-  schema?: string;
-  tableName: string;
-  propertyName: string;
-}
-
 export function buildDataGridCopyUpdateStatements(options: DataGridCopyUpdateStatementOptions): Promise<string[]> {
   return api.buildDataGridCopyUpdateStatements(options);
 }
@@ -144,14 +138,6 @@ export function buildDataGridCountSql(options: DataGridCountSqlOptions): Promise
   return api.buildDataGridCountSql(options);
 }
 
-export function buildHiveTablePropertiesSql(options: HiveTablePropertiesSqlOptions): Promise<string> {
-  return api.buildHiveTablePropertiesSql(options);
-}
-
-export function normalizeDataGridSaveError(databaseType: DatabaseType | undefined, error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error);
-  if (databaseType === "hive" && /Attempt to do update or delete|Error 10294/i.test(message)) {
-    return "Hive UPDATE/DELETE are not enabled for this table or server. Add rows with INSERT, or enable ACID transactional tables in Hive before editing/deleting existing rows.";
-  }
-  return message;
+export function normalizeDataGridSaveError(_databaseType: DatabaseType | undefined, error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

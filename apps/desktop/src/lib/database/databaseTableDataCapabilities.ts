@@ -1,15 +1,11 @@
 import type { DatabaseType } from "@/types/database";
 import { isSchemaAware, usesTreeSchemaMode } from "@/lib/database/databaseFeatureSupport";
 
-export type SyntheticEditKey = "oracle-rowid" | "neo4j-element-id";
-
 export interface TableDataCapability {
   insert: boolean;
   updateRequiresPrimaryKey: boolean;
   deleteRequiresPrimaryKey: boolean;
   keylessRowPredicate?: boolean;
-  requiresTransactionalTableForExistingRows: boolean;
-  existingRowsReadonly?: boolean;
   transaction: boolean;
   readonly?: boolean;
 }
@@ -18,7 +14,6 @@ export interface DatabaseCapability {
   schemaAware: boolean;
   treeSchemaMode: boolean;
   tableData: TableDataCapability;
-  syntheticKey?: SyntheticEditKey;
 }
 
 const DEFAULT_TABLE_DATA_CAPABILITY: TableDataCapability = {
@@ -26,7 +21,6 @@ const DEFAULT_TABLE_DATA_CAPABILITY: TableDataCapability = {
   updateRequiresPrimaryKey: true,
   deleteRequiresPrimaryKey: true,
   keylessRowPredicate: false,
-  requiresTransactionalTableForExistingRows: false,
   transaction: true,
 };
 
@@ -35,7 +29,6 @@ const NAVICAT_STYLE_TABLE_DATA_CAPABILITY: TableDataCapability = {
   updateRequiresPrimaryKey: false,
   deleteRequiresPrimaryKey: false,
   keylessRowPredicate: true,
-  requiresTransactionalTableForExistingRows: false,
   transaction: true,
 };
 
@@ -45,147 +38,15 @@ const DEFAULT_CAPABILITY: DatabaseCapability = {
   tableData: DEFAULT_TABLE_DATA_CAPABILITY,
 };
 
-const NAVICAT_STYLE_TABLE_DATA_TYPES = new Set<DatabaseType>([
-  "mysql",
-  "manticoresearch",
-  "postgres",
-  "sqlite",
-  "rqlite",
-  "turso",
-  "cloudflare-d1",
-  "duckdb",
-  "sqlserver",
-  "oracle",
-  "doris",
-  "starrocks",
-  "redshift",
-  "dameng",
-  "gaussdb",
-  "kwdb",
-  "kingbase",
-  "highgo",
-  "uxdb",
-  "vastbase",
-  "goldendb",
-  "yashandb",
-  "databricks",
-  "saphana",
-  "teradata",
-  "vertica",
-  "firebird",
-  "exasol",
-  "opengauss",
-  "questdb",
-  "oceanbase-oracle",
-  "gbase",
-  "access",
-  "h2",
-  "snowflake",
-  "db2",
-  "informix",
-  "bigquery",
-  "sundb",
-  "oscar",
-  "databend",
-]);
+const NAVICAT_STYLE_TABLE_DATA_TYPES = new Set<DatabaseType>(["postgres", "opengauss"]);
 
 const DATABASE_CAPABILITY_OVERRIDES: Partial<Record<DatabaseType, Partial<DatabaseCapability>>> = {
-  hive: {
-    tableData: {
-      insert: true,
-      updateRequiresPrimaryKey: false,
-      deleteRequiresPrimaryKey: false,
-      keylessRowPredicate: true,
-      requiresTransactionalTableForExistingRows: true,
-      transaction: false,
-    },
-  },
   jdbc: {
     tableData: {
       insert: false,
       updateRequiresPrimaryKey: true,
       deleteRequiresPrimaryKey: true,
-      requiresTransactionalTableForExistingRows: false,
       transaction: false,
-    },
-  },
-  manticoresearch: {
-    tableData: {
-      insert: true,
-      updateRequiresPrimaryKey: false,
-      deleteRequiresPrimaryKey: false,
-      keylessRowPredicate: true,
-      requiresTransactionalTableForExistingRows: false,
-      transaction: false,
-    },
-  },
-  neo4j: {
-    syntheticKey: "neo4j-element-id",
-  },
-  oracle: {
-    syntheticKey: "oracle-rowid",
-  },
-  "oceanbase-oracle": {
-    syntheticKey: "oracle-rowid",
-  },
-  trino: {
-    tableData: {
-      insert: true,
-      updateRequiresPrimaryKey: true,
-      deleteRequiresPrimaryKey: true,
-      requiresTransactionalTableForExistingRows: false,
-      transaction: false,
-    },
-  },
-  prestosql: {
-    tableData: {
-      insert: true,
-      updateRequiresPrimaryKey: true,
-      deleteRequiresPrimaryKey: true,
-      requiresTransactionalTableForExistingRows: false,
-      transaction: false,
-    },
-  },
-  clickhouse: {
-    tableData: {
-      insert: true,
-      updateRequiresPrimaryKey: true,
-      deleteRequiresPrimaryKey: true,
-      requiresTransactionalTableForExistingRows: false,
-      transaction: false,
-    },
-  },
-  tdengine: {
-    tableData: {
-      insert: true,
-      updateRequiresPrimaryKey: true,
-      deleteRequiresPrimaryKey: true,
-      requiresTransactionalTableForExistingRows: false,
-      transaction: false,
-    },
-  },
-  influxdb: {
-    tableData: {
-      insert: false,
-      updateRequiresPrimaryKey: false,
-      deleteRequiresPrimaryKey: true,
-      keylessRowPredicate: false,
-      requiresTransactionalTableForExistingRows: false,
-      existingRowsReadonly: true,
-      transaction: false,
-      readonly: true,
-    },
-  },
-  victoriametrics: {
-    tableData: {
-      insert: false,
-      updateRequiresPrimaryKey: false,
-      deleteRequiresPrimaryKey: true,
-      keylessRowPredicate: false,
-      requiresTransactionalTableForExistingRows: false,
-      existingRowsReadonly: true,
-      transaction: false,
-      readonly: true,
     },
   },
 };

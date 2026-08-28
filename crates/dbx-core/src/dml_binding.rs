@@ -401,9 +401,9 @@ mod tests {
 
     #[test]
     fn mapping_cache_path() {
-        let path = MappingCacheFile::cache_path(DialectKind::Mysql, DialectKind::Postgres);
-        assert!(path.to_string_lossy().contains("mysql_to_postgres"));
-        let custom = MappingCacheFile::custom_path(DialectKind::Mysql, DialectKind::Postgres, "prod");
+        let path = MappingCacheFile::cache_path(DialectKind::Opengauss, DialectKind::Postgres);
+        assert!(path.to_string_lossy().contains("opengauss_to_postgres"));
+        let custom = MappingCacheFile::custom_path(DialectKind::Opengauss, DialectKind::Postgres, "prod");
         assert!(custom.to_string_lossy().contains("prod"));
     }
 }

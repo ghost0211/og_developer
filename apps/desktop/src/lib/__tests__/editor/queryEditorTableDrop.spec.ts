@@ -11,7 +11,7 @@ describe("query editor table reference drop", () => {
     });
 
     expect(payload).not.toBeNull();
-    expect(tableReferenceInsertText(payload!)).toBe("`app-db`");
+    expect(tableReferenceInsertText(payload!)).toBe(`"app-db"`);
   });
 
   it("round-trips database reference payloads", () => {

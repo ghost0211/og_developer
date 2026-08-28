@@ -1,80 +1,6 @@
 import type { BackendError } from "@/lib/backend/errorUtils";
 
-export type DatabaseType =
-  | "mysql"
-  | "postgres"
-  | "sqlite"
-  | "rqlite"
-  | "turso"
-  | "cloudflare-d1"
-  | "redis"
-  | "duckdb"
-  | "clickhouse"
-  | "sqlserver"
-  | "mongodb"
-  | "oracle"
-  | "elasticsearch"
-  | "easysearch"
-  | "hbase"
-  | "qdrant"
-  | "milvus"
-  | "weaviate"
-  | "chromadb"
-  | "doris"
-  | "starrocks"
-  | "manticoresearch"
-  | "databend"
-  | "redshift"
-  | "dameng"
-  | "gaussdb"
-  | "kingbase"
-  | "highgo"
-  | "uxdb"
-  | "vastbase"
-  | "goldendb"
-  | "kwdb"
-  | "yashandb"
-  | "databricks"
-  | "saphana"
-  | "teradata"
-  | "vertica"
-  | "firebird"
-  | "exasol"
-  | "opengauss"
-  | "oceanbase-oracle"
-  | "questdb"
-  | "gbase"
-  | "access"
-  | "h2"
-  | "snowflake"
-  | "trino"
-  | "prestosql"
-  | "hive"
-  | "spark"
-  | "db2"
-  | "informix"
-  | "neo4j"
-  | "cassandra"
-  | "bigquery"
-  | "kylin"
-  | "sundb"
-  | "oscar"
-  | "tdengine"
-  | "xugu"
-  | "iotdb"
-  | "etcd"
-  | "zookeeper"
-  | "iris"
-  | "influxdb"
-  | "victoriametrics"
-  | "jdbc"
-  | "mq"
-  | "mqtt"
-  | "nacos";
-
-export function isElasticsearchCompatibleDatabaseType(dbType?: DatabaseType): boolean {
-  return dbType === "elasticsearch" || dbType === "easysearch";
-}
+export type DatabaseType = "opengauss" | "postgres" | "jdbc";
 
 export interface SqlSnippet {
   id: string;
@@ -141,7 +67,6 @@ export interface ConnectionConfig {
   visible_databases?: string[];
   visible_schemas?: Record<string, string[]>;
   show_system_schemas?: boolean;
-  attached_databases?: AttachedDatabaseConfig[];
   init_script?: string;
   color?: string;
   transport_layers?: TransportLayerConfig[];
@@ -153,24 +78,9 @@ export interface ConnectionConfig {
   ca_cert_path?: string;
   client_cert_path?: string;
   client_key_path?: string;
-  sysdba?: boolean;
-  oracle_connection_type?: "service_name" | "sid" | "tns";
   connection_string?: string;
   jdbc_driver_class?: string;
   jdbc_driver_paths?: string[];
-  redis_connection_mode?: "standalone" | "sentinel" | "cluster";
-  redis_sentinel_master?: string;
-  redis_sentinel_nodes?: string;
-  redis_sentinel_username?: string;
-  redis_sentinel_password?: string;
-  redis_sentinel_tls?: boolean;
-  redis_cluster_nodes?: string;
-  redis_key_separator?: string;
-  redis_scan_page_size?: number;
-  redis_database_aliases?: Record<string, string>;
-  etcd_endpoints?: string;
-  gbase_server?: string;
-  informix_server?: string;
   external_config?: unknown;
   one_time?: boolean;
   read_only?: boolean;
@@ -287,11 +197,6 @@ export interface HttpTunnelConfig {
   profile_id?: string;
 }
 
-export interface AttachedDatabaseConfig {
-  name: string;
-  path: string;
-}
-
 export interface PluginDriverManifest {
   id: string;
   label: string;
@@ -378,28 +283,8 @@ export interface DatabaseStorageInfo {
   size_bytes: number | null;
 }
 
-export interface SqlServerCompletionContext {
-  default_schema: string;
-  supports_session_database_switch: boolean;
-}
-
 export interface SchemaInfo {
   name: string;
-  comment?: string | null;
-}
-
-export interface LinkedServerInfo {
-  name: string;
-  product?: string | null;
-  provider?: string | null;
-  data_source?: string | null;
-}
-
-/** A catalog exposed by a multi-catalog engine (Doris / StarRocks). */
-export interface CatalogInfo {
-  name: string;
-  catalog_type: string;
-  is_current: boolean;
   comment?: string | null;
 }
 
@@ -584,8 +469,6 @@ export interface QueryResult {
   appended_from_row_count?: number;
   /** Set for synthesized query execution failures. */
   execution_error?: true;
-  /** Set only for SQL Server informational messages emitted by the backend. */
-  server_message?: true;
   /** Structured backend error; authoritative when execution_error is true. */
   error?: BackendError;
   /** Zero-based index of the submitted statement that produced this result. */
@@ -608,13 +491,6 @@ export interface QueryResult {
    */
   column_sortables?: boolean[];
   rows: (string | number | boolean | null)[][];
-  /**
-   * Original MongoDB documents, kept in lockstep with `rows` for document
-   * preview. This is populated only for MongoDB document query results.
-   */
-  mongo_documents?: unknown[];
-  /** Type-preserving Extended JSON documents used when copying MongoDB values. */
-  mongo_copy_documents?: unknown[];
   affected_rows: number;
   execution_time_ms: number;
   /** Server-side output lines (openGauss gms_output/dbms_output buffer,
@@ -625,10 +501,6 @@ export interface QueryResult {
   truncated?: boolean;
   session_id?: string | null;
   has_more?: boolean;
-  /** For Elasticsearch REST search results parsed into a _source table,
-   *  this carries the raw HTTP response body so the UI can toggle between
-   *  the tabular view and the original JSON. */
-  elasticsearch_raw_body?: string;
   sourceLabel?: string;
   sourceStatement?: string;
   /** Absolute offsets in the editor document at execution time. */
@@ -688,8 +560,6 @@ export interface QueryResultRun {
   resultSortDirection?: "asc" | "desc";
   resultSortMode?: "database" | "local";
   resultLocalSortOriginalRows?: QueryResult["rows"];
-  resultLocalSortOriginalMongoDocuments?: QueryResult["mongo_documents"];
-  resultLocalSortOriginalMongoCopyDocuments?: QueryResult["mongo_copy_documents"];
   orderByInput?: string;
   resultPageSql?: string;
   resultPageLimit?: number;
@@ -706,7 +576,6 @@ export interface QueryResultRun {
   queryAnalysis?: QueryTab["queryAnalysis"];
   querySourceColumns?: QueryTab["querySourceColumns"];
   queryEditabilityReason?: QueryTab["queryEditabilityReason"];
-  mongoEditTarget?: QueryTab["mongoEditTarget"];
   tableMeta?: QueryTab["tableMeta"];
 }
 
@@ -768,11 +637,6 @@ export type TreeNodeType =
   | "connection"
   | "connection-group"
   | "database"
-  | "doris-catalog"
-  | "linked-server-root"
-  | "linked-server"
-  | "linked-server-catalog"
-  | "linked-server-schema"
   | "schema"
   | "table"
   | "view"
@@ -813,7 +677,6 @@ export type TreeNodeType =
   | "extension"
   | "object-browser"
   | "user-admin"
-  | "dameng-job-admin"
   | "saved-sql-root"
   | "saved-sql-folder"
   | "saved-sql-file"
@@ -825,23 +688,7 @@ export type TreeNodeType =
   | "trigger"
   | "constraint"
   | "partition"
-  | "subpartition"
-  | "redis-db"
-  | "mq-tenant"
-  | "nacos-namespace"
-  | "etcd-root"
-  | "etcd-dashboard"
-  | "etcd-access-control"
-  | "zookeeper-root"
-  | "mongo-db"
-  | "mongo-gridfs"
-  | "mongo-buckets"
-  | "mongo-bucket"
-  | "mongo-collection"
-  | "vector-database"
-  | "vector-collection"
-  | "elasticsearch-index"
-  | "mqtt-topic";
+  | "subpartition";
 
 export interface ConnectionGroup {
   id: string;
@@ -868,13 +715,6 @@ export interface TreeNode {
   database?: string;
   catalog?: string;
   catalogType?: string;
-  linkedServer?: string;
-  linkedCatalog?: string;
-  linkedSchema?: string;
-  mqTenant?: string;
-  mqInitialTab?: "topics";
-  nacosNamespace?: string;
-  nacosNamespaceName?: string;
   schema?: string;
   tableName?: string;
   objectName?: string;
@@ -902,7 +742,7 @@ export interface TreeNode {
   tableSearchParentId?: string;
   savedSqlId?: string;
   savedSqlFolderId?: string;
-  meta?: ColumnInfo | IndexInfo | ForeignKeyInfo | TriggerInfo | ConstraintInfo | PartitionInfo | SubpartitionInfo | ExtensionInfo | VectorCollectionMeta | MongoCollectionMeta;
+  meta?: ColumnInfo | IndexInfo | ForeignKeyInfo | TriggerInfo | ConstraintInfo | PartitionInfo | SubpartitionInfo | ExtensionInfo;
   loadMore?: {
     parentId: string;
     offset: number;
@@ -974,8 +814,6 @@ export interface QueryTab {
   resultSortDirection?: "asc" | "desc";
   resultSortMode?: "database" | "local";
   resultLocalSortOriginalRows?: QueryResult["rows"];
-  resultLocalSortOriginalMongoDocuments?: QueryResult["mongo_documents"];
-  resultLocalSortOriginalMongoCopyDocuments?: QueryResult["mongo_copy_documents"];
   orderByInput?: string;
   resultPageSql?: string;
   resultPageLimit?: number;
@@ -1023,38 +861,7 @@ export interface QueryTab {
   explainClientSessionId?: string;
   /** Invalidates tab-scoped completion metadata after session context changes. */
   completionContextVersion?: number;
-  mode:
-    | "data"
-    | "query"
-    | "redis"
-    | "redis-dashboard"
-    | "mongo"
-    | "mongo-gridfs"
-    | "mongo-bucket"
-    | "vector"
-    | "hbase"
-    | "etcd"
-    | "etcd-dashboard"
-    | "etcd-access-control"
-    | "zookeeper"
-    | "mq"
-    | "mqtt"
-    | "nacos"
-    | "nacos-dashboard"
-    | "objects"
-    | "structure"
-    | "users"
-    | "dameng-jobs"
-    | "processlist"
-    | "mysql-dashboard"
-    | "postgres-dashboard"
-    | "routine-test"
-    | "routine-debug"
-    | "program-window"
-    | "command"
-    | "settings";
-  /** Ephemeral navigation intent; it is consumed by HBaseBrowser and is not persisted. */
-  hbaseCreateTableOnOpen?: boolean;
+  mode: "data" | "query" | "objects" | "structure" | "users" | "processlist" | "postgres-dashboard" | "routine-test" | "routine-debug" | "program-window" | "command" | "settings";
   /** Routine test window (PL/SQL Developer style graphical call page). */
   routineTest?: {
     schema?: string;
@@ -1086,15 +893,6 @@ export interface QueryTab {
     packageSpecDraftInitialized?: boolean;
     packageBodyDraftInitialized?: boolean;
   };
-  mqTenant?: string;
-  mqInitialTab?: "topics";
-  mqttInitialTopic?: string;
-  nacosNamespace?: string;
-  nacosNamespaceName?: string;
-  nacosTargetDataId?: string;
-  nacosTargetGroup?: string;
-  nacosTargetKeyword?: string;
-  nacosTargetRequestId?: number;
   structureTableName?: string;
   structureInitialTab?: TableInfoTab;
   structureInitialTabRequestId?: number;
@@ -1164,13 +962,6 @@ export interface QueryTab {
   };
   querySourceColumns?: Array<string | undefined>;
   queryEditabilityReason?: "not-select" | "cte" | "set-operation" | "aggregation" | "external-source" | "complex-source" | "computed-columns" | "no-table" | "no-primary-key" | "primary-key-not-returned" | "aliased-columns" | "metadata-unavailable";
-  mongoEditTarget?: {
-    collection: string;
-    idColumn: "_id";
-  };
-  mongoBucket?: {
-    bucketName: string;
-  };
   resultEvicted?: boolean;
   whereInput?: string;
   previewSql?: string;
@@ -1212,40 +1003,4 @@ export interface SavedSqlFile {
 export interface SavedSqlLibrary {
   folders: SavedSqlFolder[];
   files: SavedSqlFile[];
-}
-
-export interface VectorCollectionMeta {
-  dimension?: number;
-  collectionId?: string;
-}
-
-export interface MilvusFieldInfo {
-  name: string;
-  dataType: string;
-  dimension?: number;
-  primaryKey: boolean;
-  autoId: boolean;
-  nullable: boolean;
-  hasDefaultValue: boolean;
-  isFunctionOutput: boolean;
-}
-
-export interface MilvusCollectionSchema {
-  fields: MilvusFieldInfo[];
-}
-
-/** Mongo collection node metadata (not SQL tableType). */
-export type MongoCollectionKind = "collection" | "view" | "timeseries";
-
-export interface MongoCollectionMeta {
-  collectionKind: MongoCollectionKind;
-}
-
-export interface CollectionInfo {
-  name: string;
-  id: string;
-  dimension?: number;
-  milvusSchema?: MilvusCollectionSchema;
-  kind?: MongoCollectionKind | "bucket";
-  bucketName?: string;
 }

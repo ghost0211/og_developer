@@ -84,19 +84,8 @@ import { tableOpenPageLimit } from "@/lib/table/tableOpenPageLimit";
 import { uuid } from "@/lib/common/utils";
 import { generateCellValues, type CellValueGenerationKind } from "@/lib/dataGrid/cellValueGeneration";
 import { compactHeaderColumnType, isNumericColumnType, resolveHeaderColumnType, resolveResultColumnType } from "@/lib/dataGrid/dataGridColumnType";
-import {
-  canDeleteExistingTdengineRows,
-  canEditExistingTableRows,
-  canInsertTableRows,
-  canUseKeylessRowPredicate,
-  hasCompleteTdengineRowIdentity,
-  hiveTablePropertiesIndicateTransactional,
-  isClickHouseExistingRowReadonlyColumn,
-  isHiddenGridColumn,
-  isTdengineExistingRowReadonlyColumn,
-  usesSyntheticRowIdKey,
-} from "@/lib/table/tableEditing";
-import { buildDataGridColumnDistinctValuesSql, buildDataGridContextFilterCondition, buildDataGridCountSql, buildHiveTablePropertiesSql, type DataGridContextFilterMode } from "@/lib/dataGrid/dataGridSql";
+import { canEditExistingTableRows, canInsertTableRows, canUseKeylessRowPredicate } from "@/lib/table/tableEditing";
+import { buildDataGridColumnDistinctValuesSql, buildDataGridContextFilterCondition, buildDataGridCountSql, type DataGridContextFilterMode } from "@/lib/dataGrid/dataGridSql";
 import { computeDataGridColumnStats, type DataGridColumnStats } from "@/lib/dataGrid/columnStats";
 import {
   buildVisibleTransposeRows,
@@ -118,7 +107,7 @@ import {
   visibleTransposeRecordWindow,
 } from "@/lib/dataGrid/dataGridTranspose";
 import { canApplyGridSelectionValue, canDeleteGridRowItem, canEditGridCellDetail, matchesRowStatusFilter, shouldShowQuickEntryDraftRow, type RowStatus, type RowStatusFilter } from "@/lib/dataGrid/gridRowStatus";
-import { displayCellValue, firstLineCellDisplayValue, limitDataGridCellDisplay, SQLSERVER_DATA_GRID_CELL_DISPLAY_MAX_LENGTH, type CellValue } from "@/lib/dataGrid/cellValue";
+import { displayCellValue, firstLineCellDisplayValue, limitDataGridCellDisplay, type CellValue } from "@/lib/dataGrid/cellValue";
 import { getApplicablePreviewActions } from "@/lib/dataGrid/resultPreviewRegistry";
 import "@/lib/dataGrid/geometryMapPreview";
 import {
@@ -135,7 +124,7 @@ import {
 } from "@/lib/dataGrid/binaryCellDownload";
 import { buildBinaryHexViewRows } from "@/lib/dataGrid/binaryHexViewer";
 import { canFormatCellDetailJson, cellDetailEditorText, compactJsonText, defaultCellDetailTab, formatJsonText, isGeometryColumnType, linkedCellDetailTarget, looksLikeJsonContainerText, valueEditorActions, visibleCellDetailTabs, type CellDetailTab } from "@/lib/dataGrid/cellDetailPresentation";
-import { buildDataGridCellDetail, buildDataGridColumnDetail, buildDataGridRowDetail, CELL_DETAIL_VALUE_PREVIEW_MAX_LENGTH, dataGridColumnDetailJson, dataGridColumnDetailTsv, dataGridRowDetailJson, dataGridRowDetailTsv, type DataGridCellDetail } from "@/lib/dataGrid/dataGridDetail";
+import { buildDataGridCellDetail, buildDataGridColumnDetail, buildDataGridRowDetail, dataGridColumnDetailJson, dataGridColumnDetailTsv, dataGridRowDetailJson, dataGridRowDetailTsv, type DataGridCellDetail } from "@/lib/dataGrid/dataGridDetail";
 import { applyColumnFormatter, buildColumnFormatterKey, getSupportedTimeZoneOptions, normalizeColumnFormatter, resolveColumnFormatter, type ColumnFormatterConfig, type DateTimeFormatterUnit, DateTimePatterns } from "@/lib/dataGrid/columnFormatter";
 import { temporalCellEditorConfig, type TemporalCellEditorConfig } from "@/lib/dataGrid/dataGridTemporalEditor";
 import { BOOLEAN_CELL_EDITOR_VALUES, booleanCellEditorValue, isBooleanCellValue, isBooleanColumnType, normalizeBooleanCellValue, parseBooleanCellEditorValue } from "@/lib/dataGrid/dataGridBooleanColumn";
@@ -188,7 +177,7 @@ import { buildColumnForeignKeyMap, combineForeignKeyConditions, foreignKeyAssoci
 
 import { useToast } from "@/composables/useToast";
 import { useNavigationTargets } from "@/composables/useNavigationTargets";
-import { useDataGridExport, type MongoCopyUpdateTarget } from "@/composables/useDataGridExport";
+import { useDataGridExport } from "@/composables/useDataGridExport";
 import { eventTargetAllowsNativeClipboard, isPlainClipboardShortcut, readTextFromClipboard } from "@/lib/common/clipboard";
 import { claimDataGridPaste, claimDataGridSelectAll, clearDataGridClipboardCopy, parseDataGridClipboard, planDataGridPaste } from "@/lib/dataGrid/dataGridClipboard";
 import { beginDataGridNativeSelectionBlock, finishDataGridNativeSelectionBlock } from "@/lib/dataGrid/dataGridNativeSelection";
@@ -237,10 +226,6 @@ import { supportsTableStructureEditing } from "@/lib/database/databaseCapabiliti
 import { rememberDataGridConditionHistory } from "@/lib/dataGrid/dataGridConditionHistory";
 import { restoreDataGridLocalColumnFilters, serializeDataGridLocalColumnFilters } from "@/lib/dataGrid/dataGridLocalColumnFilterState";
 import { effectiveDatabaseTypeForConnection } from "@/lib/database/jdbcDialect";
-import { mongoCollectionSupportsIndexes, supportsMongoIndexMutations } from "@/lib/mongo/mongoCapabilities";
-import { refreshLoadedMongoIndexes } from "@/lib/mongo/mongoIndexMetadata";
-import { isProtectedMongoIndex, mongoDropAllIndexesPreview, mongoDropIndexFailureCount, mongoDropIndexPreview } from "@/lib/sidebar/mongoCollectionMutation";
-import { runMongoMutation } from "@/lib/sidebar/runMongoSidebarMutation";
 import { dataGridConditionColumnOptions, dataGridConditionIdentifierQuote } from "@/lib/dataGrid/dataGridConditionCompletion";
 import { isMacOS } from "@/lib/backend/platform";
 import { appendDebugLog, isDebugLoggingEnabled } from "@/lib/backend/debugLog";
@@ -348,7 +333,6 @@ interface DataGridProps {
   allExportResults?: Array<{ sheetName: string; result: QueryResult; sql?: string }>;
   exportFileBaseName?: string;
   customSaveHandler?: import("@/composables/useDataGridEditor").CustomSaveHandler;
-  mongoUpdateTarget?: MongoCopyUpdateTarget;
   queryEditabilityReason?: QueryEditabilityReason;
   allowInsertRows?: boolean;
   allowDeleteRows?: boolean;
@@ -1759,7 +1743,7 @@ const tableColumnOrderScopeKey = computed(() => {
 const displayableColumnIndexes = computed(() =>
   props.result.columns
     .map((column, index) => ({ column, index }))
-    .filter(({ column, index }) => !props.result.hidden_column_indexes?.includes(index) && !isHiddenGridColumn(props.databaseType, column, props.tableMeta?.primaryKeys ?? [], props.tableMeta?.tableType))
+    .filter(({ index }) => !props.result.hidden_column_indexes?.includes(index))
     .map(({ index }) => index),
 );
 const allNullColumnIndexesForResult = computed(() => allNullColumnIndexes(props.result.rows, displayableColumnIndexes.value));
@@ -2617,15 +2601,11 @@ watch(
 const showQueryEditReadOnlyBadge = computed(() => isResultsContext.value && hasData.value && !props.editable && !!props.queryEditabilityReason);
 const queryEditReadOnlyReason = computed(() => (props.queryEditabilityReason ? t(`grid.queryEditUnsupported.${props.queryEditabilityReason}`) : ""));
 const showKeylessEditWarning = computed(() => !!props.editable && !!props.tableMeta && canUseKeylessRowPredicate(props.databaseType, props.tableMeta.primaryKeys ?? []));
-const canShowWhereSearch = computed(() => !!props.onExecuteSql && !isResultsContext.value && resolvedDatabaseType.value !== "victoriametrics");
+const canShowWhereSearch = computed(() => !!props.onExecuteSql && !isResultsContext.value);
 const canUseWhereSearch = computed(() => !!props.tableMeta && canShowWhereSearch.value);
 const canUseServerColumnFilter = computed(() => canUseWhereSearch.value && !!props.connectionId && !!props.tableMeta);
 type DataGridTableMeta = NonNullable<typeof props.tableMeta>;
-const hiveTableTransactional = ref<boolean | undefined>(undefined);
-const resultSourceColumns = computed(() => props.result.columns.map((column, index) => props.sourceColumns?.[index] ?? column));
-const canEditExistingRows = computed(
-  () => !!props.customSaveHandler || (canEditExistingTableRows(props.databaseType, hiveTableTransactional.value, props.tableMeta?.primaryKeys ?? []) && hasCompleteTdengineRowIdentity(props.databaseType, props.tableMeta?.primaryKeys ?? [], resultSourceColumns.value)),
-);
+const canEditExistingRows = computed(() => !!props.customSaveHandler || canEditExistingTableRows(props.databaseType, props.tableMeta?.primaryKeys ?? []));
 const customReadonlyColumns = computed(() => new Set((props.customSaveHandler?.readonlyColumns ?? []).map((column) => column.toLowerCase())));
 const hasDataGridSaveTarget = computed(() => !!props.tableMeta || !!props.customSaveHandler);
 const hasDataGridInsertTarget = computed(() => {
@@ -2636,28 +2616,7 @@ const hasDataGridInsertTarget = computed(() => {
 });
 const canInsertRows = computed(() => !!props.editable && hasDataGridInsertTarget.value);
 const canDeleteRows = computed(() => props.allowDeleteRows !== false && (!props.customSaveHandler || props.customSaveHandler.canDelete !== false));
-const canDeleteExistingRows = computed(() => !!props.customSaveHandler || canDeleteExistingTdengineRows(props.databaseType, props.tableMeta?.primaryKeys ?? []));
-watch(
-  () => [props.databaseType, props.connectionId, props.database, props.tableMeta?.schema, props.tableMeta?.tableName],
-  async () => {
-    if (props.databaseType !== "hive" || !props.connectionId || !props.database || !props.tableMeta) {
-      hiveTableTransactional.value = undefined;
-      return;
-    }
-    try {
-      const sql = await buildHiveTablePropertiesSql({
-        schema: props.tableMeta.schema,
-        tableName: props.tableMeta.tableName,
-        propertyName: "transactional",
-      });
-      const result = await api.executeQuery(props.connectionId, props.database, sql, props.tableMeta.schema);
-      hiveTableTransactional.value = hiveTablePropertiesIndicateTransactional(result);
-    } catch {
-      hiveTableTransactional.value = false;
-    }
-  },
-  { immediate: true },
-);
+const canDeleteExistingRows = computed(() => !!props.customSaveHandler || true);
 function currentWhereInput(): string | undefined {
   return combineWhereInputs(whereFilterInput.value, appliedStructuredWhereInput.value);
 }
@@ -3119,11 +3078,6 @@ function canEditCellItem(item: RowItem | undefined, columnIndex: number): boolea
   if (isSavingNewRow(item)) return false;
   const column = props.result.columns[columnIndex] ?? "";
   if (customReadonlyColumns.value.has(column.toLowerCase())) return false;
-  if (!item?.isNew && !item?.isDraft) {
-    const sourceColumn = props.sourceColumns?.[columnIndex] ?? column;
-    if (isClickHouseExistingRowReadonlyColumn(props.databaseType, sourceColumn, props.tableMeta?.primaryKeys ?? [], props.tableMeta?.columns ?? [])) return false;
-    if (isTdengineExistingRowReadonlyColumn(props.databaseType, column, props.tableMeta?.columns ?? [])) return false;
-  }
   return true;
 }
 
@@ -3985,27 +3939,11 @@ const activeCellDetail = computed(() => {
   return cell ? cellDetailFor(cell.rowIndex, cell.col) : null;
 });
 
-const canShowMongoJsonPreview = computed(() => props.databaseType === "mongodb" && !!props.result.mongo_documents && props.result.mongo_documents.length === props.result.rows.length);
-const mongoJsonPreviewOpen = computed(() => showMongoJsonPreview.value && canShowMongoJsonPreview.value);
-const activeMongoJsonDocument = computed(() => {
-  if (!mongoJsonPreviewOpen.value) return undefined;
-  const selectedCell = currentSelectedCellPosition();
-  if (!selectedCell) return undefined;
-  const item = displayItemAt(selectedCell.rowIndex);
-  return item?.sourceIndex === undefined ? undefined : props.result.mongo_documents?.[item.sourceIndex];
-});
-const mongoJsonPreviewFullText = computed(() => {
-  const document = activeMongoJsonDocument.value;
-  if (document === undefined) return "";
-  try {
-    return JSON.stringify(document, null, 2) ?? "";
-  } catch {
-    return "";
-  }
-});
-const mongoJsonPreviewText = computed(() => mongoJsonPreviewFullText.value.slice(0, CELL_DETAIL_VALUE_PREVIEW_MAX_LENGTH));
-const mongoJsonPreviewTruncated = computed(() => mongoJsonPreviewText.value.length < mongoJsonPreviewFullText.value.length);
-const mongoJsonPreviewUsesCodeEditor = computed(() => !!mongoJsonPreviewText.value && !mongoJsonPreviewTruncated.value);
+const canShowMongoJsonPreview = computed(() => false);
+const mongoJsonPreviewOpen = computed(() => false);
+const mongoJsonPreviewFullText = computed(() => "");
+const mongoJsonPreviewText = computed(() => "");
+const mongoJsonPreviewUsesCodeEditor = computed(() => false);
 
 watch(canShowMongoJsonPreview, (available) => {
   if (!available) showMongoJsonPreview.value = false;
@@ -4548,7 +4486,7 @@ async function applyOrderBySearch() {
       orderBy: orderByClause,
       limit: pageSize.value,
       whereInput: currentWhereInput(),
-      includeRowId: usesSyntheticRowIdKey(resolvedDatabaseType.value, tableMeta.primaryKeys, tableMeta.tableType),
+      includeRowId: false,
     });
     await props.onExecuteSql(sql);
   } catch (e: any) {
@@ -4582,7 +4520,7 @@ async function applyWhereFilter() {
       orderBy: orderByInput.value.trim() || (sortCol.value ? `${queryColumnRef(sortCol.value)} ${sortDir.value.toUpperCase()}` : undefined),
       limit: pageSize.value,
       whereInput,
-      includeRowId: usesSyntheticRowIdKey(resolvedDatabaseType.value, tableMeta.primaryKeys, tableMeta.tableType),
+      includeRowId: false,
     });
     await props.onExecuteSql(sql);
   } catch (e: any) {
@@ -4640,7 +4578,7 @@ function formatCell(value: CellValue, columnIndex?: number): string {
   const binaryDisplay = formatter ? null : binaryCellDisplayText(value, columnInfo?.data_type ?? (columnName ? columnTypeMap.value.get(columnName) : undefined));
   if (binaryDisplay) return binaryDisplay;
   const s = applyColumnFormatter(value, formatter);
-  return limitDataGridCellDisplay(s, resolvedDatabaseType.value === "sqlserver" ? SQLSERVER_DATA_GRID_CELL_DISPLAY_MAX_LENGTH : undefined);
+  return limitDataGridCellDisplay(s);
 }
 
 function formatCellCached(value: CellValue, columnIndex?: number): string {
@@ -4695,8 +4633,7 @@ function quoteIdent(name: string): string {
 }
 
 function queryColumnRef(name: string): string {
-  const quoted = quoteIdent(name);
-  return props.databaseType === "neo4j" ? `n.${quoted}` : quoted;
+  return quoteIdent(name);
 }
 
 function isNull(value: unknown): boolean {
@@ -5562,15 +5499,12 @@ const {
   sql: computed(() => props.sql),
   exportSql: computed(() => props.exportSql),
   tableMeta: computed(() => (props.tableMeta ? { ...props.tableMeta } : undefined)),
-  copyInsertTargetLabel: computed(() => props.tableMeta?.tableName ?? props.customSaveHandler?.targetLabel),
-  mongoUpdateTarget: computed(() => props.mongoUpdateTarget),
   databaseType: computed(() => props.databaseType),
   identifierQuote: computed(() => connectionStore.connectionIdentifierQuote(props.connectionId)),
   connectionId: computed(() => props.connectionId),
   database: computed(() => props.executionDatabase ?? props.database),
   context: computed(() => props.context),
   sourceColumns: visibleSourceColumns,
-  mongoDocuments: computed(() => props.result.mongo_copy_documents ?? props.result.mongo_documents),
   columnTypes: visibleColumnTypes,
   allColumnTypes,
   whereInput: computed(() => currentWhereInput()),
@@ -7511,7 +7445,6 @@ const indexesLoading = ref(false);
 const indexesError = ref("");
 const showDropMongoIndexConfirm = ref(false);
 const dropMongoIndexLoading = ref(false);
-const pendingDropMongoIndex = ref<IndexInfo | null>(null);
 const showDropAllMongoIndexesConfirm = ref(false);
 const dropAllMongoIndexesLoading = ref(false);
 const foreignKeys = ref<ForeignKeyInfo[]>([]);
@@ -7619,9 +7552,8 @@ function toggleCellDetailPanelLayout() {
 
 const tableMetadataCapabilities = computed(() => getTableMetadataCapabilities(props.databaseType));
 const canOpenTableStructureEditor = computed(() => !!props.connectionId && !!props.database && !!props.tableMeta?.tableName && supportsTableStructureEditing(resolvedDatabaseType.value));
-const mongoConnectionConfig = resolvedConnectionConfig;
-const canManageMongoIndexes = computed(() => resolvedDatabaseType.value === "mongodb" && !!props.connectionId && !!props.database && !!props.tableMeta?.tableName && supportsMongoIndexMutations(mongoConnectionConfig.value, props.tableMeta?.tableType));
-const canShowTableIndexes = computed(() => tableMetadataCapabilities.value.indexes && (resolvedDatabaseType.value !== "mongodb" || mongoCollectionSupportsIndexes(props.tableMeta?.tableType)));
+const canManageMongoIndexes = computed(() => false);
+const canShowTableIndexes = computed(() => tableMetadataCapabilities.value.indexes);
 const tableInfoTabs = computed(() => {
   const tabs: TableInfoTabItem[] = [];
   if (tableMetadataCapabilities.value.ddl) {
@@ -7712,24 +7644,6 @@ async function fetchIndexes() {
     indexesError.value = String(e?.message || e);
   } finally {
     indexesLoading.value = false;
-  }
-}
-
-async function reloadIndexes() {
-  indexesLoaded.value = false;
-  await fetchIndexes();
-}
-
-async function refreshMongoIndexMetadataAfterMutation() {
-  await reloadIndexes();
-  const connectionId = props.connectionId;
-  const database = props.database;
-  const collection = props.tableMeta?.tableName;
-  if (!connectionId || !database || !collection) return;
-  try {
-    await refreshLoadedMongoIndexes(connectionStore, { connectionId, database, collection });
-  } catch (e: any) {
-    toast(t("contextMenu.mongoIndexRefreshFailed", { message: String(e?.message || e) }), 5000);
   }
 }
 
@@ -8081,97 +7995,17 @@ const filteredIndexes = computed(() => {
   return indexes.value.filter((i) => i.name.toLowerCase().includes(q) || i.columns.some((c) => c.toLowerCase().includes(q)));
 });
 
-const droppableMongoIndexes = computed(() => indexes.value.filter((index) => !isProtectedMongoIndex(index)));
+const droppableMongoIndexes = computed(() => []);
+const dropMongoIndexConfirmMessage = computed(() => "");
+const dropMongoIndexPreview = computed(() => "");
+const dropAllMongoIndexesConfirmMessage = computed(() => "");
+const dropAllMongoIndexesConfirmDetails = computed(() => "");
+const dropAllMongoIndexesPreview = computed(() => "");
 
-const dropMongoIndexConfirmMessage = computed(() =>
-  pendingDropMongoIndex.value
-    ? t("contextMenu.confirmDropMongoIndexMessage", {
-        name: pendingDropMongoIndex.value.name,
-        collection: props.tableMeta?.tableName || "",
-      })
-    : "",
-);
-const dropMongoIndexPreview = computed(() => (pendingDropMongoIndex.value ? mongoDropIndexPreview(props.database || "", props.tableMeta?.tableName || "", pendingDropMongoIndex.value.name) : ""));
-const dropAllMongoIndexesConfirmMessage = computed(() => t("contextMenu.confirmDropMongoAllIndexesMessage", { name: props.tableMeta?.tableName || "" }));
-const dropAllMongoIndexesConfirmDetails = computed(() => t("contextMenu.confirmDropMongoAllIndexesDetails"));
-const dropAllMongoIndexesPreview = computed(() => mongoDropAllIndexesPreview(props.database || "", props.tableMeta?.tableName || ""));
-
-function requestDropMongoIndex(index: IndexInfo) {
-  if (!canManageMongoIndexes.value || isProtectedMongoIndex(index)) return;
-  pendingDropMongoIndex.value = index;
-  showDropMongoIndexConfirm.value = true;
-}
-
-function requestDropAllMongoIndexes() {
-  if (!canManageMongoIndexes.value || droppableMongoIndexes.value.length === 0) return;
-  showDropAllMongoIndexesConfirm.value = true;
-}
-
-async function confirmDropMongoIndex() {
-  const index = pendingDropMongoIndex.value;
-  const connectionId = props.connectionId;
-  const database = props.database;
-  const tableName = props.tableMeta?.tableName;
-  if (!connectionId || !database || !tableName || !index || !canManageMongoIndexes.value || isProtectedMongoIndex(index) || dropMongoIndexLoading.value) return;
-  await runMongoMutation({
-    connection: connectionStore.getConfig(connectionId),
-    database,
-    reviewText: dropMongoIndexPreview.value,
-    source: t("production.sourceDataGrid"),
-    loading: dropMongoIndexLoading,
-    beforeExecute: () => connectionStore.ensureConnected(connectionId),
-    execute: async () => {
-      try {
-        return await api.mongoDropIndexes(connectionId, database, tableName, JSON.stringify(index.name), true);
-      } finally {
-        await refreshMongoIndexMetadataAfterMutation();
-      }
-    },
-    onSuccess: (result) => {
-      const failed = mongoDropIndexFailureCount(result);
-      if (failed > 0) {
-        toast(t("contextMenu.dropIndexesPartialFailure", { success: result.dropped_names.length, failed }), 5000);
-      } else {
-        toast(t("contextMenu.dropTableChildObjectSuccess", { name: index.name }), 3000);
-      }
-      showDropMongoIndexConfirm.value = false;
-      pendingDropMongoIndex.value = null;
-    },
-    onError: (e: any) => toast(t("contextMenu.tableOperationFailed", { message: e?.message || String(e) }), 5000),
-  });
-}
-
-async function confirmDropAllMongoIndexes() {
-  const connectionId = props.connectionId;
-  const database = props.database;
-  const tableName = props.tableMeta?.tableName;
-  if (!connectionId || !database || !tableName || !canManageMongoIndexes.value || dropAllMongoIndexesLoading.value) return;
-  await runMongoMutation({
-    connection: connectionStore.getConfig(connectionId),
-    database,
-    reviewText: dropAllMongoIndexesPreview.value,
-    source: t("production.sourceDataGrid"),
-    loading: dropAllMongoIndexesLoading,
-    beforeExecute: () => connectionStore.ensureConnected(connectionId),
-    execute: async () => {
-      try {
-        return await api.mongoDropIndexes(connectionId, database, tableName, undefined, false);
-      } finally {
-        await refreshMongoIndexMetadataAfterMutation();
-      }
-    },
-    onSuccess: (result) => {
-      const failed = mongoDropIndexFailureCount(result);
-      if (failed > 0) {
-        toast(t("contextMenu.dropIndexesPartialFailure", { success: result.dropped_names.length, failed }), 5000);
-      } else {
-        toast(t("contextMenu.dropAllIndexesSuccess", { count: result.dropped_names.length, name: tableName }), 3000);
-      }
-      showDropAllMongoIndexesConfirm.value = false;
-    },
-    onError: (e: any) => toast(t("contextMenu.tableOperationFailed", { message: e?.message || String(e) }), 5000),
-  });
-}
+function requestDropMongoIndex(_index: IndexInfo) {}
+function requestDropAllMongoIndexes() {}
+async function confirmDropMongoIndex() {}
+async function confirmDropAllMongoIndexes() {}
 
 const filteredForeignKeys = computed(() => {
   if (!searchQuery.value) return foreignKeys.value;
@@ -9816,7 +9650,7 @@ const gridContextMenuItems = computed<ContextMenuItem[]>(() => {
                         {{ index.columns.join(", ") }}
                       </div>
                     </div>
-                    <Button v-if="canManageMongoIndexes && !isProtectedMongoIndex(index)" variant="ghost" size="sm" class="h-7 shrink-0 px-2 text-[11px] text-destructive hover:text-destructive" @click="requestDropMongoIndex(index)">
+                    <Button v-if="false" variant="ghost" size="sm" class="h-7 shrink-0 px-2 text-[11px] text-destructive hover:text-destructive" @click="requestDropMongoIndex(index)">
                       <Trash2 class="mr-1 h-3 w-3" />
                       {{ t("contextMenu.dropIndex") }}
                     </Button>

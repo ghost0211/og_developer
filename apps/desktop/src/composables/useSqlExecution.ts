@@ -6,13 +6,11 @@ import { useConnectionStore } from "@/stores/connectionStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useToast } from "@/composables/useToast";
 import { isSingleDatabase, usesTreeSchemaMode } from "@/lib/database/databaseCapabilities";
-import { supportsConnectionLevelSqlExecution } from "@/lib/connection/connectionLevelDatabaseBootstrap";
 import { classifySqlActivityKind } from "@/lib/history/historyActivityKind";
 import { sqlMetadataRefreshTarget } from "@/lib/sql/sqlMetadataRefresh";
 import { isQueryExecutionErrorResult } from "@/lib/query/queryResultError";
-import { classifyRedisCommandSafety } from "@/lib/redis/redisCommandSafety";
 import { isSqlExecutionSnapshot, resolveExecutableSql, type SqlExecutionOverride, type SqlExecutionSnapshot } from "@/lib/sql/sqlExecutionTarget";
-import { isElasticsearchRestRequestText, parseElasticsearchRestRequestTarget, splitSqlStatementRanges } from "@/lib/sql/sqlStatementRanges";
+import { splitSqlStatementRanges } from "@/lib/sql/sqlStatementRanges";
 import { extractSqlParameterDescriptors, type SqlParameterDescriptor, type SqlParameterSyntax } from "@/lib/sql/sqlParameters";
 import { expandSqlVariables } from "@/lib/sql/sqlVariables";
 import { enabledSqlParameterSyntaxes, resolveSqlVariableSyntaxToggles } from "@/lib/sql/sqlVariableSyntax";
@@ -33,23 +31,7 @@ export function stripSqlComments(sql: string): string {
     .replace(/#.*$/gm, " ");
 }
 
-const ELASTICSEARCH_TRANSIENT_DELETE_PATHS = [/^\/_search\/scroll\/?$/i, /^\/_pit\/?$/i, /^\/_async_search\/[^/?]+\/?$/i];
-const ELASTICSEARCH_DESTRUCTIVE_POST_PATHS = [/(?:^|\/)_(?:delete_by_query|update_by_query|bulk)(?:\/|$)/i, /^\/_reindex(?:\/|$)/i, /^\/_aliases(?:\/|$)/i, /\/_restore(?:\/|$)/i];
-
-function isDangerousElasticsearchRequest(method: "GET" | "POST" | "PUT" | "DELETE" | "HEAD", path: string): boolean {
-  const pathname = path.split("?", 1)[0].replace(/\/+$/, "") || "/";
-  if (method === "DELETE") return !ELASTICSEARCH_TRANSIENT_DELETE_PATHS.some((pattern) => pattern.test(pathname));
-  if (method === "PUT") return true;
-  return method === "POST" && ELASTICSEARCH_DESTRUCTIVE_POST_PATHS.some((pattern) => pattern.test(pathname));
-}
-
-export function isDangerousSql(sql: string, databaseType?: DatabaseType): boolean {
-  if (databaseType === "elasticsearch" || databaseType === "easysearch") {
-    const requests = splitSqlStatementRanges(sql, databaseType)
-      .map((statement) => parseElasticsearchRestRequestTarget(statement.sql))
-      .filter((request): request is NonNullable<typeof request> => request !== null);
-    if (requests.length > 0) return requests.some((request) => isDangerousElasticsearchRequest(request.method, request.path));
-  }
+export function isDangerousSql(sql: string, _databaseType?: DatabaseType): boolean {
   const cleaned = stripSqlComments(sql);
   return cleaned.split(";").some((stmt) => DANGER_RE.test(stmt));
 }
@@ -77,7 +59,6 @@ export function useSqlExecution(deps: {
   executableSql: ComputedRef<string>;
   resolveExecutableSql?: (snapshot?: SqlExecutionSnapshot) => Promise<string>;
   activeOutputView: Ref<"result" | "output" | "summary" | "explain" | "chart">;
-  blockDangerousRedisCommands?: Ref<boolean>;
   onMissingDatabase?: () => void;
 }) {
   const { t } = useI18n();
@@ -99,7 +80,6 @@ export function useSqlExecution(deps: {
   const sqlParameterDatabaseType = ref<DatabaseType | undefined>();
   const sqlParameterEnabledSyntaxes = ref<SqlParameterSyntax[]>([]);
   const pendingSourceOffset = ref<number | undefined>();
-  const pendingDangerKind = ref<"sql" | "redis">("sql");
   const pendingDangerSourceOffset = ref<number | undefined>();
   const pendingOpenInNewResultTab = ref(false);
 
@@ -133,38 +113,6 @@ export function useSqlExecution(deps: {
   }
 
   async function continueExecute(sql: string, sourceOffset?: number, options: SqlExecutionOptions = {}) {
-    // Redis: block dangerous commands when toggle is on (scan entire batch for highest safety level)
-    if (deps.activeConnection.value?.db_type === "redis" && deps.blockDangerousRedisCommands?.value !== false) {
-      const commands = sql
-        .split("\n")
-        .map((line) => line.trim())
-        .filter((line) => line.length > 0);
-      let highestSafety: "allowed" | "write" | "confirm" | "blocked" = "allowed";
-      for (const cmd of commands) {
-        const safety = classifyRedisCommandSafety(cmd);
-        if (safety === "blocked") {
-          highestSafety = "blocked";
-          break;
-        }
-        if (safety === "confirm") {
-          highestSafety = "confirm";
-        }
-      }
-      if (highestSafety === "blocked") {
-        toast(t("redis.blockedCommand", { command: "Redis" }), 5000);
-        return;
-      }
-      if (highestSafety === "confirm") {
-        dangerSql.value = sql;
-        pendingDangerSql.value = sql;
-        pendingDangerKind.value = "redis";
-        pendingDangerSourceOffset.value = sourceOffset;
-        pendingOpenInNewResultTab.value = options.openInNewResultTab === true;
-        suppressDangerConfirm.value = false;
-        showDangerDialog.value = true;
-        return;
-      }
-    }
     const productionAssessment = assessProductionSql(sql, deps.activeConnection.value, deps.activeTab.value?.database);
     if (productionAssessment.active && productionAssessment.isMutation) {
       // Production writes always need a new explicit decision; editor preferences cannot suppress this gate.
@@ -181,7 +129,6 @@ export function useSqlExecution(deps: {
     if (isDangerousSql(sql, deps.activeConnection.value?.db_type) && settingsStore.editorSettings.confirmDangerousSqlExecution) {
       dangerSql.value = sql;
       pendingDangerSql.value = sql;
-      pendingDangerKind.value = "sql";
       pendingDangerSourceOffset.value = sourceOffset;
       pendingOpenInNewResultTab.value = options.openInNewResultTab === true;
       suppressDangerConfirm.value = false;
@@ -221,21 +168,13 @@ export function useSqlExecution(deps: {
     deps.activeOutputView.value = statementCount > 1 ? "summary" : "result";
     const connName = executionConnection?.name || "";
     const start = Date.now();
-    const isRedis = executionDatabaseType === "redis";
     const producedResult = await queryStore.executeCurrentSql(sql, {
-      ...(isRedis ? { skipRedisSafetyCheck: deps.blockDangerousRedisCommands?.value === false } : {}),
       ...(sourceOffset !== undefined ? { sourceOffset } : {}),
       ...(options.openInNewResultTab ? { openInNewResultTab: true } : {}),
     });
     if (producedResult === false) return;
-    const sqlServerMessageResultIndex = executionDatabaseType === "sqlserver" ? tab.results?.findIndex((result) => result.server_message === true) : undefined;
     const executionMessages = (tab.results ?? (tab.result ? [tab.result] : [])).flatMap((result) => result.messages ?? []);
-    if (sqlServerMessageResultIndex !== undefined && sqlServerMessageResultIndex >= 0) {
-      queryStore.setActiveResultIndex(tab.id, sqlServerMessageResultIndex);
-      deps.activeOutputView.value = "result";
-    } else if (executionDatabaseType === "sqlserver" && tab.result?.server_message === true) {
-      deps.activeOutputView.value = "result";
-    } else if (executionMessages.length > 0 && !tab.results?.some((result) => result.columns.length > 0)) {
+    if (executionMessages.length > 0 && !tab.results?.some((result) => result.columns.length > 0)) {
       // 打印输出优先于摘要：纯 RAISE NOTICE/gms_output 的执行没有结果表。
       deps.activeOutputView.value = "output";
     } else if (tab.result && !tab.result.columns.length && !tab.results?.some((result) => result.columns.length > 0)) {
@@ -301,13 +240,11 @@ export function useSqlExecution(deps: {
   async function onDangerConfirm() {
     const sql = pendingDangerSql.value;
     const sourceOffset = pendingDangerSourceOffset.value;
-    const kind = pendingDangerKind.value;
     const openInNewResultTab = pendingOpenInNewResultTab.value;
     pendingDangerSql.value = "";
     pendingDangerSourceOffset.value = undefined;
-    pendingDangerKind.value = "sql";
     pendingOpenInNewResultTab.value = false;
-    if (suppressDangerConfirm.value && kind === "sql") {
+    if (suppressDangerConfirm.value) {
       settingsStore.updateEditorSettings({ confirmDangerousSqlExecution: false });
     }
     suppressDangerConfirm.value = false;
@@ -341,7 +278,6 @@ export function useSqlExecution(deps: {
     if (open) return;
     pendingDangerSql.value = "";
     pendingDangerSourceOffset.value = undefined;
-    pendingDangerKind.value = "sql";
     pendingOpenInNewResultTab.value = false;
     suppressDangerConfirm.value = false;
   });
@@ -367,10 +303,8 @@ export function useSqlExecution(deps: {
   };
 }
 
-export function supportsSqlTemplateParameters(connection: Pick<ConnectionConfig, "db_type"> | undefined, sql = ""): boolean {
-  if (!connection) return false;
-  if (connection.db_type === "elasticsearch" || connection.db_type === "easysearch") return !isElasticsearchRestRequestText(sql);
-  return connection.db_type !== "redis" && connection.db_type !== "mongodb" && connection.db_type !== "victoriametrics";
+export function supportsSqlTemplateParameters(connection: Pick<ConnectionConfig, "db_type"> | undefined, _sql = ""): boolean {
+  return !!connection;
 }
 
 export function requiresDatabaseSelection(tab: QueryTab, connection: ConnectionConfig | undefined, _sql = ""): boolean {
@@ -379,8 +313,5 @@ export function requiresDatabaseSelection(tab: QueryTab, connection: ConnectionC
   if (tab.database) return false;
   if (tab.database === "" && usesTreeSchemaMode(connection.db_type)) return false;
   if (isSingleDatabase(connection.db_type)) return false;
-  // MySQL-compatible servers decide per statement whether a default database is required.
-  // Keep interactive execution connection-scoped instead of rejecting valid qualified or constant queries.
-  if (supportsConnectionLevelSqlExecution(connection)) return false;
-  return !["elasticsearch", "easysearch", "qdrant", "milvus", "weaviate", "chromadb", "zookeeper"].includes(connection.db_type);
+  return true;
 }

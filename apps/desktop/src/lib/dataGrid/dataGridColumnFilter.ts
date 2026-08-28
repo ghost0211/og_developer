@@ -184,10 +184,9 @@ export function filterModeUsesRange(mode: DataGridContextFilterMode): boolean {
 }
 
 export function filterModeIsSupportedForDatabase(mode: DataGridContextFilterMode, databaseType?: DatabaseType): boolean {
-  if (databaseType === "victoriametrics") return false;
   if (!filterModeUsesList(mode) && !filterModeUsesRange(mode)) return true;
-  // These targets do not support all four new SQL predicates reliably.
-  return databaseType !== "cassandra" && databaseType !== "influxdb" && databaseType !== "jdbc";
+  // Generic JDBC drivers do not reliably support all four list/range predicates.
+  return databaseType !== "jdbc";
 }
 
 export function filterModeHasCompleteValue(mode: DataGridContextFilterMode, rawValue: string, rawEndValue = ""): boolean {

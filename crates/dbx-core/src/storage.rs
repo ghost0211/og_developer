@@ -8,17 +8,12 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::ai::{AiChatMessage, AiChatSelectionState, AiConfig, AiConfigItem, AiConversation, AiProvider};
-use crate::connection_secrets::{
-    MQ_AUTH_API_KEY_VALUE_KEY, MQ_AUTH_CLIENT_SECRET_KEY, MQ_AUTH_PASSWORD_KEY, MQ_AUTH_SECRET_PREFIX,
-    MQ_AUTH_TOKEN_KEY, MQ_TOKEN_SIGNING_KEY, MQ_TOKEN_SIGNING_SECRET_PREFIX, NACOS_AUTH_PASSWORD_KEY,
-    NACOS_AUTH_SECRET_PREFIX, NACOS_RNACOS_CONSOLE_PASSWORD_KEY,
-};
 use crate::db::sqlite::{connect_path_create_if_missing, SqliteHandle};
 use crate::history::{
     HistoryConnectionFilter, HistoryConnectionOption, HistoryCursor, HistoryDatabaseFilter, HistoryEntry,
     HistorySearchRequest, HistorySearchResult, MAX_HISTORY,
 };
-use crate::models::connection::{ConnectionConfig, DatabaseConnectionInfo, DatabaseType, TransportLayerConfig};
+use crate::models::connection::{ConnectionConfig, DatabaseConnectionInfo, TransportLayerConfig};
 use crate::prompt_template::PromptTemplate;
 use crate::saved_sql::{SavedSqlFile, SavedSqlFolder, SavedSqlLibrary};
 
@@ -663,47 +658,9 @@ fn scrub_transport_layer_secrets(config: &mut ConnectionConfig) {
     }
 }
 
-fn scrub_mq_auth_secrets(config: &mut ConnectionConfig) {
-    if config.db_type != DatabaseType::MessageQueue {
-        return;
-    }
-    let Some(auth) = mq_auth_object_mut(config.external_config.as_mut()) else {
-        return;
-    };
-    match mq_auth_kind(auth) {
-        Some("token") => scrub_json_secret(auth, "token"),
-        Some("basic") => scrub_json_secret(auth, "password"),
-        Some(kind) if is_api_key_auth_kind(kind) => scrub_json_secret(auth, "value"),
-        Some("oauth2") => scrub_json_secret(auth, "clientSecret"),
-        _ => {}
-    }
-}
-
-fn scrub_mq_token_signing_secret(config: &mut ConnectionConfig) {
-    if config.db_type != DatabaseType::MessageQueue {
-        return;
-    }
-    let Some(signing) = mq_token_signing_object_mut(config.external_config.as_mut()) else {
-        return;
-    };
-    scrub_json_secret(signing, "key");
-}
-
-fn scrub_nacos_auth_secrets(config: &mut ConnectionConfig) {
-    if config.db_type != DatabaseType::Nacos {
-        return;
-    }
-    if let Some(auth) = nacos_auth_object_mut(config.external_config.as_mut()) {
-        if auth.get("kind").and_then(serde_json::Value::as_str) == Some("usernamePassword") {
-            scrub_json_secret(auth, "password");
-        }
-    }
-    if let Some(auth) = nacos_console_auth_object_mut(config.external_config.as_mut()) {
-        if auth.get("kind").and_then(serde_json::Value::as_str) == Some("usernamePassword") {
-            scrub_json_secret(auth, "password");
-        }
-    }
-}
+fn scrub_mq_auth_secrets(_config: &mut ConnectionConfig) {}
+fn scrub_mq_token_signing_secret(_config: &mut ConnectionConfig) {}
+fn scrub_nacos_auth_secrets(_config: &mut ConnectionConfig) {}
 
 fn delete_secret_prefix_in_tx(
     tx: &rusqlite::Transaction<'_>,
@@ -2009,12 +1966,7 @@ fn sanitized_connection_config(config: &ConnectionConfig) -> ConnectionConfig {
     let mut sanitized = config.clone().canonicalized();
     sanitized.password = String::new();
     scrub_transport_layer_secrets(&mut sanitized);
-    sanitized.redis_sentinel_password = String::new();
     sanitized.connection_string = None;
-    sanitized.init_script = None;
-    scrub_mq_auth_secrets(&mut sanitized);
-    scrub_mq_token_signing_secret(&mut sanitized);
-    scrub_nacos_auth_secrets(&mut sanitized);
     sanitized
 }
 
@@ -2058,7 +2010,6 @@ fn persist_connection_in_tx(tx: &rusqlite::Transaction<'_>, config: &ConnectionC
             }
         }
     }
-    persist_secret_in_tx(tx, &config.id, "redis_sentinel_password", &config.redis_sentinel_password)?;
     persist_secret_in_tx(tx, &config.id, "ssh_password", "")?;
     persist_secret_in_tx(tx, &config.id, "ssh_key_passphrase", "")?;
     persist_secret_in_tx(tx, &config.id, "proxy_password", "")?;
@@ -2072,18 +2023,8 @@ fn persist_connection_in_tx(tx: &rusqlite::Transaction<'_>, config: &ConnectionC
         )
         .map_err(|e| e.to_string())?;
     }
-    if let Some(script) = &config.init_script {
-        persist_secret_in_tx(tx, &config.id, "init_script", script)?;
-    } else {
-        tx.execute(
-            "DELETE FROM connection_secrets WHERE connection_id = ?1 AND key = ?2",
-            params![config.id, "init_script"],
-        )
-        .map_err(|e| e.to_string())?;
-    }
-    persist_mq_auth_secrets_in_tx(tx, &config)?;
-    persist_mq_token_signing_secret_in_tx(tx, &config)?;
-    persist_nacos_auth_secrets_in_tx(tx, &config)
+
+    Ok(())
 }
 
 fn preserve_unreadable_connections_for_replacement(
@@ -2151,9 +2092,7 @@ impl Storage {
                 let mut sanitized = config;
                 sanitized.password = String::new();
                 scrub_transport_layer_secrets(&mut sanitized);
-                sanitized.redis_sentinel_password = String::new();
                 sanitized.connection_string = None;
-                sanitized.init_script = None;
                 scrub_mq_auth_secrets(&mut sanitized);
                 scrub_mq_token_signing_secret(&mut sanitized);
                 scrub_nacos_auth_secrets(&mut sanitized);
@@ -2374,103 +2313,10 @@ impl Storage {
                     }
                 }
             }
-            config.redis_sentinel_password = self.get_secret(&id, "redis_sentinel_password").await?.unwrap_or_default();
             config.connection_string = self.get_secret(&id, "connection_string").await?;
-            config.init_script = self.get_secret(&id, "init_script").await?;
-            let needs_mq_auth_rewrite = self.hydrate_mq_auth_secrets(&id, &mut config).await?;
-            let needs_mq_token_signing_rewrite = self.hydrate_mq_token_signing_secret(&id, &mut config).await?;
-            let needs_nacos_auth_rewrite = self.hydrate_nacos_auth_secret(&id, &mut config).await?;
-            let needs_external_secret_rewrite =
-                needs_mq_auth_rewrite || needs_mq_token_signing_rewrite || needs_nacos_auth_rewrite;
-            if needs_external_secret_rewrite {
-                let mut sanitized = config.clone().canonicalized();
-                scrub_mq_auth_secrets(&mut sanitized);
-                scrub_mq_token_signing_secret(&mut sanitized);
-                scrub_nacos_auth_secrets(&mut sanitized);
-                let sanitized_json = serde_json::to_string(&sanitized).map_err(|e| e.to_string())?;
-                let update_id = id.clone();
-                self.with_conn(move |conn| {
-                    conn.execute(
-                        "UPDATE connections SET config_json = ?1 WHERE id = ?2",
-                        params![sanitized_json, update_id],
-                    )
-                    .map(|_| ())
-                    .map_err(|e| e.to_string())
-                })
-                .await?;
-            }
             configs.push(config.canonicalized());
         }
         Ok(configs)
-    }
-
-    async fn hydrate_mq_auth_secrets(
-        &self,
-        connection_id: &str,
-        config: &mut ConnectionConfig,
-    ) -> Result<bool, String> {
-        if config.db_type != DatabaseType::MessageQueue {
-            return Ok(false);
-        }
-        let Some(auth) = mq_auth_object_mut(config.external_config.as_mut()) else {
-            return Ok(false);
-        };
-
-        let needs_rewrite = match mq_auth_kind(auth) {
-            Some("token") => hydrate_mq_json_secret(self, connection_id, MQ_AUTH_TOKEN_KEY, auth, "token").await?,
-            Some("basic") => {
-                hydrate_mq_json_secret(self, connection_id, MQ_AUTH_PASSWORD_KEY, auth, "password").await?
-            }
-            Some(kind) if is_api_key_auth_kind(kind) => {
-                hydrate_mq_json_secret(self, connection_id, MQ_AUTH_API_KEY_VALUE_KEY, auth, "value").await?
-            }
-            Some("oauth2") => {
-                hydrate_mq_json_secret(self, connection_id, MQ_AUTH_CLIENT_SECRET_KEY, auth, "clientSecret").await?
-            }
-            _ => false,
-        };
-
-        Ok(needs_rewrite)
-    }
-
-    async fn hydrate_mq_token_signing_secret(
-        &self,
-        connection_id: &str,
-        config: &mut ConnectionConfig,
-    ) -> Result<bool, String> {
-        if config.db_type != DatabaseType::MessageQueue {
-            return Ok(false);
-        }
-        let Some(signing) = mq_token_signing_object_mut(config.external_config.as_mut()) else {
-            return Ok(false);
-        };
-
-        hydrate_mq_json_secret(self, connection_id, MQ_TOKEN_SIGNING_KEY, signing, "key").await
-    }
-
-    async fn hydrate_nacos_auth_secret(
-        &self,
-        connection_id: &str,
-        config: &mut ConnectionConfig,
-    ) -> Result<bool, String> {
-        if config.db_type != DatabaseType::Nacos {
-            return Ok(false);
-        }
-        let mut rewritten = false;
-        if let Some(auth) = nacos_auth_object_mut(config.external_config.as_mut()) {
-            if auth.get("kind").and_then(serde_json::Value::as_str) == Some("usernamePassword") {
-                rewritten |=
-                    hydrate_mq_json_secret(self, connection_id, NACOS_AUTH_PASSWORD_KEY, auth, "password").await?;
-            }
-        }
-        if let Some(auth) = nacos_console_auth_object_mut(config.external_config.as_mut()) {
-            if auth.get("kind").and_then(serde_json::Value::as_str) == Some("usernamePassword") {
-                rewritten |=
-                    hydrate_mq_json_secret(self, connection_id, NACOS_RNACOS_CONSOLE_PASSWORD_KEY, auth, "password")
-                        .await?;
-            }
-        }
-        Ok(rewritten)
     }
 }
 
@@ -2827,76 +2673,6 @@ impl Storage {
             )
             .map(|_| ())
             .map_err(|e| e.to_string())
-        })
-        .await
-    }
-}
-
-// MQ token records
-
-#[cfg(feature = "mq-admin")]
-impl Storage {
-    pub async fn save_mq_token_record(&self, record: &crate::mq::MqTokenRecord) -> Result<(), String> {
-        let record = record.clone();
-        self.with_conn(move |conn| {
-            let scope_json = record
-                .scope
-                .as_ref()
-                .map(serde_json::to_string)
-                .transpose()
-                .map_err(|e| e.to_string())?;
-            let actions_json = serde_json::to_string(&record.actions).map_err(|e| e.to_string())?;
-            conn.execute(
-                "INSERT OR REPLACE INTO mq_token_records \
-                 (id, connection_id, subject, algorithm, token_fingerprint, scope_json, actions_json, expires_at, created_at, note) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-                params![
-                    record.id,
-                    record.connection_id,
-                    record.subject,
-                    record.algorithm.as_str(),
-                    record.token_fingerprint,
-                    scope_json,
-                    actions_json,
-                    record.expires_at,
-                    record.created_at,
-                    record.note
-                ],
-            )
-            .map(|_| ())
-            .map_err(|e| e.to_string())
-        })
-        .await
-    }
-
-    pub async fn load_mq_token_records(
-        &self,
-        connection_id: &str,
-        subject: Option<&str>,
-    ) -> Result<Vec<crate::mq::MqTokenRecord>, String> {
-        let connection_id = connection_id.to_string();
-        let subject = subject.map(str::to_string);
-        self.with_conn(move |conn| {
-            let sql = if subject.is_some() {
-                "SELECT id, connection_id, subject, algorithm, token_fingerprint, scope_json, actions_json, expires_at, created_at, note \
-                 FROM mq_token_records WHERE connection_id = ?1 AND subject = ?2 ORDER BY created_at DESC"
-            } else {
-                "SELECT id, connection_id, subject, algorithm, token_fingerprint, scope_json, actions_json, expires_at, created_at, note \
-                 FROM mq_token_records WHERE connection_id = ?1 ORDER BY created_at DESC"
-            };
-            let mut stmt = conn.prepare(sql).map_err(|e| e.to_string())?;
-            let rows = if let Some(subject) = subject {
-                stmt.query_map(params![connection_id, subject], mq_token_record_from_row)
-                    .map_err(|e| e.to_string())?
-                    .collect::<Result<Vec<_>, _>>()
-                    .map_err(|e| e.to_string())?
-            } else {
-                stmt.query_map(params![connection_id], mq_token_record_from_row)
-                    .map_err(|e| e.to_string())?
-                    .collect::<Result<Vec<_>, _>>()
-                    .map_err(|e| e.to_string())?
-            };
-            Ok(rows)
         })
         .await
     }
@@ -3447,220 +3223,6 @@ fn persist_secret_in_tx(
     Ok(())
 }
 
-fn persist_mq_auth_secrets_in_tx(tx: &rusqlite::Transaction<'_>, config: &ConnectionConfig) -> Result<(), String> {
-    if config.db_type != DatabaseType::MessageQueue {
-        delete_secret_prefix_in_tx(tx, &config.id, MQ_AUTH_SECRET_PREFIX)?;
-        return Ok(());
-    }
-
-    let Some(auth) = mq_auth_object(config.external_config.as_ref()) else {
-        delete_secret_prefix_in_tx(tx, &config.id, MQ_AUTH_SECRET_PREFIX)?;
-        return Ok(());
-    };
-
-    match mq_auth_kind(auth) {
-        Some("none") => delete_secret_prefix_in_tx(tx, &config.id, MQ_AUTH_SECRET_PREFIX)?,
-        Some("token") => replace_mq_auth_secret_in_tx(tx, &config.id, MQ_AUTH_TOKEN_KEY, auth, "token")?,
-        Some("basic") => replace_mq_auth_secret_in_tx(tx, &config.id, MQ_AUTH_PASSWORD_KEY, auth, "password")?,
-        Some(kind) if is_api_key_auth_kind(kind) => {
-            replace_mq_auth_secret_in_tx(tx, &config.id, MQ_AUTH_API_KEY_VALUE_KEY, auth, "value")?
-        }
-        Some("oauth2") => {
-            replace_mq_auth_secret_in_tx(tx, &config.id, MQ_AUTH_CLIENT_SECRET_KEY, auth, "clientSecret")?
-        }
-        _ => delete_secret_prefix_in_tx(tx, &config.id, MQ_AUTH_SECRET_PREFIX)?,
-    }
-
-    Ok(())
-}
-
-fn replace_mq_auth_secret_in_tx(
-    tx: &rusqlite::Transaction<'_>,
-    connection_id: &str,
-    key: &str,
-    auth: &serde_json::Map<String, serde_json::Value>,
-    field: &str,
-) -> Result<(), String> {
-    let current = auth.get(field).and_then(serde_json::Value::as_str).filter(|secret| !secret.is_empty());
-    let existing = if current.is_none() { get_secret_in_tx(tx, connection_id, key)? } else { None };
-    delete_secret_prefix_in_tx(tx, connection_id, MQ_AUTH_SECRET_PREFIX)?;
-    match current {
-        Some(secret) => persist_secret_in_tx(tx, connection_id, key, secret),
-        None => match existing {
-            Some(secret) => persist_secret_in_tx(tx, connection_id, key, &secret),
-            None => Ok(()),
-        },
-    }
-}
-
-fn get_secret_in_tx(tx: &rusqlite::Transaction<'_>, connection_id: &str, key: &str) -> Result<Option<String>, String> {
-    tx.query_row(
-        "SELECT secret FROM connection_secrets WHERE connection_id = ?1 AND key = ?2",
-        params![connection_id, key],
-        |row| row.get(0),
-    )
-    .optional()
-    .map_err(|e| e.to_string())
-}
-
-fn persist_mq_token_signing_secret_in_tx(
-    tx: &rusqlite::Transaction<'_>,
-    config: &ConnectionConfig,
-) -> Result<(), String> {
-    if config.db_type != DatabaseType::MessageQueue {
-        delete_secret_prefix_in_tx(tx, &config.id, MQ_TOKEN_SIGNING_SECRET_PREFIX)?;
-        return Ok(());
-    }
-
-    let Some(signing) = mq_token_signing_object(config.external_config.as_ref()) else {
-        delete_secret_prefix_in_tx(tx, &config.id, MQ_TOKEN_SIGNING_SECRET_PREFIX)?;
-        return Ok(());
-    };
-
-    persist_json_secret_if_present_in_tx(tx, &config.id, MQ_TOKEN_SIGNING_KEY, signing, "key")
-}
-
-fn persist_nacos_auth_secrets_in_tx(tx: &rusqlite::Transaction<'_>, config: &ConnectionConfig) -> Result<(), String> {
-    if config.db_type != DatabaseType::Nacos {
-        delete_secret_prefix_in_tx(tx, &config.id, NACOS_AUTH_SECRET_PREFIX)?;
-        return Ok(());
-    }
-
-    let primary_auth = nacos_auth_object(config.external_config.as_ref())
-        .filter(|auth| auth.get("kind").and_then(serde_json::Value::as_str) == Some("usernamePassword"));
-    let primary = primary_auth
-        .and_then(|auth| auth.get("password").and_then(serde_json::Value::as_str))
-        .filter(|secret| !secret.is_empty());
-    let console_auth = nacos_console_auth_object(config.external_config.as_ref())
-        .filter(|auth| auth.get("kind").and_then(serde_json::Value::as_str) == Some("usernamePassword"));
-    let console = console_auth
-        .and_then(|auth| auth.get("password").and_then(serde_json::Value::as_str))
-        .filter(|secret| !secret.is_empty());
-    let existing_primary = if primary.is_none() && primary_auth.is_some() {
-        get_secret_in_tx(tx, &config.id, NACOS_AUTH_PASSWORD_KEY)?
-    } else {
-        None
-    };
-    let existing_console = if console.is_none() && console_auth.is_some() {
-        get_secret_in_tx(tx, &config.id, NACOS_RNACOS_CONSOLE_PASSWORD_KEY)?
-    } else {
-        None
-    };
-    delete_secret_prefix_in_tx(tx, &config.id, NACOS_AUTH_SECRET_PREFIX)?;
-    if let Some(secret) = primary.or(existing_primary.as_deref()) {
-        persist_secret_in_tx(tx, &config.id, NACOS_AUTH_PASSWORD_KEY, secret)?;
-    }
-    if let Some(secret) = console.or(existing_console.as_deref()) {
-        persist_secret_in_tx(tx, &config.id, NACOS_RNACOS_CONSOLE_PASSWORD_KEY, secret)?;
-    }
-
-    Ok(())
-}
-
-fn persist_json_secret_if_present_in_tx(
-    tx: &rusqlite::Transaction<'_>,
-    connection_id: &str,
-    key: &str,
-    auth: &serde_json::Map<String, serde_json::Value>,
-    field: &str,
-) -> Result<(), String> {
-    if let Some(secret) = auth.get(field).and_then(serde_json::Value::as_str).filter(|secret| !secret.is_empty()) {
-        persist_secret_in_tx(tx, connection_id, key, secret)?;
-    }
-    Ok(())
-}
-
-async fn hydrate_mq_json_secret(
-    storage: &Storage,
-    connection_id: &str,
-    key: &str,
-    auth: &mut serde_json::Map<String, serde_json::Value>,
-    field: &str,
-) -> Result<bool, String> {
-    if let Some(secret) = auth.get(field).and_then(serde_json::Value::as_str).filter(|secret| !secret.is_empty()) {
-        storage.set_secret(connection_id, key, secret).await?;
-        Ok(true)
-    } else if let Some(secret) = storage.get_secret(connection_id, key).await? {
-        auth.insert(field.to_string(), serde_json::Value::String(secret));
-        Ok(false)
-    } else {
-        Ok(false)
-    }
-}
-
-fn scrub_json_secret(auth: &mut serde_json::Map<String, serde_json::Value>, field: &str) {
-    if auth.contains_key(field) {
-        auth.insert(field.to_string(), serde_json::Value::String(String::new()));
-    }
-}
-
-fn mq_auth_kind(auth: &serde_json::Map<String, serde_json::Value>) -> Option<&str> {
-    auth.get("kind").and_then(serde_json::Value::as_str)
-}
-
-fn mq_auth_object(value: Option<&serde_json::Value>) -> Option<&serde_json::Map<String, serde_json::Value>> {
-    value?.get("auth")?.as_object()
-}
-
-fn mq_auth_object_mut(
-    value: Option<&mut serde_json::Value>,
-) -> Option<&mut serde_json::Map<String, serde_json::Value>> {
-    value?.get_mut("auth")?.as_object_mut()
-}
-
-fn mq_token_signing_object(value: Option<&serde_json::Value>) -> Option<&serde_json::Map<String, serde_json::Value>> {
-    value?.get("tokenSigning")?.as_object()
-}
-
-fn mq_token_signing_object_mut(
-    value: Option<&mut serde_json::Value>,
-) -> Option<&mut serde_json::Map<String, serde_json::Value>> {
-    value?.get_mut("tokenSigning")?.as_object_mut()
-}
-
-fn nacos_auth_object(value: Option<&serde_json::Value>) -> Option<&serde_json::Map<String, serde_json::Value>> {
-    value?.get("auth")?.as_object()
-}
-
-fn nacos_auth_object_mut(
-    value: Option<&mut serde_json::Value>,
-) -> Option<&mut serde_json::Map<String, serde_json::Value>> {
-    value?.get_mut("auth")?.as_object_mut()
-}
-
-fn nacos_console_auth_object(value: Option<&serde_json::Value>) -> Option<&serde_json::Map<String, serde_json::Value>> {
-    value?.get("rnacosConsoleAuth")?.as_object()
-}
-
-fn nacos_console_auth_object_mut(
-    value: Option<&mut serde_json::Value>,
-) -> Option<&mut serde_json::Map<String, serde_json::Value>> {
-    value?.get_mut("rnacosConsoleAuth")?.as_object_mut()
-}
-
-fn is_api_key_auth_kind(kind: &str) -> bool {
-    matches!(kind, "apiKey" | "api_key" | "apikey")
-}
-
-#[cfg(feature = "mq-admin")]
-fn mq_token_record_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<crate::mq::MqTokenRecord> {
-    let algorithm: String = row.get(3)?;
-    let scope_json: Option<String> = row.get(5)?;
-    let actions_json: String = row.get(6)?;
-    Ok(crate::mq::MqTokenRecord {
-        id: row.get(0)?,
-        connection_id: row.get(1)?,
-        subject: row.get(2)?,
-        algorithm: serde_json::from_value(serde_json::Value::String(algorithm)).map_err(map_from_sql_err)?,
-        token_fingerprint: row.get(4)?,
-        scope: scope_json.as_deref().map(serde_json::from_str).transpose().map_err(map_from_sql_err)?,
-        actions: serde_json::from_str(&actions_json).map_err(map_from_sql_err)?,
-        expires_at: row.get(7)?,
-        created_at: row.get(8)?,
-        note: row.get(9)?,
-    })
-}
-
 fn map_from_sql_err(err: serde_json::Error) -> rusqlite::Error {
     rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(err))
 }
@@ -3672,10 +3234,6 @@ mod tests {
         McpGlobalPolicyState, Storage, MCP_GLOBAL_POLICY_KEY,
     };
     use crate::ai::{AiActiveModelSelection, AiChatSelectionState, AiEffortSelection, AiModelEffortPreference};
-    use crate::connection_secrets::NACOS_RNACOS_CONSOLE_PASSWORD_KEY;
-    use crate::connection_secrets::{
-        MQ_AUTH_PASSWORD_KEY, MQ_AUTH_TOKEN_KEY, MQ_TOKEN_SIGNING_KEY, NACOS_AUTH_PASSWORD_KEY,
-    };
     use crate::history::{HistoryConnectionFilter, HistoryDatabaseFilter, HistoryEntry, HistorySearchRequest};
     use crate::models::connection::{
         ConnectionConfig, DatabaseConnectionInfo, DatabaseType, SshTunnelConfig, TransportLayerConfig,
@@ -3943,90 +3501,23 @@ mod tests {
         let _ = std::fs::remove_file(path);
     }
 
-    fn mq_connection(id: &str, token: &str) -> ConnectionConfig {
+    fn opengauss_connection(id: &str, password: &str) -> ConnectionConfig {
         ConnectionConfig {
             id: id.to_string(),
-            name: "Pulsar".to_string(),
+            name: "openGauss".to_string(),
             note: String::new(),
-            db_type: DatabaseType::MessageQueue,
-            driver_profile: Some("pulsar".to_string()),
-            driver_label: Some("Apache Pulsar".to_string()),
-            url_params: None,
-            agent_java_options: Vec::new(),
-            host: "127.0.0.1".to_string(),
-            port: 8080,
-            username: String::new(),
-            password: String::new(),
-            database: None,
-            visible_databases: None,
-            visible_schemas: None,
-            show_system_schemas: false,
-            attached_databases: Vec::new(),
-            init_script: None,
-            color: None,
-            transport_layers: Vec::new(),
-            connect_timeout_secs: 30,
-            query_timeout_secs: 300,
-            idle_timeout_secs: 600,
-            keepalive_interval_secs: crate::models::connection::default_keepalive_interval_secs(),
-            ssl: false,
-            ca_cert_path: String::new(),
-            client_cert_path: String::new(),
-            client_key_path: String::new(),
-            sysdba: false,
-            oracle_connection_type: None,
-            connection_string: None,
-            redis_connection_mode: None,
-            redis_sentinel_master: String::new(),
-            redis_sentinel_nodes: String::new(),
-            redis_sentinel_username: String::new(),
-            redis_sentinel_password: String::new(),
-            redis_sentinel_tls: false,
-            redis_cluster_nodes: String::new(),
-            redis_key_separator: ":".to_string(),
-            redis_scan_page_size: None,
-            redis_database_aliases: Default::default(),
-            etcd_endpoints: String::new(),
-            gbase_server: String::new(),
-            informix_server: String::new(),
-            external_config: Some(serde_json::json!({
-                "systemKind": "pulsar",
-                "adminUrl": "http://127.0.0.1:8080",
-                "auth": {
-                    "kind": "token",
-                    "token": token
-                }
-            })),
-            jdbc_driver_class: None,
-            jdbc_driver_paths: Vec::new(),
-            one_time: false,
-            read_only: false,
-            is_production: false,
-            production_databases: vec![],
-            database_info: None,
-        }
-    }
-
-    fn nacos_connection(id: &str, password: &str) -> ConnectionConfig {
-        ConnectionConfig {
-            id: id.to_string(),
-            name: "Nacos".to_string(),
-            note: String::new(),
-            db_type: DatabaseType::Nacos,
+            db_type: DatabaseType::Opengauss,
             driver_profile: None,
             driver_label: None,
             url_params: None,
-            agent_java_options: Vec::new(),
             host: "127.0.0.1".to_string(),
-            port: 8848,
-            username: "nacos".to_string(),
-            password: String::new(),
-            database: None,
+            port: 5432,
+            username: "gaussdb".to_string(),
+            password: password.to_string(),
+            database: Some("postgres".to_string()),
             visible_databases: None,
             visible_schemas: None,
             show_system_schemas: false,
-            attached_databases: Vec::new(),
-            init_script: None,
             color: None,
             transport_layers: Vec::new(),
             connect_timeout_secs: 30,
@@ -4037,31 +3528,8 @@ mod tests {
             ca_cert_path: String::new(),
             client_cert_path: String::new(),
             client_key_path: String::new(),
-            sysdba: false,
-            oracle_connection_type: None,
             connection_string: None,
-            redis_connection_mode: None,
-            redis_sentinel_master: String::new(),
-            redis_sentinel_nodes: String::new(),
-            redis_sentinel_username: String::new(),
-            redis_sentinel_password: String::new(),
-            redis_sentinel_tls: false,
-            redis_cluster_nodes: String::new(),
-            redis_key_separator: ":".to_string(),
-            redis_scan_page_size: None,
-            redis_database_aliases: Default::default(),
-            etcd_endpoints: String::new(),
-            gbase_server: String::new(),
-            informix_server: String::new(),
-            external_config: Some(serde_json::json!({
-                "namespace": "public",
-                "group": "DEFAULT_GROUP",
-                "auth": {
-                    "kind": "usernamePassword",
-                    "username": "nacos",
-                    "password": password
-                }
-            })),
+            external_config: None,
             jdbc_driver_class: None,
             jdbc_driver_paths: Vec::new(),
             one_time: false,
@@ -4083,35 +3551,10 @@ mod tests {
             .unwrap()
     }
 
-    async fn insert_raw_connection(storage: &Storage, config: &ConnectionConfig) {
-        let id = config.id.clone();
-        let json = serde_json::to_string(config).unwrap();
-        storage
-            .with_conn(move |conn| {
-                conn.execute("INSERT INTO connections (id, config_json) VALUES (?1, ?2)", rusqlite::params![id, json])
-                    .map(|_| ())
-                    .map_err(|e| e.to_string())
-            })
-            .await
-            .unwrap();
-    }
-
-    fn mq_token(config: &ConnectionConfig) -> Option<&str> {
-        config.external_config.as_ref()?.get("auth")?.get("token")?.as_str()
-    }
-
-    fn mq_token_signing_key(config: &ConnectionConfig) -> Option<&str> {
-        config.external_config.as_ref()?.get("tokenSigning")?.get("key")?.as_str()
-    }
-
-    fn nacos_auth_password(config: &ConnectionConfig) -> Option<&str> {
-        config.external_config.as_ref()?.get("auth")?.get("password")?.as_str()
-    }
-
-    async fn create_data_dir_with_connection(name: &str, connection_id: &str, token: &str) -> std::path::PathBuf {
+    async fn create_data_dir_with_connection(name: &str, connection_id: &str, password: &str) -> std::path::PathBuf {
         let data_dir = temp_data_dir(name);
         let storage = Storage::open(&data_dir.join("dbx.db")).await.unwrap();
-        storage.save_connections(&[mq_connection(connection_id, token)]).await.unwrap();
+        storage.save_connections(&[opengauss_connection(connection_id, password)]).await.unwrap();
         drop(storage);
         data_dir
     }
@@ -4128,7 +3571,6 @@ mod tests {
         let connections = storage.load_connections().await.unwrap();
         assert_eq!(connections.len(), 1);
         assert_eq!(connections[0].id, "source-connection");
-        assert_eq!(mq_token(&connections[0]), Some("source-token"));
     }
 
     #[tokio::test]
@@ -4145,7 +3587,6 @@ mod tests {
         let connections = storage.load_connections().await.unwrap();
         assert_eq!(connections.len(), 1);
         assert_eq!(connections[0].id, "target-connection");
-        assert_eq!(mq_token(&connections[0]), Some("target-token"));
     }
 
     #[tokio::test]
@@ -4199,30 +3640,29 @@ mod tests {
     async fn save_connections_preserves_database_info() {
         let path = temp_db_path("database-info");
         let storage = Storage::open(&path).await.unwrap();
-        let mut config = mq_connection("database-info", "mq-secret");
+        let mut config = opengauss_connection("database-info", "password");
         config.database_info = Some(DatabaseConnectionInfo {
-            product_name: Some("MySQL".to_string()),
-            product_version: Some("8.4.0".to_string()),
-            current_database: Some("app".to_string()),
+            product_name: Some("openGauss".to_string()),
+            product_version: Some("5.0.0".to_string()),
+            current_database: Some("postgres".to_string()),
             ..DatabaseConnectionInfo::default()
         });
 
         storage.save_connections(std::slice::from_ref(&config)).await.unwrap();
 
         let raw_json = raw_connection_json(&storage, "database-info").await;
-        assert!(raw_json.contains("8.4.0"));
+        assert!(raw_json.contains("5.0.0"));
         let loaded = storage.load_connections().await.unwrap();
         assert_eq!(loaded[0].database_info, config.database_info);
 
         let updated_info = DatabaseConnectionInfo {
-            product_name: Some("MySQL".to_string()),
-            product_version: Some("8.4.1".to_string()),
+            product_name: Some("openGauss".to_string()),
+            product_version: Some("5.0.1".to_string()),
             ..DatabaseConnectionInfo::default()
         };
         storage.save_connection_database_info("database-info", Some(updated_info.clone())).await.unwrap();
         let loaded = storage.load_connections().await.unwrap();
         assert_eq!(loaded[0].database_info, Some(updated_info));
-        assert_eq!(mq_token(&loaded[0]), Some("mq-secret"));
 
         let _ = std::fs::remove_file(path);
     }
@@ -4231,36 +3671,22 @@ mod tests {
     async fn save_connection_driver_profile_updates_only_the_target_metadata() {
         let path = temp_db_path("connection-driver-profile");
         let storage = Storage::open(&path).await.unwrap();
-        let target = mq_connection("target", "target-secret");
-        let untouched = mq_connection("untouched", "untouched-secret");
+        let target = opengauss_connection("target", "target-secret");
+        let untouched = opengauss_connection("untouched", "untouched-secret");
         storage.save_connections(&[target.clone(), untouched.clone()]).await.unwrap();
 
         assert!(storage
-            .save_connection_driver_profile(
-                &target,
-                Some("mongodb-legacy".to_string()),
-                Some("MongoDB (Legacy)".to_string()),
-            )
+            .save_connection_driver_profile(&target, Some("opengauss".to_string()), Some("openGauss".to_string()),)
             .await
             .unwrap());
-        let mut wrong_type = untouched.clone();
-        wrong_type.db_type = DatabaseType::MongoDb;
-        assert!(!storage
-            .save_connection_driver_profile(&wrong_type, Some("mongodb-legacy".to_string()), None,)
-            .await
-            .unwrap());
-        let mut missing = wrong_type;
-        missing.id = "missing".to_string();
-        assert!(!storage
-            .save_connection_driver_profile(&missing, Some("mongodb-legacy".to_string()), None)
-            .await
-            .unwrap());
+        let mut wrong_id = untouched.clone();
+        wrong_id.id = "missing".to_string();
+        assert!(!storage.save_connection_driver_profile(&wrong_id, Some("opengauss".to_string()), None).await.unwrap());
 
         let loaded = storage.load_connections().await.unwrap();
         let target = loaded.iter().find(|config| config.id == "target").unwrap();
-        assert_eq!(target.driver_profile.as_deref(), Some("mongodb-legacy"));
-        assert_eq!(target.driver_label.as_deref(), Some("MongoDB (Legacy)"));
-        assert_eq!(mq_token(target), Some("target-secret"));
+        assert_eq!(target.driver_profile.as_deref(), Some("opengauss"));
+        assert_eq!(target.driver_label.as_deref(), Some("openGauss"));
         assert_eq!(loaded.iter().find(|config| config.id == "untouched"), Some(&untouched));
 
         let _ = std::fs::remove_file(path);
@@ -4270,7 +3696,7 @@ mod tests {
     async fn save_connection_driver_profile_rejects_a_stale_connection_config() {
         let path = temp_db_path("connection-driver-profile-stale");
         let storage = Storage::open(&path).await.unwrap();
-        let original = mq_connection("target", "target-secret");
+        let original = opengauss_connection("target", "target-secret");
         storage.save_connections(std::slice::from_ref(&original)).await.unwrap();
 
         let mut replacement = original.clone();
@@ -4279,11 +3705,7 @@ mod tests {
         storage.save_connections(std::slice::from_ref(&replacement)).await.unwrap();
 
         assert!(!storage
-            .save_connection_driver_profile(
-                &original,
-                Some("mongodb-legacy".to_string()),
-                Some("MongoDB (Legacy)".to_string()),
-            )
+            .save_connection_driver_profile(&original, Some("opengauss".to_string()), Some("openGauss".to_string()),)
             .await
             .unwrap());
 
@@ -4294,28 +3716,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn save_connections_moves_mq_auth_token_to_secret_table_and_restores_it() {
-        let path = temp_db_path("mq-token-secrets");
-        let storage = Storage::open(&path).await.unwrap();
-
-        storage.save_connections(&[mq_connection("pulsar", "mq-token-secret")]).await.unwrap();
-
-        let raw_json = raw_connection_json(&storage, "pulsar").await;
-        assert!(!raw_json.contains("mq-token-secret"));
-        let persisted: ConnectionConfig = serde_json::from_str(&raw_json).unwrap();
-        assert_eq!(mq_token(&persisted), Some(""));
-        assert_eq!(storage.get_secret("pulsar", MQ_AUTH_TOKEN_KEY).await.unwrap().as_deref(), Some("mq-token-secret"));
-
-        let loaded = storage.load_connections().await.unwrap();
-        assert_eq!(loaded.len(), 1);
-        assert_eq!(mq_token(&loaded[0]), Some("mq-token-secret"));
-    }
-
-    #[tokio::test]
     async fn unreadable_saved_connections_do_not_block_loading_or_get_deleted_by_list_saves() {
         let path = temp_db_path("unreadable-connection-preservation");
         let storage = Storage::open(&path).await.unwrap();
-        let mut known = mq_connection("known", "known-secret");
+        let mut known = opengauss_connection("known", "known-secret");
         storage.save_connections(std::slice::from_ref(&known)).await.unwrap();
 
         let future_json = serde_json::json!({
@@ -4358,173 +3762,6 @@ mod tests {
         assert_eq!(storage.get_secret("future", "password").await.unwrap().as_deref(), Some("future-secret"));
 
         let _ = std::fs::remove_file(path);
-    }
-
-    #[tokio::test]
-    async fn metadata_save_scrubs_mq_auth_token_and_preserves_existing_secret() {
-        let path = temp_db_path("mq-token-metadata");
-        let storage = Storage::open(&path).await.unwrap();
-
-        let original = mq_connection("pulsar", "existing-token");
-        storage.save_connections(std::slice::from_ref(&original)).await.unwrap();
-
-        let mut metadata = original;
-        metadata.name = "Pulsar renamed".to_string();
-        if let Some(auth) = metadata.external_config.as_mut().and_then(|value| value.get_mut("auth")) {
-            auth["token"] = serde_json::Value::String("new-token-that-should-not-persist".to_string());
-        }
-
-        storage.save_connection_metadata_preserving_secrets(&[metadata]).await.unwrap();
-
-        let raw_json = raw_connection_json(&storage, "pulsar").await;
-        assert!(!raw_json.contains("existing-token"));
-        assert!(!raw_json.contains("new-token-that-should-not-persist"));
-        assert_eq!(storage.get_secret("pulsar", MQ_AUTH_TOKEN_KEY).await.unwrap().as_deref(), Some("existing-token"));
-
-        let loaded = storage.load_connections().await.unwrap();
-        assert_eq!(loaded[0].name, "Pulsar renamed");
-        assert_eq!(mq_token(&loaded[0]), Some("existing-token"));
-    }
-
-    #[tokio::test]
-    async fn load_connections_migrates_legacy_mq_auth_token_out_of_config_json() {
-        let path = temp_db_path("mq-token-legacy-migration");
-        let storage = Storage::open(&path).await.unwrap();
-        insert_raw_connection(&storage, &mq_connection("pulsar", "legacy-token")).await;
-
-        let loaded = storage.load_connections().await.unwrap();
-
-        assert_eq!(mq_token(&loaded[0]), Some("legacy-token"));
-        assert_eq!(storage.get_secret("pulsar", MQ_AUTH_TOKEN_KEY).await.unwrap().as_deref(), Some("legacy-token"));
-        let raw_json = raw_connection_json(&storage, "pulsar").await;
-        assert!(!raw_json.contains("legacy-token"));
-        let persisted: ConnectionConfig = serde_json::from_str(&raw_json).unwrap();
-        assert_eq!(mq_token(&persisted), Some(""));
-    }
-
-    #[tokio::test]
-    async fn save_connections_deletes_stale_mq_auth_secrets_when_kind_changes() {
-        let path = temp_db_path("mq-auth-kind-change");
-        let storage = Storage::open(&path).await.unwrap();
-        storage.save_connections(&[mq_connection("pulsar", "old-token")]).await.unwrap();
-        let mut config = mq_connection("pulsar", "");
-        config.external_config = Some(serde_json::json!({
-            "systemKind": "pulsar",
-            "adminUrl": "http://127.0.0.1:8080",
-            "auth": {
-                "kind": "basic",
-                "username": "admin",
-                "password": "basic-secret"
-            }
-        }));
-
-        storage.save_connections(&[config]).await.unwrap();
-
-        assert_eq!(storage.get_secret("pulsar", MQ_AUTH_TOKEN_KEY).await.unwrap(), None);
-        assert_eq!(storage.get_secret("pulsar", MQ_AUTH_PASSWORD_KEY).await.unwrap().as_deref(), Some("basic-secret"));
-    }
-
-    #[tokio::test]
-    async fn save_connections_moves_mq_token_signing_key_to_secret_table_and_restores_it() {
-        let path = temp_db_path("mq-token-signing-secret");
-        let storage = Storage::open(&path).await.unwrap();
-        let mut config = mq_connection("pulsar", "");
-        config.external_config = Some(serde_json::json!({
-            "systemKind": "pulsar",
-            "adminUrl": "http://127.0.0.1:8080",
-            "auth": { "kind": "none" },
-            "tokenSigning": {
-                "algorithm": "hs256",
-                "key": "broker-signing-secret"
-            }
-        }));
-
-        storage.save_connections(&[config]).await.unwrap();
-
-        let raw_json = raw_connection_json(&storage, "pulsar").await;
-        assert!(!raw_json.contains("broker-signing-secret"));
-        let persisted: ConnectionConfig = serde_json::from_str(&raw_json).unwrap();
-        assert_eq!(mq_token_signing_key(&persisted), Some(""));
-        assert_eq!(
-            storage.get_secret("pulsar", MQ_TOKEN_SIGNING_KEY).await.unwrap().as_deref(),
-            Some("broker-signing-secret")
-        );
-
-        let loaded = storage.load_connections().await.unwrap();
-        assert_eq!(mq_token_signing_key(&loaded[0]), Some("broker-signing-secret"));
-    }
-
-    #[tokio::test]
-    async fn save_connections_moves_nacos_auth_password_to_secret_table_and_restores_it() {
-        let path = temp_db_path("nacos-auth-secret");
-        let storage = Storage::open(&path).await.unwrap();
-
-        storage.save_connections(&[nacos_connection("nacos", "nacos-secret")]).await.unwrap();
-
-        let raw_json = raw_connection_json(&storage, "nacos").await;
-        assert!(!raw_json.contains("nacos-secret"));
-        let persisted: ConnectionConfig = serde_json::from_str(&raw_json).unwrap();
-        assert_eq!(nacos_auth_password(&persisted), Some(""));
-        assert_eq!(
-            storage.get_secret("nacos", NACOS_AUTH_PASSWORD_KEY).await.unwrap().as_deref(),
-            Some("nacos-secret")
-        );
-
-        let loaded = storage.load_connections().await.unwrap();
-        assert_eq!(loaded.len(), 1);
-        assert_eq!(nacos_auth_password(&loaded[0]), Some("nacos-secret"));
-    }
-
-    #[tokio::test]
-    async fn save_connections_moves_separate_rnacos_console_password_to_secret_table() {
-        let path = temp_db_path("rnacos-console-auth-secret");
-        let storage = Storage::open(&path).await.unwrap();
-        let mut config = nacos_connection("rnacos", "");
-        config.external_config = Some(serde_json::json!({
-            "implementation": "rnacos",
-            "serverAddr": "http://127.0.0.1:8848",
-            "rnacosConsoleAddr": "http://127.0.0.1:10848/rnacos",
-            "rnacosHistoryEnabled": true,
-            "auth": { "kind": "none" },
-            "rnacosConsoleAuth": { "kind": "usernamePassword", "username": "console", "password": "console-secret" }
-        }));
-
-        storage.save_connections(&[config]).await.unwrap();
-        let raw_json = raw_connection_json(&storage, "rnacos").await;
-        assert!(!raw_json.contains("console-secret"));
-        assert_eq!(
-            storage.get_secret("rnacos", NACOS_RNACOS_CONSOLE_PASSWORD_KEY).await.unwrap().as_deref(),
-            Some("console-secret")
-        );
-        let loaded = storage.load_connections().await.unwrap();
-        assert_eq!(
-            loaded[0]
-                .external_config
-                .as_ref()
-                .and_then(|value| value.get("rnacosConsoleAuth"))
-                .and_then(|auth| auth.get("password"))
-                .and_then(serde_json::Value::as_str),
-            Some("console-secret")
-        );
-    }
-
-    #[tokio::test]
-    async fn load_connections_migrates_legacy_nacos_auth_password_out_of_config_json() {
-        let path = temp_db_path("nacos-auth-legacy-migration");
-        let storage = Storage::open(&path).await.unwrap();
-        insert_raw_connection(&storage, &nacos_connection("nacos", "legacy-nacos-secret")).await;
-
-        let loaded = storage.load_connections().await.unwrap();
-
-        assert_eq!(nacos_auth_password(&loaded[0]), Some("legacy-nacos-secret"));
-        assert_eq!(
-            storage.get_secret("nacos", NACOS_AUTH_PASSWORD_KEY).await.unwrap().as_deref(),
-            Some("legacy-nacos-secret")
-        );
-        let raw_json = raw_connection_json(&storage, "nacos").await;
-        assert!(!raw_json.contains("legacy-nacos-secret"));
-        let persisted: ConnectionConfig = serde_json::from_str(&raw_json).unwrap();
-        assert_eq!(nacos_auth_password(&persisted), Some(""));
     }
 
     #[tokio::test]
@@ -4652,8 +3889,8 @@ mod tests {
     async fn mcp_connection_mutations_are_atomic_and_recheck_policy() {
         let path = temp_db_path("mcp-connection-mutation-guard");
         let storage = Storage::open(&path).await.unwrap();
-        let kept = mq_connection("kept", "kept-token");
-        let removed = mq_connection("removed", "removed-token");
+        let kept = opengauss_connection("kept", "kept-token");
+        let removed = opengauss_connection("removed", "removed-token");
         storage.save_connections(&[kept.clone(), removed.clone()]).await.unwrap();
 
         storage
@@ -4670,7 +3907,7 @@ mod tests {
         let mut concurrently_updated = removed.clone();
         concurrently_updated.host = "updated-by-web-ui".to_string();
         storage.save_connections(&[kept.clone(), concurrently_updated.clone()]).await.unwrap();
-        let added = mq_connection("added", "added-token");
+        let added = opengauss_connection("added", "added-token");
         storage.add_connection_for_mcp(added.clone()).await.unwrap();
         let after_add = storage.load_connections().await.unwrap();
         assert_eq!(after_add.len(), 3);

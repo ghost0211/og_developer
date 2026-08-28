@@ -78,23 +78,12 @@ LIMIT 1;`;
 }
 
 export function supportsRoutineParameterMetadata(databaseType?: DatabaseType): boolean {
-  return (
-    databaseType === "postgres" ||
-    databaseType === "opengauss" ||
-    databaseType === "mysql" ||
-    databaseType === "doris" ||
-    databaseType === "starrocks" ||
-    databaseType === "sqlserver" ||
-    databaseType === "oracle" ||
-    databaseType === "dameng" ||
-    databaseType === "oceanbase-oracle" ||
-    databaseType === "databend"
-  );
+  return databaseType === "postgres" || databaseType === "opengauss";
 }
 
 export function routineParametersQuery(options: Pick<LoadRoutineParametersOptions, "database" | "databaseType" | "schema" | "routineName" | "routineKind" | "signature">): string | null {
   if (!supportsRoutineParameterMetadata(options.databaseType)) return null;
-  const effectiveSchema = options.schema || (options.databaseType === "postgres" || options.databaseType === "opengauss" ? "public" : "") || (options.databaseType === "mysql" || options.databaseType === "doris" || options.databaseType === "starrocks" ? options.database : "");
+  const effectiveSchema = options.schema || (options.databaseType === "postgres" || options.databaseType === "opengauss" ? "public" : "");
   const schema = quoteSqlLiteral(effectiveSchema);
   const name = quoteSqlLiteral(options.routineName);
   if (options.databaseType === "postgres" || options.databaseType === "opengauss") {
@@ -147,187 +136,22 @@ WHERE ${prokindFilter}
   AND ${nameFilter}${signatureFilter}${standalonePackageFilter}
 ORDER BY gs.ordinal;`.trim();
   }
-  if (options.databaseType === "mysql" || options.databaseType === "doris" || options.databaseType === "starrocks") {
-    return `
-SELECT
-  PARAMETER_NAME AS name,
-  DTD_IDENTIFIER AS data_type,
-  COALESCE(PARAMETER_MODE, 'IN') AS mode,
-  ORDINAL_POSITION AS ordinal,
-  FALSE AS has_default
-FROM information_schema.PARAMETERS
-WHERE SPECIFIC_SCHEMA = ${schema}
-  AND SPECIFIC_NAME = ${name}
-  AND ORDINAL_POSITION > 0
-ORDER BY ORDINAL_POSITION;`.trim();
-  }
-  if (options.databaseType === "databend") {
-    return `
-SELECT arguments
-FROM system.procedures
-WHERE name = ${name}
-ORDER BY procedure_id
-LIMIT 1;`.trim();
-  }
-  if (options.databaseType === "sqlserver") {
-    return `
-SELECT
-  p.name AS name,
-  t.name AS data_type,
-  CASE WHEN p.is_output = 1 THEN 'OUT' ELSE 'IN' END AS mode,
-  p.parameter_id AS ordinal,
-  p.has_default_value AS has_default,
-  p.max_length AS max_length,
-  p.precision AS precision,
-  p.scale AS scale,
-  SCHEMA_NAME(t.schema_id) AS type_schema,
-  t.is_user_defined AS is_user_defined
-FROM sys.parameters p
-JOIN sys.objects o ON o.object_id = p.object_id
-JOIN sys.schemas s ON s.schema_id = o.schema_id
-JOIN sys.types t ON t.user_type_id = p.user_type_id
-WHERE o.type IN ('P', 'PC')
-  AND s.name = ${schema}
-  AND o.name = ${name}
-ORDER BY p.parameter_id;`.trim();
-  }
-  if (options.databaseType === "oracle" || options.databaseType === "dameng" || options.databaseType === "oceanbase-oracle") {
-    return `
-SELECT
-  ARGUMENT_NAME AS name,
-  DATA_TYPE AS data_type,
-  IN_OUT AS mode,
-  POSITION AS ordinal,
-  DEFAULTED AS has_default
-FROM ALL_ARGUMENTS
-WHERE OWNER = UPPER(${schema})
-  AND OBJECT_NAME = UPPER(${name})
-  AND POSITION > 0
-ORDER BY SEQUENCE;`.trim();
-  }
   return null;
 }
 
 export function routineParametersFromResult(result: QueryResult, databaseType?: DatabaseType): RoutineParameter[] {
-  if (databaseType === "databend") return databendRoutineParametersFromResult(result);
-  const sqlServerMetadata =
-    databaseType === "sqlserver"
-      ? {
-          maxLength: result.columns.findIndex((column) => column.toLowerCase() === "max_length"),
-          precision: result.columns.findIndex((column) => column.toLowerCase() === "precision"),
-          scale: result.columns.findIndex((column) => column.toLowerCase() === "scale"),
-          typeSchema: result.columns.findIndex((column) => column.toLowerCase() === "type_schema"),
-          isUserDefined: result.columns.findIndex((column) => column.toLowerCase() === "is_user_defined"),
-        }
-      : null;
+  void databaseType;
   return result.rows
     .map((row, index) => {
-      const dataType = String(row[1] || "");
       return {
         name: String(row[0] || `arg${index + 1}`),
-        dataType: sqlServerMetadata ? sqlServerParameterDeclarationType(dataType, row, sqlServerMetadata) : dataType,
+        dataType: String(row[1] || ""),
         mode: normalizeParameterMode(row[2]),
         ordinal: Number(row[3] || index + 1),
         hasDefault: normalizeBoolean(row[4]),
       };
     })
     .filter((parameter) => parameter.mode !== "RETURN");
-}
-
-interface SqlServerParameterMetadataIndexes {
-  maxLength: number;
-  precision: number;
-  scale: number;
-  typeSchema: number;
-  isUserDefined: number;
-}
-
-function sqlServerParameterDeclarationType(baseType: string, row: unknown[], indexes: SqlServerParameterMetadataIndexes): string {
-  const typeName = baseType.trim();
-  if (!typeName) return "";
-  if (normalizeBoolean(valueAt(row, indexes.isUserDefined))) {
-    const schema = String(valueAt(row, indexes.typeSchema) || "").trim();
-    const qualifiedType = quoteSqlServerIdentifier(typeName);
-    return schema ? `${quoteSqlServerIdentifier(schema)}.${qualifiedType}` : qualifiedType;
-  }
-
-  const normalizedType = typeName.toLowerCase();
-  const maxLength = Number(valueAt(row, indexes.maxLength));
-  if (["varchar", "char", "varbinary", "binary"].includes(normalizedType) && Number.isFinite(maxLength)) {
-    return `${typeName}(${maxLength === -1 ? "max" : Math.max(1, maxLength)})`;
-  }
-  if (["nvarchar", "nchar"].includes(normalizedType) && Number.isFinite(maxLength)) {
-    return `${typeName}(${maxLength === -1 ? "max" : Math.max(1, Math.floor(maxLength / 2))})`;
-  }
-
-  const precision = Number(valueAt(row, indexes.precision));
-  const scale = Number(valueAt(row, indexes.scale));
-  if (["decimal", "numeric"].includes(normalizedType) && Number.isFinite(precision) && Number.isFinite(scale)) {
-    return `${typeName}(${precision},${scale})`;
-  }
-  if (["datetime2", "datetimeoffset", "time"].includes(normalizedType) && Number.isFinite(scale)) {
-    return `${typeName}(${scale})`;
-  }
-  if (normalizedType === "float" && Number.isFinite(precision)) {
-    return `${typeName}(${precision})`;
-  }
-  return typeName;
-}
-
-function valueAt(row: unknown[], index: number): unknown {
-  return index >= 0 ? row[index] : undefined;
-}
-
-function quoteSqlServerIdentifier(value: string): string {
-  return `[${value.replace(/]/g, "]]")}]`;
-}
-
-function databendRoutineParametersFromResult(result: QueryResult): RoutineParameter[] {
-  const argumentsIndex = result.columns.findIndex((column) => column.toLowerCase() === "arguments");
-  const signature = String(result.rows[0]?.[argumentsIndex >= 0 ? argumentsIndex : 0] || "");
-  const inputTypes = databendInputTypesFromArguments(signature);
-  return inputTypes.map((dataType, index) => ({
-    name: `arg${index + 1}`,
-    dataType,
-    mode: "IN",
-    ordinal: index + 1,
-    hasDefault: false,
-  }));
-}
-
-function databendInputTypesFromArguments(signature: string): string[] {
-  const openIndex = signature.indexOf("(");
-  if (openIndex < 0) return [];
-  let depth = 0;
-  for (let index = openIndex; index < signature.length; index += 1) {
-    const char = signature[index];
-    if (char === "(") depth += 1;
-    if (char === ")") {
-      depth -= 1;
-      if (depth === 0) {
-        return splitTopLevelComma(signature.slice(openIndex + 1, index)).filter(Boolean);
-      }
-    }
-  }
-  return [];
-}
-
-function splitTopLevelComma(value: string): string[] {
-  const parts: string[] = [];
-  let current = "";
-  let depth = 0;
-  for (const char of value) {
-    if (char === "(") depth += 1;
-    if (char === ")") depth = Math.max(0, depth - 1);
-    if (char === "," && depth === 0) {
-      parts.push(current.trim());
-      current = "";
-      continue;
-    }
-    current += char;
-  }
-  if (current.trim()) parts.push(current.trim());
-  return parts;
 }
 
 function normalizeParameterMode(value: unknown): RoutineParameterMode {

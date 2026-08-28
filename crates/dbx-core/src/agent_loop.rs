@@ -886,10 +886,10 @@ async fn build_schema_prompt(agent_ctx: &AgentLoopContext, system_prompt: &str) 
         &agent_ctx.database,
         agent_ctx.schema.as_deref().unwrap_or(""),
         None,
-        Some(50), // smaller limit for prompt injection
         None,
         None,
         None,
+        Some(50),
     )
     .await;
 

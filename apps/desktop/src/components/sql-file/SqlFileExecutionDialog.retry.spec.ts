@@ -40,7 +40,6 @@ vi.mock("@/composables/useExportTracker", () => ({
   useExportTracker: () => ({ addSqlFileTask: mocks.addSqlFileTask, updateSqlFileTask: mocks.updateSqlFileTask }),
 }));
 vi.mock("@/composables/useDatabaseOptions", () => ({ fetchSqlFileTargetOptions: mocks.fetchSqlFileTargetOptions }));
-vi.mock("@/lib/connection/connectionLevelDatabaseBootstrap", () => ({ requiresSqlFileTargetDatabaseSelection: () => false }));
 vi.mock("@/lib/database/productionSafety", () => ({ productionContextForDatabase: () => ({ active: false, databases: [] }) }));
 vi.mock("@/stores/productionSafetyStore", () => ({
   useProductionSafetyStore: () => ({ requestConfirmation: mocks.requestConfirmation }),
@@ -152,7 +151,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.progressHandler = undefined;
   mocks.ensureConnected.mockResolvedValue(undefined);
-  mocks.fetchSqlFileTargetOptions.mockResolvedValue([]);
+  mocks.fetchSqlFileTargetOptions.mockResolvedValue(["app"]);
   mocks.openFileDialog.mockResolvedValue(["/tmp/first.sql", "/tmp/second.sql"]);
   mocks.previewSqlFile.mockImplementation(async (filePath: string) => ({
     fileName: filePath.split("/").pop()!,

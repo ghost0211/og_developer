@@ -47,7 +47,7 @@ const terminalContainerRef = ref<HTMLElement | null>(null);
 const inputRef = ref<HTMLInputElement | HTMLTextAreaElement | null>(null);
 
 const connection = computed(() => connectionStore.getConfig(props.connectionId));
-const commandConnections = computed(() => connectionStore.connections.filter((candidate) => candidate.db_type === "opengauss" || candidate.db_type === "gaussdb"));
+const commandConnections = computed(() => connectionStore.connections.filter((candidate) => candidate.db_type === "opengauss"));
 const currentDbUser = computed(() => connection.value?.username || "omm");
 const currentDatabase = computed(() => props.database || connection.value?.database || "postgres");
 const currentSchema = computed(() => props.schema?.trim() || "public");

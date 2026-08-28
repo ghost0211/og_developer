@@ -125,7 +125,7 @@ function isTableColumnTemplateFieldApplicable(field: TableColumnTemplateField, d
 }
 
 function isTableColumnTemplateDatabaseType(databaseType: DatabaseType): boolean {
-  return databaseType !== "manticoresearch" && getTableStructureCapabilities(databaseType).createTable;
+  return getTableStructureCapabilities(databaseType).createTable;
 }
 
 function isDatabaseTypeKey(value: string): value is DatabaseType {

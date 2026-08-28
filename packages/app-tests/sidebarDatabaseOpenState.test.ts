@@ -28,19 +28,6 @@ test("database open state is based on the database node children cache", () => {
   assert.equal(canCloseSidebarDatabaseConnection(unopened, isLoaded), false);
 });
 
-test("non-SQL database nodes can be marked open without showing close database connection", () => {
-  const mongoDatabase: TreeNode = {
-    id: "mongo:app",
-    label: "app",
-    type: "mongo-db",
-    connectionId: "mongo",
-    database: "app",
-  };
-  const isLoaded = (id: string) => id === mongoDatabase.id;
-
-  assert.equal(isSidebarDatabaseOpened(mongoDatabase, isLoaded), true);
-  assert.equal(canCloseSidebarDatabaseConnection(mongoDatabase, isLoaded), false);
-});
 
 test("database connections can be closed while an open tab still uses the database", () => {
   const node = databaseNode("conn-1:app");

@@ -38,7 +38,7 @@ export function latestQueryExecutionFeedback(tab: Pick<QueryTab, "result" | "res
   if (!results.length) return undefined;
   return results.reduce(
     (feedback, result) => {
-      const rowCount = result.execution_error || result.server_message ? 0 : result.affected_rows > 0 ? result.affected_rows : result.rows.length;
+      const rowCount = result.execution_error ? 0 : result.affected_rows > 0 ? result.affected_rows : result.rows.length;
       return {
         durationMs: feedback.durationMs + (Number.isFinite(result.execution_time_ms) ? result.execution_time_ms : 0),
         affectedRows: feedback.affectedRows + rowCount,

@@ -17,7 +17,6 @@ export type TableClipboardMenuState = "copy" | "paste" | "copy-and-paste";
 export interface TableDataCopyColumnOptions {
   columns: string[];
   postgresOverridingSystemValue: boolean;
-  sqlserverIdentityInsert: boolean;
 }
 
 function normalizeSchema(schema: string | null | undefined): string {
@@ -56,7 +55,7 @@ export function tableClipboardMenuState(entries: TableClipboardTableContext[], t
 }
 
 export function supportsWholeRowTableDataCopy(databaseType: DatabaseType | undefined): boolean {
-  return !!databaseType && databaseType !== "victoriametrics";
+  return !!databaseType;
 }
 
 export function defaultPasteTableMode(databaseType: DatabaseType | undefined): PasteTableMode {
@@ -72,20 +71,13 @@ export function tableDataCopyColumnOptions(databaseType: DatabaseType | undefine
   return {
     columns: writableColumns.map((column) => column.name),
     postgresOverridingSystemValue: databaseType === "postgres" && writableColumns.some(isIdentityColumn),
-    sqlserverIdentityInsert: databaseType === "sqlserver" && writableColumns.some(isIdentityColumn),
   };
 }
 
 function isWritableTableDataCopyColumn(databaseType: DatabaseType | undefined, column: ColumnInfo): boolean {
   const extra = (column.extra ?? "").toLowerCase();
-  if (databaseType === "mysql") {
-    return !extra.includes("generated");
-  }
   if (databaseType === "postgres") {
     return !extra.includes("generated always as (");
-  }
-  if (databaseType === "sqlserver") {
-    return !extra.includes("computed");
   }
   return !extra.includes("computed") && !(extra.includes("generated") && !extra.includes("identity"));
 }

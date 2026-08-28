@@ -25,7 +25,6 @@ fn live_postgres_config(
         driver_profile: None,
         driver_label: None,
         url_params: None,
-        agent_java_options: Vec::new(),
         host: host.to_string(),
         port,
         username: user.to_string(),
@@ -33,8 +32,7 @@ fn live_postgres_config(
         database: Some(database.to_string()),
         visible_databases: None,
         visible_schemas: None,
-        attached_databases: Vec::new(),
-        init_script: None,
+        show_system_schemas: false,
         color: None,
         transport_layers: Vec::new(),
         connect_timeout_secs: 10,
@@ -45,22 +43,7 @@ fn live_postgres_config(
         ca_cert_path: String::new(),
         client_cert_path: String::new(),
         client_key_path: String::new(),
-        sysdba: false,
-        oracle_connection_type: None,
         connection_string: None,
-        redis_connection_mode: None,
-        redis_sentinel_master: String::new(),
-        redis_sentinel_nodes: String::new(),
-        redis_sentinel_username: String::new(),
-        redis_sentinel_password: String::new(),
-        redis_sentinel_tls: false,
-        redis_cluster_nodes: String::new(),
-        redis_key_separator: dbx_core::models::connection::default_redis_key_separator(),
-        redis_scan_page_size: None,
-        redis_database_aliases: Default::default(),
-        etcd_endpoints: String::new(),
-        gbase_server: String::new(),
-        informix_server: String::new(),
         external_config: None,
         jdbc_driver_class: None,
         jdbc_driver_paths: Vec::new(),
@@ -68,7 +51,6 @@ fn live_postgres_config(
         read_only: false,
         is_production: false,
         production_databases: vec![],
-        show_system_schemas: false,
         database_info: None,
     }
 }
@@ -437,7 +419,16 @@ async fn live_postgres_stream_still_times_out_without_progress_and_recovers() {
     let started_at = Instant::now();
     let result = export_query_result_core(&state, &request, None, |_| {}).await;
     let elapsed = started_at.elapsed();
-    let recovery = execute_sql_statement(&state, &connection_id, &database, "SELECT 1 AS id", None, None).await;
+    let recovery = execute_sql_statement(
+        &state,
+        &connection_id,
+        &database,
+        "SELECT 1 AS id",
+        None,
+        None,
+        dbx_core::query::QueryExecutionOptions::default(),
+    )
+    .await;
     let _ = std::fs::remove_dir_all(dir);
 
     assert_eq!(result, Err("Query timed out after 1 seconds".to_string()));

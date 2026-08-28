@@ -1,22 +1,9 @@
 import type { ConnectionConfig, DatabaseType, QueryResult } from "@/types/database";
 import { effectiveDatabaseTypeForConnection } from "@/lib/database/jdbcDialect";
-import { buildMysqlCancelSql, buildKillSql as buildMysqlKillSql, mapProcessRows as mapMysqlProcessRows, PROCESS_LIST_SQL as MYSQL_PROCESS_LIST_SQL, supportsProcessList as supportsMysqlProcessList } from "./mysqlProcessList";
 import {
-  buildKingbaseCancelSql,
-  buildKingbaseKillSql,
-  buildKingbasePgKillSql,
   buildPgCancelSql,
   buildPgKillSql,
-  isKingbaseOwnSessionCatalogCompatibilityError,
-  isKingbaseProcessListCatalogCompatibilityError,
-  isKingbaseTerminateCatalogCompatibilityError,
   isPgProcessListCompatibilityError,
-  kingbaseKillResultError,
-  kingbasePgKillResultError,
-  KINGBASE_OWN_SESSION_SQL,
-  KINGBASE_PG_OWN_SESSION_SQL,
-  KINGBASE_PG_PROCESS_LIST_SQL,
-  KINGBASE_PROCESS_LIST_SQL,
   mapPgBlockingLockRows,
   mapPgLockRows,
   mapPgProcessRows,
@@ -38,7 +25,54 @@ import {
  * Engine-agnostic process-list model. Each supported engine contributes a driver
  * describing how to list sessions, identify the caller's own session, render the
  * columns, and kill a session. The panel component stays entirely generic.
+ *
+ * The generic bits (coordinator, interval clamping, execution-error extraction)
+ * also live here so the panel can wire them to any driver.
  */
+
+/** Bounds for the auto-refresh interval, in seconds. */
+export const MIN_REFRESH_SECONDS = 1;
+export const MAX_REFRESH_SECONDS = 3600;
+export const DEFAULT_REFRESH_SECONDS = 5;
+
+export interface ProcessListLoadCoordinator {
+  tryStart(): boolean;
+  finish(): void;
+}
+
+/**
+ * Keep manual and timer-driven refreshes on the same single-flight guard. Slow
+ * servers must not accumulate process-list queries faster than they complete.
+ */
+export function createProcessListLoadCoordinator(): ProcessListLoadCoordinator {
+  let inFlight = false;
+  return {
+    tryStart() {
+      if (inFlight) return false;
+      inFlight = true;
+      return true;
+    },
+    finish() {
+      inFlight = false;
+    },
+  };
+}
+
+export function clampInterval(seconds: number): number {
+  if (!Number.isFinite(seconds)) return DEFAULT_REFRESH_SECONDS;
+  const floored = Math.floor(seconds);
+  if (floored < MIN_REFRESH_SECONDS) return MIN_REFRESH_SECONDS;
+  if (floored > MAX_REFRESH_SECONDS) return MAX_REFRESH_SECONDS;
+  return floored;
+}
+
+/** Return the server-provided message for the first failed batch statement. */
+export function processListExecutionError(results: QueryResult[]): string | null {
+  const failed = results.find((result) => result.execution_error === true);
+  if (!failed) return null;
+  const message = failed.rows?.[0]?.[0];
+  return message === null || message === undefined || String(message).length === 0 ? "Query execution failed" : String(message);
+}
 
 /** A displayable session row. `id` is the value passed to the driver's kill SQL. */
 export type ProcessRow = { id: number } & Record<string, string | number | null>;
@@ -99,17 +133,6 @@ export interface ProcessListDriver {
   fallbackKillResultError?(results: QueryResult[]): string | null;
 }
 
-const MYSQL_COLUMNS: ProcessColumn[] = [
-  { key: "id", labelKey: "processList.colId", mono: true, numeric: true },
-  { key: "user", labelKey: "processList.colUser" },
-  { key: "host", labelKey: "processList.colHost" },
-  { key: "db", labelKey: "processList.colDb" },
-  { key: "command", labelKey: "processList.colCommand" },
-  { key: "time", labelKey: "processList.colTime", mono: true, numeric: true },
-  { key: "state", labelKey: "processList.colState" },
-  { key: "info", labelKey: "processList.colInfo", mono: true, wide: true },
-];
-
 const POSTGRES_COLUMNS: ProcessColumn[] = [
   { key: "id", labelKey: "processList.colPid", mono: true, numeric: true },
   { key: "user", labelKey: "processList.colUser" },
@@ -121,18 +144,6 @@ const POSTGRES_COLUMNS: ProcessColumn[] = [
   { key: "time", labelKey: "processList.colTime", mono: true, numeric: true },
   { key: "query", labelKey: "processList.colQuery", mono: true, wide: true },
 ];
-
-const MYSQL_DRIVER: ProcessListDriver = {
-  listSql: MYSQL_PROCESS_LIST_SQL,
-  ownSessionSql: "SELECT CONNECTION_ID()",
-  columns: MYSQL_COLUMNS,
-  defaultSortKey: "time",
-  maxRows: 5000,
-  // Typed structs carry no index signature; they are plain string-keyed objects at runtime.
-  mapRows: (result) => mapMysqlProcessRows(result) as unknown as ProcessRow[],
-  buildKillSql: buildMysqlKillSql,
-  buildCancelSql: buildMysqlCancelSql,
-};
 
 const POSTGRES_DRIVER: ProcessListDriver = {
   listSql: PG_PROCESS_LIST_SQL,
@@ -168,63 +179,28 @@ const OPENGAUSS_DRIVER: ProcessListDriver = {
   mapLocks: mapPgLockRows,
 };
 
-const KINGBASE_DRIVER: ProcessListDriver = {
-  listSql: KINGBASE_PROCESS_LIST_SQL,
-  fallbackListSql: KINGBASE_PG_PROCESS_LIST_SQL,
-  shouldUseFallbackListSql: isKingbaseProcessListCatalogCompatibilityError,
-  ownSessionSql: KINGBASE_OWN_SESSION_SQL,
-  fallbackOwnSessionSql: KINGBASE_PG_OWN_SESSION_SQL,
-  shouldUseFallbackOwnSessionSql: isKingbaseOwnSessionCatalogCompatibilityError,
-  columns: POSTGRES_COLUMNS,
-  defaultSortKey: "time",
-  maxRows: 5000,
-  mapRows: (result) => mapPgProcessRows(result) as unknown as ProcessRow[],
-  buildKillSql: buildKingbaseKillSql,
-  buildCancelSql: buildKingbaseCancelSql,
-  buildFallbackKillSql: buildKingbasePgKillSql,
-  shouldUseFallbackKillSql: isKingbaseTerminateCatalogCompatibilityError,
-  killResultError: kingbaseKillResultError,
-  fallbackKillResultError: kingbasePgKillResultError,
-  blockingLocksSql: PG_BLOCKING_LOCKS_SQL,
-  mapBlockingLocks: mapPgBlockingLockRows,
-  locksSql: PG_LOCKS_SQL,
-  mapLocks: mapPgLockRows,
-};
-
 /** Resolve the process-list driver for a connection, or null if unsupported. */
 export function resolveProcessListDriver(dbType: DatabaseType | undefined): ProcessListDriver | null {
-  if (supportsMysqlProcessList(dbType)) return MYSQL_DRIVER;
   if (dbType === "postgres") return POSTGRES_DRIVER;
   if (dbType === "opengauss") return OPENGAUSS_DRIVER;
-  if (dbType === "kingbase") return KINGBASE_DRIVER;
   return null;
 }
 
-/** Whether any process-list viewer (MySQL or Postgres family) covers this engine. */
+/** Whether any process-list viewer covers this engine. */
 export function supportsProcessList(dbType: DatabaseType | undefined): boolean {
   return resolveProcessListDriver(dbType) !== null;
 }
 
 /**
- * JDBC profiles that only borrow MySQL SQL syntax (Kyuubi / HiveServer2) infer as
- * `mysql` but are Spark/Hive engines that cannot serve `SHOW FULL PROCESSLIST`.
- */
-const MYSQL_LOOKALIKE_JDBC = /(?:kyuubi|hive2|org\.apache\.hive\.jdbc\.HiveDriver|hive-jdbc)/i;
-
-/**
- * Resolve the process-list driver from the real connection profile. Uses the
- * effective engine (so JDBC connections that resolve to MySQL/Postgres work) and
- * excludes MySQL-lookalike JDBC engines that cannot serve the process list.
+ * Resolve the process-list driver from the real connection profile, using the
+ * effective engine so JDBC connections that resolve to Postgres/openGauss work.
  */
 export function resolveProcessListDriverForConnection(connection: ConnectionConfig | undefined): ProcessListDriver | null {
   if (!connection) return null;
-  if (connection.db_type === "jdbc") {
-    const profile = [connection.driver_profile, connection.connection_string, connection.jdbc_driver_class, ...(connection.jdbc_driver_paths ?? [])].filter(Boolean).join("\n");
-    if (MYSQL_LOOKALIKE_JDBC.test(profile)) return null;
-  }
   const dbType = effectiveDatabaseTypeForConnection(connection);
-  if (dbType === "gaussdb" && /(?:^|-)opengauss(?:-jdbc)?$/i.test(connection.driver_profile ?? "")) return OPENGAUSS_DRIVER;
-  return resolveProcessListDriver(dbType);
+  if (dbType === "opengauss") return OPENGAUSS_DRIVER;
+  if (dbType === "postgres") return POSTGRES_DRIVER;
+  return null;
 }
 
 /** Connection-aware process-list gate (mirrors the server-dashboard gate). */

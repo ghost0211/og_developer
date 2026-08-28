@@ -16,13 +16,6 @@ function column(name: string, dataType: string): ColumnInfo {
   };
 }
 
-test("detects boolean types using database semantics", () => {
-  assert.equal(isBooleanColumnType("boolean"), true);
-  assert.equal(isBooleanColumnType("bool", "postgres"), true);
-  assert.equal(isBooleanColumnType("bit", "sqlserver"), true);
-  assert.equal(isBooleanColumnType("boolean", "mysql"), true);
-  assert.equal(isBooleanColumnType("  BOOLEAN ", "postgres"), true);
-});
 
 test("does not treat database bit strings or MySQL integer aliases as boolean", () => {
   assert.equal(isBooleanColumnType("bit", "postgres"), false);

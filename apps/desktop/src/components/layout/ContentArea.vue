@@ -74,29 +74,11 @@ function preloadDataGridComponent() {
 }
 
 const DataGrid = defineAsyncComponent(loadDataGridComponent);
-const RedisKeyBrowser = defineAsyncComponent(() => import("@/components/redis/RedisKeyBrowser.vue"));
-const RedisDashboard = defineAsyncComponent(() => import("@/components/redis/RedisDashboard.vue"));
-const EtcdKeyBrowser = defineAsyncComponent(() => import("@/components/etcd/EtcdKeyBrowser.vue"));
-const EtcdDashboard = defineAsyncComponent(() => import("@/components/etcd/EtcdDashboard.vue"));
-const EtcdAccessControl = defineAsyncComponent(() => import("@/components/etcd/EtcdAccessControl.vue"));
-const ZooKeeperKeyBrowser = defineAsyncComponent(() => import("@/components/zookeeper/ZooKeeperKeyBrowser.vue"));
-const DocumentBrowser = defineAsyncComponent(() => import("@/components/document/DocumentBrowser.vue"));
-const MongoGridFsBrowser = defineAsyncComponent(() => import("@/components/document/MongoGridFsBrowser.vue"));
-const MongoBucketBrowser = defineAsyncComponent(() => import("@/components/document/MongoBucketBrowser.vue"));
-const VectorBrowser = defineAsyncComponent(() => import("@/components/vector/VectorBrowser.vue"));
-const HBaseBrowser = defineAsyncComponent(() => import("@/components/hbase/HBaseBrowser.vue"));
-const ElasticsearchJsonResponsePanel = defineAsyncComponent(() => import("@/components/common/ElasticsearchJsonResponsePanel.vue"));
-const MqAdminConsole = defineAsyncComponent(() => import("@/components/mq/MqAdminConsole.vue"));
-const MqttAdminConsole = defineAsyncComponent(() => import("@/components/mqtt/MqttAdminConsole.vue"));
-const NacosAdminConsole = defineAsyncComponent(() => import("@/components/nacos/NacosAdminConsole.vue"));
-const NacosDashboard = defineAsyncComponent(() => import("@/components/nacos/NacosDashboard.vue"));
 const ObjectBrowser = defineAsyncComponent(() => import("@/components/objects/ObjectBrowser.vue"));
 const TableStructureEditor = defineAsyncComponent(() => import("@/components/structure/TableStructureEditor.vue"));
 const DatabaseUserAdmin = defineAsyncComponent(() => import("@/components/admin/DatabaseUserAdmin.vue"));
 const ProcessListPanel = defineAsyncComponent(() => import("@/components/admin/ProcessListPanel.vue"));
-const MySqlDashboard = defineAsyncComponent(() => import("@/components/admin/MySqlDashboard.vue"));
 const PostgresDashboard = defineAsyncComponent(() => import("@/components/admin/PostgresDashboard.vue"));
-const DamengJobAdmin = defineAsyncComponent(() => import("@/components/admin/DamengJobAdmin.vue"));
 const RoutineTestPanel = defineAsyncComponent(() => import("@/components/objects/RoutineTestPanel.vue"));
 const RoutineDebugPanel = defineAsyncComponent(() => import("@/components/debug/RoutineDebugPanel.vue"));
 const ProgramWindowPanel = defineAsyncComponent(() => import("@/components/objects/ProgramWindowPanel.vue"));
@@ -120,16 +102,12 @@ import { formatShortcut } from "@/lib/editor/shortcutRegistry";
 import type { CodeMirrorSqlDialectName } from "@/lib/editor/codemirrorSqlDialect";
 import { codeMirrorSqlDialect, codeMirrorSqlDialectForConnection, effectiveDatabaseTypeForConnection } from "@/lib/database/jdbcDialect";
 import { chartableColumnIndexes } from "@/lib/dataGrid/chartData";
-import { elasticsearchJsonResponseForResult } from "@/lib/elasticsearch/elasticsearchJsonResponse";
-import * as api from "@/lib/backend/api";
-import { applyMongoGridChangesToDocument, applyMongoGridChangesToDocumentBaseline, buildMongoUpdateDocument, formatMongoShellLiteral, serializeMongoDocumentId, type MongoInputValue } from "@/lib/mongo/mongoDocumentValues";
 import type { SqlExecutionOverride } from "@/lib/sql/sqlExecutionTarget";
 import type { DataGridSortMode } from "@/lib/dataGrid/dataGridSort";
 import { isDataGridToolbarCompact, type DataGridReloadIntent } from "@/lib/dataGrid/dataGridToolbar";
 import { useTabScroll } from "@/composables/useTabScroll";
 import { formatElapsedSeconds } from "@/lib/common/elapsedTime";
-import type { CustomSaveHandler } from "@/composables/useDataGridEditor";
-import type { QueryTab, ConnectionConfig, TableInfoTab, TreeNode, VectorCollectionMeta, ObjectBrowserViewport } from "@/types/database";
+import type { QueryTab, ConnectionConfig, TableInfoTab, ObjectBrowserViewport } from "@/types/database";
 import type { SqlObjectNavigationTarget } from "@/lib/sql/sqlNavigation";
 import { sqlFormatDialectForDbType, type SqlFormatDialect } from "@/lib/sql/sqlFormatter";
 import { productionContextForDatabase } from "@/lib/database/productionSafety";
@@ -160,8 +138,6 @@ type DataGridHandle = DataGridColumnLayoutHandle & {
 type SearchableBrowserHandle = {
   focusSearch: () => boolean;
   refresh?: () => boolean;
-  insertCommand?: (command: string) => Promise<boolean>;
-  executeCommand?: (command: string) => Promise<boolean>;
 };
 
 const props = defineProps<{
@@ -173,7 +149,6 @@ const props = defineProps<{
   compressSqlRequest: { id: number; tabId: string } | null;
   selectedSql: string;
   cursorPos: number;
-  blockDangerousRedisCommands: boolean;
   appVersion?: string;
   settingsInitialTab?: string;
   settingsInitialSection?: string;
@@ -228,7 +203,6 @@ onMounted(() => {
   } else {
     setTimeout(preload, 300);
   }
-  window.addEventListener("dbx-refresh-active-kv-browser", onRefreshActiveKvBrowser);
   window.addEventListener("resize", updateStandaloneResultToolbarDimensions);
   window.visualViewport?.addEventListener("resize", updateStandaloneResultToolbarDimensions);
   window.addEventListener("dbx:ui-scale-applied", updateStandaloneResultToolbarDimensions);
@@ -260,17 +234,12 @@ const dataGridSearchMode = computed(() => settingsStore.editorSettings.dataGridS
 const resultRunDisplayMode = computed(() => settingsStore.editorSettings.resultRunDisplayMode);
 const columnWidthDensity = computed(() => settingsStore.editorSettings.columnWidthDensity);
 const tableFontSize = computed(() => settingsStore.editorSettings.tableFontSize);
-const redisKeyBrowserRef = ref<SearchableBrowserHandle>();
-const documentBrowserRef = ref<SearchableBrowserHandle>();
 
 function openDataGridExtractorConfiguration() {
   dataGridViewOptionsOpen.value = false;
   void nextTick(() => dataGridRef.value?.openExtractorConfiguration());
 }
 
-const etcdKeyBrowserRef = ref<SearchableBrowserHandle>();
-const etcdDashboardRef = ref<{ refresh?: () => boolean }>();
-const zookeeperKeyBrowserRef = ref<SearchableBrowserHandle>();
 const objectBrowserRef = ref<SearchableBrowserHandle>();
 const activeTableMeta = computed(() => props.activeTab.tableMeta);
 const activeDataTabTableMeta = computed(() => tableMetaForDataTab(props.activeTab));
@@ -283,17 +252,6 @@ const productionSessionDetail = computed(() => {
   if (activeProductionContext.value.reason === "connection") return t("production.connection");
   return activeProductionContext.value.databases.join(", ") || t("production.databases");
 });
-
-function findNodeInTree(nodes: TreeNode[], id: string): TreeNode | undefined {
-  for (const node of nodes) {
-    if (node.id === id) return node;
-    if (node.children) {
-      const found = findNodeInTree(node.children, id);
-      if (found) return found;
-    }
-  }
-  return undefined;
-}
 
 function setDataGridRenderMode(value: "canvas" | "dom") {
   settingsStore.updateEditorSettings({ dataGridRenderMode: value });
@@ -333,19 +291,9 @@ function increaseTableFontSize() {
   setTableFontSize(tableFontSize.value + 1);
 }
 
-const activeTabDimension = computed(() => {
-  const tab = props.activeTab;
-  if (!tab.connectionId || tab.mode !== "vector") return undefined;
-  const isMilvus = connectionStore.getConfig(tab.connectionId)?.db_type === "milvus";
-  const suffix = isMilvus && tab.database ? `${tab.database}:${tab.sql}` : tab.sql;
-  const nodeId = `${tab.connectionId}:__vector_collection:${suffix}`;
-  const meta = findNodeInTree(connectionStore.treeNodes, nodeId)?.meta;
-  return meta && "dimension" in meta ? (meta as VectorCollectionMeta).dimension : undefined;
-});
-
 const activeSqlFormatDialect = computed<SqlFormatDialect>(() => sqlFormatDialectForDbType(activeEffectiveDatabaseType.value));
 
-const editorDialect = computed<"mysql" | "postgres" | "sqlserver">(() => codeMirrorSqlDialect(activeEffectiveDatabaseType.value));
+const editorDialect = computed<"postgres">(() => codeMirrorSqlDialect(activeEffectiveDatabaseType.value));
 const editorSyntaxDialect = computed<CodeMirrorSqlDialectName>(() => codeMirrorSqlDialectForConnection(props.activeConnection));
 
 const shortcutModifier = computed(() => (navigator.platform.toLowerCase().includes("mac") ? "Cmd" : "Ctrl"));
@@ -424,20 +372,6 @@ const activeStatementExecutionMarkers = computed(() =>
     props.activeTab.batchSqlExecution,
   ),
 );
-const activeElasticsearchJsonResponse = computed(() => elasticsearchJsonResponseForResult(activeEffectiveDatabaseType.value, activeResultSql.value, props.activeTab.result));
-/** Whether the active result is an Elasticsearch _source table that also has a raw JSON toggle. */
-const activeElasticsearchRawBody = computed(() => {
-  if (activeEffectiveDatabaseType.value !== "elasticsearch" && activeEffectiveDatabaseType.value !== "easysearch") return undefined;
-  return props.activeTab.result?.elasticsearch_raw_body;
-});
-/** Toggle between the _source table and the raw JSON panel for Elasticsearch REST results. */
-const showElasticsearchRawJson = ref(false);
-watch(
-  () => props.activeTab.result?.elasticsearch_raw_body,
-  () => {
-    showElasticsearchRawJson.value = false;
-  },
-);
 const resultArchiveExporting = ref(false);
 const canExportResultArchive = computed(() => props.activeTab.mode === "query" && (!!props.activeTab.result || !!props.activeTab.results?.length || !!props.activeTab.resultRuns?.length));
 const resultAutoSave = computed(() => props.activeTab.resultAutoSave === true);
@@ -472,7 +406,7 @@ const hasTabularResult = computed(() => {
 });
 const canShowResultOutput = computed(() => hasTabularResult.value || props.activeTab.isExecuting);
 const canShowExplainOutput = computed(() => !!props.activeTab.explainPlan || !!props.activeTab.explainError || !!props.activeTab.explainTableResult || !!props.activeTab.explainTableError || props.activeTab.isExplaining === true);
-const showStandaloneResultToolbar = computed(() => activeElasticsearchJsonResponse.value || props.activeOutputView !== "result" || !props.activeTab.result || !hasTabularResult.value);
+const showStandaloneResultToolbar = computed(() => props.activeOutputView !== "result" || !props.activeTab.result || !hasTabularResult.value);
 const standaloneResultToolbarCompact = computed(() => isDataGridToolbarCompact(standaloneResultToolbarWidth.value, standaloneResultToolbarViewportWidth.value));
 let standaloneResultToolbarResizeObserver: ResizeObserver | undefined;
 
@@ -493,85 +427,6 @@ function observeStandaloneResultToolbar() {
 }
 
 watch(standaloneResultToolbarRef, observeStandaloneResultToolbar, { flush: "post" });
-type MongoQueryGridChanges = {
-  dirtyRows: Map<number, Map<number, MongoInputValue>>;
-  deletedRows: Set<number>;
-  newRows: MongoInputValue[][];
-  columns: string[];
-  rows: MongoInputValue[][];
-};
-function mongoCollectionExpression(collection: string): string {
-  return `db.getCollection(${JSON.stringify(collection)})`;
-}
-function mongoQueryResultDocumentId(rowIdx: number, fallback: unknown): unknown {
-  const document = props.activeTab.result?.mongo_documents?.[rowIdx];
-  if (!document || typeof document !== "object" || Array.isArray(document)) return fallback;
-  return (document as Record<string, unknown>)._id ?? fallback;
-}
-const mongoQueryResultSaveHandler = computed<CustomSaveHandler | undefined>(() => {
-  const tab = props.activeTab;
-  const target = tab.mongoEditTarget;
-  if (tab.mode !== "query" || activeEffectiveDatabaseType.value !== "mongodb" || !target || !tab.connectionId || !tab.database || !tab.result) return undefined;
-  if (!tab.result.columns.includes(target.idColumn)) return undefined;
-
-  const save: CustomSaveHandler["save"] = async (changes: MongoQueryGridChanges) => {
-    if (changes.newRows.length > 0 || changes.deletedRows.size > 0) {
-      throw new Error("MongoDB query result editing only supports updating existing rows.");
-    }
-    const idColIdx = changes.columns.indexOf(target.idColumn);
-    if (idColIdx < 0) throw new Error("No _id column");
-    for (const [rowIdx, dirtyCols] of changes.dirtyRows) {
-      const row = changes.rows[rowIdx];
-      const id = row?.[idColIdx];
-      if (id === null || id === undefined || String(id).trim() === "") continue;
-      const updateDoc = buildMongoUpdateDocument(dirtyCols, changes.columns, tab.result?.mongo_documents?.[rowIdx]);
-      if (Object.keys(updateDoc).length === 0) continue;
-      await api.mongoUpdateDocument(tab.connectionId, tab.database, target.collection, serializeMongoDocumentId(mongoQueryResultDocumentId(rowIdx, id)), JSON.stringify(updateDoc));
-    }
-  };
-
-  const preview: CustomSaveHandler["preview"] = async (changes: MongoQueryGridChanges) => {
-    const idColIdx = changes.columns.indexOf(target.idColumn);
-    if (idColIdx < 0) return [];
-    const stmts: string[] = [];
-    for (const [rowIdx, dirtyCols] of changes.dirtyRows) {
-      const row = changes.rows[rowIdx];
-      const id = row?.[idColIdx];
-      if (id === null || id === undefined || String(id).trim() === "") continue;
-      const updateDoc = buildMongoUpdateDocument(dirtyCols, changes.columns, tab.result?.mongo_documents?.[rowIdx]);
-      if (Object.keys(updateDoc).length === 0) continue;
-      stmts.push(`${mongoCollectionExpression(target.collection)}.updateOne({_id: ${formatMongoShellLiteral(mongoQueryResultDocumentId(rowIdx, id))}}, ${formatMongoShellLiteral(updateDoc)})`);
-    }
-    return stmts;
-  };
-
-  const applySavedChanges: NonNullable<CustomSaveHandler["applySavedChanges"]> = ({ dirtyRows, columns }) => {
-    const documents = tab.result?.mongo_documents;
-    if (!documents) return;
-
-    // Replace the raw array only after every backend update succeeds, keeping
-    // the grid and JSON preview atomic when a multi-row save partially fails.
-    if (tab.resultLocalSortOriginalMongoDocuments) {
-      tab.resultLocalSortOriginalMongoDocuments = applyMongoGridChangesToDocumentBaseline(tab.resultLocalSortOriginalMongoDocuments, documents, dirtyRows, columns);
-    }
-    tab.result!.mongo_documents = documents.map((document, rowIdx) => {
-      const changes = dirtyRows.get(rowIdx);
-      return changes ? applyMongoGridChangesToDocument(document, changes, columns) : document;
-    });
-    const copyDocuments = tab.result!.mongo_copy_documents;
-    if (copyDocuments) {
-      if (tab.resultLocalSortOriginalMongoCopyDocuments) {
-        tab.resultLocalSortOriginalMongoCopyDocuments = applyMongoGridChangesToDocumentBaseline(tab.resultLocalSortOriginalMongoCopyDocuments, copyDocuments, dirtyRows, columns);
-      }
-      tab.result!.mongo_copy_documents = copyDocuments.map((document, rowIdx) => {
-        const changes = dirtyRows.get(rowIdx);
-        return changes ? applyMongoGridChangesToDocument(document, changes, columns) : document;
-      });
-    }
-  };
-
-  return { save, preview, applySavedChanges, canInsert: false, canDelete: false, supportsInsert: false, readonlyColumns: [target.idColumn], targetLabel: target.collection };
-});
 const resultsPaneOpen = ref(false);
 const resultsPaneSize = ref(Number(safeLocalStorageGet("dbx-results-pane-size")) || DEFAULT_QUERY_RESULTS_PANE_SIZE);
 const editorPaneSize = computed(() => (resultsPaneOpen.value ? 100 - resultsPaneSize.value : 100));
@@ -618,7 +473,6 @@ watch(() => [props.activeTab.id, props.activeTab.isExecuting, props.activeTab.qu
 onUnmounted(() => {
   stopQueryRunningElapsedTimer();
   standaloneResultToolbarResizeObserver?.disconnect();
-  window.removeEventListener("dbx-refresh-active-kv-browser", onRefreshActiveKvBrowser);
   window.removeEventListener("resize", updateStandaloneResultToolbarDimensions);
   window.visualViewport?.removeEventListener("resize", updateStandaloneResultToolbarDimensions);
   window.removeEventListener("dbx:ui-scale-applied", updateStandaloneResultToolbarDimensions);
@@ -809,10 +663,6 @@ function onHandleCloseColumnPanel() {
 }
 
 function focusSearch(): boolean {
-  if (props.activeTab.mode === "mongo") return documentBrowserRef.value?.focusSearch() ?? false;
-  if (props.activeTab.mode === "redis") return redisKeyBrowserRef.value?.focusSearch() ?? false;
-  if (props.activeTab.mode === "etcd") return etcdKeyBrowserRef.value?.focusSearch() ?? false;
-  if (props.activeTab.mode === "zookeeper") return zookeeperKeyBrowserRef.value?.focusSearch() ?? false;
   if (props.activeTab.mode === "objects") return objectBrowserRef.value?.focusSearch() ?? false;
   if (props.activeTab.mode === "query") return queryEditorRef.value?.openSearch() ?? false;
   return dataGridRef.value?.focusSearch() ?? false;
@@ -827,29 +677,14 @@ function refreshQueryEditorCompletionCache(): boolean {
 function refreshData(): boolean {
   // Reuse ObjectBrowser's reload path so schema reloads and stale object-response guards stay intact.
   if (props.activeTab.mode === "objects") return objectBrowserRef.value?.refresh?.() ?? false;
-  if (props.activeTab.mode === "etcd") return etcdKeyBrowserRef.value?.refresh?.() ?? false;
-  if (props.activeTab.mode === "etcd-dashboard") return etcdDashboardRef.value?.refresh?.() ?? false;
-  if (props.activeTab.mode === "zookeeper") return zookeeperKeyBrowserRef.value?.refresh?.() ?? false;
   // Restored data tabs intentionally omit row data, so refresh must work before DataGrid mounts.
   if (canReloadUnavailableDataTab(props.activeTab)) {
     emit("reload");
     return true;
   }
-  if (activeElasticsearchJsonResponse.value) {
-    // Match DataGrid's toolbar refresh intent so multi-result runs are
-    // refreshed as a group instead of replacing them with the active result.
-    emit("reload", activeResultSql.value, undefined, undefined, undefined, undefined, undefined, "refresh");
-    return true;
-  }
   if (!dataGridRef.value) return false;
   void dataGridRef.value.onToolbarRefresh();
   return true;
-}
-
-function onRefreshActiveKvBrowser(event: Event) {
-  const detail = (event as CustomEvent<{ mode?: string; connectionId?: string }>).detail;
-  if (!detail || props.activeTab.mode !== detail.mode || props.activeTab.connectionId !== detail.connectionId) return;
-  void nextTick(() => refreshData());
 }
 
 async function exportResultArchive() {
@@ -944,7 +779,7 @@ function focusExecutionSummaryItem(item: ExecutionSummaryItem) {
 function handleModRTarget(target: Element): boolean {
   if (target.closest("[data-query-editor-root]")) return queryEditorRef.value?.openReplace() ?? false;
   if (target.closest("[data-cell-detail-editor-root]")) return dataGridRef.value?.openCellDetailSearch() ?? false;
-  if (target.closest("[data-grid-root], [data-elasticsearch-json-response-root]")) return refreshData();
+  if (target.closest("[data-grid-root]")) return refreshData();
   if (canReloadUnavailableDataTab(props.activeTab)) return refreshData();
   return false;
 }
@@ -983,17 +818,7 @@ function applyTableStructureChanges() {
   return tableStructureEditorRef.value?.applyChanges() ?? Promise.resolve(false);
 }
 
-async function insertRedisCommand(command: string): Promise<boolean> {
-  if (props.activeTab.mode !== "redis") return false;
-  return (await redisKeyBrowserRef.value?.insertCommand?.(command)) ?? false;
-}
-
-async function executeRedisCommand(command: string): Promise<boolean> {
-  if (props.activeTab.mode !== "redis") return false;
-  return (await redisKeyBrowserRef.value?.executeCommand?.(command)) ?? false;
-}
-
-defineExpose({ focusSearch, refreshData, refreshQueryEditorCompletionCache, handleModRTarget, requestQueryEditorExecute, requestQueryEditorExecuteCurrent, requestQueryEditorExecuteInNewResultTab, pasteClipboardAsSqlInCondition, applyTableStructureChanges, insertRedisCommand, executeRedisCommand });
+defineExpose({ focusSearch, refreshData, refreshQueryEditorCompletionCache, handleModRTarget, requestQueryEditorExecute, requestQueryEditorExecuteCurrent, requestQueryEditorExecuteInNewResultTab, pasteClipboardAsSqlInCondition, applyTableStructureChanges });
 </script>
 
 <template>
@@ -1205,7 +1030,7 @@ defineExpose({ focusSearch, refreshData, refreshQueryEditorCompletionCache, hand
                 </div>
               </template>
               <div class="ml-auto flex shrink-0 items-center gap-1">
-                <Popover v-if="activeOutputView === 'result' && activeTab.result && hasTabularResult && !activeElasticsearchJsonResponse" v-model:open="dataGridViewOptionsOpen">
+                <Popover v-if="activeOutputView === 'result' && activeTab.result && hasTabularResult" v-model:open="dataGridViewOptionsOpen">
                   <PopoverTrigger as-child>
                     <Button variant="ghost" size="icon" class="h-6 w-7 shrink-0 text-foreground hover:bg-accent" :title="t('grid.viewOptions')" :aria-label="t('grid.viewOptions')">
                       <Wrench class="h-4 w-4" />
@@ -1419,7 +1244,7 @@ defineExpose({ focusSearch, refreshData, refreshQueryEditorCompletionCache, hand
                 :can-show-result="canShowResultOutput"
                 :can-show-output="hasResultOutput"
                 :can-show-summary="hasExecutionSummary"
-                :can-show-chart="hasNumericData && !activeElasticsearchJsonResponse"
+                :can-show-chart="hasNumericData"
                 :compact="standaloneResultToolbarCompact"
                 @select-view="emit('update:activeOutputView', $event)"
               />
@@ -1447,7 +1272,7 @@ defineExpose({ focusSearch, refreshData, refreshQueryEditorCompletionCache, hand
               :table-error="activeTab.explainTableError"
             />
 
-            <QueryChart v-else-if="activeOutputView === 'chart' && activeTab.result && !activeElasticsearchJsonResponse" class="flex-1 min-h-0" :result="activeTab.result" />
+            <QueryChart v-else-if="activeOutputView === 'chart' && activeTab.result" class="flex-1 min-h-0" :result="activeTab.result" />
 
             <div v-else-if="activeOutputView === 'output'" data-query-output-view class="flex-1 min-h-0 overflow-auto bg-background">
               <div v-if="outputMessages.length === 0" class="flex h-full items-center justify-center text-sm text-muted-foreground">
@@ -1530,11 +1355,8 @@ defineExpose({ focusSearch, refreshData, refreshQueryEditorCompletionCache, hand
             </div>
 
             <template v-else>
-              <ElasticsearchJsonResponsePanel v-if="activeElasticsearchJsonResponse" class="flex-1 min-h-0" :status="activeElasticsearchJsonResponse.status" :body="activeElasticsearchJsonResponse.body" />
-              <ElasticsearchJsonResponsePanel v-else-if="showElasticsearchRawJson && activeElasticsearchRawBody" class="flex-1 min-h-0" :status="200" :body="activeElasticsearchRawBody" can-show-table @show-table="showElasticsearchRawJson = false" />
-
               <!-- Multi-Result Split: Horizontal Layout -->
-              <Splitpanes v-else-if="multiResultSplitMode === 'horizontal' && visibleResultItems.length > 1 && hasTabularResult" horizontal class="flex-1 min-h-0 w-full">
+              <Splitpanes v-if="multiResultSplitMode === 'horizontal' && visibleResultItems.length > 1 && hasTabularResult" horizontal class="flex-1 min-h-0 w-full">
                 <Pane v-for="item in visibleResultItems" :key="`${activeTab.id}:res:h:${item.index}`" :min-size="15" class="flex flex-col min-h-0 bg-background border-b last:border-b-0">
                   <div class="flex items-center justify-between border-b bg-muted/30 px-2.5 py-1 text-xs select-none shrink-0 font-medium">
                     <span class="font-mono text-[11px]">{{ item.displayLabel || item.label || t("tabs.resultN", { n: item.n }) }} ({{ item.result.rows?.length ?? 0 }} 行)</span>
@@ -1615,10 +1437,8 @@ defineExpose({ focusSearch, refreshData, refreshQueryEditorCompletionCache, hand
                 :sql="activeResultSql"
                 :export-sql="activeResultExportSql"
                 :loading="activeTab.isExecuting"
-                :editable="!!activeTab.queryAnalysis || !!mongoQueryResultSaveHandler"
+                :editable="!!activeTab.queryAnalysis"
                 :source-columns="activeTab.querySourceColumns"
-                :custom-save-handler="mongoQueryResultSaveHandler"
-                :mongo-update-target="mongoQueryResultSaveHandler && activeTab.result.mongo_copy_documents?.length === activeTab.result.rows.length ? activeTab.mongoEditTarget : undefined"
                 :query-editability-reason="activeTab.queryEditabilityReason"
                 :allow-insert-rows="activeTab.queryAnalysis?.allowInsert !== false && activeTab.queryAnalysis?.allowInsertDelete !== false"
                 :allow-delete-rows="activeTab.queryAnalysis?.allowInsertDelete !== false"
@@ -1650,27 +1470,7 @@ defineExpose({ focusSearch, refreshData, refreshQueryEditorCompletionCache, hand
                 @sort="(column: string, columnIndex: number, direction: 'asc' | 'desc' | null, whereInput?: string, mode?: DataGridSortMode) => emit('sort', column, columnIndex, direction, whereInput, mode)"
               >
                 <template #result-toolbar-leading="{ compact }">
-                  <QueryResultViewSwitcher
-                    :active-view="activeOutputView"
-                    :can-show-result="canShowResultOutput"
-                    :can-show-output="hasResultOutput"
-                    :can-show-summary="hasExecutionSummary"
-                    :can-show-chart="hasNumericData && !activeElasticsearchJsonResponse"
-                    :compact="compact"
-                    @select-view="emit('update:activeOutputView', $event)"
-                  />
-                  <template v-if="activeElasticsearchRawBody">
-                    <div class="mx-1 h-4 w-px bg-border" />
-                    <button
-                      type="button"
-                      class="inline-flex h-5 shrink-0 items-center rounded-sm border border-transparent px-2 text-xs leading-none transition-colors"
-                      :class="showElasticsearchRawJson ? 'bg-secondary text-secondary-foreground' : 'text-muted-foreground hover:text-foreground'"
-                      :aria-pressed="showElasticsearchRawJson"
-                      @click="showElasticsearchRawJson = !showElasticsearchRawJson"
-                    >
-                      {{ showElasticsearchRawJson ? t("tabs.tableData") : t("redis.jsonView") }}
-                    </button>
-                  </template>
+                  <QueryResultViewSwitcher :active-view="activeOutputView" :can-show-result="canShowResultOutput" :can-show-output="hasResultOutput" :can-show-summary="hasExecutionSummary" :can-show-chart="hasNumericData" :compact="compact" @select-view="emit('update:activeOutputView', $event)" />
                 </template>
                 <template #result-toolbar-actions="{ compact }">
                   <QueryResultToolbarActions
@@ -2001,107 +1801,6 @@ defineExpose({ focusSearch, refreshData, refreshQueryEditorCompletionCache, hand
       </div>
     </template>
 
-    <!-- Redis mode: key browser -->
-    <template v-else-if="activeTab.mode === 'redis'">
-      <div class="flex-1 min-h-0">
-        <RedisKeyBrowser ref="redisKeyBrowserRef" :key="`${activeTab.id}:${activeTab.connectionId}:${activeTab.database}`" :connection-id="activeTab.connectionId" :db="Number(activeTab.database)" :block-dangerous-redis-commands="props.blockDangerousRedisCommands" />
-      </div>
-    </template>
-
-    <!-- Redis Dashboard: instance info -->
-    <template v-else-if="activeTab.mode === 'redis-dashboard'">
-      <div class="flex-1 min-h-0">
-        <RedisDashboard :key="activeTab.id" :connection-id="activeTab.connectionId" />
-      </div>
-    </template>
-
-    <!-- etcd mode: key browser -->
-    <template v-else-if="activeTab.mode === 'etcd'">
-      <div class="flex-1 min-h-0">
-        <EtcdKeyBrowser ref="etcdKeyBrowserRef" :key="activeTab.id" :connection-id="activeTab.connectionId" />
-      </div>
-    </template>
-
-    <!-- etcd Dashboard: cluster observation -->
-    <template v-else-if="activeTab.mode === 'etcd-dashboard'">
-      <div class="flex-1 min-h-0">
-        <EtcdDashboard ref="etcdDashboardRef" :key="activeTab.id" :connection-id="activeTab.connectionId" />
-      </div>
-    </template>
-
-    <template v-else-if="activeTab.mode === 'etcd-access-control'">
-      <div class="flex-1 min-h-0">
-        <EtcdAccessControl :key="activeTab.id" :connection-id="activeTab.connectionId" />
-      </div>
-    </template>
-
-    <!-- ZooKeeper mode: znode browser -->
-    <template v-else-if="activeTab.mode === 'zookeeper'">
-      <div class="flex-1 min-h-0">
-        <ZooKeeperKeyBrowser ref="zookeeperKeyBrowserRef" :key="activeTab.id" :connection-id="activeTab.connectionId" />
-      </div>
-    </template>
-
-    <!-- Document mode: MongoDB collections and Elasticsearch indices -->
-    <template v-else-if="activeTab.mode === 'mongo'">
-      <div class="flex-1 min-h-0">
-        <DocumentBrowser ref="documentBrowserRef" :key="activeTab.id" :connection-id="activeTab.connectionId" :database="activeTab.database" :collection="activeTab.sql" :database-type="activeEffectiveDatabaseType" :table-meta="activeTab.tableMeta" />
-      </div>
-    </template>
-
-    <template v-else-if="activeTab.mode === 'mongo-gridfs'">
-      <div class="flex-1 min-h-0">
-        <MongoGridFsBrowser :key="activeTab.id" :connection-id="activeTab.connectionId" :database="activeTab.database" />
-      </div>
-    </template>
-
-    <template v-else-if="activeTab.mode === 'mongo-bucket'">
-      <div class="flex-1 min-h-0">
-        <MongoBucketBrowser :key="activeTab.id" :connection-id="activeTab.connectionId" :database="activeTab.database" :bucket="activeTab.mongoBucket?.bucketName || activeTab.sql" />
-      </div>
-    </template>
-
-    <!-- Vector mode: Qdrant and Milvus collections -->
-    <template v-else-if="activeTab.mode === 'vector'">
-      <div class="flex-1 min-h-0">
-        <VectorBrowser :key="activeTab.id" :connection-id="activeTab.connectionId" :database="activeTab.database" :collection="activeTab.sql" :collection-label="activeTab.title" :database-type="activeEffectiveDatabaseType" :dimension="activeTabDimension" />
-      </div>
-    </template>
-
-    <template v-else-if="activeTab.mode === 'hbase'">
-      <div class="flex-1 min-h-0">
-        <HBaseBrowser :key="activeTab.id" :tab-id="activeTab.id" :connection-id="activeTab.connectionId" :namespace="activeTab.database" :table="activeTab.sql" :create-table-on-open="activeTab.hbaseCreateTableOnOpen" />
-      </div>
-    </template>
-
-    <template v-else-if="activeTab.mode === 'mq'">
-      <div class="flex-1 min-h-0">
-        <MqAdminConsole :key="activeTab.id" :connection-id="activeTab.connectionId" :initial-tenant="activeTab.mqTenant" :initial-tab="activeTab.mqInitialTab" :read-only="activeConnection?.read_only ?? false" />
-      </div>
-    </template>
-
-    <template v-else-if="activeTab.mode === 'mqtt'">
-      <div class="flex-1 min-h-0">
-        <MqttAdminConsole :key="activeTab.id" :connection-id="activeTab.connectionId" :initial-topic="activeTab.mqttInitialTopic" />
-      </div>
-    </template>
-
-    <template v-else-if="activeTab.mode === 'nacos'">
-      <div class="flex-1 min-h-0">
-        <NacosAdminConsole
-          :key="activeTab.id"
-          :connection-id="activeTab.connectionId"
-          :namespace="activeTab.nacosNamespace"
-          :namespace-name="activeTab.nacosNamespaceName"
-          :target-data-id="activeTab.nacosTargetDataId"
-          :target-group="activeTab.nacosTargetGroup"
-          :target-keyword="activeTab.nacosTargetKeyword"
-          :target-request-id="activeTab.nacosTargetRequestId"
-          :read-only="activeConnection?.read_only ?? false"
-        />
-      </div>
-    </template>
-
     <!-- Objects mode: virtualized database object browser -->
     <template v-else-if="activeTab.mode === 'objects' && activeConnection">
       <div class="min-w-0 flex-1 min-h-0">
@@ -2149,26 +1848,10 @@ defineExpose({ focusSearch, refreshData, refreshQueryEditorCompletionCache, hand
       <ProcessListPanel :key="activeTab.id" :connection="activeConnection" />
     </template>
 
-    <template v-else-if="activeTab.mode === 'mysql-dashboard'">
-      <div class="min-h-0 flex-1">
-        <MySqlDashboard :key="activeTab.id" :connection-id="activeTab.connectionId" />
-      </div>
-    </template>
-
     <template v-else-if="activeTab.mode === 'postgres-dashboard'">
       <div class="min-h-0 flex-1">
         <PostgresDashboard :key="activeTab.id" :connection-id="activeTab.connectionId" />
       </div>
-    </template>
-
-    <template v-else-if="activeTab.mode === 'nacos-dashboard'">
-      <div class="min-h-0 flex-1">
-        <NacosDashboard :key="activeTab.id" :connection-id="activeTab.connectionId" />
-      </div>
-    </template>
-
-    <template v-else-if="activeTab.mode === 'dameng-jobs' && activeConnection">
-      <DamengJobAdmin :key="activeTab.id" :connection="activeConnection" />
     </template>
 
     <!-- Routine Test mode: graphical procedure/function test window (PL/SQL Developer style) -->

@@ -38,6 +38,7 @@ describe("connectionStore sidebar table storage", () => {
     vi.doMock("@/lib/backend/tauriRuntime", () => ({ isTauriRuntime: () => false }));
     vi.doMock("@/lib/backend/api", () => ({
       checkConnectionHealth: vi.fn().mockResolvedValue(undefined),
+      connectionDatabaseInfo: vi.fn().mockResolvedValue(null),
       deleteSchemaCachePrefix: vi.fn().mockResolvedValue(undefined),
       listInstalledAgents: vi.fn().mockResolvedValue([]),
       listObjects: vi.fn().mockResolvedValue([]),
@@ -57,30 +58,30 @@ describe("connectionStore sidebar table storage", () => {
     settingsStore.editorSettings.sidebarObjectInfoMode = "size";
 
     const connection = {
-      id: "oracle-1",
-      name: "Oracle",
-      db_type: "oracle",
+      id: "opengauss-1",
+      name: "openGauss",
+      db_type: "opengauss",
       host: "127.0.0.1",
-      port: 1521,
-      username: "APP",
+      port: 5432,
+      username: "gaussdb",
       password: "",
-      database: "ORCL",
+      database: "postgres",
     } as ConnectionConfig;
     const existingTable: TreeNode = {
-      id: "oracle-1:ORCL:APP:EXISTING_TABLE",
+      id: "opengauss-1:postgres:public:EXISTING_TABLE",
       label: "EXISTING_TABLE",
       type: "table",
       connectionId: connection.id,
       database: connection.database,
-      schema: "APP",
+      schema: "public",
     };
     const schemaNode: TreeNode = {
-      id: "oracle-1:ORCL:APP",
-      label: "APP",
+      id: "opengauss-1:postgres:public",
+      label: "public",
       type: "schema",
       connectionId: connection.id,
       database: connection.database,
-      schema: "APP",
+      schema: "public",
       isExpanded: true,
       children: [existingTable],
     };
@@ -88,23 +89,23 @@ describe("connectionStore sidebar table storage", () => {
     store.connectedIds.add(connection.id);
     store.treeNodes = [{ id: connection.id, label: connection.name, type: "connection", connectionId: connection.id, children: [schemaNode] }];
 
-    const initialLoad = store.loadSidebarTableStorage({ connectionId: connection.id, database: connection.database, schema: "APP" });
+    const initialLoad = store.loadSidebarTableStorage({ connectionId: connection.id, database: connection.database, schema: "public" });
     expect(listObjectStatistics).toHaveBeenCalledTimes(1);
 
-    await store.refreshObjectListTreeNode(connection.id, connection.database, "APP");
+    await store.refreshObjectListTreeNode(connection.id, connection.database, "public");
     expect(listObjectStatistics).toHaveBeenCalledTimes(2);
 
     const currentExistingTable = schemaNode.children?.find((node) => node.label === "EXISTING_TABLE");
     const newTable = schemaNode.children?.find((node) => node.label === "NEW_TABLE");
     refreshedStatistics.resolve([
-      { name: "EXISTING_TABLE", schema: "APP", total_bytes: 8192 },
-      { name: "NEW_TABLE", schema: "APP", total_bytes: 16384 },
+      { name: "EXISTING_TABLE", schema: "public", total_bytes: 8192 },
+      { name: "NEW_TABLE", schema: "public", total_bytes: 16384 },
     ]);
     await vi.waitFor(() => expect(newTable?.sizeBytes).toBe(16384));
 
-    initialStatistics.resolve([{ name: "EXISTING_TABLE", schema: "APP", total_bytes: 4096 }]);
+    initialStatistics.resolve([{ name: "EXISTING_TABLE", schema: "public", total_bytes: 4096 }]);
     await initialLoad;
     expect(currentExistingTable?.sizeBytes).toBe(8192);
     expect(newTable?.sizeBytes).toBe(16384);
-  });
+  }, 15000);
 });

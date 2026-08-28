@@ -1,6 +1,6 @@
 import type { ConnectionConfig, DatabaseStorageInfo, ObjectStatistics, TreeNode } from "@/types/database";
 
-const sidebarTableStorageTypes = new Set<ConnectionConfig["db_type"]>(["mysql", "postgres", "sqlserver", "oracle", "clickhouse", "dameng", "gaussdb", "kingbase", "gbase"]);
+const sidebarTableStorageTypes = new Set<ConnectionConfig["db_type"]>(["postgres", "opengauss"]);
 
 export function supportsSidebarDatabaseStorage(connection: ConnectionConfig | undefined): boolean {
   return connection?.db_type === "postgres" && connection.driver_profile !== "cockroachdb";
@@ -8,7 +8,6 @@ export function supportsSidebarDatabaseStorage(connection: ConnectionConfig | un
 
 export function supportsSidebarTableStorage(connection: ConnectionConfig | undefined): boolean {
   if (!connection || !sidebarTableStorageTypes.has(connection.db_type)) return false;
-  if (connection.db_type === "gbase" && connection.driver_profile === "gbase8s") return false;
   return connection.db_type !== "postgres" || connection.driver_profile !== "cockroachdb";
 }
 

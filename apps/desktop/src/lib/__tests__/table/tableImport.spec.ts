@@ -113,13 +113,13 @@ describe("tableImport", () => {
           ["1001", "00123", "12.5", "2026-07-07 08:15:00"],
           ["1002", "00456", "13.75", "2026-07-07 09:15:00"],
         ],
-        "mysql",
+        "opengauss",
       ),
     ).toEqual({
       id: "BIGINT",
       code: "TEXT",
-      amount: "DOUBLE",
-      created_at: "DATETIME",
+      amount: "DOUBLE PRECISION",
+      created_at: "TIMESTAMP",
     });
   });
 });

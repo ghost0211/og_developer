@@ -5,7 +5,6 @@ import { appendSearchMatchSelection, findSearchMatch, isSearchAddSelectionModifi
 
 const searchPanelSource = readFileSync(new URL("../../../components/editor/EditorSearchPanel.vue", import.meta.url), "utf8");
 const ddlViewSource = readFileSync(new URL("../../../components/objects/DdlViewDialog.vue", import.meta.url), "utf8");
-const nacosSource = readFileSync(new URL("../../../components/nacos/NacosAdminConsole.vue", import.meta.url), "utf8");
 
 const matches = [
   { from: 0, to: 3 },
@@ -92,6 +91,5 @@ describe("editorSearchSelection", () => {
 
   it("enables multiple selections in every editor using the shared panel", () => {
     expect(ddlViewSource).toContain("EditorState.allowMultipleSelections.of(true)");
-    expect(nacosSource).toContain("EditorState.allowMultipleSelections.of(true)");
   });
 });

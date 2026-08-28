@@ -51,21 +51,6 @@ test("flags confirmed missing tables", () => {
   assert.equal(diagnostics[0]?.severity, "error");
 });
 
-test("does not flag MySQL DUAL as a missing physical table", () => {
-  const analysis: SqlReferenceAnalysis = {
-    tables: [{ name: "DUAL", span: span(24, 27) }],
-    columns: [],
-  };
-
-  const diagnostics = buildSqlSemanticDiagnostics(analysis, {
-    tables: [],
-    columnsByTable: new Map(),
-    missingTables: new Set(["dual"]),
-    databaseType: "mysql",
-  });
-
-  assert.deepEqual(diagnostics, []);
-});
 
 test("trims whitespace from missing table diagnostic spans", () => {
   const analysis: SqlReferenceAnalysis = {
@@ -307,12 +292,6 @@ test("builds a syntax diagnostic from parser errors with line and column", () =>
   assert.deepEqual(diagnostic?.span, span(10, 12));
 });
 
-test("uses MySQL reference parsing only for Kingbase connections that report backtick identifiers", () => {
-  assert.equal(sqlReferenceAnalysisDialectFor({ databaseType: "kingbase", identifierQuote: "`", fallbackDialect: "postgres" }), "mysql");
-  assert.equal(sqlReferenceAnalysisDialectFor({ databaseType: "kingbase", identifierQuote: '"', fallbackDialect: "postgres" }), "postgres");
-  assert.equal(sqlReferenceAnalysisDialectFor({ databaseType: "kingbase", fallbackDialect: "postgres" }), "postgres");
-  assert.equal(sqlReferenceAnalysisDialectFor({ databaseType: "postgres", identifierQuote: "`", fallbackDialect: "postgres" }), "postgres");
-});
 
 test("compares diagnostics by severity message and span", () => {
   const diagnostics = [
@@ -343,14 +322,7 @@ test("defers diagnostics while the cursor is in table completion context", () =>
   assert.equal(isSqlSemanticDiagnosticInputContext("SELECT * FROM `t_0001` where ids > 1 LIMIT 50;", "SELECT * FROM `t_0001` where ids > 1 LIMIT 50;".length, { databaseType: "mysql" }), false);
 });
 
-test("skips diagnostics for MongoDB connections", () => {
-  assert.equal(shouldRunSqlSemanticDiagnostics("db.my_collection.find({})", 0, { databaseType: "mongodb" }), false);
-});
 
-test("skips diagnostics for Elasticsearch-compatible connections", () => {
-  assert.equal(shouldRunSqlSemanticDiagnostics("db.my_collection.find({})", 0, { databaseType: "elasticsearch" }), false);
-  assert.equal(shouldRunSqlSemanticDiagnostics("GET /_cluster/health", 0, { databaseType: "easysearch" }), false);
-});
 
 test("still runs diagnostics for SQL connections", () => {
   assert.equal(shouldRunSqlSemanticDiagnostics("SELECT * FROM users WHERE id = 1", 42, { databaseType: "mysql" }), true);
@@ -369,25 +341,6 @@ test("selects complete SQL statements intersecting the visible viewport for diag
   assert.equal(ranges[0]?.to, sql.indexOf(";\nSELECT * FROM third"));
 });
 
-test("skips Oracle PL/SQL blocks when selecting semantic diagnostic ranges", () => {
-  const sql = `DECLARE
-  v_order_count NUMBER;
-BEGIN
-  SELECT COUNT(*) INTO v_order_count
-  FROM "DBX_TEST"."ORDERS_10K";
-
-  IF v_order_count = 0 THEN
-    COMMIT;
-  END IF;
-END;
-/
-SELECT * FROM "DBX_TEST"."ORDERS_10K";`;
-
-  const ranges = sqlSemanticDiagnosticRangesForViewport(sql, [{ from: 0, to: sql.length }], "oracle");
-
-  assert.equal(ranges.length, 1);
-  assert.equal(ranges[0]?.sql, 'SELECT * FROM "DBX_TEST"."ORDERS_10K"');
-});
 
 test("keeps a long statement complete when only its middle is visible", () => {
   const sql = "SELECT id,\n  name,\n  missing_field\nFROM users\nWHERE id > 1;";

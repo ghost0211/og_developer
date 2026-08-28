@@ -6,7 +6,6 @@
 // seeds it into the JDBC plugin driver directory.
 // See NOTICE for the full list of modifications.
 
-use crate::agent_service::AgentProgressEvent;
 use crate::plugins::PluginRuntimeEnv;
 use crate::plugins::{PluginManifest, SUPPORTED_PLUGIN_PROTOCOL_VERSION};
 use crate::update::{fetch_latest_release, is_newer_version, JdbcPluginLatest};
@@ -267,6 +266,23 @@ pub async fn install_prestosql_jdbc_driver(plugins_root: &Path) -> Result<Vec<Jd
 
 pub async fn get_jdbc_plugin_status(plugins_root: &Path) -> Result<JdbcPluginStatus, String> {
     jdbc_plugin_status_from_dir(&plugins_root.join("jdbc")).await
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentProgressEvent {
+    pub step: String,
+    pub completed: u64,
+    pub total: u64,
+}
+
+impl AgentProgressEvent {
+    pub fn transfer(step: &str, completed: u64, total: u64) -> Self {
+        Self { step: step.to_string(), completed, total }
+    }
+    pub fn step(step: &str) -> Self {
+        Self { step: step.to_string(), completed: 0, total: 0 }
+    }
 }
 
 pub async fn install_jdbc_plugin(plugins_root: &Path) -> Result<JdbcPluginStatus, String> {

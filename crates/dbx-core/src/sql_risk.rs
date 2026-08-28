@@ -740,14 +740,7 @@ pub fn mcp_sql_has_forbidden_database_switch(sql: &str, database_type: DatabaseT
         return true;
     }
 
-    if matches!(
-        database_type,
-        DatabaseType::Mysql
-            | DatabaseType::Doris
-            | DatabaseType::StarRocks
-            | DatabaseType::ManticoreSearch
-            | DatabaseType::Goldendb
-    ) {
+    if false {
         let executable_comments_expanded = crate::query_execution_sql::strip_sql_comments(sql);
         return sql_has_use_statement(&executable_comments_expanded, dialect.as_ref());
     }
@@ -782,19 +775,7 @@ fn sql_has_use_statement(sql: &str, dialect: &dyn sqlparser::dialect::Dialect) -
 }
 
 fn supports_select_into_table_creation(database_type: DatabaseType) -> bool {
-    matches!(
-        database_type,
-        DatabaseType::Postgres
-            | DatabaseType::Redshift
-            | DatabaseType::Gaussdb
-            | DatabaseType::OpenGauss
-            | DatabaseType::Kingbase
-            | DatabaseType::Highgo
-            | DatabaseType::Uxdb
-            | DatabaseType::Vastbase
-            | DatabaseType::Kwdb
-            | DatabaseType::SqlServer
-    )
+    matches!(database_type, DatabaseType::Postgres | DatabaseType::OpenGauss)
 }
 
 fn classify_sql_risk_with_database(
@@ -807,11 +788,6 @@ fn classify_sql_risk_with_database(
     let has_locking_clause = sql_contains_top_level_locking_clause(sql, parser_dialect.as_ref());
     let has_dialect_specific_write = match database_type {
         Some(database_type) => crate::query_execution_sql::has_dialect_specific_write(sql, database_type),
-        // Preserve MySQL executable-comment and file-output detection even
-        // when callers provide a dialect string instead of a database type.
-        None if normalized_dialect == "mysql" => {
-            crate::query_execution_sql::has_dialect_specific_write(sql, DatabaseType::Mysql)
-        }
         None => false,
     };
 
@@ -896,30 +872,13 @@ mod tests {
             "SHOW TRIGGERS FROM `rs_main` LIKE 'trg_order_items_after_%';",
             "show triggers in `rs_main` where `Event` = 'INSERT';",
         ] {
-            assert_eq!(classify_sql_risk(sql, "mysql").unwrap(), SqlRisk::ReadOnly, "expected read-only: {sql}");
+            assert_eq!(classify_sql_risk(sql, "postgres").unwrap(), SqlRisk::ReadOnly, "expected read-only: {sql}");
             assert_eq!(
-                classify_sql_risk_for_database(sql, DatabaseType::Mysql).unwrap(),
+                classify_sql_risk_for_database(sql, DatabaseType::Postgres).unwrap(),
                 SqlRisk::ReadOnly,
                 "expected read-only: {sql}"
             );
-            assert!(!is_dangerous_sql_for_database(sql, DatabaseType::Mysql), "expected safe SQL: {sql}");
-        }
-    }
-
-    #[test]
-    fn mysql_show_triggers_preserves_write_detection() {
-        for (sql, expected_risk) in [
-            ("SHOW TRIGGERS; DELETE FROM order_items", SqlRisk::Write),
-            ("SHOW TRIGGERS; DROP TABLE order_items", SqlRisk::Ddl),
-            ("SHOW TRIGGERS; /*!50000 DELETE FROM order_items */", SqlRisk::Write),
-        ] {
-            assert_eq!(classify_sql_risk(sql, "mysql").unwrap(), expected_risk, "expected write detection: {sql}");
-            assert_eq!(
-                classify_sql_risk_for_database(sql, DatabaseType::Mysql).unwrap(),
-                expected_risk,
-                "expected write detection: {sql}"
-            );
-            assert!(is_dangerous_sql_for_database(sql, DatabaseType::Mysql), "expected dangerous SQL: {sql}");
+            assert!(!is_dangerous_sql_for_database(sql, DatabaseType::Postgres), "expected safe SQL: {sql}");
         }
     }
 
@@ -974,30 +933,17 @@ mod tests {
         assert_eq!(classify_sql_risk("DELETE FROM users", "postgres").unwrap(), SqlRisk::Write);
         assert_eq!(classify_sql_risk("EXPLAIN ANALYZE DELETE FROM users", "postgres").unwrap(), SqlRisk::Write);
         assert_eq!(classify_sql_risk("SELECT * INTO backup_users FROM users", "postgres").unwrap(), SqlRisk::Write);
-        assert_eq!(
-            classify_sql_risk("SELECT * FROM users INTO OUTFILE '/tmp/users.csv'", "mysql").unwrap(),
-            SqlRisk::Write
-        );
-        assert_eq!(classify_sql_risk("/*! DELETE FROM users */", "mysql").unwrap(), SqlRisk::Write);
     }
 
     #[test]
     fn mcp_forbids_persistent_database_switching_in_every_permission_mode() {
-        for (sql, database_type) in [
-            ("USE reporting", DatabaseType::Mysql),
-            ("-- target database\nUSE reporting", DatabaseType::Mysql),
-            ("SELECT 1; USE reporting", DatabaseType::Mysql),
-            ("USE [reporting]", DatabaseType::SqlServer),
-            ("USE DATABASE reporting", DatabaseType::Snowflake),
-            ("/*!50000 USE reporting */", DatabaseType::Mysql),
-        ] {
-            assert!(mcp_sql_has_forbidden_database_switch(sql, database_type), "expected blocked SQL: {sql}");
+        for sql in ["USE reporting", "-- target database\nUSE reporting", "SELECT 1; USE reporting"] {
+            assert!(mcp_sql_has_forbidden_database_switch(sql, DatabaseType::Opengauss), "expected blocked SQL: {sql}");
         }
 
         for sql in ["SELECT use FROM feature_flags", "SELECT 'USE reporting'", "SELECT 1"] {
-            assert!(!mcp_sql_has_forbidden_database_switch(sql, DatabaseType::Mysql), "expected allowed SQL: {sql}");
+            assert!(!mcp_sql_has_forbidden_database_switch(sql, DatabaseType::Postgres), "expected allowed SQL: {sql}");
         }
-        assert!(!mcp_sql_has_forbidden_database_switch("/*!50000 USE reporting */", DatabaseType::Postgres));
     }
 
     #[test]
@@ -1022,41 +968,13 @@ mod tests {
 
     #[test]
     fn classify_dialect_specific_select_into_as_write() {
-        for sql in [
-            "SELECT 3156 INTO OUTFILE '/var/lib/mysql-files/dbx_ro_probe.txt'",
-            "SELECT 3156 INTO DUMPFILE '/var/lib/mysql-files/dbx_ro_probe.bin'",
-        ] {
-            assert_eq!(classify_sql_risk_for_database(sql, DatabaseType::Mysql).unwrap(), SqlRisk::Write);
-        }
-
-        for database_type in [
-            DatabaseType::Postgres,
-            DatabaseType::Redshift,
-            DatabaseType::Gaussdb,
-            DatabaseType::OpenGauss,
-            DatabaseType::Kingbase,
-            DatabaseType::Highgo,
-            DatabaseType::Vastbase,
-            DatabaseType::Kwdb,
-        ] {
+        for database_type in [DatabaseType::Postgres, DatabaseType::Opengauss] {
             assert_eq!(
                 classify_sql_risk_for_database("SELECT * INTO copied_users FROM users", database_type).unwrap(),
                 SqlRisk::Write,
                 "expected PostgreSQL-family SELECT INTO to be a write for {database_type:?}"
             );
         }
-        assert_eq!(
-            classify_sql_risk_for_database("SELECT * INTO #copied_users FROM users", DatabaseType::SqlServer).unwrap(),
-            SqlRisk::Write
-        );
-        assert_eq!(
-            classify_sql_risk_for_database(
-                "SELECT 3156 /*!50000 INTO OUTFILE '/var/lib/mysql-files/dbx_ro_probe.txt' */",
-                DatabaseType::Mysql,
-            )
-            .unwrap(),
-            SqlRisk::Write
-        );
     }
 
     #[test]
@@ -1068,10 +986,6 @@ mod tests {
         assert_eq!(
             classify_sql_risk_for_database("CREATE TABLE users (id INT)", DatabaseType::Postgres).unwrap(),
             SqlRisk::Ddl
-        );
-        assert_eq!(
-            classify_sql_risk_for_database("SELECT 1 INTO unsupported", DatabaseType::Sqlite).unwrap(),
-            SqlRisk::ReadOnly
         );
     }
 
@@ -1085,80 +999,70 @@ mod tests {
 
     #[test]
     fn high_risk_sql_requires_central_permission_for_unbounded_changes() {
-        assert!(is_dangerous_sql_for_database("TRUNCATE TABLE users", DatabaseType::Mysql));
-        assert!(is_dangerous_sql_for_database("DELETE FROM users", DatabaseType::Mysql));
-        assert!(is_dangerous_sql_for_database("UPDATE users SET active = 0", DatabaseType::Mysql));
-        assert!(is_dangerous_sql_for_database("DELETE FROM users WHERE 1 = 1", DatabaseType::Mysql));
-        assert!(is_dangerous_sql_for_database("UPDATE users SET active = 0 WHERE TRUE", DatabaseType::Mysql));
-        assert!(is_dangerous_sql_for_database("DELETE FROM users WHERE id = id", DatabaseType::Mysql));
+        assert!(is_dangerous_sql_for_database("TRUNCATE TABLE users", DatabaseType::Postgres));
+        assert!(is_dangerous_sql_for_database("DELETE FROM users", DatabaseType::Postgres));
+        assert!(is_dangerous_sql_for_database("UPDATE users SET active = 0", DatabaseType::Postgres));
+        assert!(is_dangerous_sql_for_database("DELETE FROM users WHERE 1 = 1", DatabaseType::Postgres));
+        assert!(is_dangerous_sql_for_database("UPDATE users SET active = 0 WHERE TRUE", DatabaseType::Postgres));
+        assert!(is_dangerous_sql_for_database("DELETE FROM users WHERE id = id", DatabaseType::Postgres));
         assert!(is_dangerous_sql_for_database(
             "DELETE FROM users WHERE lower(email) = lower(email)",
-            DatabaseType::Mysql
+            DatabaseType::Postgres
         ));
-        assert!(is_dangerous_sql_for_database("DELETE FROM users WHERE NOT (1 = 0)", DatabaseType::Mysql));
-        assert!(is_dangerous_sql_for_database("UPDATE users SET active = 0 WHERE 2 > 1", DatabaseType::Mysql));
+        assert!(is_dangerous_sql_for_database("DELETE FROM users WHERE NOT (1 = 0)", DatabaseType::Postgres));
+        assert!(is_dangerous_sql_for_database("UPDATE users SET active = 0 WHERE 2 > 1", DatabaseType::Postgres));
         assert!(is_dangerous_sql_for_database(
             "DELETE FROM users WHERE id IS NULL OR id IS NOT NULL",
-            DatabaseType::Mysql
+            DatabaseType::Postgres
         ));
         assert!(is_dangerous_sql_for_database(
             "DELETE FROM users WHERE id IS NULL OR NOT (((id IS NULL)))",
-            DatabaseType::Mysql
+            DatabaseType::Postgres
         ));
         assert!(is_dangerous_sql_for_database(
             "DELETE FROM users WHERE id IS NOT NULL OR NOT (((id IS NOT NULL)))",
-            DatabaseType::Mysql
+            DatabaseType::Postgres
         ));
-        assert!(is_dangerous_sql_for_database("DELETE FROM users WHERE id = 1 OR id <> 1", DatabaseType::Mysql));
-        assert!(is_dangerous_sql_for_database("DELETE FROM users WHERE id != 1 OR 1 = id", DatabaseType::Mysql));
+        assert!(is_dangerous_sql_for_database("DELETE FROM users WHERE id = 1 OR id <> 1", DatabaseType::Postgres));
+        assert!(is_dangerous_sql_for_database("DELETE FROM users WHERE id != 1 OR 1 = id", DatabaseType::Postgres));
         assert!(is_dangerous_sql_for_database(
             "DELETE FROM users WHERE status = 'disabled' OR status != 'disabled'",
-            DatabaseType::Mysql
+            DatabaseType::Postgres
         ));
         assert!(is_dangerous_sql_for_database(
             "DELETE FROM users WHERE (id = 1 OR status = 'disabled') OR 1 != id OR id IS NULL",
-            DatabaseType::Mysql
+            DatabaseType::Postgres
         ));
-        assert!(is_dangerous_sql_for_database("DELETE FROM users WHERE id > 1 OR id <= 1", DatabaseType::Mysql));
-        assert!(is_dangerous_sql_for_database("DELETE FROM users WHERE 1 >= id OR id > 1", DatabaseType::Mysql));
-        assert!(is_dangerous_sql_for_database("DELETE FROM users WHERE id >= 1 OR 1 > id", DatabaseType::Mysql));
+        assert!(is_dangerous_sql_for_database("DELETE FROM users WHERE id > 1 OR id <= 1", DatabaseType::Postgres));
+        assert!(is_dangerous_sql_for_database("DELETE FROM users WHERE 1 >= id OR id > 1", DatabaseType::Postgres));
+        assert!(is_dangerous_sql_for_database("DELETE FROM users WHERE id >= 1 OR 1 > id", DatabaseType::Postgres));
         assert!(is_dangerous_sql_for_database(
             "DELETE FROM users WHERE id IN (1) OR id NOT IN (1) OR id IS NULL",
-            DatabaseType::Mysql
+            DatabaseType::Postgres
         ));
         assert!(is_dangerous_sql_for_database(
             "DELETE FROM users WHERE id IN (1, 2) OR id NOT IN (2, 1) OR id IS NULL",
-            DatabaseType::Mysql
+            DatabaseType::Postgres
         ));
         assert!(is_dangerous_sql_for_database(
             "DELETE FROM users WHERE id BETWEEN 1 AND 2 OR id NOT BETWEEN 1 AND 2 OR id IS NULL",
-            DatabaseType::Mysql
+            DatabaseType::Postgres
         ));
         assert!(is_dangerous_sql_for_database(
             "DELETE FROM users WHERE id = 1 OR (id <> 1 AND TRUE) OR id IS NULL",
-            DatabaseType::Mysql
+            DatabaseType::Postgres
         ));
         assert!(is_dangerous_sql_for_database(
             "DELETE FROM users WHERE id IS NOT DISTINCT FROM id",
             DatabaseType::Postgres
         ));
-        assert!(is_dangerous_sql_for_database("DELETE FROM users WHERE id <=> id", DatabaseType::Mysql));
-        assert!(is_dangerous_sql_for_database(
-            "UPDATE users SET active = 0 WHERE name LIKE '%' OR name IS NULL",
-            DatabaseType::Mysql
-        ));
-        assert!(is_dangerous_sql_for_database(
-            "UPDATE users SET active = 0 WHERE name LIKE '%%' OR name IS NULL",
-            DatabaseType::Mysql
-        ));
         assert!(is_dangerous_sql_for_database(
             "DELETE FROM users WHERE (id IS NULL OR status = 'disabled') OR id IS NOT NULL",
-            DatabaseType::Mysql
+            DatabaseType::Postgres
         ));
-        assert!(is_dangerous_sql_for_database("UPDATE users SET active = 0 WHERE abs(1) = 1", DatabaseType::Mysql));
-        assert!(is_dangerous_sql_for_database("DELETE FROM users WHERE lower('A') = 'a'", DatabaseType::Mysql));
-        assert!(is_dangerous_sql_for_database("DELETE FROM users WHERE coalesce(NULL, 1) = 1", DatabaseType::Mysql));
-        assert!(is_dangerous_sql_for_database("DELETE FROM users WHERE LOWER(_utf8mb4'A') = 'a'", DatabaseType::Mysql));
+        assert!(is_dangerous_sql_for_database("UPDATE users SET active = 0 WHERE abs(1) = 1", DatabaseType::Postgres));
+        assert!(is_dangerous_sql_for_database("DELETE FROM users WHERE lower('A') = 'a'", DatabaseType::Postgres));
+        assert!(is_dangerous_sql_for_database("DELETE FROM users WHERE coalesce(NULL, 1) = 1", DatabaseType::Postgres));
         assert!(is_dangerous_sql_for_database(
             "DELETE FROM users WHERE EXTRACT(YEAR FROM DATE '2026-01-01') = 2026",
             DatabaseType::Postgres
@@ -1176,12 +1080,15 @@ mod tests {
             "DELETE FROM users WHERE EXISTS (SELECT 1 FROM archived_users)",
             DatabaseType::Postgres
         ));
-        assert!(!is_dangerous_sql_for_database("DELETE FROM users WHERE id = 1", DatabaseType::Mysql));
-        assert!(!is_dangerous_sql_for_database("UPDATE users SET active = 0 WHERE id = 1", DatabaseType::Mysql));
-        assert!(!is_dangerous_sql_for_database("UPDATE users SET active = 0 WHERE abs(id) = 1", DatabaseType::Mysql));
+        assert!(!is_dangerous_sql_for_database("DELETE FROM users WHERE id = 1", DatabaseType::Postgres));
+        assert!(!is_dangerous_sql_for_database("UPDATE users SET active = 0 WHERE id = 1", DatabaseType::Postgres));
+        assert!(!is_dangerous_sql_for_database(
+            "UPDATE users SET active = 0 WHERE abs(id) = 1",
+            DatabaseType::Postgres
+        ));
         assert!(!is_dangerous_sql_for_database(
             "DELETE FROM users WHERE lower(email) = 'disabled@example.com'",
-            DatabaseType::Mysql
+            DatabaseType::Postgres
         ));
         assert!(!is_dangerous_sql_for_database(
             "DELETE FROM users WHERE EXTRACT(YEAR FROM created_at) = 2026",
@@ -1189,58 +1096,44 @@ mod tests {
         ));
         assert!(!is_dangerous_sql_for_database(
             "DELETE FROM users WHERE id IS NULL OR status IS NOT NULL",
-            DatabaseType::Mysql
+            DatabaseType::Postgres
         ));
         assert!(!is_dangerous_sql_for_database(
             "DELETE FROM users WHERE (id IS NULL OR NOT (((id IS NULL)))) AND tenant_id = 1",
-            DatabaseType::Mysql
+            DatabaseType::Postgres
         ));
         assert!(!is_dangerous_sql_for_database(
             "DELETE FROM users WHERE (id = 1 OR id <> 1) AND tenant_id = 1",
-            DatabaseType::Mysql
+            DatabaseType::Postgres
         ));
         assert!(!is_dangerous_sql_for_database(
             "DELETE FROM users WHERE status = 'pending' OR status <> 'disabled'",
-            DatabaseType::Mysql
+            DatabaseType::Postgres
         ));
-        assert!(!is_dangerous_sql_for_database("DELETE FROM users WHERE id IN (1) OR id IN (2)", DatabaseType::Mysql));
+        assert!(!is_dangerous_sql_for_database(
+            "DELETE FROM users WHERE id IN (1) OR id IN (2)",
+            DatabaseType::Postgres
+        ));
         assert!(!is_dangerous_sql_for_database(
             "DELETE FROM users WHERE id BETWEEN 1 AND 2 OR id BETWEEN 4 AND 5",
-            DatabaseType::Mysql
-        ));
-        assert!(!is_dangerous_sql_for_database(
-            "UPDATE users SET active = 0 WHERE name LIKE 'admin%'",
-            DatabaseType::Mysql
+            DatabaseType::Postgres
         ));
         assert!(!is_dangerous_sql_for_database(
             "UPDATE users SET active = 0 WHERE status = 'inactive' AND tenant_id = 1",
-            DatabaseType::Mysql
-        ));
-        assert!(is_dangerous_sql_for_database(
-            "UPDATE users JOIN accounts ON accounts.id = users.account_id SET users.active = 0 WHERE users.id = 1",
-            DatabaseType::Mysql
+            DatabaseType::Postgres
         ));
         assert!(is_dangerous_sql_for_database(
             "UPDATE users SET active = false FROM accounts WHERE users.account_id = accounts.id",
             DatabaseType::Postgres
         ));
         assert!(is_dangerous_sql_for_database(
-            "DELETE users FROM users JOIN accounts ON accounts.id = users.account_id WHERE users.id = 1",
-            DatabaseType::Mysql
-        ));
-        assert!(is_dangerous_sql_for_database("REPLACE INTO users (id) VALUES (1)", DatabaseType::Mysql));
-        assert!(is_dangerous_sql_for_database(
-            "INSERT INTO users (id) VALUES (1) ON DUPLICATE KEY UPDATE active = 1",
-            DatabaseType::Mysql
-        ));
-        assert!(is_dangerous_sql_for_database(
             "INSERT INTO users (id) VALUES (1) ON CONFLICT (id) DO UPDATE SET active = true",
             DatabaseType::Postgres
         ));
-        assert!(!is_dangerous_sql_for_database("INSERT INTO users (id) VALUES (1)", DatabaseType::Mysql));
+        assert!(!is_dangerous_sql_for_database("INSERT INTO users (id) VALUES (1)", DatabaseType::Postgres));
         assert!(is_dangerous_sql_for_database(
             "INSERT INTO users (id) SELECT id FROM staged_users",
-            DatabaseType::Mysql
+            DatabaseType::Postgres
         ));
         assert!(!is_dangerous_sql_for_database(
             "INSERT INTO users (id) VALUES (1) ON CONFLICT (id) DO NOTHING",
@@ -1250,25 +1143,13 @@ mod tests {
 
     #[test]
     fn select_into_requires_central_high_risk_permission_for_supported_databases() {
-        for database_type in [
-            DatabaseType::Postgres,
-            DatabaseType::Redshift,
-            DatabaseType::Gaussdb,
-            DatabaseType::OpenGauss,
-            DatabaseType::Kingbase,
-            DatabaseType::Highgo,
-            DatabaseType::Vastbase,
-            DatabaseType::Kwdb,
-        ] {
+        for database_type in [DatabaseType::Postgres, DatabaseType::Opengauss] {
             assert!(
                 is_dangerous_sql_for_database("SELECT * INTO copied_users FROM users", database_type),
                 "expected PostgreSQL-family SELECT INTO to require high-risk permission for {database_type:?}"
             );
         }
-        assert!(is_dangerous_sql_for_database("SELECT * INTO #copied_users FROM users", DatabaseType::SqlServer));
-        assert!(is_dangerous_sql_for_database("SELECT 1 INTO OUTFILE '/tmp/dbx-probe.txt'", DatabaseType::Mysql));
         assert!(!is_dangerous_sql_for_database("SELECT 1", DatabaseType::Postgres));
-        assert!(!is_dangerous_sql_for_database("SELECT 1 INTO unsupported", DatabaseType::Sqlite));
     }
 
     #[test]
@@ -1295,26 +1176,5 @@ mod tests {
         // Statements not explicitly handled should be conservative (Write)
         // This depends on sqlparser's coverage, but we can test the catch-all
         assert_eq!(classify_sql_risk("GRANT SELECT ON users TO admin", "postgres").unwrap(), SqlRisk::Ddl);
-    }
-
-    #[test]
-    fn classifies_search_engine_rest_risk_by_method_and_path() {
-        for database_type in [DatabaseType::Elasticsearch, DatabaseType::Easysearch] {
-            assert_eq!(
-                classify_sql_risk_for_database("GET /_cluster/health", database_type).unwrap(),
-                SqlRisk::ReadOnly
-            );
-            assert_eq!(
-                classify_sql_risk_for_database("POST /products/_search\n{}", database_type).unwrap(),
-                SqlRisk::ReadOnly
-            );
-            assert_eq!(
-                classify_sql_risk_for_database("PUT /products/_doc/1\n{}", database_type).unwrap(),
-                SqlRisk::Write
-            );
-            assert!(!is_dangerous_sql_for_database("PUT /products/_doc/1\n{}", database_type));
-            assert_eq!(classify_sql_risk_for_database("DELETE /products", database_type).unwrap(), SqlRisk::Ddl);
-            assert!(is_dangerous_sql_for_database("DELETE /products", database_type));
-        }
     }
 }

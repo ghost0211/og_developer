@@ -28,7 +28,7 @@ const props = withDefaults(
     /** Effective database type selects database-specific syntax rules; older callers can still rely on the dialect fallback. */
     databaseType?: DatabaseType;
     /** SQL dialect fallback for syntax highlighting when the effective database type is unavailable. */
-    dialect: "mysql" | "postgres" | "sqlserver";
+    dialect: "postgres";
     /** SQL formatter dialect. Kept separate from the syntax-highlighting dialect because several PG-compatible DBs highlight as MySQL. */
     formatDialect?: SqlFormatDialect;
   }>(),

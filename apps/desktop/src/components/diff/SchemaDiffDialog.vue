@@ -386,7 +386,7 @@ async function handleCompare() {
   try {
     const sourceConfig = store.getConfig(sourceConnectionId.value);
     const targetConfig = store.getConfig(targetConnectionId.value);
-    const dbType = targetConfig?.db_type || "mysql";
+    const dbType = targetConfig?.db_type || "opengauss";
     const sourceDbType = sourceConfig?.db_type || dbType;
     const opts = normalizeSchemaDiffCompareOptions(activeConfig.value?.options, dbType);
     const tableFilter = compileSchemaDiffTableFilter(opts);
@@ -775,13 +775,8 @@ async function fetchDbVersion(connectionId: string, database: string, schema: st
     switch (dbType) {
       case "postgres":
       case "opengauss":
+      case "jdbc":
         sql = "SELECT version()";
-        break;
-      case "mysql":
-        sql = "SELECT VERSION()";
-        break;
-      case "sqlite":
-        sql = "SELECT sqlite_version()";
         break;
       default:
         return;

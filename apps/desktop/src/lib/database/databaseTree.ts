@@ -1,11 +1,7 @@
-import type { ConnectionConfig, DatabaseInfo, TreeNode } from "@/types/database";
+import type { DatabaseInfo, TreeNode } from "@/types/database";
 import { DEFAULT_DATABASE_TREE_LABEL } from "@/lib/sidebar/treeNodeContext";
 
 const sidebarNameCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
-
-export function shouldIncludeDefaultDatabaseNode(connection: Pick<ConnectionConfig, "db_type"> | undefined, databases: DatabaseInfo[]): boolean {
-  return connection?.db_type === "mysql" && databases.some((database) => !database.name.trim());
-}
 
 export function compareSidebarNames(left: string, right: string): number {
   return sidebarNameCollator.compare(left, right);

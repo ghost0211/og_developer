@@ -337,12 +337,12 @@ identifier_rules:
     #[test]
     fn load_valid_yaml_file_mysql() {
         let dir = temp_dialect_dir();
-        let path = write_temp_yaml(&dir, "dialect_mysql.yaml", "MySQL");
+        let path = write_temp_yaml(&dir, "dialect_postgres.yaml", "PostgreSQL");
         let result = DialectPluginLoader::load_file(&path);
         cleanup_temp_dir(&dir);
         assert!(result.is_ok());
         let (kind, _, _) = result.unwrap();
-        assert_eq!(kind, DialectKind::Mysql);
+        assert_eq!(kind, DialectKind::Postgres);
     }
 
     #[test]
@@ -370,60 +370,59 @@ identifier_rules:
         let registry = DialectRegistry::new();
         assert!(registry.is_empty());
 
-        let desc = DialectCapabilityDescriptor::for_dialect(DialectKind::Mysql);
+        let desc = DialectCapabilityDescriptor::for_dialect(DialectKind::Postgres);
         let yaml = DialectYaml {
             dialect: super::super::dialect_yaml::DialectMeta {
-                name: "MySQL".to_string(),
-                display_name: Some("MySQL".to_string()),
+                name: "PostgreSQL".to_string(),
+                display_name: Some("PostgreSQL".to_string()),
                 versions: vec![],
             },
             identifier_rules: super::super::dialect_yaml::IdentifierRules {
-                quote_char: "`".to_string(),
+                quote_char: "\"".to_string(),
                 case_sensitive: false,
-                max_length: 64,
+                max_length: 63,
             },
             ..Default::default()
         };
 
-        registry.register_descriptor("MySQL", desc, yaml);
+        registry.register_descriptor("PostgreSQL", desc, yaml);
         assert_eq!(registry.len(), 1);
-        assert!(registry.has("MySQL"));
-        assert!(!registry.has("PostgreSQL"));
+        assert!(registry.has("PostgreSQL"));
 
-        let loaded = registry.get("MySQL").unwrap();
-        assert_eq!(loaded.dialect_name, "MySQL");
+        let loaded = registry.get("PostgreSQL").unwrap();
+        assert_eq!(loaded.dialect_name, "PostgreSQL");
 
-        registry.unregister("MySQL");
+        registry.unregister("PostgreSQL");
         assert!(registry.is_empty());
     }
 
     #[test]
     fn registry_fallback_resolve() {
         let registry = DialectRegistry::new();
-        let desc = resolve_descriptor(DialectKind::Mysql, &registry);
+        let desc = resolve_descriptor(DialectKind::Postgres, &registry);
         assert!(desc.has_capability(super::super::descriptor::CAP_ADD_COLUMN));
     }
 
     #[test]
     fn registry_all_kinds() {
         let registry = DialectRegistry::new();
-        let desc = DialectCapabilityDescriptor::for_dialect(DialectKind::Mysql);
+        let desc = DialectCapabilityDescriptor::for_dialect(DialectKind::Postgres);
         let yaml = DialectYaml {
             dialect: super::super::dialect_yaml::DialectMeta {
-                name: "MySQL".to_string(),
+                name: "PostgreSQL".to_string(),
                 display_name: None,
                 versions: vec![],
             },
             identifier_rules: super::super::dialect_yaml::IdentifierRules {
-                quote_char: "`".to_string(),
+                quote_char: "\"".to_string(),
                 case_sensitive: false,
-                max_length: 64,
+                max_length: 63,
             },
             ..Default::default()
         };
 
-        registry.register_descriptor("MySQL", desc, yaml);
+        registry.register_descriptor("PostgreSQL", desc, yaml);
         let names = registry.all_names();
-        assert_eq!(names, vec!["mysql"]);
+        assert_eq!(names, vec!["postgresql"]);
     }
 }

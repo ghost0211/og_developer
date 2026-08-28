@@ -6,9 +6,9 @@ type VuePropDefinition = { default?: unknown };
 type VueComponentWithProps = { props?: Record<string, VuePropDefinition> };
 
 describe("DataGrid total row count exactness", () => {
-  it("uses a VictoriaMetrics-specific truncation explanation", () => {
-    expect(dataGridTruncationHintKey("victoriametrics")).toBe("grid.victoriaMetricsTruncatedHint");
-    expect(dataGridTruncationHintKey("mysql")).toBe("grid.truncatedHint");
+  it("uses the shared truncation explanation", () => {
+    expect(dataGridTruncationHintKey("postgres")).toBe("grid.truncatedHint");
+    expect(dataGridTruncationHintKey("opengauss")).toBe("grid.truncatedHint");
     expect(dataGridTruncationHintKey()).toBe("grid.truncatedHint");
   });
 

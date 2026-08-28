@@ -3883,7 +3883,6 @@ mod tests {
         AiMessage, AiModelInfo, AiProvider, AiReasoningLevel, StreamToolEvent, StreamingToolCallAccumulator,
         ToolCallRef, AUTHORIZATION, CLAUDE_DEFAULT_SYSTEM, TEST_PROMPT,
     };
-
     struct CapturedJsonRequest {
         headers: String,
         body: serde_json::Value,

@@ -287,16 +287,9 @@ export interface SchemaDiffPreparation {
   dependencyGraph?: DependencyGraph;
 }
 
-const MYSQL_LIKE_SCHEMA_DIFF_TARGET_TYPES = new Set<DatabaseType>(["mysql", "doris", "starrocks", "goldendb", "sundb", "databend", "gbase"]);
-
-export function schemaDiffDeployTargetSchema(databaseType: DatabaseType | undefined, targetDatabase: string, targetSchema?: string): string | undefined {
+export function schemaDiffDeployTargetSchema(_databaseType: DatabaseType | undefined, _targetDatabase: string, targetSchema?: string): string | undefined {
   const schema = targetSchema?.trim();
   if (schema) return schema;
-
-  const database = targetDatabase.trim();
-  if (databaseType && MYSQL_LIKE_SCHEMA_DIFF_TARGET_TYPES.has(databaseType) && database) {
-    return database;
-  }
 
   return undefined;
 }

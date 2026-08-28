@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch, type Component } from "vue";
 import { uuid } from "@/lib/common/utils";
 import { useI18n } from "vue-i18n";
@@ -57,7 +57,7 @@ import ConnectionGroupBadge from "@/components/connection/ConnectionGroupBadge.v
 import { useQueryStore } from "@/stores/queryStore";
 import { useToast } from "@/composables/useToast";
 import { useNavigationTargets } from "@/composables/useNavigationTargets";
-import { buildAiContext, resolveAiDatabaseTarget, resolveAiNamespaceSelection, resolveDefaultAiSchema, runAgentStream, isVectorDbType, isValidActionForMode, defaultActionForMode, type AiAction, type AiAssistantMode, type AiSqlFileContext, type CustomPromptContext } from "@/lib/ai/ai";
+import { buildAiContext, resolveAiDatabaseTarget, resolveAiNamespaceSelection, runAgentStream, isValidActionForMode, defaultActionForMode, type AiAction, type AiAssistantMode, type AiSqlFileContext, type CustomPromptContext } from "@/lib/ai/ai";
 import { formatOpengaussDocHits, searchOpengaussDocs } from "@/lib/ai/opengaussDocs";
 import { isAiConfigModelCandidate } from "@/lib/ai/aiConfigCandidates";
 import { addConfiguredAiModel, aiModelOptions } from "@/lib/ai/aiConfigList";
@@ -79,14 +79,13 @@ import { aiCancelStream, saveAiConversation, loadAiConversations, deleteAiConver
 import type { AiMessage } from "@/lib/backend/api";
 import type { AiConfigItem, AiEffortCapability, AiEffortOption, AiEffortSelection } from "@/types/ai";
 import type { ConnectionConfig, QueryTab, SavedSqlFile, TableInfo } from "@/types/database";
-import { fetchNamespaceOptionsForConnection, useDatabaseOptions } from "@/composables/useDatabaseOptions";
+import { useDatabaseOptions } from "@/composables/useDatabaseOptions";
 import { decodeSelectableDatabaseValue, encodeSelectableDatabaseValue, formatDatabaseLabel, resolveDefaultDatabase } from "@/lib/database/defaultDatabase";
-import { normalizeSqliteNamespace } from "@/lib/database/sqliteNamespace";
 import { isQueryExecutionErrorResult } from "@/lib/query/queryResultError";
 import { isSchemaAware } from "@/lib/database/databaseCapabilities";
 import { effectiveDatabaseTypeForConnection } from "@/lib/database/jdbcDialect";
 import ExplainPlanViewer from "@/components/explain/ExplainPlanViewer.vue";
-import { parseExplainResult, parseOracleExplainText, type ParsedExplainPlan } from "@/lib/diagram/explainPlan";
+import { parseExplainResult, type ParsedExplainPlan } from "@/lib/diagram/explainPlan";
 import { copyToClipboard } from "@/lib/common/clipboard";
 import { AI_TABLE_MENTION_CANDIDATE_LIMIT, AI_TABLE_MENTION_SCHEMA_LIMIT, filterAiTableMentionCandidates, formatAiTableMention, parseAiTableMentions, type AiTableMention } from "@/lib/ai/aiTableMentions";
 import { isAiPromptImeCompositionEvent, shouldSubmitAiPromptOnKeydown } from "@/lib/ai/aiPromptKeyboard";
@@ -152,8 +151,6 @@ const emit = defineEmits<{
   executeSql: [sql: string];
   tempRunSql: [sql: string];
   requestAutoExecuteSql: [sql: string];
-  insertRedisCommand: [command: string];
-  executeRedisCommand: [command: string];
   openExplainPlan: [sql: string];
   close: [];
 }>();
@@ -630,12 +627,8 @@ const agentActionButtons: AiActionButton[] = [
 ];
 
 const actionButtons = computed<AiActionButton[]>(() => (assistantMode.value === "agent" ? agentActionButtons : askActionButtons));
-const isRedisConnection = computed(() => props.connection?.db_type === "redis");
 
-// Vector DBs hide the action menu and only expose collection tools.
-// Keep their action at `generate` so the task contract doesn't tell the LLM to call execute_query.
 function resolveDefaultAction(mode: AiAssistantMode): AiAction {
-  if (props.connection && isVectorDbType(props.connection.db_type)) return "generate";
   return defaultActionForMode(mode);
 }
 
@@ -653,18 +646,6 @@ watch(assistantMode, (mode) => {
   }
   activeAction.value = resolveDefaultAction(mode);
 });
-
-watch(
-  () => props.connection?.db_type,
-  () => {
-    // Vector DBs hide the action picker, so keep the hidden action aligned with
-    // the collection-oriented prompt contract on initial render and connection changes.
-    if (props.connection && isVectorDbType(props.connection.db_type)) {
-      activeAction.value = "generate";
-    }
-  },
-  { immediate: true },
-);
 
 function selectAction(action: AiAction) {
   activeAction.value = action;
@@ -802,10 +783,7 @@ function sendProposalReply(positive: boolean) {
 const activePlaceholder = computed(() => `${t(`ai.placeholders.${activeAction.value}`)} ${t("ai.tableMentionPlaceholderHint")}`);
 const aiCodeAppearance = computed(() => (isDark.value ? "dark" : "light"));
 
-const showActionButtons = computed(() => {
-  if (!props.connection) return true;
-  return !isVectorDbType(props.connection.db_type);
-});
+const showActionButtons = computed(() => true);
 
 const modeIcon = computed<Component>(() => (assistantMode.value === "agent" ? Bot : MessageSquarePlus));
 const modeLabel = computed(() => t(`ai.modes.${assistantMode.value}`));
@@ -833,14 +811,9 @@ function selectModeActionItem(action: AiAction) {
 
 const { databaseOptions, loadDatabaseOptions } = useDatabaseOptions();
 
-// Dameng presents schemas as its top-level namespace, unlike the other
-// connection types that rely on the shared database-options loader.
-const aiDatabaseOptions = ref<Record<string, string[]>>({});
-
 const dbOptions = computed(() => {
   const connection = props.connection;
   if (!connection) return [];
-  if (connection.db_type === "dameng") return aiDatabaseOptions.value[connection.id] || [];
   return databaseOptions.value[connection.id] || [];
 });
 
@@ -857,7 +830,7 @@ const dbSelectOptions = computed(() => {
   }));
 });
 
-const selectedNamespace = computed(() => (props.connection && props.tab ? resolveAiNamespaceSelection(props.tab, props.connection).value : ""));
+const selectedNamespace = computed(() => (props.tab ? resolveAiNamespaceSelection(props.tab).value : ""));
 
 const selectedDatabaseSelectValue = computed(() => (props.connection ? encodeSelectableDatabaseValue(props.connection.db_type, selectedNamespace.value) : ""));
 
@@ -872,14 +845,8 @@ const selectedDatabaseLabel = computed(() => {
 
 async function loadDatabases(connection = props.connection): Promise<string[]> {
   if (!connection) return [];
-  if (connection.db_type !== "dameng") {
-    await loadDatabaseOptions(connection.id);
-    return databaseOptions.value[connection.id] || [];
-  }
-  await connectionStore.ensureConnected(connection.id);
-  const options = await fetchNamespaceOptionsForConnection(connection.id, connection);
-  aiDatabaseOptions.value[connection.id] = options;
-  return options;
+  await loadDatabaseOptions(connection.id);
+  return databaseOptions.value[connection.id] || [];
 }
 
 async function changeConnection(connectionId: string) {
@@ -893,11 +860,7 @@ async function changeConnection(connectionId: string) {
   }
   try {
     const options = await loadDatabases(conn);
-    if (conn.db_type === "dameng") {
-      queryStore.updateSchema(tabId, resolveDefaultAiSchema(conn, options));
-    } else {
-      queryStore.updateDatabase(tabId, resolveDefaultDatabase(conn, options));
-    }
+    queryStore.updateDatabase(tabId, resolveDefaultDatabase(conn, options));
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : String(e);
     toast(t("connection.connectFailed", { message: translateBackendError(t, message) }), 5000);
@@ -909,11 +872,7 @@ function changeNamespace(value: string) {
   const connection = props.connection;
   if (!tab || !connection) return;
   const namespace = decodeSelectableDatabaseValue(connection.db_type, value);
-  if (resolveAiNamespaceSelection(tab, connection).kind === "schema") {
-    queryStore.updateSchema(tab.id, namespace || undefined);
-  } else {
-    queryStore.updateDatabase(tab.id, namespace);
-  }
+  queryStore.updateDatabase(tab.id, namespace);
 }
 
 function flushAssistantDeltas() {
@@ -1027,11 +986,8 @@ function extractExplainData(result: unknown): unknown | undefined {
 
 /** Parse explain_data (a serialized QueryResult) into ParsedExplainPlan */
 function parseExplainFromData(explainData: unknown, dbType: string): ParsedExplainPlan | undefined {
-  if (dbType === "oracle" && typeof explainData === "string") {
-    return parseOracleExplainText(explainData);
-  }
   if (!explainData || typeof explainData !== "object") return undefined;
-  const supportedTypes = ["mysql", "postgres", "opengauss", "gaussdb", "dameng", "questdb"] as const;
+  const supportedTypes = ["postgres", "opengauss"] as const;
   if (!supportedTypes.includes(dbType as (typeof supportedTypes)[number])) return undefined;
   try {
     return parseExplainResult(dbType as (typeof supportedTypes)[number], explainData as import("@/types/database").QueryResult);
@@ -1305,7 +1261,7 @@ async function loadMentionCandidates(query: string) {
       );
       tableCandidates = filterAiTableMentionCandidates(results.flat(), "", AI_TABLE_MENTION_CANDIDATE_LIMIT);
     } else {
-      const database = props.connection.db_type === "sqlite" ? normalizeSqliteNamespace(props.tab.database || props.connection.database, props.connection) : props.tab.database;
+      const database = props.tab.database;
       const schema = database || props.connection.database || "main";
       const tables = await listTables(props.tab.connectionId, database, schema, tableFilter || undefined, AI_TABLE_MENTION_CANDIDATE_LIMIT);
       tableCandidates = filterAiTableMentionCandidates(
@@ -1935,26 +1891,14 @@ async function cancelStream() {
 }
 
 function applySql(code: string) {
-  if (isRedisConnection.value) {
-    emit("insertRedisCommand", code);
-    return;
-  }
   emit("replaceSql", code);
 }
 
 function executeSql(code: string) {
-  if (isRedisConnection.value) {
-    emit("executeRedisCommand", code);
-    return;
-  }
   emit("executeSql", code);
 }
 
 function tempRunSql(code: string) {
-  if (isRedisConnection.value) {
-    emit("executeRedisCommand", code);
-    return;
-  }
   emit("tempRunSql", code);
 }
 
@@ -2370,13 +2314,13 @@ async function openExternalUrl(url: string) {
                       <!-- `pending` means the closing fence is still missing, so the code is truncated: never offer to run or apply it. -->
                       <Loader2 v-if="seg.pending && isGenerating" class="h-3 w-3 animate-spin text-zinc-400" />
                       <div class="flex items-center gap-1.5">
-                        <button v-if="!seg.pending && seg.isSql && !isRedisConnection" class="rounded p-0.5 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200" :title="t('ai.tempRunSql')" @click="tempRunSql(seg.content)">
+                        <button v-if="!seg.pending && seg.isSql" class="rounded p-0.5 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200" :title="t('ai.tempRunSql')" @click="tempRunSql(seg.content)">
                           <FlaskConical class="h-3.5 w-3.5" />
                         </button>
-                        <button v-if="!seg.pending && (seg.isSql || isRedisConnection)" class="rounded p-0.5 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200" :title="t('ai.executeSql')" @click="executeSql(seg.content)">
+                        <button v-if="!seg.pending && seg.isSql" class="rounded p-0.5 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200" :title="t('ai.executeSql')" @click="executeSql(seg.content)">
                           <Play class="h-3.5 w-3.5" />
                         </button>
-                        <button v-if="!seg.pending && (seg.isSql || isRedisConnection)" class="rounded p-0.5 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200" :title="t('ai.apply')" @click="applySql(seg.content)">
+                        <button v-if="!seg.pending && seg.isSql" class="rounded p-0.5 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200" :title="t('ai.apply')" @click="applySql(seg.content)">
                           <Replace class="h-3.5 w-3.5" />
                         </button>
                         <button

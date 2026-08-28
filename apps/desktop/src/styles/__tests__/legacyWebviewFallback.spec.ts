@@ -41,7 +41,6 @@ describe("legacy WebView CSS fallbacks", () => {
     expect(enhanced).toBeGreaterThan(supports);
     expect(dialogContentSource).toContain("max-h-[calc(var(--dbx-viewport-height)-2rem)]");
     expect(dialogScrollContentSource).toContain("max-h-[calc(var(--dbx-viewport-height)-6rem)]");
-    expect(connectionDialogSource).toContain("max-height: calc(var(--dbx-viewport-height) - 2rem);");
   });
 
   it("uses a lightweight theme-aware mask without full-window filters", () => {

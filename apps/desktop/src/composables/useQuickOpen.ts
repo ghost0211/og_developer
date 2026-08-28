@@ -19,7 +19,7 @@ const QUICK_OPEN_MAX_RESULTS = 200;
 const INITIAL_SQL_LIBRARY_LIMIT = 20;
 const INITIAL_SQL_FILE_LIMIT = 20;
 
-const REMOTE_SEARCH_UNSUPPORTED_TYPES = new Set<ConnectionConfig["db_type"]>(["redis", "mongodb", "elasticsearch", "easysearch", "qdrant", "milvus", "weaviate", "chromadb", "neo4j", "influxdb", "victoriametrics", "etcd", "zookeeper", "mq", "nacos"]);
+const REMOTE_SEARCH_UNSUPPORTED_TYPES = new Set<ConnectionConfig["db_type"]>();
 
 export interface QuickOpenItem {
   id: string;
@@ -486,9 +486,6 @@ export function useQuickOpen() {
       if (conn.database?.trim()) databases.add(conn.database.trim());
       for (const database of conn.visible_databases ?? []) {
         if (database.trim()) databases.add(database.trim());
-      }
-      for (const database of conn.attached_databases ?? []) {
-        if (database.name.trim()) databases.add(database.name.trim());
       }
       const defaultDatabase = resolveDefaultDatabase(conn, [...databases]);
       if (defaultDatabase) databases.add(defaultDatabase);

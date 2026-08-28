@@ -18,8 +18,6 @@ import {
   Zap,
   ListTree,
   FileCode,
-  Network,
-  Server,
   Pin,
   Search,
   Plus,
@@ -30,10 +28,7 @@ import {
   UsersRound,
   CalendarClock,
   Timer,
-  Gauge,
-  ShieldCheck,
   Lock,
-  Archive,
   Square,
   X,
   RefreshCw,
@@ -206,14 +201,6 @@ function getIconInfo(node: TreeNode): { icon: any; colorClass: string } | null {
       return { icon: node.isExpanded ? FolderOpen : FolderClosed, colorClass: "text-amber-500" };
     case "database":
       return { icon: Database, colorClass: "text-yellow-500" };
-    case "linked-server-root":
-      return { icon: Network, colorClass: "text-blue-500" };
-    case "linked-server":
-      return { icon: Server, colorClass: "text-blue-400" };
-    case "linked-server-catalog":
-      return { icon: Database, colorClass: "text-yellow-500" };
-    case "linked-server-schema":
-      return { icon: FolderOpen, colorClass: "text-sky-400" };
     case "schema":
       return { icon: FolderOpen, colorClass: "text-sky-400" };
     case "table":
@@ -249,41 +236,12 @@ function getIconInfo(node: TreeNode): { icon: any; colorClass: string } | null {
       return { icon: TableProperties, colorClass: "text-primary" };
     case "user-admin":
       return { icon: UsersRound, colorClass: "text-primary" };
-    case "dameng-job-admin":
-      return { icon: CalendarClock, colorClass: "text-primary" };
     case "index":
       return { icon: Key, colorClass: "text-amber-400" };
     case "fkey":
       return { icon: Link, colorClass: "text-blue-300" };
     case "trigger":
       return { icon: Zap, colorClass: "text-orange-300" };
-    case "redis-db":
-      return { icon: Database, colorClass: "text-red-400" };
-    case "mq-tenant":
-      return { icon: FolderOpen, colorClass: "text-sky-400" };
-    case "nacos-namespace":
-      return { icon: FolderOpen, colorClass: "text-sky-500" };
-    case "etcd-root":
-      return { icon: Database, colorClass: "text-sky-500" };
-    case "etcd-dashboard":
-      return { icon: Gauge, colorClass: "text-sky-500" };
-    case "etcd-access-control":
-      return { icon: ShieldCheck, colorClass: "text-sky-500" };
-    case "zookeeper-root":
-      return { icon: Database, colorClass: "text-blue-500" };
-    case "mongo-db":
-      return { icon: Database, colorClass: "text-yellow-500" };
-    case "mongo-gridfs":
-    case "mongo-buckets":
-      return { icon: Archive, colorClass: "text-cyan-500" };
-    case "mongo-bucket":
-      return { icon: Archive, colorClass: "text-cyan-400" };
-    case "mongo-collection":
-      return { icon: Table, colorClass: "text-green-400" };
-    case "vector-collection":
-      return { icon: TableProperties, colorClass: "text-cyan-400" };
-    case "elasticsearch-index":
-      return { icon: Table, colorClass: "text-emerald-400" };
     case "procedure":
       return { icon: ScrollText, colorClass: "text-blue-500" };
     case "function":
@@ -348,15 +306,14 @@ function isGroupLabel(node: TreeNode): boolean {
 function displayLabel(node: TreeNode): string {
   if (node.type === "load-more") return t(node.label);
   if (node.type === "object-browser") return t(node.label, { count: node.objectCount ?? 0 });
-  if (node.type === "user-admin" || node.type === "dameng-job-admin") return t(node.label);
-  if (node.type === "linked-server-root") return t(node.label);
+  if (node.type === "user-admin") return t(node.label);
   if (node.label === "tree.defaultDatabase") return t(node.label);
   return isGroupLabel(node) ? t(node.label) : node.label;
 }
 
 function visibleLabel(node: TreeNode): string {
   const withValidity = (label: string) => (node.valid === false ? `${label} · INVALID` : label);
-  if (node.type === "table" || node.type === "view" || node.type === "materialized_view" || node.type === "mongo-collection" || node.type === "vector-collection" || node.type === "elasticsearch-index") {
+  if (node.type === "table" || node.type === "view" || node.type === "materialized_view") {
     return withValidity(sidebarDisplayTableName(node.label, settingsStore.editorSettings.sidebarHiddenTablePrefixes));
   }
   return withValidity(displayLabel(node));
@@ -386,10 +343,6 @@ function cleanTooltipValue(value: string | number | null | undefined): string {
   return String(value ?? "").trim();
 }
 
-function isLocalFileConnection(config: Pick<ConnectionConfig, "db_type" | "port">): boolean {
-  return config.db_type === "sqlite" || config.db_type === "duckdb" || config.db_type === "access" || (config.db_type === "h2" && config.port === 0);
-}
-
 function redactedConnectionString(value: string): string {
   return value.replace(/(:\/\/[^/\s:@?#;]+):([^@\s/?#;]+)@/g, "$1:***@").replace(/([?&;](?:password|pwd|pass|token|secret|key)=)[^&;]*/gi, "$1***");
 }
@@ -407,11 +360,6 @@ function connectionTooltipUrl(config: ConnectionConfig): string {
   if (!host) return "";
   if (host.includes("://")) return redactedConnectionString(host);
 
-  if (isLocalFileConnection(config)) {
-    if (config.db_type === "access") return `jdbc:ucanaccess://${host}`;
-    return `${config.db_type}://${host}`;
-  }
-
   const scheme = connectionDisplayUrlScheme(config);
   const port = Number(config.port) > 0 ? `:${config.port}` : "";
   const user = cleanTooltipValue(config.username);
@@ -428,7 +376,7 @@ const detailTooltip = computed(() => {
   if (node.type === "connection" && node.connectionId) {
     const config = connectionStore.getConfig(node.connectionId);
     if (!config) return null;
-    const hostLabel = isLocalFileConnection(config) ? t("connection.filePath") : t("connection.host");
+    const hostLabel = t("connection.host");
     const hostValue = cleanTooltipValue(config.host);
     const hostValues = hostValue.includes(",")
       ? hostValue
@@ -439,7 +387,7 @@ const detailTooltip = computed(() => {
     const rows: DetailTooltipRow[] = [
       { label: t("connection.name"), value: cleanTooltipValue(config.name) },
       { label: "URL", value: connectionTooltipUrl(config), multiline: true },
-      ...(hostValues.length > 0 ? [{ label: hostLabel, value: hostValues[0], values: hostValues } as DetailTooltipRow] : [{ label: hostLabel, value: hostValue, multiline: isLocalFileConnection(config) } as DetailTooltipRow]),
+      ...(hostValues.length > 0 ? [{ label: hostLabel, value: hostValues[0], values: hostValues } as DetailTooltipRow] : [{ label: hostLabel, value: hostValue } as DetailTooltipRow]),
       { label: "Port", value: Number(config.port) > 0 ? String(config.port) : "" },
       { label: t("connection.database"), value: cleanTooltipValue(config.database) },
       { label: t("connection.user"), value: cleanTooltipValue(config.username) },
@@ -570,18 +518,12 @@ const canExpand = computed(() => {
 });
 
 function isOpenGaussFamilyDatabaseType(databaseType: DatabaseType | undefined): boolean {
-  return databaseType === "opengauss" || databaseType === "gaussdb";
+  return databaseType === "opengauss";
 }
 
 const isPinned = computed(() => activeNode.value.pinned || connectionStore.isTreeNodePinned(activeNode.value));
 
-const isNodeDefaultDatabase = computed(
-  () =>
-    (activeNode.value.type === "database" || activeNode.value.type === "redis-db" || activeNode.value.type === "mongo-db") &&
-    !!activeNode.value.connectionId &&
-    typeof activeNode.value.database === "string" &&
-    connectionStore.isDefaultDatabase(activeNode.value.connectionId, activeNode.value.database),
-);
+const isNodeDefaultDatabase = computed(() => activeNode.value.type === "database" && !!activeNode.value.connectionId && typeof activeNode.value.database === "string" && connectionStore.isDefaultDatabase(activeNode.value.connectionId, activeNode.value.database));
 
 const trailingComment = computed(() => {
   if (!settingsStore.editorSettings.sidebarObjectInfoMode.startsWith("comment-")) return null;

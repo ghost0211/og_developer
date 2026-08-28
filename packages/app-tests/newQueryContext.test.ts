@@ -129,16 +129,3 @@ test("new query target refreshes default database for connection-only sidebar no
   });
 });
 
-test("new query target repairs stale SQLite file paths without changing attached aliases", () => {
-  const stalePathTarget = resolveNewQueryTarget({
-    activeTab: queryTab("sqlite", "/tmp/stale.sqlite"),
-    connections: [sqliteConnection("sqlite", "/tmp/stale.sqlite")],
-  });
-  const attachedAliasTarget = resolveNewQueryTarget({
-    activeTab: queryTab("sqlite", "analytics"),
-    connections: [sqliteConnection("sqlite")],
-  });
-
-  assert.equal(stalePathTarget?.database, "main");
-  assert.equal(attachedAliasTarget?.database, "analytics");
-});

@@ -7,8 +7,7 @@ export type SidebarSelectionCopyAction = "copy-name" | "none";
 export type SidebarActivation = "single" | "double";
 
 const dataNodeTypes = new Set<TreeNodeType>(["table", "view", "materialized_view"]);
-const documentBrowserNodeTypes = new Set<TreeNodeType>(["mongo-collection", "mongo-bucket"]);
-const toggleLeafNodeTypes = new Set<TreeNodeType>(["redis-db", "mq-tenant", "etcd-root", "etcd-dashboard", "etcd-access-control", "zookeeper-root", "mongo-gridfs", "mongo-collection", "mongo-bucket", "vector-collection", "elasticsearch-index", "user-admin"]);
+const toggleLeafNodeTypes = new Set<TreeNodeType>(["user-admin"]);
 const objectBrowserNodeTypes = new Set<TreeNodeType>(["database", "schema", "object-browser"]);
 const sourceNodeTypes = new Set<TreeNodeType>(["materialized_view", "procedure", "function", "trigger", "sequence", "synonym", "package", "package-body", "type", "type-body", "job", "scheduler"]);
 const savedSqlNodeTypes = new Set<TreeNodeType>(["saved-sql-file"]);
@@ -44,10 +43,6 @@ export function objectSourceKindForTreeNode(type: TreeNodeType): ObjectSourceKin
   if (type === "job") return "JOB";
   if (type === "scheduler") return "SCHEDULER";
   return null;
-}
-
-export function isDocumentBrowserTreeNode(type: TreeNodeType): boolean {
-  return documentBrowserNodeTypes.has(type);
 }
 
 export function treeNodeRowAction(type: TreeNodeType, canExpand: boolean, activation: SidebarActivation = "single"): TreeNodeRowAction {

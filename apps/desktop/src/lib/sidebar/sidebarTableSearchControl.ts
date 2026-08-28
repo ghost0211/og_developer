@@ -1,7 +1,7 @@
 import type { FlatTreeNode } from "@/composables/useFlatTree";
 import type { TreeNode, TreeNodeType } from "@/types/database";
 
-const simpleObjectParentTypes = new Set<TreeNodeType>(["database", "schema", "linked-server-schema"]);
+const simpleObjectParentTypes = new Set<TreeNodeType>(["database", "schema"]);
 const tableSearchableChildTypes = new Set<TreeNodeType>(["table", "view", "materialized_view", "load-more"]);
 
 export function isSidebarTableSearchControlNode(node: TreeNode): boolean {

@@ -17,13 +17,10 @@ import * as api from "@/lib/backend/api";
 import type { TransferContent, TransferMode, TransferObjectKind, TransferTableNameCase } from "@/lib/backend/api";
 import { crossFamilyTransferableKinds, isSameTransferFamily, transferObjectKindsForDatabase } from "@/lib/database/transferObjectKinds";
 import ObjectSelectionTree from "@/components/transfer/ObjectSelectionTree.vue";
-import type { DatabaseType } from "@/types/database";
 import { isSchemaAware, supportsTransfer } from "@/lib/database/databaseCapabilities";
-import { isDorisFamilyCatalogCapable } from "@/lib/database/databaseFeatureSupport";
 import { isSameTransferDatabase, normalizeTransferCatalog } from "@/lib/database/dataTransferSelection";
-import { databaseOptionsForConnection, fetchCatalogNamespaceOptions, fetchNamespaceOptionsForConnection, namespaceOptionsAreSchemas } from "@/composables/useDatabaseOptions";
+import { fetchNamespaceOptionsForConnection } from "@/composables/useDatabaseOptions";
 import { useExportTracker } from "@/composables/useExportTracker";
-import type { CatalogInfo } from "@/types/database";
 import { ArrowRightLeft, ArrowLeftRight, Loader2 } from "@lucide/vue";
 
 const { t } = useI18n();
@@ -48,7 +45,7 @@ const sqlConnections = computed(() => store.connections.filter((c) => supportsTr
 // Source state
 const sourceConnectionId = ref("");
 const sourceCatalog = ref("");
-const sourceCatalogs = ref<CatalogInfo[]>([]);
+const sourceCatalogs = ref<{ name: string }[]>([]);
 const sourceDatabase = ref("");
 const sourceDatabases = ref<string[]>([]);
 const sourceSchemas = ref<string[]>([]);
@@ -126,7 +123,7 @@ const pendingSelectedTablesPrefill = ref<string[] | null>(null);
 // Target state
 const targetConnectionId = ref("");
 const targetCatalog = ref("");
-const targetCatalogs = ref<CatalogInfo[]>([]);
+const targetCatalogs = ref<{ name: string }[]>([]);
 const targetDatabase = ref("");
 const targetDatabases = ref<string[]>([]);
 const targetSchemas = ref<string[]>([]);
@@ -144,26 +141,10 @@ const ownershipTargetOwner = ref("");
 const pendingOwnershipRequest = ref<api.TransferRequest | null>(null);
 const pendingOwnershipRefresh = ref<{ shouldRefreshTargetTree: boolean } | null>(null);
 
-function connectionType(id: string): DatabaseType | undefined {
-  return store.connections.find((c) => c.id === id)?.db_type;
-}
-
-function isMongoConnection(id: string): boolean {
-  return connectionType(id) === "mongodb";
-}
-
-function isCatalogCapable(id: string): boolean {
-  const config = store.getConfig(id);
-  return isDorisFamilyCatalogCapable(config?.db_type, config?.driver_profile);
-}
-
 const canStart = computed(() => {
   const effectiveSourceSchema = sourceSchema.value || sourceDatabase.value;
   const effectiveTargetSchema = targetSchema.value || targetDatabase.value;
-  const sameCatalogAndDatabase = isSameTransferDatabase(
-    { connectionId: sourceConnectionId.value, catalog: sourceCatalog.value, catalogs: sourceCatalogs.value, database: sourceDatabase.value },
-    { connectionId: targetConnectionId.value, catalog: targetCatalog.value, catalogs: targetCatalogs.value, database: targetDatabase.value },
-  );
+  const sameCatalogAndDatabase = isSameTransferDatabase({ connectionId: sourceConnectionId.value, catalog: sourceCatalog.value, database: sourceDatabase.value }, { connectionId: targetConnectionId.value, catalog: targetCatalog.value, database: targetDatabase.value });
   const sameSourceAndTarget = sameCatalogAndDatabase && effectiveSourceSchema === effectiveTargetSchema;
   return (
     !!sourceConnectionId.value &&
@@ -177,64 +158,13 @@ const canStart = computed(() => {
   );
 });
 
-async function loadCatalogs(connectionId: string, side: "source" | "target") {
-  if (!connectionId || !isCatalogCapable(connectionId)) {
-    if (side === "source") {
-      sourceCatalogs.value = [];
-      sourceCatalog.value = "";
-    } else {
-      targetCatalogs.value = [];
-      targetCatalog.value = "";
-    }
-    return;
-  }
-  try {
-    const catalogs = await api.listDorisCatalogs(connectionId);
-    if (side === "source") {
-      sourceCatalogs.value = catalogs;
-      sourceCatalog.value = catalogs.length === 1 ? catalogs[0].name : "";
-    } else {
-      targetCatalogs.value = catalogs;
-      targetCatalog.value = catalogs.length === 1 ? catalogs[0].name : "";
-    }
-  } catch {
-    if (side === "source") {
-      sourceCatalogs.value = [];
-      sourceCatalog.value = "";
-    } else {
-      targetCatalogs.value = [];
-      targetCatalog.value = "";
-    }
-  }
-}
-
 async function loadDatabases(connectionId: string, target: "source" | "target") {
   if (!connectionId) return;
   try {
     await store.ensureConnected(connectionId);
     const config = store.getConfig(connectionId);
     if (!config) return;
-    const names = isMongoConnection(connectionId) ? databaseOptionsForConnection(await api.mongoListDatabases(connectionId), config) : await fetchNamespaceOptionsForConnection(connectionId, config);
-    if (target === "source") {
-      sourceDatabases.value = names;
-      sourceDatabase.value = names.length === 1 ? names[0] : "";
-    } else {
-      targetDatabases.value = names;
-      targetDatabase.value = names.length === 1 ? names[0] : "";
-    }
-  } catch {
-    if (target === "source") sourceDatabases.value = [];
-    else targetDatabases.value = [];
-  }
-}
-
-async function loadDatabasesForCatalog(connectionId: string, catalog: string, target: "source" | "target") {
-  if (!connectionId || !catalog) return;
-  try {
-    await store.ensureConnected(connectionId);
-    const config = store.getConfig(connectionId);
-    if (!config) return;
-    const names = await fetchCatalogNamespaceOptions(connectionId, catalog, config);
+    const names = await fetchNamespaceOptionsForConnection(connectionId, config);
     if (target === "source") {
       sourceDatabases.value = names;
       sourceDatabase.value = names.length === 1 ? names[0] : "";
@@ -250,16 +180,6 @@ async function loadDatabasesForCatalog(connectionId: string, catalog: string, ta
 
 async function loadSchemas(connectionId: string, database: string, side: "source" | "target", preferredSchema = "") {
   if (!connectionId || !database) return;
-  if (isMongoConnection(connectionId)) {
-    if (side === "source") {
-      sourceSchemas.value = [];
-      sourceSchema.value = database;
-    } else {
-      targetSchemas.value = [];
-      targetSchema.value = database;
-    }
-    return;
-  }
   try {
     const schemas = await api.listSchemas(connectionId, database);
     const selected = preferredSchema && schemas.includes(preferredSchema) ? preferredSchema : schemas.includes("public") ? "public" : (schemas[0] ?? "");
@@ -300,12 +220,6 @@ async function loadObjects() {
   }
   loadingObjects.value = true;
   try {
-    if (isMongoConnection(sourceConnectionId.value)) {
-      const collections = await api.mongoListCollections(sourceConnectionId.value, sourceDatabase.value);
-      objectGroups.value = { TABLE: collections.map((c) => c.name) };
-      applyPendingTableSelection();
-      return;
-    }
     const config = store.getConfig(sourceConnectionId.value);
     const needsSchema = isSchemaAware(config?.db_type);
     const schema = needsSchema && sourceSchema.value ? sourceSchema.value : sourceDatabase.value;
@@ -349,35 +263,13 @@ watch(sourceConnectionId, async (id) => {
   selectedObjects.value = {};
   pendingSourceSchemaPrefill.value = "";
   pendingSelectedTablesPrefill.value = null;
-  if (isCatalogCapable(id)) {
-    await loadCatalogs(id, "source");
-    if (sourceCatalog.value) {
-      await loadDatabasesForCatalog(id, sourceCatalog.value, "source");
-    }
-  } else {
-    await loadDatabases(id, "source");
-  }
-});
-
-watch(sourceCatalog, async (catalog) => {
-  if (!sourceConnectionId.value) return;
-  sourceDatabase.value = "";
-  objectGroups.value = {};
-  selectedObjects.value = {};
-  if (catalog) {
-    await loadDatabasesForCatalog(sourceConnectionId.value, catalog, "source");
-  }
+  await loadDatabases(id, "source");
 });
 
 watch(sourceDatabase, async (db) => {
   if (db) {
     const config = store.getConfig(sourceConnectionId.value);
-    if (namespaceOptionsAreSchemas(config)) {
-      // Dameng has no selectable catalog, so the top-level namespace option is
-      // also the schema used for metadata lookup and qualified transfer SQL.
-      sourceSchemas.value = [];
-      sourceSchema.value = db;
-    } else if (isSchemaAware(config?.db_type)) {
+    if (isSchemaAware(config?.db_type)) {
       await loadSchemas(sourceConnectionId.value, db, "source", pendingSourceSchemaPrefill.value);
       pendingSourceSchemaPrefill.value = "";
     } else {
@@ -399,33 +291,13 @@ watch(targetConnectionId, async (id) => {
   targetSchemas.value = [];
   targetSchema.value = "";
   pendingTargetSchemaPrefill.value = "";
-  if (isCatalogCapable(id)) {
-    await loadCatalogs(id, "target");
-    if (targetCatalog.value) {
-      await loadDatabasesForCatalog(id, targetCatalog.value, "target");
-    }
-  } else {
-    await loadDatabases(id, "target");
-  }
-});
-
-watch(targetCatalog, async (catalog) => {
-  if (!targetConnectionId.value) return;
-  targetDatabase.value = "";
-  targetSchemas.value = [];
-  targetSchema.value = "";
-  if (catalog) {
-    await loadDatabasesForCatalog(targetConnectionId.value, catalog, "target");
-  }
+  await loadDatabases(id, "target");
 });
 
 watch(targetDatabase, async (db) => {
   if (db) {
     const config = store.getConfig(targetConnectionId.value);
-    if (namespaceOptionsAreSchemas(config)) {
-      targetSchemas.value = [];
-      targetSchema.value = db;
-    } else if (isSchemaAware(config?.db_type)) {
+    if (isSchemaAware(config?.db_type)) {
       await loadSchemas(targetConnectionId.value, db, "target", pendingTargetSchemaPrefill.value);
       pendingTargetSchemaPrefill.value = "";
     } else {
@@ -445,30 +317,13 @@ watch(
       if (props.prefillConnectionId) {
         skipSourceWatch.value = true;
         sourceConnectionId.value = props.prefillConnectionId;
-        if (isCatalogCapable(props.prefillConnectionId)) {
-          await loadCatalogs(props.prefillConnectionId, "source");
-          if (props.prefillCatalog) {
-            sourceCatalog.value = props.prefillCatalog;
-          }
-          if (sourceCatalog.value) {
-            await loadDatabasesForCatalog(props.prefillConnectionId, sourceCatalog.value, "source");
-          }
-        } else {
-          await loadDatabases(props.prefillConnectionId, "source");
-        }
+        await loadDatabases(props.prefillConnectionId, "source");
         if (props.prefillDatabase) sourceDatabase.value = props.prefillDatabase;
       }
       if (props.prefillTargetConnectionId) {
         skipTargetWatch.value = true;
         targetConnectionId.value = props.prefillTargetConnectionId;
-        if (isCatalogCapable(props.prefillTargetConnectionId)) {
-          await loadCatalogs(props.prefillTargetConnectionId, "target");
-          if (targetCatalog.value) {
-            await loadDatabasesForCatalog(props.prefillTargetConnectionId, targetCatalog.value, "target");
-          }
-        } else {
-          await loadDatabases(props.prefillTargetConnectionId, "target");
-        }
+        await loadDatabases(props.prefillTargetConnectionId, "target");
         if (props.prefillTargetDatabase) targetDatabase.value = props.prefillTargetDatabase;
       }
     }
@@ -525,11 +380,11 @@ async function startTransfer() {
     sourceConnectionId: sourceConnectionId.value,
     sourceDatabase: sourceDatabaseName,
     sourceSchema: effectiveSourceSchema,
-    sourceCatalog: normalizeTransferCatalog(sourceCatalog.value, sourceCatalogs.value) || undefined,
+    sourceCatalog: normalizeTransferCatalog(sourceCatalog.value) || undefined,
     targetConnectionId: targetConnection,
     targetDatabase: targetDatabaseName,
     targetSchema: effectiveTargetSchema,
-    targetCatalog: normalizeTransferCatalog(targetCatalog.value, targetCatalogs.value) || undefined,
+    targetCatalog: normalizeTransferCatalog(targetCatalog.value) || undefined,
     tables: [...selectedTables.value],
     createTable: transferContent.value !== "dataOnly",
     content: transferContent.value,

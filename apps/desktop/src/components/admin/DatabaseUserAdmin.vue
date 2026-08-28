@@ -64,7 +64,7 @@ const createPassword = ref("");
 const newPassword = ref("");
 const privilegeDatabase = ref(props.connection.database || "*");
 const privilegeTable = ref("*");
-const privilegeScope = ref<PrivilegeScope>("mysql");
+const privilegeScope = ref<PrivilegeScope>("database");
 const privilegeRole = ref("");
 const grantOption = ref(false);
 const selectedPrivileges = ref<string[]>(["SELECT"]);
@@ -483,7 +483,7 @@ watch(
     selectedUserKey.value = "";
     grants.value = [];
     grantsLoaded.value = false;
-    privilegeScope.value = provider.value?.defaultScope ?? "mysql";
+    privilegeScope.value = provider.value?.defaultScope ?? "database";
     resetPrivilegeDefaults(privilegeScope.value);
     void loadUsers();
   },
@@ -492,7 +492,7 @@ watch(
 watch(
   () => provider.value,
   () => {
-    privilegeScope.value = provider.value?.defaultScope ?? "mysql";
+    privilegeScope.value = provider.value?.defaultScope ?? "database";
     resetPrivilegeDefaults(privilegeScope.value);
   },
   { immediate: true },

@@ -118,84 +118,8 @@ test("jdbc tabs use the connection target when database is empty", () => {
   }
 });
 
-test("zookeeper tabs use key browser labels", () => {
-  const restoreStorage = installMemoryStorage();
-  setActivePinia(createPinia());
-  useConnectionStore().addEphemeralConnection({
-    ...conn("conn-1"),
-    name: "ZK Prod",
-    db_type: "zookeeper",
-    port: 2181,
-  });
-  const t = (key: string) => (key === "tabs.zookeeper" ? "ZooKeeper" : key);
 
-  try {
-    const tab = queryTab({ mode: "zookeeper", database: "", title: "ZooKeeper Keys" });
-    assert.equal(tabDisplayTitle(tab, t), "ZK Prod@keys");
-    assert.equal(tabModeLabel(tab, t), "ZooKeeper");
-  } finally {
-    restoreStorage();
-  }
-});
 
-test("HBase tabs identify the table and namespace", () => {
-  const restoreStorage = installMemoryStorage();
-  setActivePinia(createPinia());
-  useConnectionStore().addEphemeralConnection({
-    ...conn("conn-1"),
-    name: "HBase Dev",
-    db_type: "hbase",
-    port: 8080,
-  });
-  const t = (key: string) => key;
-
-  try {
-    const tab = queryTab({ mode: "hbase", database: "analytics", title: "events", sql: "events" });
-    assert.equal(tabDisplayTitle(tab, t), "events@analytics");
-    assert.equal(tabModeLabel(tab, t), "HBase");
-  } finally {
-    restoreStorage();
-  }
-});
-
-test("GridFS tabs use dedicated titles and labels", () => {
-  const restoreStorage = installMemoryStorage();
-  setActivePinia(createPinia());
-  useConnectionStore().addEphemeralConnection({
-    ...conn("conn-1"),
-    name: "uat-mongo",
-    db_type: "mongodb",
-    port: 27017,
-  });
-  const t = (key: string) => {
-    if (key === "tabs.gridfs") return "GridFS";
-    if (key === "tabs.mongo") return "Mongo";
-    return key;
-  };
-
-  try {
-    const managerTab = queryTab({
-      title: "GridFS",
-      database: "amazon",
-      mode: "mongo-gridfs" as QueryTab["mode"],
-      sql: "",
-    });
-    const bucketTab = queryTab({
-      title: "amazon.NMDocumentData_acc001",
-      database: "amazon",
-      mode: "mongo-bucket",
-      sql: "NMDocumentData_acc001",
-      mongoBucket: { bucketName: "NMDocumentData_acc001" },
-    });
-
-    assert.equal(tabDisplayTitle(managerTab, t), "GridFS@amazon");
-    assert.equal(tabDisplayTitle(bucketTab, t), "NMDocumentData_acc001@amazon");
-    assert.equal(tabModeLabel(managerTab, t), "GridFS");
-    assert.equal(tabModeLabel(bucketTab, t), "GridFS");
-  } finally {
-    restoreStorage();
-  }
-});
 
 test("tabular result items hide statement results without returned columns", () => {
   const results = [result([]), result(["id"]), result([]), result(["name"])];
@@ -242,27 +166,7 @@ test("resultSourceRange uses the result index for repeated SQL", () => {
   assert.equal(resultSourceRange("select * from users;", { sourceStatement: "select * from orders" }, 0, "mysql"), undefined);
 });
 
-test("resultSourceRange resolves newline-separated MongoDB commands", () => {
-  const sql = "db.model_field_group.find({})\n\ndb.model_info.find({})";
-  const sourceStatement = "db.model_info.find({})";
 
-  assert.deepEqual(resultSourceRange(sql, { sourceStatement }, 1, "mongodb"), {
-    from: sql.indexOf(sourceStatement),
-    to: sql.length,
-    sql: sourceStatement,
-  });
-});
-
-test("resultSourceRange resolves newline-separated Redis commands", () => {
-  const sql = "GET first\n\nGET second";
-  const sourceStatement = "GET second";
-
-  assert.deepEqual(resultSourceRange(sql, { sourceStatement }, 1, "redis"), {
-    from: sql.indexOf(sourceStatement),
-    to: sql.length,
-    sql: sourceStatement,
-  });
-});
 
 test("resultSqlForGrid prefers the active result source statement", () => {
   const tab = queryTab({

@@ -152,7 +152,7 @@ async fn benchmark_file(
         &[],
         "benchmark_import",
         "main",
-        &DatabaseType::Sqlite,
+        &DatabaseType::Postgres,
         options.batch_size,
     )?;
     let batch_build_ms = batch_started.elapsed().as_secs_f64() * 1000.0;

@@ -359,92 +359,18 @@ fn builds_null_safe_where_clause_predicates() {
 }
 
 #[test]
-fn where_clause_applies_mysql_json_cast() {
-    // WHERE must reuse the UPDATE predicate builder so MySQL JSON columns get
-    // CAST(... AS JSON) instead of a raw string literal.
-    let mut request = request(DataGridExtractorId::WhereClause);
-    request.database_type = Some(DatabaseType::Mysql);
-    request.selected_column_indexes = vec![1];
-    request.rows = vec![vec![json!(1), json!("{\"k\":1}")]];
-    request.table_meta = Some(DataGridTableMeta {
-        catalog: None,
-        database: None,
-        schema: None,
-        table_name: "t".to_string(),
-        primary_keys: vec!["id".to_string()],
-        columns: Some(vec![
-            DataGridColumnInfo {
-                name: "id".to_string(),
-                data_type: "int".to_string(),
-                is_nullable: false,
-                is_primary_key: true,
-                column_default: None,
-                extra: None,
-            },
-            DataGridColumnInfo {
-                name: "name".to_string(),
-                data_type: "json".to_string(),
-                is_nullable: true,
-                is_primary_key: false,
-                column_default: None,
-                extra: None,
-            },
-        ]),
-    });
-    let result = extract_data_grid_selection(request).expect("WHERE extraction");
-    assert!(
-        result.text.contains("CAST(") && result.text.contains(" AS JSON)"),
-        "expected MySQL JSON CAST predicate, got: {}",
-        result.text
-    );
-}
-
-#[test]
-fn where_clause_rejects_unsupported_nosql_databases() {
-    for database_type in [DatabaseType::MongoDb, DatabaseType::Neo4j, DatabaseType::Tdengine] {
-        let mut request = request(DataGridExtractorId::WhereClause);
-        request.database_type = Some(database_type);
-        let error = extract_data_grid_selection(request).expect_err("WHERE must reject NoSQL");
-        assert_eq!(error.code, DataGridExtractErrorCode::UnsupportedDatabase, "{database_type:?}");
-    }
-}
-
-#[test]
-fn build_data_grid_copy_update_statements_returns_empty_for_mongodb() {
-    use crate::data_grid_sql::{build_data_grid_copy_update_statements, DataGridCopyUpdateStatementOptions};
-    let options = DataGridCopyUpdateStatementOptions {
-        database_type: Some(DatabaseType::MongoDb),
-        table_meta: DataGridTableMeta {
-            catalog: None,
-            database: None,
-            schema: None,
-            table_name: "t".to_string(),
-            primary_keys: vec!["id".to_string()],
-            columns: None,
-        },
-        columns: vec!["id".to_string()],
-        source_columns: Some(vec![Some("id".to_string())]),
-        rows: vec![vec![json!(1)]],
-    };
-    assert!(build_data_grid_copy_update_statements(options).is_empty());
-}
-
-#[test]
-fn format_grid_sql_literal_uses_numeric_bool_for_sqlserver() {
+fn format_grid_sql_literal_postgres() {
     use crate::data_grid_sql::format_grid_sql_literal;
     let column = DataGridColumnInfo {
         name: "active".to_string(),
-        data_type: "tinyint".to_string(),
+        data_type: "boolean".to_string(),
         is_nullable: true,
         is_primary_key: false,
         column_default: None,
         extra: None,
     };
-    // SQL Server has no TRUE/FALSE literals; emit 1/0 even for non-BIT columns.
-    assert_eq!(format_grid_sql_literal(&json!(true), Some(DatabaseType::SqlServer), Some(&column)), "1");
-    assert_eq!(format_grid_sql_literal(&json!(false), Some(DatabaseType::SqlServer), Some(&column)), "0");
-    // Other dialects still emit TRUE/FALSE for non-bit columns.
     assert_eq!(format_grid_sql_literal(&json!(true), Some(DatabaseType::Postgres), Some(&column)), "TRUE");
+    assert_eq!(format_grid_sql_literal(&json!(false), Some(DatabaseType::Postgres), Some(&column)), "FALSE");
 }
 
 #[test]

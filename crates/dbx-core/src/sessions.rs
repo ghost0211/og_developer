@@ -36,20 +36,10 @@ ORDER BY a.backend_start";
 const EXTERNAL_SESSION_MAX_ROWS: usize = 1000;
 
 fn is_postgres_session_config(config: &ConnectionConfig) -> bool {
-    matches!(
-        config.db_type,
-        DatabaseType::Postgres
-            | DatabaseType::OpenGauss
-            | DatabaseType::Gaussdb
-            | DatabaseType::Kwdb
-            | DatabaseType::Questdb
-            | DatabaseType::Highgo
-            | DatabaseType::Vastbase
-    ) || config.driver_profile.as_deref().is_some_and(|profile| {
-        profile.eq_ignore_ascii_case("opengauss")
-            || profile.eq_ignore_ascii_case("opengauss-jdbc")
-            || profile.eq_ignore_ascii_case("gaussdb")
-    })
+    matches!(config.db_type, DatabaseType::Postgres | DatabaseType::OpenGauss)
+        || config.driver_profile.as_deref().is_some_and(|profile| {
+            profile.eq_ignore_ascii_case("opengauss") || profile.eq_ignore_ascii_case("opengauss-jdbc")
+        })
 }
 
 fn json_value_to_string(value: Option<&Value>) -> String {
@@ -193,7 +183,6 @@ pub async fn list_sessions(state: &AppState) -> Vec<SessionInfo> {
             PoolKind::ExternalDriver { config: external_config, session, .. } => {
                 collect_external_sessions(external_config, session, connection_id, &config.name, &mut out).await;
             }
-            _ => {}
         }
     }
     out

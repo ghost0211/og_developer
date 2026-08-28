@@ -1157,8 +1157,6 @@ pub fn run() {
             } else {
                 AppState::new_with_plugin_dir_and_app_version(storage, plugin_dir, env!("CARGO_PKG_VERSION"))
             };
-            state.set_duckdb_worker_process_isolation_enabled(desktop_settings.duckdb_worker_process_isolation);
-            state.set_duckdb_worker_max_processes(desktop_settings.duckdb_worker_max_processes);
             let state = Arc::new(state);
             app.manage(state.clone());
             // OG Developer: seed the bundled openGauss JDBC driver into the
@@ -1436,8 +1434,6 @@ pub fn run() {
             commands::query::build_search_result_where,
             commands::query::build_rename_object_sql,
             commands::query::build_create_database_sql,
-            #[cfg(feature = "duckdb-sidecar")]
-            commands::query::build_duckdb_attach_database_sql,
             commands::query::build_sqlite_attach_database_sql,
             commands::query::build_drop_object_sql,
             commands::query::build_drop_table_sql,
@@ -1530,52 +1526,6 @@ pub fn run() {
             commands::redis_pubsub_server::redis_pubsub_server_port,
             commands::redis_cmd::redis_slowlog_get,
             commands::redis_cmd::redis_cluster_master_nodes,
-            commands::etcd_cmd::etcd_supports_ttl,
-            commands::etcd_cmd::etcd_list_prefix,
-            commands::etcd_cmd::etcd_get,
-            commands::etcd_cmd::etcd_put,
-            commands::etcd_cmd::etcd_delete,
-            commands::etcd_cmd::etcd_rename,
-            commands::etcd_cmd::etcd_history,
-            commands::etcd_cmd::etcd_status,
-            commands::etcd_cmd::etcd_preflight,
-            commands::etcd_cmd::etcd_compact,
-            commands::etcd_cmd::etcd_defrag,
-            commands::etcd_cmd::etcd_watch_start,
-            commands::etcd_cmd::etcd_watch_poll,
-            commands::etcd_cmd::etcd_watch_stop,
-            commands::etcd_cmd::etcd_lease_list,
-            commands::etcd_cmd::etcd_lease_call,
-            commands::etcd_cmd::etcd_auth_call,
-            commands::zookeeper_cmd::zookeeper_list_prefix,
-            commands::zookeeper_cmd::zookeeper_get,
-            commands::zookeeper_cmd::zookeeper_put,
-            commands::zookeeper_cmd::zookeeper_delete,
-            commands::nacos_cmd::nacos_test_connection,
-            commands::nacos_cmd::nacos_list_namespaces,
-            commands::nacos_cmd::nacos_create_namespace,
-            commands::nacos_cmd::nacos_update_namespace,
-            commands::nacos_cmd::nacos_list_configs,
-            commands::nacos_cmd::nacos_get_config,
-            commands::nacos_cmd::nacos_publish_config,
-            commands::nacos_cmd::nacos_delete_config,
-            commands::nacos_cmd::nacos_list_config_history,
-            commands::nacos_cmd::nacos_get_config_history,
-            commands::nacos_cmd::nacos_rollback_config,
-            commands::nacos_cmd::nacos_get_rnacos_console_captcha,
-            commands::nacos_cmd::nacos_login_rnacos_console,
-            commands::nacos_cmd::nacos_list_services,
-            commands::nacos_cmd::nacos_list_instances,
-            commands::nacos_cmd::nacos_update_instance,
-            commands::nacos_cmd::nacos_get_dashboard,
-            commands::nacos_cmd::nacos_raw_request,
-            commands::nacos_cmd::nacos_search_config_content,
-            commands::nacos_cmd::nacos_cancel_operation,
-            commands::nacos_cmd::nacos_export_configs,
-            commands::nacos_cmd::nacos_preview_config_import,
-            commands::nacos_cmd::nacos_apply_config_import,
-            commands::nacos_cmd::nacos_preview_config_transfer,
-            commands::nacos_cmd::nacos_apply_config_transfer,
             commands::saved_sql::load_saved_sql_library,
             commands::saved_sql::load_saved_sql_file,
             commands::saved_sql::save_saved_sql_folder,
@@ -1624,178 +1574,11 @@ pub fn run() {
             commands::mongo_cmd::mongo_update_document,
             commands::mongo_cmd::mongo_update_documents,
             commands::document_cmd::document_delete_document,
-            commands::hbase_cmd::hbase_get_table_schema,
-            commands::hbase_cmd::hbase_scan_rows,
-            commands::hbase_cmd::hbase_get_row,
-            commands::hbase_cmd::hbase_put_row,
-            commands::hbase_cmd::hbase_delete_row,
-            commands::hbase_cmd::hbase_create_table,
-            commands::hbase_cmd::hbase_delete_table,
             commands::mongo_cmd::mongo_delete_document,
             commands::mongo_cmd::mongo_delete_documents,
             commands::mongo_cmd::mongo_find_one_and_update,
             commands::mongo_cmd::mongo_find_one_and_replace,
             commands::mongo_cmd::mongo_find_one_and_delete,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_test_connection,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_list_tenants,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_get_tenant,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_create_tenant,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_update_tenant,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_delete_tenant,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_list_namespaces,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_create_namespace,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_delete_namespace,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_get_namespace_policies,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_list_topics,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_create_topic,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_delete_topic,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_update_partitions,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_get_topic_stats,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_get_topic_internal_stats,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_list_exchanges,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_create_exchange,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_delete_exchange,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_list_bindings,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_bind,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_unbind,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_list_subscriptions,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_enrich_subscriptions,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_create_subscription,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_delete_subscription,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_skip_messages,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_reset_cursor,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_clear_backlog,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_get_consumer_group_config,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_alter_consumer_group_config,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_peek_messages,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_expire_messages,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_list_producers,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_list_consumers,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_unload_topic,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_list_client_connections,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_list_client_channels,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_close_client_connection,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_set_publish_rate,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_set_dispatch_rate,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_set_subscribe_rate,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_set_backlog_quota,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_set_retention,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_get_effective_policies,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_grant_permission,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_revoke_permission,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_list_permissions,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_list_users,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_create_user,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_delete_user,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_list_user_permissions,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_grant_user_permission,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_revoke_user_permission,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_list_policies,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_set_policy,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_delete_policy,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_get_overview,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_list_nodes,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_issue_token,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_list_token_records,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_get_backlog,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_get_cluster_info,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_get_topic_route,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_alter_topic_config,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_skip_topic_accumulation,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_view_message,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_query_messages_by_key,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_query_messages_by_topic,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_query_message_trace,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_raw_request,
-            #[cfg(feature = "mq-admin")]
-            commands::mq_cmd::mq_send_message,
-            #[cfg(feature = "mq-admin")]
-            commands::mqtt_cmd::mqtt_get_broker_info,
-            #[cfg(feature = "mq-admin")]
-            commands::mqtt_cmd::mqtt_subscribe,
-            #[cfg(feature = "mq-admin")]
-            commands::mqtt_cmd::mqtt_unsubscribe,
-            #[cfg(feature = "mq-admin")]
-            commands::mqtt_cmd::mqtt_publish,
-            #[cfg(feature = "mq-admin")]
-            commands::mqtt_cmd::mqtt_list_topics,
-            #[cfg(feature = "mq-admin")]
-            commands::mqtt_cmd::mqtt_get_topic_tree,
-            #[cfg(feature = "mq-admin")]
-            commands::mqtt_cmd::mqtt_get_messages,
-            #[cfg(feature = "mq-admin")]
-            commands::mqtt_cmd::mqtt_clear_messages,
             commands::history::save_history,
             commands::history::load_history,
             commands::history::search_history,

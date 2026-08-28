@@ -7,23 +7,13 @@ pub(in crate::schema) async fn list_databases(
     config: Option<&ConnectionConfig>,
 ) -> Result<Vec<db::DatabaseInfo>, String> {
     match pool {
-        PoolKind::Mysql(p, _) if config.is_some_and(is_doris_family_config) => db::mysql::list_databases_show(p)
-            .await
-            .map(|databases| filter_mysql_system_databases_for_config(databases, config)),
-        PoolKind::Mysql(p, mode) if *mode == MysqlMode::OceanBaseOracle => db::ob_oracle::list_databases(p).await,
-        PoolKind::Mysql(p, _) => db::mysql::list_databases(p).await,
         PoolKind::Postgres(p) => db::postgres::list_databases(p).await,
-        PoolKind::Sqlite(p) => db::sqlite::list_databases(p).await,
-        PoolKind::Rqlite(client) => db::rqlite_driver::list_databases(client).await,
-        PoolKind::HBase(client) => db::hbase_driver::list_namespaces(client).await,
-        PoolKind::Turso(client) => db::turso_driver::list_databases(client).await,
         _ => Ok(vec![]),
     }
 }
 
 pub(in crate::schema) async fn list_schemas(pool: &PoolKind) -> Result<Vec<String>, String> {
     match pool {
-        PoolKind::Mysql(p, mode) if *mode == MysqlMode::OceanBaseOracle => db::ob_oracle::list_schemas(p).await,
         PoolKind::Postgres(p) => db::postgres::list_schemas(p).await,
         _ => Ok(vec![]),
     }
@@ -36,38 +26,11 @@ pub(in crate::schema) async fn list_tables(
     schema: &str,
 ) -> Result<Vec<db::TableInfo>, String> {
     match pool {
-        PoolKind::Mysql(p, _) if config.is_some_and(is_doris_family_config) => {
-            db::mysql::list_tables_show(p, database).await
-        }
-        PoolKind::Mysql(p, mode) if *mode == MysqlMode::OceanBaseOracle => {
-            let s = if schema.is_empty() { database } else { schema };
-            db::ob_oracle::list_tables(p, s).await
-        }
-        PoolKind::Mysql(p, _) => {
-            let db = if schema.is_empty() { database } else { schema };
-            db::mysql::list_tables(p, db).await
-        }
         PoolKind::Postgres(p) if config.is_some_and(is_questdb_config) => db::questdb::list_tables(p, schema).await,
         PoolKind::Postgres(p) if config.is_some_and(is_cloudberry_config) => {
             db::cloudberry::list_tables_filtered(p, schema, None, None, None).await
         }
         PoolKind::Postgres(p) => db::postgres::list_tables(p, schema).await,
-        PoolKind::Sqlite(p) => db::sqlite::list_tables(p, schema).await,
-        PoolKind::Rqlite(client) => db::rqlite_driver::list_tables(client, schema).await,
-        PoolKind::Turso(client) => db::turso_driver::list_tables(client, schema).await,
-        PoolKind::MongoDb(client) => db::mongo_driver::list_collections(client, database)
-            .await
-            .map(|names| collection_names_to_tables(names, "COLLECTION")),
-        PoolKind::Elasticsearch(client) => {
-            db::elasticsearch_driver::list_indices(client).await.map(|names| collection_names_to_tables(names, "INDEX"))
-        }
-        PoolKind::Easysearch(client) => {
-            db::easysearch_driver::list_indices(client).await.map(|names| collection_names_to_tables(names, "INDEX"))
-        }
-        PoolKind::HBase(client) => db::hbase_driver::list_tables(client, database).await,
-        PoolKind::VectorDb(client) => db::vector_driver::list_collections(client)
-            .await
-            .map(|infos| collection_names_to_tables(infos.into_iter().map(|i| i.name).collect(), "COLLECTION")),
         _ => Ok(vec![]),
     }
 }
@@ -79,18 +42,6 @@ pub(in crate::schema) async fn list_objects(
     schema: &str,
 ) -> Result<Option<Vec<db::ObjectInfo>>, String> {
     match pool {
-        PoolKind::Mysql(p, mode) if *mode == MysqlMode::OceanBaseOracle => {
-            db::ob_oracle::list_objects(p, schema).await.map(Some)
-        }
-        PoolKind::Mysql(p, _) if config.is_some_and(is_manticoresearch_config) => {
-            db::manticoresearch::list_objects(p, database).await.map(Some)
-        }
-        PoolKind::Mysql(p, _) if config.is_some_and(is_doris_family_config) => {
-            db::mysql::list_table_objects_show(p, database).await.map(Some)
-        }
-        PoolKind::Mysql(p, _) => {
-            db::mysql::list_objects(p, database, None, None, None).await.map(|result| Some(result.objects))
-        }
         PoolKind::Postgres(p) if config.is_some_and(is_questdb_config) => {
             db::questdb::list_objects(p, schema).await.map(Some)
         }
@@ -109,12 +60,6 @@ pub(in crate::schema) async fn list_completion_objects(
     schema: &str,
 ) -> Result<Option<Vec<db::ObjectInfo>>, String> {
     match pool {
-        PoolKind::Mysql(p, mode) if *mode != MysqlMode::OceanBaseOracle => {
-            db::mysql::list_completion_objects(p, database).await.map(Some)
-        }
-        PoolKind::Mysql(p, mode) if *mode == MysqlMode::OceanBaseOracle => {
-            db::ob_oracle::list_objects(p, schema).await.map(Some)
-        }
         PoolKind::Postgres(p) if config.is_some_and(is_questdb_config) => {
             db::questdb::list_objects(p, schema).await.map(Some)
         }
@@ -134,29 +79,10 @@ pub(in crate::schema) async fn get_columns(
     table: &str,
 ) -> Result<Vec<db::ColumnInfo>, String> {
     match pool {
-        PoolKind::Mysql(p, _) if config.is_some_and(is_manticoresearch_config) => {
-            let metadata_database = mysql_show_metadata_database_for_config(config, database);
-            db::manticoresearch::get_columns(p, metadata_database, table).await
-        }
-        PoolKind::Mysql(p, _) if config.is_some_and(is_doris_family_config) => {
-            let metadata_database = mysql_show_metadata_database_for_config(config, database);
-            db::mysql::get_columns(p, metadata_database, table).await
-        }
-        PoolKind::Mysql(p, mode) if *mode == MysqlMode::OceanBaseOracle => {
-            db::ob_oracle::get_columns(p, database, table).await
-        }
-        PoolKind::Mysql(p, _) => db::mysql::get_columns(p, database, table).await,
         PoolKind::Postgres(p) if config.is_some_and(is_questdb_config) => {
             db::questdb::get_columns(p, schema, table).await
         }
         PoolKind::Postgres(p) => db::postgres::get_columns(p, schema, table).await,
-        PoolKind::Sqlite(p) => db::sqlite::get_columns(p, schema, table).await,
-        PoolKind::Rqlite(client) => db::rqlite_driver::get_columns(client, schema, table).await,
-        PoolKind::Turso(client) => db::turso_driver::get_columns(client, schema, table).await,
-        PoolKind::Elasticsearch(client) => db::elasticsearch_driver::get_columns(client, table).await,
-        PoolKind::Easysearch(client) => db::easysearch_driver::get_columns(client, table).await,
-        PoolKind::HBase(client) => db::hbase_driver::get_columns(client, database, table).await,
-        PoolKind::VectorDb(_) => Ok(vec![]),
         _ => Ok(vec![]),
     }
 }
@@ -169,30 +95,10 @@ pub(in crate::schema) async fn list_indexes(
     table: &str,
 ) -> Result<Vec<db::IndexInfo>, String> {
     match pool {
-        PoolKind::Mysql(p, mode) if *mode == MysqlMode::OceanBaseOracle => {
-            db::ob_oracle::list_indexes(p, schema, table).await
-        }
-        PoolKind::Mysql(p, _) if config.is_some_and(is_starrocks_config) => {
-            db::starrocks::list_indexes(p, database, table).await
-        }
-        PoolKind::Mysql(p, _) if config.is_some_and(is_doris_config) => {
-            db::doris::list_indexes(p, database, table).await
-        }
-        PoolKind::Mysql(p, _) if config.is_some_and(is_manticoresearch_config) => {
-            db::mysql_compatible::list_indexes_with_ddl_fallback(p, database, table).await
-        }
-        PoolKind::Mysql(p, _) => db::mysql::list_indexes(p, schema, table).await,
         PoolKind::Postgres(p) if config.is_some_and(is_questdb_config) => {
             db::questdb::list_indexes(p, schema, table).await
         }
         PoolKind::Postgres(p) => db::postgres::list_indexes(p, schema, table).await,
-        PoolKind::Sqlite(p) => db::sqlite::list_indexes(p, schema, table).await,
-        PoolKind::Rqlite(client) => db::rqlite_driver::list_indexes(client, schema, table).await,
-        PoolKind::Turso(client) => db::turso_driver::list_indexes(client, schema, table).await,
-        PoolKind::MongoDb(client) => db::mongo_driver::list_indexes(client, database, table).await,
-        PoolKind::ClickHouse(client) => {
-            db::clickhouse_driver::list_indexes(client, clickhouse_metadata_database(database, schema), table).await
-        }
         _ => Ok(vec![]),
     }
 }
@@ -203,14 +109,7 @@ pub(in crate::schema) async fn list_foreign_keys(
     table: &str,
 ) -> Result<Vec<db::ForeignKeyInfo>, String> {
     match pool {
-        PoolKind::Mysql(p, mode) if *mode == MysqlMode::OceanBaseOracle => {
-            db::ob_oracle::list_foreign_keys(p, schema, table).await
-        }
-        PoolKind::Mysql(p, _) => db::mysql::list_foreign_keys(p, schema, table).await,
         PoolKind::Postgres(p) => db::postgres::list_foreign_keys(p, schema, table).await,
-        PoolKind::Sqlite(p) => db::sqlite::list_foreign_keys(p, schema, table).await,
-        PoolKind::Rqlite(client) => db::rqlite_driver::list_foreign_keys(client, schema, table).await,
-        PoolKind::Turso(client) => db::turso_driver::list_foreign_keys(client, schema, table).await,
         _ => Ok(vec![]),
     }
 }
@@ -221,14 +120,7 @@ pub(in crate::schema) async fn list_triggers(
     table: &str,
 ) -> Result<Vec<db::TriggerInfo>, String> {
     match pool {
-        PoolKind::Mysql(p, mode) if *mode == MysqlMode::OceanBaseOracle => {
-            db::ob_oracle::list_triggers(p, schema, table).await
-        }
-        PoolKind::Mysql(p, _) => db::mysql::list_triggers(p, schema, table).await,
         PoolKind::Postgres(p) => db::postgres::list_triggers(p, schema, table).await,
-        PoolKind::Sqlite(p) => db::sqlite::list_triggers(p, schema, table).await,
-        PoolKind::Rqlite(client) => db::rqlite_driver::list_triggers(client, schema, table).await,
-        PoolKind::Turso(client) => db::turso_driver::list_triggers(client, schema, table).await,
         _ => Ok(vec![]),
     }
 }
@@ -240,7 +132,6 @@ pub(in crate::schema) async fn table_ddl(
     table: &str,
 ) -> Result<String, String> {
     match pool {
-        PoolKind::Mysql(p, _) => super::super::mysql_ddl(p, schema, table).await,
         PoolKind::Postgres(p) if config.is_some_and(is_opengauss_family_config) => {
             match super::super::opengauss_table_ddl(p, schema, table).await {
                 Ok(ddl) => Ok(ddl),
@@ -257,9 +148,6 @@ pub(in crate::schema) async fn table_ddl(
             super::super::cloudberry_ddl(p, schema, table).await
         }
         PoolKind::Postgres(p) => super::super::pg_ddl(p, schema, table).await,
-        PoolKind::Sqlite(p) => super::super::sqlite_ddl(p, schema, table).await,
-        PoolKind::Rqlite(client) => db::rqlite_driver::table_ddl(client, table).await,
-        PoolKind::Turso(client) => db::turso_driver::table_ddl(client, table).await,
         _ => Err("DDL not supported for this database type".to_string()),
     }
 }
@@ -272,38 +160,8 @@ pub(in crate::schema) async fn object_source(
     object_type: &db::ObjectSourceKind,
 ) -> Result<Option<String>, String> {
     match pool {
-        PoolKind::Mysql(pool, _) => super::super::mysql_object_source(
-            pool,
-            super::super::mysql_table_metadata_catalog(database, schema),
-            name,
-            object_type,
-        )
-        .await
-        .map(Some),
         PoolKind::Postgres(pool) => {
             super::super::postgres_object_source(pool, schema, name, object_type).await.map(Some)
-        }
-        PoolKind::Sqlite(pool) => {
-            let source = super::super::first_string_cell(
-                db::sqlite::execute_query(pool, &super::super::sqlite_object_source_sql(schema, name, object_type))
-                    .await?,
-            )?;
-            Ok(Some(source))
-        }
-        PoolKind::Rqlite(client) => {
-            db::rqlite_driver::object_source(client, name, object_type).await.map(|source| Some(source.source))
-        }
-        PoolKind::Turso(client) => {
-            db::turso_driver::object_source(client, name, object_type).await.map(|source| Some(source.source))
-        }
-        PoolKind::ClickHouse(client) if matches!(object_type, db::ObjectSourceKind::View) => {
-            let result = db::clickhouse_driver::execute_query(
-                client,
-                database,
-                &format!("SHOW CREATE TABLE {}", super::super::mysql_ident(name)),
-            )
-            .await?;
-            super::super::first_string_cell(result).map(Some)
         }
         _ => Ok(None),
     }
@@ -340,20 +198,20 @@ fn is_cloudberry_config(config: &ConnectionConfig) -> bool {
 }
 
 fn is_doris_family_config(config: &ConnectionConfig) -> bool {
-    matches!(config.db_type, DatabaseType::Doris | DatabaseType::StarRocks | DatabaseType::ManticoreSearch)
+    false
         || matches!(config.driver_profile.as_deref(), Some("doris" | "selectdb" | "starrocks" | "manticoresearch"))
 }
 
 fn is_doris_config(config: &ConnectionConfig) -> bool {
-    config.db_type == DatabaseType::Doris || matches!(config.driver_profile.as_deref(), Some("doris" | "selectdb"))
+    false|| matches!(config.driver_profile.as_deref(), Some("doris" | "selectdb"))
 }
 
 fn is_starrocks_config(config: &ConnectionConfig) -> bool {
-    config.db_type == DatabaseType::StarRocks || matches!(config.driver_profile.as_deref(), Some("starrocks"))
+    false|| matches!(config.driver_profile.as_deref(), Some("starrocks"))
 }
 
 fn is_manticoresearch_config(config: &ConnectionConfig) -> bool {
-    matches!(config.db_type, DatabaseType::ManticoreSearch)
+    false
         || matches!(config.driver_profile.as_deref(), Some("manticoresearch"))
 }
 
@@ -381,5 +239,5 @@ fn is_mysql_system_database(name: &str) -> bool {
 }
 
 fn is_questdb_config(config: &ConnectionConfig) -> bool {
-    matches!(config.db_type, DatabaseType::Questdb) || matches!(config.driver_profile.as_deref(), Some("questdb"))
+    false|| matches!(config.driver_profile.as_deref(), Some("questdb"))
 }

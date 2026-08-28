@@ -11,15 +11,12 @@ function convertCase(text: string, mode: SqlSelectionCaseMode): string {
   return mode === "upper" ? text.toUpperCase() : text.toLowerCase();
 }
 
-export function convertSqlSelectionCase(sql: string, range: SqlSelectionRange, mode: SqlSelectionCaseMode, dialectId?: "mysql" | "postgres" | "sqlserver"): string {
+export function convertSqlSelectionCase(sql: string, range: SqlSelectionRange, mode: SqlSelectionCaseMode, dialectId?: "postgres"): string {
   const from = Math.max(0, Math.min(range.from, sql.length));
   const to = Math.max(from, Math.min(range.to, sql.length));
   const protectedTokens = tokenizeSqlSemantic(sql, dialectId).filter((item) => {
     if (item.span.end <= from || item.span.start >= to) return false;
-    if (item.kind === "string") return true;
-    if (dialectId !== "mysql") return false;
-    if (item.kind === "quoted_identifier" && item.quote === '"') return true;
-    return item.kind === "comment" && /^\/\*(?:!|M!)/i.test(item.text);
+    return item.kind === "string";
   });
   if (protectedTokens.length === 0) return convertCase(sql.slice(from, to), mode);
 

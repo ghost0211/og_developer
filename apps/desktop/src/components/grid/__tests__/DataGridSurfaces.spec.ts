@@ -761,7 +761,7 @@ describe("DataGridCopyColumnNamesDialog", () => {
     const mounted = mountComponent(DataGridCopyColumnNamesDialog, {
       open: true,
       columnNames: ["id", "type"],
-      databaseType: "mysql",
+      databaseType: "opengauss",
       onCopy: copy,
       "onUpdate:open": openChange,
     });
@@ -770,22 +770,22 @@ describe("DataGridCopyColumnNamesDialog", () => {
     findOne(mounted.root, (node) => node.props["data-stub"] === "Select").props["onUpdate:modelValue"]("comma-newline");
     findOne(mounted.root, (node) => node.props["data-stub"] === "Switch").props["onUpdate:modelValue"](true);
     await nextTick();
-    expect(previewText(mounted)).toBe("`id`,\n`type`");
+    expect(previewText(mounted)).toBe('"id",\n"type"');
 
     dispatch(
       findOne(mounted.root, (node) => node.props["data-stub"] === "Button" && hostText(node) === "grid.copy"),
       "click",
     );
-    expect(copy).toHaveBeenCalledWith("`id`,\n`type`");
+    expect(copy).toHaveBeenCalledWith('"id",\n"type"');
     expect(openChange).toHaveBeenCalledWith(false);
     expect(localStorage.getItem("dbx-copy-column-names-separator")).toBe("comma-newline");
   });
 
-  it("hides the quote option for non-SQL databases and ignores invalid separators", async () => {
+  it("hides the quote option for unquotable databases and ignores invalid separators", async () => {
     const mounted = mountComponent(DataGridCopyColumnNamesDialog, {
       open: true,
       columnNames: ["id", "type"],
-      databaseType: "mongodb",
+      databaseType: "jdbc",
       onCopy: vi.fn(),
     });
     expect(findAll(mounted.root, (node) => node.props["data-stub"] === "Switch")).toHaveLength(0);

@@ -2,14 +2,12 @@
 import { computed, ref, watch, nextTick, onUnmounted } from "vue";
 import type { CSSProperties } from "vue";
 import { useI18n } from "vue-i18n";
-import { X, Pin, ChevronDown, Table2, Code2, TableProperties, PencilRuler, KeyRound, Pencil, Package, Lock, Copy, AlertTriangle, Network, Minimize2, Maximize2, CalendarClock, Activity, Gauge, ShieldCheck, Terminal, TerminalSquare, Bug, FileCode, Settings } from "@lucide/vue";
+import { X, Pin, ChevronDown, Table2, Code2, TableProperties, PencilRuler, Pencil, Lock, Copy, AlertTriangle, Minimize2, Maximize2, Activity, Gauge, Terminal, TerminalSquare, Bug, FileCode, Settings } from "@lucide/vue";
 import CustomContextMenu, { type ContextMenuItem } from "@/components/ui/CustomContextMenu.vue";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import DatabaseIcon from "@/components/icons/DatabaseIcon.vue";
-import { useConnectionStore } from "@/stores/connectionStore";
 import { useQueryStore } from "@/stores/queryStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useTabScroll } from "@/composables/useTabScroll";
@@ -38,7 +36,6 @@ const emit = defineEmits<{
 }>();
 
 const { t } = useI18n();
-const connectionStore = useConnectionStore();
 const queryStore = useQueryStore();
 const settingsStore = useSettingsStore();
 const { toast } = useToast();
@@ -443,29 +440,14 @@ function tabColorStyle(tab: QueryTab) {
 }
 
 function tabIconClass(tab: QueryTab) {
-  if (tab.mode === "mq") return "";
   if (tab.mode === "command") return "text-emerald-500";
   if (tab.mode === "routine-test") return "text-primary";
   if (tab.mode === "routine-debug") return "text-amber-500";
   if (tab.mode === "program-window") return "text-blue-500";
   if (tab.mode === "settings") return "text-muted-foreground";
   if (tab.mode === "objects") return "text-amber-500 dark:text-amber-400";
-  if (tab.mode === "data" || tab.mode === "mongo" || tab.mode === "vector" || tab.mode === "redis" || tab.mode === "hbase" || tab.mode === "structure") return "text-emerald-600 dark:text-emerald-400";
+  if (tab.mode === "data" || tab.mode === "structure") return "text-emerald-600 dark:text-emerald-400";
   return "text-blue-600 dark:text-blue-400";
-}
-
-function tabDatabaseIconType(tab: QueryTab) {
-  const connection = connectionStore.getConfig(tab.connectionId);
-  if (!connection) return "mq";
-  if (connection.db_type === "mq") {
-    const externalConfig = connection.external_config as { systemKind?: unknown } | undefined;
-    const systemKind = typeof externalConfig?.systemKind === "string" ? externalConfig.systemKind : "";
-    if (connection.driver_profile === "kafka" || systemKind === "kafka") return "kafka";
-    if (connection.driver_profile === "rocketmq" || systemKind === "rocketmq") return "rocketmq";
-    if (connection.driver_profile === "rabbitmq" || systemKind === "rabbitmq") return "rabbitmq";
-    if (connection.driver_profile === "pulsar" || systemKind === "pulsar") return "pulsar";
-  }
-  return connection.driver_profile || connection.db_type;
 }
 
 const showRegularTabScrollbar = computed(() => hasTabOverflow.value && !isWrapLayout.value);
@@ -477,22 +459,16 @@ const tabBarClass = computed(() => [isClassicLayout.value ? "bg-muted" : "border
 const regularTabRowClass = computed(() => [isClassicLayout.value ? "h-9 items-stretch" : "h-10 items-center px-2", isClassicLayout.value && !hasFixedTabs.value ? "border-b" : ""]);
 
 function tabMenuIcon(tab: QueryTab) {
-  if (tab.mode === "data" || tab.mode === "mongo" || tab.mode === "redis" || tab.mode === "hbase") return Table2;
-  if (tab.mode === "vector") return TableProperties;
-  if (tab.mode === "etcd" || tab.mode === "zookeeper") return KeyRound;
-  if (tab.mode === "etcd-dashboard") return Gauge;
-  if (tab.mode === "etcd-access-control") return ShieldCheck;
-  if (tab.mode === "nacos") return Network;
+  if (tab.mode === "data") return Table2;
   if (tab.mode === "objects") return TableProperties;
   if (tab.mode === "structure") return PencilRuler;
-  if (tab.mode === "dameng-jobs") return CalendarClock;
   if (tab.mode === "processlist") return Activity;
   if (tab.mode === "command") return Terminal;
   if (tab.mode === "routine-test") return TerminalSquare;
   if (tab.mode === "routine-debug") return Bug;
   if (tab.mode === "program-window") return FileCode;
   if (tab.mode === "settings") return Settings;
-  if (tab.mode === "mysql-dashboard" || tab.mode === "postgres-dashboard" || tab.mode === "nacos-dashboard") return Gauge;
+  if (tab.mode === "postgres-dashboard") return Gauge;
   return Code2;
 }
 
@@ -622,22 +598,15 @@ function onOverflowItemKeydown(event: KeyboardEvent, tabId: string, kind: "regul
                     @mouseleave="tabDrag.clearTarget(tab.id)"
                   >
                     <span class="shrink-0" :class="tabIconClass(tab)">
-                      <Table2 v-if="tab.mode === 'data' || tab.mode === 'mongo' || tab.mode === 'redis' || tab.mode === 'hbase'" class="h-3.5 w-3.5" />
-                      <DatabaseIcon v-else-if="tab.mode === 'mq'" :db-type="tabDatabaseIconType(tab)" class="h-3.5 w-3.5" />
-                      <TableProperties v-else-if="tab.mode === 'vector'" class="h-3.5 w-3.5" />
-                      <KeyRound v-else-if="tab.mode === 'etcd' || tab.mode === 'zookeeper'" class="h-3.5 w-3.5" />
-                      <Gauge v-else-if="tab.mode === 'etcd-dashboard'" class="h-3.5 w-3.5" />
-                      <ShieldCheck v-else-if="tab.mode === 'etcd-access-control'" class="h-3.5 w-3.5" />
-                      <Network v-else-if="tab.mode === 'nacos'" class="h-3.5 w-3.5" />
+                      <Table2 v-if="tab.mode === 'data'" class="h-3.5 w-3.5" />
                       <TableProperties v-else-if="tab.mode === 'objects'" class="h-3.5 w-3.5" />
                       <PencilRuler v-else-if="tab.mode === 'structure'" class="h-3.5 w-3.5" />
-                      <CalendarClock v-else-if="tab.mode === 'dameng-jobs'" class="h-3.5 w-3.5" />
                       <Activity v-else-if="tab.mode === 'processlist'" class="h-3.5 w-3.5" />
                       <Terminal v-else-if="tab.mode === 'command'" class="h-3.5 w-3.5 text-emerald-500" />
                       <TerminalSquare v-else-if="tab.mode === 'routine-test'" class="h-3.5 w-3.5 text-primary" />
                       <Bug v-else-if="tab.mode === 'routine-debug'" class="h-3.5 w-3.5 text-amber-500" />
                       <FileCode v-else-if="tab.mode === 'program-window'" class="h-3.5 w-3.5 text-blue-500" />
-                      <Gauge v-else-if="tab.mode === 'mysql-dashboard' || tab.mode === 'postgres-dashboard' || tab.mode === 'nacos-dashboard'" class="h-3.5 w-3.5" />
+                      <Gauge v-else-if="tab.mode === 'postgres-dashboard'" class="h-3.5 w-3.5" />
                       <Settings v-else-if="tab.mode === 'settings'" class="h-3.5 w-3.5 text-muted-foreground" />
                       <Code2 v-else class="h-3.5 w-3.5" />
                     </span>
@@ -731,8 +700,7 @@ function onOverflowItemKeydown(event: KeyboardEvent, tabId: string, kind: "regul
                 @contextmenu="onContextMenu"
                 @keydown="onOverflowItemKeydown($event, tab.id, 'regular')"
               >
-                <DatabaseIcon v-if="tab.mode === 'mq'" :db-type="tabDatabaseIconType(tab)" class="h-3.5 w-3.5 shrink-0" />
-                <component :is="tabMenuIcon(tab)" v-else :class="['h-3.5 w-3.5 shrink-0', tabIconClass(tab)]" />
+                <component :is="tabMenuIcon(tab)" :class="['h-3.5 w-3.5 shrink-0', tabIconClass(tab)]" />
                 <span class="inline-flex min-w-0 flex-1 items-center gap-0.5 overflow-hidden">
                   <span v-if="isDirtyTab(tab)" aria-hidden="true" class="dirty-tab-marker">*</span>
                   <span class="min-w-0 flex-1 truncate" :style="tabTitleStyle(tab)">{{ tabTitleText(tab) }}</span>
@@ -793,22 +761,15 @@ function onOverflowItemKeydown(event: KeyboardEvent, tabId: string, kind: "regul
                     @mouseleave="tabDrag.clearTarget(tab.id)"
                   >
                     <span class="shrink-0" :class="tabIconClass(tab)">
-                      <Table2 v-if="tab.mode === 'data' || tab.mode === 'mongo' || tab.mode === 'redis' || tab.mode === 'hbase'" class="h-3.5 w-3.5" />
-                      <DatabaseIcon v-else-if="tab.mode === 'mq'" :db-type="tabDatabaseIconType(tab)" class="h-3.5 w-3.5" />
-                      <TableProperties v-else-if="tab.mode === 'vector'" class="h-3.5 w-3.5" />
-                      <KeyRound v-else-if="tab.mode === 'etcd' || tab.mode === 'zookeeper'" class="h-3.5 w-3.5" />
-                      <Gauge v-else-if="tab.mode === 'etcd-dashboard'" class="h-3.5 w-3.5" />
-                      <ShieldCheck v-else-if="tab.mode === 'etcd-access-control'" class="h-3.5 w-3.5" />
-                      <Network v-else-if="tab.mode === 'nacos'" class="h-3.5 w-3.5" />
+                      <Table2 v-if="tab.mode === 'data'" class="h-3.5 w-3.5" />
                       <TableProperties v-else-if="tab.mode === 'objects'" class="h-3.5 w-3.5" />
                       <PencilRuler v-else-if="tab.mode === 'structure'" class="h-3.5 w-3.5" />
-                      <CalendarClock v-else-if="tab.mode === 'dameng-jobs'" class="h-3.5 w-3.5" />
                       <Activity v-else-if="tab.mode === 'processlist'" class="h-3.5 w-3.5" />
                       <Terminal v-else-if="tab.mode === 'command'" class="h-3.5 w-3.5 text-emerald-500" />
                       <TerminalSquare v-else-if="tab.mode === 'routine-test'" class="h-3.5 w-3.5 text-primary" />
                       <Bug v-else-if="tab.mode === 'routine-debug'" class="h-3.5 w-3.5 text-amber-500" />
                       <FileCode v-else-if="tab.mode === 'program-window'" class="h-3.5 w-3.5 text-blue-500" />
-                      <Gauge v-else-if="tab.mode === 'mysql-dashboard' || tab.mode === 'postgres-dashboard' || tab.mode === 'nacos-dashboard'" class="h-3.5 w-3.5" />
+                      <Gauge v-else-if="tab.mode === 'postgres-dashboard'" class="h-3.5 w-3.5" />
                       <Settings v-else-if="tab.mode === 'settings'" class="h-3.5 w-3.5 text-muted-foreground" />
                       <Code2 v-else class="h-3.5 w-3.5" />
                     </span>
@@ -873,8 +834,7 @@ function onOverflowItemKeydown(event: KeyboardEvent, tabId: string, kind: "regul
                 @contextmenu="onContextMenu"
                 @keydown="onOverflowItemKeydown($event, tab.id, 'fixed')"
               >
-                <DatabaseIcon v-if="tab.mode === 'mq'" :db-type="tabDatabaseIconType(tab)" class="h-3.5 w-3.5 shrink-0" />
-                <component :is="tabMenuIcon(tab)" v-else :class="['h-3.5 w-3.5 shrink-0', tabIconClass(tab)]" />
+                <component :is="tabMenuIcon(tab)" :class="['h-3.5 w-3.5 shrink-0', tabIconClass(tab)]" />
                 <span class="inline-flex min-w-0 flex-1 items-center gap-0.5 overflow-hidden">
                   <span v-if="isDirtyTab(tab)" aria-hidden="true" class="dirty-tab-marker">*</span>
                   <span class="min-w-0 flex-1 truncate" :style="tabTitleStyle(tab)">{{ tabTitleText(tab) }}</span>

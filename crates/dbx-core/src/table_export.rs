@@ -6,14 +6,12 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 
-use crate::connection::MysqlMode;
 use crate::connection::{config_for_pool_key, task_client_session_id, AppState, PoolKind};
 use crate::csv_export::{format_csv, format_tsv, format_tsv_rows, push_csv_text_value};
 pub use crate::database_export::ExportStatus;
 use crate::database_export::{
     build_export_insert_statements, is_export_cancelled, is_internal_export_column, BuildExportInsertStatementsOptions,
 };
-use crate::db::agent_driver::AgentTableReadStartParams;
 use crate::models::connection::DatabaseType;
 use crate::query::{close_query_session, execute_sql_statement_with_options, QueryExecutionOptions};
 use crate::transfer::{
@@ -140,8 +138,8 @@ fn resolve_requested_export_columns(
     (resolved_columns, resolved_column_types, resolved_primary_keys)
 }
 
-fn requested_export_needs_column_extras(database_type: DatabaseType, format: &str) -> bool {
-    database_type == DatabaseType::Mysql && format.eq_ignore_ascii_case("sql")
+fn requested_export_needs_column_extras(_database_type: DatabaseType, format: &str) -> bool {
+    false && format.eq_ignore_ascii_case("sql")
 }
 
 fn resolve_requested_export_column_extras(
@@ -301,27 +299,19 @@ fn table_cursor_sql(
     format!("SELECT {col_list} FROM {full_table}{where_clause}{order_by}")
 }
 
-fn is_agent_table_read_unsupported(error: &str) -> bool {
-    let lower = error.to_ascii_lowercase();
-    lower.contains("unknown method") || lower.contains("method not found")
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum TableExportCursorKind {
-    Agent,
     ExternalDriver,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum TableExportCursorSession {
-    Agent(String),
     ExternalDriver(String),
 }
 
 async fn table_export_cursor_kind(state: &AppState, pool_key: &str) -> Option<TableExportCursorKind> {
     let connections = state.connections.read().await;
     match connections.get(pool_key) {
-        Some(PoolKind::Agent(_)) => Some(TableExportCursorKind::Agent),
         Some(PoolKind::ExternalDriver { .. }) => Some(TableExportCursorKind::ExternalDriver),
         _ => None,
     }
@@ -346,24 +336,53 @@ async fn execute_external_driver_export_page(
     let sql = table_cursor_sql(request, db_type, col_names, primary_keys);
     let max_rows = request.row_limit.unwrap_or(i32::MAX as usize).min(i32::MAX as usize).max(1);
     let timeout_secs = table_export_query_timeout_secs(state, pool_key).await;
-    execute_sql_statement_with_options(
+    let initial_result = execute_sql_statement_with_options(
         state,
         &request.connection_id,
         &request.database,
         &sql,
         request.schema.as_deref(),
-        Some(cancel_token),
+        Some(cancel_token.clone()),
         QueryExecutionOptions {
             max_rows: Some(max_rows),
             fetch_size: Some(active_batch_size),
             page_size: Some(active_batch_size),
-            result_session_id,
+            result_session_id: result_session_id.clone(),
             client_session_id: Some(table_export_client_session_id(&request.export_id)),
             timeout_secs: Some(timeout_secs),
             ..Default::default()
         },
     )
-    .await
+    .await;
+
+    if result_session_id.is_none() {
+        if let Err(ref err) = initial_result {
+            let lower = err.to_ascii_lowercase();
+            if lower.contains("executequerypage")
+                || lower.contains("unknown method")
+                || lower.contains("not found")
+                || lower.contains("unsupported")
+            {
+                return execute_sql_statement_with_options(
+                    state,
+                    &request.connection_id,
+                    &request.database,
+                    &sql,
+                    request.schema.as_deref(),
+                    Some(cancel_token),
+                    QueryExecutionOptions {
+                        max_rows: Some(max_rows),
+                        client_session_id: Some(table_export_client_session_id(&request.export_id)),
+                        timeout_secs: Some(timeout_secs),
+                        ..Default::default()
+                    },
+                )
+                .await;
+            }
+        }
+    }
+
+    initial_result
 }
 
 async fn execute_table_export_count(
@@ -387,7 +406,6 @@ async fn execute_table_export_count(
         Some(cancel_token),
         QueryExecutionOptions {
             max_rows: Some(1),
-            fetch_size: Some(1),
             client_session_id: Some(table_export_client_session_id(&request.export_id)),
             timeout_secs: Some(timeout_secs),
             ..Default::default()
@@ -431,66 +449,8 @@ async fn fetch_table_export_batch(
         });
     }
 
-    // VictoriaMetrics metrics are read through MetricsQL rather than SQL table
-    // pagination. Execute the range query once and let the normal writers emit
-    // the returned matrix/vector rows.
-    if *db_type == DatabaseType::VictoriaMetrics {
-        *table_read_attempted = true;
-        *table_read_completed = true;
-        let query = crate::db::victoriametrics_driver::metric_range_query(&request.table_name, "1h");
-        return execute_sql_statement_with_options(
-            state,
-            &request.connection_id,
-            &request.database,
-            &query,
-            request.schema.as_deref(),
-            Some(cancel_token),
-            QueryExecutionOptions {
-                max_rows: request.row_limit,
-                client_session_id: Some(table_export_client_session_id(&request.export_id)),
-                ..Default::default()
-            },
-        )
-        .await;
-    }
-
     if !*table_read_attempted {
         match table_export_cursor_kind(state, pool_key).await {
-            Some(TableExportCursorKind::Agent) => {
-                *table_read_attempted = true;
-                let sql = table_cursor_sql(request, db_type, col_names, primary_keys);
-                let max_rows = request.row_limit.unwrap_or(i32::MAX as usize);
-                let query_timeout = table_export_query_timeout_secs(state, pool_key).await;
-                let params = AgentTableReadStartParams {
-                    sql,
-                    database: Some(request.database.clone()),
-                    schema: request.schema.clone(),
-                    page_size: active_batch_size,
-                    max_rows,
-                    fetch_size: Some(active_batch_size),
-                    timeout_secs: (query_timeout > 0).then_some(query_timeout),
-                };
-                let connections = state.connections.read().await;
-                let Some(PoolKind::Agent(client)) = connections.get(pool_key) else {
-                    return Err("Agent table read requires an agent connection".to_string());
-                };
-                let client = client.clone();
-                drop(connections);
-                let mut client = client.lock().await;
-                match client.start_table_read::<QueryResult>(params).await {
-                    Ok(result) => {
-                        *cursor_session = result.session_id.clone().map(TableExportCursorSession::Agent);
-                        if result.session_id.is_none() && !result.has_more {
-                            *table_read_completed = true;
-                        }
-                        return Ok(result);
-                    }
-                    Err(error) if is_agent_table_read_unsupported(&error) => {
-                        log::debug!("Agent table-read cursor unsupported, falling back to paginated export: {error}");
-                    }
-                    Err(error) => return Err(error),
-                }
-            }
             Some(TableExportCursorKind::ExternalDriver) => {
                 *table_read_attempted = true;
                 let result = execute_external_driver_export_page(
@@ -522,31 +482,6 @@ async fn fetch_table_export_batch(
 
     if let Some(session) = cursor_session.clone() {
         return match session {
-            TableExportCursorSession::Agent(session_id) => {
-                let connections = state.connections.read().await;
-                let Some(PoolKind::Agent(client)) = connections.get(pool_key) else {
-                    return Err("Table read session requires an agent connection".to_string());
-                };
-                let client = client.clone();
-                drop(connections);
-                let mut client = client.lock().await;
-                match client.fetch_table_read_page::<QueryResult>(&session_id, active_batch_size).await {
-                    Ok(result) => {
-                        *cursor_session =
-                            result.session_id.clone().or(Some(session_id)).map(TableExportCursorSession::Agent);
-                        if !result.has_more {
-                            *cursor_session = None;
-                            *table_read_completed = true;
-                        }
-                        Ok(result)
-                    }
-                    Err(error) => {
-                        let _ = client.close_table_read_session::<bool>(&session_id).await;
-                        *cursor_session = None;
-                        Err(error)
-                    }
-                }
-            }
             TableExportCursorSession::ExternalDriver(session_id) => {
                 match execute_external_driver_export_page(
                     state,
@@ -627,7 +562,7 @@ async fn fetch_paginated_table_export_batch(
 
 async fn close_table_export_cursor_if_open(
     state: &AppState,
-    pool_key: &str,
+    _pool_key: &str,
     request: &TableExportRequest,
     cursor_session: &mut Option<TableExportCursorSession>,
 ) {
@@ -635,16 +570,6 @@ async fn close_table_export_cursor_if_open(
         return;
     };
     match session {
-        TableExportCursorSession::Agent(session_id) => {
-            let connections = state.connections.read().await;
-            let Some(PoolKind::Agent(client)) = connections.get(pool_key) else {
-                return;
-            };
-            let client = client.clone();
-            drop(connections);
-            let mut client = client.lock().await;
-            let _ = client.close_table_read_session::<bool>(&session_id).await;
-        }
         TableExportCursorSession::ExternalDriver(session_id) => {
             let client_session_id = table_export_client_session_id(&request.export_id);
             let _ = close_query_session(
@@ -674,49 +599,19 @@ async fn start_export_cancel_watcher(export_id: String, cancelled: Arc<AtomicBoo
 async fn stream_native_table_rows(
     state: &AppState,
     pool_key: &str,
-    db_type: &DatabaseType,
+    _db_type: &DatabaseType,
     sql: &str,
     row_limit: Option<usize>,
     cancelled: &AtomicBool,
-    cancel_token: CancellationToken,
+    _cancel_token: CancellationToken,
     on_row: impl FnMut(&[Value]) -> Result<(), String>,
 ) -> Result<bool, String> {
     let connections = state.connections.read().await;
     match connections.get(pool_key) {
-        Some(PoolKind::Mysql(pool, mode)) => {
-            let pool = pool.clone();
-            let bare = *mode == MysqlMode::Bare;
-            drop(connections);
-            crate::db::mysql::stream_query_rows(
-                &pool,
-                sql,
-                bare,
-                row_limit,
-                crate::db::mysql::MySqlQueryDialect::for_connection(*db_type, None),
-                cancelled,
-                on_row,
-            )
-            .await?;
-            Ok(true)
-        }
         Some(PoolKind::Postgres(pool)) => {
             let pool = pool.clone();
             drop(connections);
             crate::db::postgres::stream_query_rows(&pool, sql, row_limit, cancelled, on_row).await?;
-            Ok(true)
-        }
-        Some(PoolKind::SqlServer(client)) => {
-            let client = client.clone();
-            drop(connections);
-            let mut on_row = on_row;
-            let mut client = client.lock().await;
-            crate::db::sqlserver::stream_first_result_set(&mut client, sql, row_limit, Some(cancel_token), |item| {
-                if let crate::db::sqlserver::SqlServerStreamItem::Row(row) = item {
-                    on_row(row)?;
-                }
-                Ok(())
-            })
-            .await?;
             Ok(true)
         }
         _ => Ok(false),
@@ -1229,7 +1124,7 @@ async fn export_table_data_core_inner(
     // grid exports skip this by default because COUNT can be the slowest query
     // on large HANA/JDBC tables, especially with filters.
     let row_limit = request.row_limit;
-    let total_rows = if request.skip_count || db_type == DatabaseType::VictoriaMetrics {
+    let total_rows = if request.skip_count || false {
         None
     } else {
         let count_query = count_sql_with_where_and_identifier_quote(
@@ -1843,6 +1738,7 @@ async fn export_table_data_core_inner(
     }
 
     close_table_export_cursor_if_open(state, &pool_key, request, &mut cursor_session).await;
+    let _ = state.close_client_session_pool(&request.connection_id, Some(&request.database), &client_session_id).await;
     file.flush().map_err(|e| format!("Failed to flush export file: {e}"))?;
 
     // 8. Emit Done progress
@@ -2162,7 +2058,7 @@ mod tests {
 
         let sql = table_cursor_sql(
             &request,
-            &DatabaseType::Oracle,
+            &DatabaseType::Opengauss,
             &[String::from("id"), String::from("status")],
             &[String::from("id")],
         );
@@ -2203,96 +2099,45 @@ mod tests {
         let primary_keys = vec!["id".to_string()];
 
         assert_eq!(
-            table_cursor_sql(&request, &DatabaseType::Gaussdb, &columns, &primary_keys),
-            "SELECT id, `DisplayName` FROM app_schema.`order` ORDER BY id ASC"
+            table_cursor_sql(&request, &DatabaseType::Opengauss, &columns, &primary_keys),
+            "SELECT \"id\", \"DisplayName\" FROM \"app_schema\".\"order\" ORDER BY \"id\" ASC"
         );
         assert_eq!(
-            table_page_sql(&request, &DatabaseType::Gaussdb, &columns, &primary_keys, false, &[], 100, 100),
-            "SELECT id, `DisplayName` FROM app_schema.`order` ORDER BY id LIMIT 100 OFFSET 100"
+            table_page_sql(&request, &DatabaseType::Opengauss, &columns, &primary_keys, false, &[], 100, 100),
+            "SELECT `id`, `DisplayName` FROM `app_schema`.`order` ORDER BY `id` LIMIT 100 OFFSET 100"
         );
         assert_eq!(
-            table_page_sql(&request, &DatabaseType::Gaussdb, &columns, &primary_keys, true, &[json!(10)], 0, 100,),
-            "SELECT id, `DisplayName` FROM app_schema.`order` WHERE id > 10 ORDER BY id ASC LIMIT 100"
+            table_page_sql(&request, &DatabaseType::Opengauss, &columns, &primary_keys, true, &[json!(10)], 0, 100,),
+            "SELECT `id`, `DisplayName` FROM `app_schema`.`order` WHERE `id` > 10 ORDER BY `id` ASC LIMIT 100"
         );
         assert_eq!(
             count_sql_with_where_and_identifier_quote(
                 &request.table_name,
                 request.schema.as_deref().unwrap(),
-                &DatabaseType::Gaussdb,
+                &DatabaseType::Opengauss,
                 None,
                 None,
                 request.identifier_quote.as_deref(),
             ),
-            "SELECT COUNT(*) FROM app_schema.`order`"
+            "SELECT COUNT(*) FROM `app_schema`.`order`"
         );
     }
 
     #[test]
-    fn oracle_requested_export_columns_omit_synthetic_rowid_and_keep_metadata_aligned() {
-        let columns = vec!["__DBX_ROWID".to_string(), "ID".to_string(), "NAME".to_string()];
-        let column_types = vec![Some("VARCHAR2".to_string()), Some("NUMBER".to_string()), Some("VARCHAR2".to_string())];
-        let primary_keys = vec!["__DBX_ROWID".to_string()];
-
-        let (columns, column_types, primary_keys) =
-            resolve_requested_export_columns(DatabaseType::Oracle, &columns, Some(&column_types), Some(&primary_keys));
-
-        assert_eq!(columns, vec!["ID", "NAME"]);
-        assert_eq!(column_types, vec![Some("NUMBER".to_string()), Some("VARCHAR2".to_string())]);
-        assert!(primary_keys.is_empty());
-
-        let request = TableExportRequest {
-            export_id: "export-rowid".to_string(),
-            connection_id: "conn-1".to_string(),
-            database: "ORCL".to_string(),
-            schema: Some("APP".to_string()),
-            identifier_quote: None,
-            table_name: "USERS".to_string(),
-            file_path: "users.sql".to_string(),
-            format: "sql".to_string(),
-            columns: None,
-            column_types: None,
-            primary_keys: None,
-            where_input: None,
-            order_by: None,
-            skip_count: false,
-            batch_size: Some(100),
-            row_limit: None,
-            date_time_format: None,
-            numeric_column_right_align: false,
-            column_comments: None,
-        };
-        let sql = table_cursor_sql(&request, &DatabaseType::Oracle, &columns, &primary_keys);
-        assert_eq!(sql, "SELECT \"ID\", \"NAME\" FROM \"APP\".\"USERS\"");
-
-        let statements = build_export_insert_statements(BuildExportInsertStatementsOptions {
-            database_type: Some(DatabaseType::Oracle),
-            schema: request.schema,
-            table_name: Some(request.table_name),
-            qualified_table_name: None,
-            columns,
-            column_types,
-            column_extras: Vec::new(),
-            rows: vec![vec![json!(1), json!("Ada")]],
-            batch_size: Some(100),
-        })
-        .unwrap();
-        assert_eq!(statements, vec!["INSERT INTO \"APP\".\"USERS\" (\"ID\", \"NAME\") VALUES (1, 'Ada');"]);
-    }
-
-    #[test]
     fn requested_export_columns_preserve_regular_oracle_and_non_oracle_columns() {
-        let oracle_columns = vec!["ROW_ID".to_string(), "NAME".to_string()];
-        let (resolved_oracle, _, _) =
-            resolve_requested_export_columns(DatabaseType::Oracle, &oracle_columns, None, None);
-        assert_eq!(resolved_oracle, oracle_columns);
+        let opengauss_columns = vec!["ROW_ID".to_string(), "NAME".to_string()];
+        let (resolved_opengauss, _, _) =
+            resolve_requested_export_columns(DatabaseType::Opengauss, &opengauss_columns, None, None);
+        assert_eq!(resolved_opengauss, opengauss_columns);
 
-        let mysql_columns = vec!["__DBX_ROWID".to_string(), "name".to_string()];
-        let (resolved_mysql, _, _) = resolve_requested_export_columns(DatabaseType::Mysql, &mysql_columns, None, None);
-        assert_eq!(resolved_mysql, mysql_columns);
+        let postgres_columns = vec!["__DBX_ROWID".to_string(), "name".to_string()];
+        let (resolved_postgres, _, _) =
+            resolve_requested_export_columns(DatabaseType::Postgres, &postgres_columns, None, None);
+        assert_eq!(resolved_postgres, postgres_columns);
     }
 
     #[test]
-    fn requested_mysql_sql_export_resolves_generated_column_extras_only_for_sql() {
+    fn requested_postgres_sql_export_resolves_generated_column_extras() {
         let table_columns = vec![
             crate::db::ColumnInfo {
                 name: "ID".to_string(),
@@ -2307,22 +2152,11 @@ mod tests {
         ];
         let requested_columns = vec!["virtual_total".to_string(), "id".to_string(), "missing".to_string()];
 
-        assert!(requested_export_needs_column_extras(DatabaseType::Mysql, "SQL"));
-        for format in ["csv", "json", "xlsx"] {
-            assert!(!requested_export_needs_column_extras(DatabaseType::Mysql, format));
-        }
         assert!(!requested_export_needs_column_extras(DatabaseType::Postgres, "sql"));
         assert_eq!(
             resolve_requested_export_column_extras(&requested_columns, &table_columns),
             vec![Some("VIRTUAL GENERATED".to_string()), Some("auto_increment".to_string()), None]
         );
-    }
-
-    #[test]
-    fn agent_table_read_unsupported_detects_old_agent_errors() {
-        assert!(is_agent_table_read_unsupported("Agent RPC error (-1): unknown method: start_table_read"));
-        assert!(is_agent_table_read_unsupported("Agent RPC error (-32601): Method not found"));
-        assert!(!is_agent_table_read_unsupported("ORA-00933: SQL command not properly ended"));
     }
 
     #[cfg(unix)]

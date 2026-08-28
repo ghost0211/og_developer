@@ -952,23 +952,6 @@ describe("useQuickOpen", () => {
       expect(filteredItems.value.map((item) => item.label)).toContain("beta_table");
     });
 
-    it("derives the SQLite main database before its tree is expanded", async () => {
-      const mockStore = remoteSearchStore({
-        connections: [{ id: "sqlite-1", name: "SQLite", db_type: "sqlite", host: "/tmp/app.sqlite" }],
-        connectedIds: new Set<string>(),
-        treeNodes: [],
-        listCompletionTables: vi.fn().mockResolvedValue([{ name: "scroll_test", type: "table" }]),
-      });
-      vi.mocked(useConnectionStore).mockReturnValue(mockStore as any);
-
-      const { filteredItems, setQuery } = useQuickOpen();
-      setQuery("scroll_test");
-      await runDebouncedSearch();
-
-      expect(mockStore.listCompletionTables).toHaveBeenCalledWith("sqlite-1", "main", "scroll_test", 25, undefined, true, undefined, undefined, { activateConnection: false });
-      expect(filteredItems.value).toEqual(expect.arrayContaining([expect.objectContaining({ label: "scroll_test", type: "table", database: "main" })]));
-    });
-
     it("searches the PostgreSQL backend default database before its tree is expanded", async () => {
       const mockStore = remoteSearchStore({
         connections: [{ id: "pg-1", name: "PostgreSQL", db_type: "postgres", database: "" }],

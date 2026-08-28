@@ -7,20 +7,6 @@ function source(relativePath: string): string {
   return readFileSync(path.resolve(relativePath), "utf8");
 }
 
-test("keeps JDBC outside the database picker and exposes a dedicated entry", () => {
-  const content = source("apps/desktop/src/components/connection/ConnectionDialog.vue");
-  const optionsStart = content.indexOf("const dbOptions: DbOption[] = [");
-  const optionsEnd = content.indexOf("const dbCategories", optionsStart);
-  const pickerToolbar = content.indexOf("sm:justify-between");
-  const searchInput = content.indexOf('v-model="dbSearchQuery"', pickerToolbar);
-  const jdbcEntry = content.indexOf("data-jdbc-connection-entry", pickerToolbar);
-
-  assert.notEqual(optionsStart, -1);
-  assert.notEqual(optionsEnd, -1);
-  assert.equal(content.slice(optionsStart, optionsEnd).includes('{ value: "jdbc"'), false);
-  assert.ok(pickerToolbar < searchInput && searchInput < jdbcEntry);
-  assert.match(content.slice(jdbcEntry, jdbcEntry + 400), /goToConnectionStep\('jdbc'\)/);
-});
 
 test("driver management page has been removed from the connection flow", () => {
   const connectionDialog = source("apps/desktop/src/components/connection/ConnectionDialog.vue");

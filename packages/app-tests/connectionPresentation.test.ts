@@ -20,17 +20,7 @@ test("uses driver profile for connection option icon identity", () => {
   assert.equal(connectionIconType(baseConnection), "tidb");
 });
 
-test("displays the configured GaussDB protocol in connection URLs", () => {
-  assert.equal(connectionDisplayUrlScheme({ db_type: "gaussdb", driver_profile: "gaussdb" }), "postgresql");
-  assert.equal(connectionDisplayUrlScheme({ db_type: "gaussdb", driver_profile: "gaussdb-m" }), "jdbc:gaussdb");
-});
 
-test("normalizes legacy single-host GaussDB endpoint labels", () => {
-  const connection = { ...baseConnection, db_type: "gaussdb" as const, host: "db.example.com:5433", port: 5432 };
-
-  assert.equal(connectionEndpointLabel(connection), "db.example.com:5433");
-  assert.equal(connectionRedactedEndpointLabel(connection), "db.***.com:****");
-});
 
 test("builds a compact subtitle for duplicate connection names", () => {
   assert.equal(connectionDriverLabel(baseConnection), "TiDB");
@@ -89,20 +79,6 @@ test("redacts network endpoint labels for quick connection cards", () => {
   );
 });
 
-test("presents Cloudflare D1 account and database identifiers without treating them as a host and port", () => {
-  const d1Connection: ConnectionConfig = {
-    ...baseConnection,
-    db_type: "cloudflare-d1",
-    driver_profile: undefined,
-    driver_label: "Cloudflare D1",
-    host: "account-id",
-    port: 443,
-    database: "database-id",
-  };
-
-  assert.equal(connectionEndpointLabel(d1Connection), "account-id/database-id");
-  assert.equal(connectionRedactedEndpointLabel(d1Connection), "***/***");
-});
 
 test("redacts host-like quick connection names", () => {
   assert.equal(
@@ -137,15 +113,3 @@ test("keeps friendly quick connection names readable", () => {
   );
 });
 
-test("keeps local file database endpoint labels readable when redacting", () => {
-  const sqliteConnection: ConnectionConfig = {
-    ...baseConnection,
-    db_type: "sqlite",
-    driver_profile: "sqlite",
-    driver_label: "SQLite",
-    host: "/tmp/local.db",
-    port: 0,
-  };
-
-  assert.equal(connectionRedactedOptionSubtitle(sqliteConnection), "SQLite · /tmp/local.db");
-});

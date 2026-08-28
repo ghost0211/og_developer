@@ -87,8 +87,8 @@ mod tests {
         let error = AppError::from(
             "Agent RPC error (-1): timed out\nDBX_AGENT_ERROR_DATA:{\"category\":\"timeout\",\"stage\":\"execute\"}",
         );
-        assert_eq!(error.error.code(), "DBX-JDBC-9001");
-        assert_eq!(error.error.source(), dbx_core::backend_error::BackendErrorSource::JdbcAgentLegacy);
+        assert_eq!(error.error.code(), "DBX-LEGACY-0001");
+        assert_eq!(error.error.source(), dbx_core::backend_error::BackendErrorSource::LegacyBackend);
     }
 
     #[tokio::test]
@@ -115,7 +115,7 @@ mod tests {
 
     #[tokio::test]
     async fn http_response_preserves_original_structured_agent_detail() {
-        use dbx_core::db::agent_driver::{
+        use dbx_core::backend_error::{
             AgentCallError, AgentErrorCategory, AgentErrorContext, AgentErrorStage, AgentOperationOutcome,
             AgentSessionDisposition,
         };

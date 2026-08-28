@@ -55,7 +55,7 @@ const progressSuccessCount = ref(0);
 const progressErrorCount = ref(0);
 let batchRunId = 0;
 
-const connections = computed(() => connectionStore.connections.filter((connection) => connection.db_type === "opengauss" || connection.db_type === "gaussdb"));
+const connections = computed(() => connectionStore.connections.filter((connection) => connection.db_type === "opengauss"));
 const databases = ref<string[]>([]);
 const schemas = ref<string[]>([]);
 

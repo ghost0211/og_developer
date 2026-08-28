@@ -1,5 +1,5 @@
 import type { QueryResult } from "@/types/database";
-import { mysqlUserAccount, quoteMySqlIdentifier, quotePostgresIdentifier, type CreatePrincipalInput, type DatabaseUserAdminProvider, type DatabaseUserIdentity } from "@/lib/database/databaseUserAdmin";
+import { quotePostgresIdentifier, type CreatePrincipalInput, type DatabaseUserAdminProvider, type DatabaseUserIdentity } from "@/lib/database/databaseUserAdmin";
 
 export type AuthorizationAccountType = "standard" | "admin";
 export type AuthorizationPreset = "readWrite" | "readOnly" | "ddl" | "dml" | "custom";
@@ -53,13 +53,6 @@ export interface CreateDatabaseAuthorizationPlanInput {
   users: DatabaseUserIdentity[];
 }
 
-const MYSQL_PRESETS: Record<Exclude<AuthorizationPreset, "custom">, string[]> = {
-  readOnly: ["SELECT", "SHOW VIEW"],
-  dml: ["SELECT", "INSERT", "UPDATE", "DELETE"],
-  ddl: ["CREATE", "DROP", "ALTER", "INDEX", "REFERENCES", "SHOW VIEW", "CREATE VIEW", "CREATE ROUTINE", "ALTER ROUTINE", "TRIGGER", "EVENT", "CREATE TEMPORARY TABLES"],
-  readWrite: ["SELECT", "INSERT", "UPDATE", "DELETE", "CREATE", "DROP", "ALTER", "INDEX", "REFERENCES", "EXECUTE", "SHOW VIEW", "CREATE VIEW", "CREATE ROUTINE", "ALTER ROUTINE", "TRIGGER", "EVENT", "CREATE TEMPORARY TABLES", "LOCK TABLES"],
-};
-
 const POSTGRES_PRESETS: Record<Exclude<AuthorizationPreset, "custom">, string[]> = {
   readOnly: ["SELECT"],
   dml: ["SELECT", "INSERT", "UPDATE", "DELETE"],
@@ -67,15 +60,14 @@ const POSTGRES_PRESETS: Record<Exclude<AuthorizationPreset, "custom">, string[]>
   readWrite: ["SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER", "EXECUTE", "CREATE", "TEMPORARY"],
 };
 
-export function authorizationPresetPrivileges(provider: DatabaseUserAdminProvider, preset: AuthorizationPreset, custom: string[] = []): string[] {
+export function authorizationPresetPrivileges(_provider: DatabaseUserAdminProvider, preset: AuthorizationPreset, custom: string[] = []): string[] {
   if (preset === "custom") return uniquePrivileges(custom);
-  return [...(provider.dialect === "mysql" ? MYSQL_PRESETS[preset] : POSTGRES_PRESETS[preset])];
+  return [...POSTGRES_PRESETS[preset]];
 }
 
 export function authorizationPrivileges(provider: DatabaseUserAdminProvider): string[] {
   const privilegesForScope = provider.privilegesForScope;
   if (!privilegesForScope) return [];
-  if (provider.dialect === "mysql") return Array.from(privilegesForScope("mysql"));
   return uniquePrivileges([...privilegesForScope("database"), ...privilegesForScope("schema"), ...privilegesForScope("table"), "EXECUTE", "USAGE", "UPDATE"]);
 }
 
@@ -95,7 +87,6 @@ export function buildCreateUserAuthorizationPlan(input: CreateUserAuthorizationP
   ];
 
   if (input.accountType === "admin") {
-    if (input.provider.dialect === "mysql" && !input.provider.grantPrivilegesSql) return { steps };
     steps.push({
       id: "grant-admin",
       label: `grant admin privileges to ${input.provider.label(input.principal)}`,
@@ -117,19 +108,6 @@ export function buildCreateUserAuthorizationPlan(input: CreateUserAuthorizationP
     const database = selection.database.trim();
     if (!database) continue;
     const privileges = authorizationPresetPrivileges(input.provider, selection.preset, selection.privileges);
-    if (input.provider.dialect === "mysql") {
-      steps.push({
-        id: `grant-${steps.length}`,
-        label: `grant ${input.provider.label(identity)} access to ${database}`,
-        database: "",
-        sql: input.provider.grantPrivilegesSql({ user: identity, privileges, database, table: "*", scope: "mysql" }),
-        dependsOn: [createStepId],
-        operation: "grantDatabase",
-        subject: input.provider.label(identity),
-        targetDatabase: database,
-      });
-      continue;
-    }
     steps.push(...postgresDatabaseAuthorizationSteps(identity, database, privileges, selection.schemas ?? ["public"], createStepId, steps.length));
   }
   return { steps };
@@ -151,19 +129,6 @@ export function buildCreateDatabaseAuthorizationPlan(input: CreateDatabaseAuthor
   const postgresDatabaseGrantIds = new Map<string, string>();
   if (!input.provider.grantPrivilegesSql) return { steps };
   for (const user of input.users) {
-    if (input.provider.dialect === "mysql") {
-      steps.push({
-        id: `grant-${steps.length}`,
-        label: `grant ${input.provider.label(user)} access to ${input.database}`,
-        database: "",
-        sql: `GRANT ALL PRIVILEGES ON ${quoteMySqlIdentifier(input.database)}.* TO ${mysqlUserAccount(user)};`,
-        dependsOn: [createStepId],
-        operation: "grantDatabase",
-        subject: input.provider.label(user),
-        targetDatabase: input.database,
-      });
-      continue;
-    }
     postgresUsers.push(user);
     const role = quotePostgresIdentifier(user.user);
     const database = quotePostgresIdentifier(input.database);
@@ -235,10 +200,7 @@ export function authorizationPlanStatus(results: AuthorizationStepResult[]): "su
   return successes > 0 ? "partial" : "failed";
 }
 
-function adminPrincipalGrantSql(provider: DatabaseUserAdminProvider, principal: CreatePrincipalInput): string {
-  if (provider.dialect === "mysql") {
-    return `GRANT ALL PRIVILEGES ON *.* TO ${mysqlUserAccount(principal)} WITH GRANT OPTION;`;
-  }
+function adminPrincipalGrantSql(_provider: DatabaseUserAdminProvider, principal: CreatePrincipalInput): string {
   return `ALTER ROLE ${quotePostgresIdentifier(principal.user)} SUPERUSER CREATEDB CREATEROLE;`;
 }
 

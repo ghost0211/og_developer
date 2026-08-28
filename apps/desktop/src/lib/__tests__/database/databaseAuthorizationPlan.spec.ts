@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mysqlUserAdminProvider, postgresUserAdminProvider } from "@/lib/database/databaseUserAdmin";
+import { postgresUserAdminProvider } from "@/lib/database/databaseUserAdmin";
 import { authorizationPlanSql, buildCreateDatabaseAuthorizationPlan, buildCreateUserAuthorizationPlan, executeAuthorizationPlan } from "@/lib/database/databaseAuthorizationPlan";
 
 describe("database authorization plans", () => {
@@ -79,46 +79,23 @@ describe("database authorization plans", () => {
     expect(sql).not.toContain('GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA "app" TO "reader";');
   });
 
-  it("keeps MySQL database grants scoped to the selected database", () => {
-    const plan = buildCreateDatabaseAuthorizationPlan({
-      provider: mysqlUserAdminProvider,
-      database: "app-db",
-      createSql: "CREATE DATABASE `app-db`;",
-      users: [{ user: "app", host: "%" }],
-    });
-
-    expect(authorizationPlanSql(plan)).toContain("GRANT ALL PRIVILEGES ON `app-db`.* TO 'app'@'%';");
-  });
-
   it("keeps creation plans usable when authorization capabilities are unavailable", () => {
-    const createOnlyProvider = { ...mysqlUserAdminProvider, grantPrivilegesSql: undefined };
+    const createOnlyProvider = { ...postgresUserAdminProvider, grantPrivilegesSql: undefined };
     const databasePlan = buildCreateDatabaseAuthorizationPlan({
       provider: createOnlyProvider,
       database: "app_db",
-      createSql: "CREATE DATABASE `app_db`;",
-      users: [{ user: "app", host: "%" }],
+      createSql: 'CREATE DATABASE "app_db";',
+      users: [{ user: "app", host: "LOGIN" }],
     });
     const unsupportedUserPlan = buildCreateUserAuthorizationPlan({
       provider: { ...createOnlyProvider, createUserSql: undefined },
-      principal: { user: "app", host: "%", password: "secret" },
+      principal: { user: "app", host: "LOGIN", password: "secret" },
       accountType: "standard",
       databases: [{ database: "app_db", preset: "readOnly" }],
     });
 
     expect(databasePlan.steps.map((step) => step.operation)).toEqual(["createDatabase"]);
     expect(unsupportedUserPlan.steps).toEqual([]);
-  });
-
-  it("keeps result metadata structured for IPv6 hosts and colon-containing databases", () => {
-    const plan = buildCreateUserAuthorizationPlan({
-      provider: mysqlUserAdminProvider,
-      principal: { user: "app", host: "2001:db8::1", password: "secret" },
-      accountType: "standard",
-      databases: [{ database: "db:prod", preset: "readOnly" }],
-    });
-    const grant = plan.steps.find((step) => step.operation === "grantDatabase");
-
-    expect(grant).toMatchObject({ subject: "app@2001:db8::1", targetDatabase: "db:prod" });
   });
 
   it("reports PostgreSQL object grants independently", async () => {
@@ -141,16 +118,17 @@ describe("database authorization plans", () => {
 
   it("skips dependent grants after a failed creation step", async () => {
     const plan = buildCreateDatabaseAuthorizationPlan({
-      provider: mysqlUserAdminProvider,
+      provider: postgresUserAdminProvider,
       database: "app_db",
-      createSql: "CREATE DATABASE `app_db`;",
-      users: [{ user: "app", host: "%" }],
+      createSql: 'CREATE DATABASE "app_db";',
+      users: [{ user: "app", host: "LOGIN" }],
     });
     const results = await executeAuthorizationPlan(plan, async (step) => {
       if (step.id === "create-database") throw new Error("create failed");
       return [];
     });
 
-    expect(results.map((result) => result.status)).toEqual(["failed", "skipped"]);
+    expect(results[0]?.status).toBe("failed");
+    expect(results.slice(1).every((result) => result.status === "skipped")).toBe(true);
   });
 });

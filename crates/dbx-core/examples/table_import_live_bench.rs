@@ -19,42 +19,37 @@ use sysinfo::{get_current_pid, ProcessRefreshKind, ProcessesToUpdate, RefreshKin
 
 #[derive(Debug, Clone, Copy)]
 enum BenchDatabase {
-    Mysql,
     Postgres,
-    SqlServer,
+    Opengauss,
 }
 
 impl BenchDatabase {
     fn parse(value: &str) -> Result<Self, String> {
         match value {
-            "mysql" => Ok(Self::Mysql),
             "postgres" => Ok(Self::Postgres),
-            "sqlserver" => Ok(Self::SqlServer),
+            "opengauss" => Ok(Self::Opengauss),
             _ => Err(format!("Unsupported database: {value}")),
         }
     }
 
     fn db_type(self) -> DatabaseType {
         match self {
-            Self::Mysql => DatabaseType::Mysql,
             Self::Postgres => DatabaseType::Postgres,
-            Self::SqlServer => DatabaseType::SqlServer,
+            Self::Opengauss => DatabaseType::Opengauss,
         }
     }
 
     fn label(self) -> &'static str {
         match self {
-            Self::Mysql => "mysql",
             Self::Postgres => "postgres",
-            Self::SqlServer => "sqlserver",
+            Self::Opengauss => "opengauss",
         }
     }
 
     fn default_port(self) -> u16 {
         match self {
-            Self::Mysql => 3306,
             Self::Postgres => 5432,
-            Self::SqlServer => 1433,
+            Self::Opengauss => 5432,
         }
     }
 }
@@ -158,7 +153,6 @@ fn connection_config(id: &str, database: BenchDatabase) -> Result<ConnectionConf
         driver_profile: None,
         driver_label: None,
         url_params: None,
-        agent_java_options: Vec::new(),
         host: env_required("DBX_BENCH_HOST")?,
         port: std::env::var("DBX_BENCH_PORT")
             .ok()
@@ -170,8 +164,6 @@ fn connection_config(id: &str, database: BenchDatabase) -> Result<ConnectionConf
         visible_databases: None,
         visible_schemas: None,
         show_system_schemas: false,
-        attached_databases: Vec::new(),
-        init_script: None,
         color: None,
         transport_layers: Vec::new(),
         connect_timeout_secs: 15,
@@ -182,22 +174,7 @@ fn connection_config(id: &str, database: BenchDatabase) -> Result<ConnectionConf
         ca_cert_path: String::new(),
         client_cert_path: String::new(),
         client_key_path: String::new(),
-        sysdba: false,
-        oracle_connection_type: None,
         connection_string: None,
-        redis_connection_mode: None,
-        redis_sentinel_master: String::new(),
-        redis_sentinel_nodes: String::new(),
-        redis_sentinel_username: String::new(),
-        redis_sentinel_password: String::new(),
-        redis_sentinel_tls: false,
-        redis_cluster_nodes: String::new(),
-        redis_key_separator: dbx_core::models::connection::default_redis_key_separator(),
-        redis_scan_page_size: None,
-        redis_database_aliases: Default::default(),
-        etcd_endpoints: String::new(),
-        gbase_server: String::new(),
-        informix_server: String::new(),
         external_config: None,
         jdbc_driver_class: None,
         jdbc_driver_paths: Vec::new(),
@@ -323,9 +300,7 @@ impl Drop for PeakRssSampler {
 
 fn qualified_table(database: BenchDatabase, schema: &str, table: &str) -> String {
     match database {
-        BenchDatabase::Mysql => format!("`{schema}`.`{table}`"),
-        BenchDatabase::Postgres => format!("\"{schema}\".\"{table}\""),
-        BenchDatabase::SqlServer => format!("[{schema}].[{table}]"),
+        BenchDatabase::Postgres | BenchDatabase::Opengauss => format!("\"{schema}\".\"{table}\""),
     }
 }
 
@@ -336,7 +311,17 @@ async fn execute_sql(
     schema: &str,
     sql: &str,
 ) -> Result<(), String> {
-    dbx_core::query::execute_sql_statement(state, connection_id, database, sql, Some(schema), None).await.map(|_| ())
+    dbx_core::query::execute_sql_statement(
+        state,
+        connection_id,
+        database,
+        sql,
+        Some(schema),
+        None,
+        dbx_core::query::QueryExecutionOptions::default(),
+    )
+    .await
+    .map(|_| ())
 }
 
 fn create_table_sql(database: BenchDatabase, schema: &str, table: &str, column_count: usize) -> Vec<String> {
@@ -345,19 +330,13 @@ fn create_table_sql(database: BenchDatabase, schema: &str, table: &str, column_c
         .into_iter()
         .enumerate()
         .map(|(index, column)| match database {
-            BenchDatabase::Mysql if index == 0 => format!("`{column}` BIGINT NOT NULL"),
-            BenchDatabase::Mysql => format!("`{column}` TEXT NULL"),
-            BenchDatabase::Postgres if index == 0 => format!("\"{column}\" BIGINT NOT NULL"),
-            BenchDatabase::Postgres => format!("\"{column}\" TEXT NULL"),
-            BenchDatabase::SqlServer if index == 0 => format!("[{column}] BIGINT NOT NULL"),
-            BenchDatabase::SqlServer => format!("[{column}] NVARCHAR(200) NULL"),
+            BenchDatabase::Postgres | BenchDatabase::Opengauss if index == 0 => format!("\"{column}\" BIGINT NOT NULL"),
+            BenchDatabase::Postgres | BenchDatabase::Opengauss => format!("\"{column}\" TEXT NULL"),
         })
         .collect::<Vec<_>>()
         .join(", ");
     let mut statements = Vec::new();
-    if matches!(database, BenchDatabase::Postgres) {
-        statements.push(format!("CREATE SCHEMA IF NOT EXISTS \"{schema}\""));
-    }
+    statements.push(format!("CREATE SCHEMA IF NOT EXISTS \"{schema}\""));
     statements.push(format!("DROP TABLE IF EXISTS {qualified}"));
     statements.push(format!("CREATE TABLE {qualified} ({definitions})"));
     statements

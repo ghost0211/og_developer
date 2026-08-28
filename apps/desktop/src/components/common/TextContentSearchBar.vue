@@ -2,7 +2,10 @@
 import { nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import { ChevronDown, ChevronUp, GripVertical, X } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
-import { isTextContentSearchDragSource } from "@/lib/redis/redisValueSearch";
+
+function isTextContentSearchDragSource(target: EventTarget | null): boolean {
+  return target instanceof Element && Boolean(target.closest("[data-text-search-drag-handle]"));
+}
 
 /**
  * Floating find panel (EditorSearchPanel look).

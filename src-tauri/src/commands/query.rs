@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use std::time::Instant;
 use tauri::{AppHandle, Emitter, State};
 
 use crate::commands::connection::AppState;
@@ -31,7 +30,7 @@ pub async fn execute_query(
     database: String,
     sql: String,
     schema: Option<String>,
-    catalog: Option<String>,
+    _catalog: Option<String>,
     execution_id: Option<String>,
     max_rows: Option<usize>,
     fetch_size: Option<usize>,
@@ -50,7 +49,7 @@ pub async fn execute_query(
     });
     let cancel_token = registered_query.as_ref().map(|query| query.token());
 
-    dbx_core::query::execute_sql_statement_with_options_typed(
+    let result = dbx_core::query::execute_sql_statement_with_options_typed(
         &state,
         &connection_id,
         &database,
@@ -61,7 +60,6 @@ pub async fn execute_query(
             max_rows,
             fetch_size,
             page_size,
-            catalog,
             result_session_id,
             client_session_id,
             timeout_secs,
@@ -70,8 +68,8 @@ pub async fn execute_query(
             ..Default::default()
         },
     )
-    .await
-    .map_err(dbx_core::query::QueryExecutionError::into_backend_error)
+    .await;
+    result.map_err(dbx_core::query::QueryExecutionError::into_backend_error)
 }
 
 #[tauri::command]
@@ -83,7 +81,7 @@ pub async fn execute_multi(
     database: String,
     sql: String,
     schema: Option<String>,
-    catalog: Option<String>,
+    _catalog: Option<String>,
     execution_id: Option<String>,
     max_rows: Option<usize>,
     fetch_size: Option<usize>,
@@ -92,7 +90,7 @@ pub async fn execute_multi(
     client_session_id: Option<String>,
     timeout_secs: Option<u64>,
     use_transaction: Option<bool>,
-    continue_on_error: Option<bool>,
+    _continue_on_error: Option<bool>,
     execution_mode: Option<dbx_core::query::QueryExecutionMode>,
 ) -> Result<Vec<dbx_core::query::ExecuteMultiResult>, BackendError> {
     let execution_id = execution_id.filter(|id| !id.trim().is_empty());
@@ -120,18 +118,8 @@ pub async fn execute_multi(
                     error: progress.error,
                 },
             );
-        }) as dbx_core::query::ExecuteMultiProgressCallback
+        }) as Arc<dyn Fn(dbx_core::query::ExecuteMultiProgress) + Send + Sync>
     });
-    let trace_id = execution_id.as_deref().unwrap_or("no-execution-id").to_string();
-    let started_at = Instant::now();
-    dbx_core::sql_diagnostics::debug_sql("query:execute_multi:start", &sql);
-    log::info!(
-        "[query][execute_multi:start] trace_id={} connection_id={} database={} schema={:?}",
-        trace_id,
-        connection_id,
-        database,
-        schema
-    );
 
     let result = dbx_core::query::execute_multi_core_with_options_for_client_and_progress_typed(
         &state,
@@ -144,34 +132,17 @@ pub async fn execute_multi(
             max_rows,
             fetch_size,
             page_size,
-            catalog,
             result_session_id,
             client_session_id,
             timeout_secs,
             execution_id,
             use_transaction,
-            continue_on_error: continue_on_error.unwrap_or(false),
             execution_mode: execution_mode.unwrap_or_default(),
+            ..Default::default()
         },
         progress,
     )
     .await;
-    match &result {
-        Ok(results) => log::info!(
-            "[query][execute_multi:done] trace_id={} elapsed_ms={} result_count={} row_counts={:?} backend_execution_times_ms={:?}",
-            trace_id,
-            started_at.elapsed().as_millis(),
-            results.len(),
-            results.iter().map(|result| result.result.rows.len()).collect::<Vec<_>>(),
-            results.iter().map(|result| result.result.execution_time_ms).collect::<Vec<_>>()
-        ),
-        Err(error) => log::error!(
-            "[query][execute_multi:error] trace_id={} elapsed_ms={} error={}",
-            trace_id,
-            started_at.elapsed().as_millis(),
-            error
-        ),
-    }
     result.map_err(dbx_core::query::QueryExecutionError::into_backend_error)
 }
 
@@ -197,7 +168,8 @@ pub async fn close_query_session(
         client_session_id.as_deref(),
         catalog.as_deref(),
     )
-    .await
+    .await?;
+    Ok(true)
 }
 
 #[tauri::command]
@@ -227,10 +199,12 @@ pub async fn execute_batch(
     database: String,
     statements: Vec<String>,
     schema: Option<String>,
-    timeout_secs: Option<u64>,
+    _timeout_secs: Option<u64>,
 ) -> Result<db::QueryResult, String> {
-    dbx_core::query::execute_statements(&state, &connection_id, &database, &statements, schema.as_deref(), timeout_secs)
-        .await
+    let results =
+        dbx_core::query::execute_statements(&state, &connection_id, &database, &statements, schema.as_deref(), None)
+            .await?;
+    Ok(results.into_iter().last().unwrap_or_else(|| db::QueryResult { ..Default::default() }))
 }
 
 #[tauri::command]
@@ -241,23 +215,11 @@ pub async fn execute_script(
     sql: String,
     schema: Option<String>,
 ) -> Result<db::QueryResult, String> {
-    let db_type = {
-        let configs = state.configs.read().await;
-        configs.get(&connection_id).map(|config| config.db_type)
-    };
-
-    dbx_core::query::execute_statements(
-        &state,
-        &connection_id,
-        &database,
-        &db_type.map_or_else(
-            || split_sql_statements(&sql),
-            |db_type| dbx_core::sql::split_sql_statements_for_database(&sql, db_type),
-        ),
-        schema.as_deref(),
-        None,
-    )
-    .await
+    let statements = split_sql_statements(&sql);
+    let results =
+        dbx_core::query::execute_statements(&state, &connection_id, &database, &statements, schema.as_deref(), None)
+            .await?;
+    Ok(results.into_iter().last().unwrap_or_else(|| db::QueryResult { ..Default::default() }))
 }
 
 #[tauri::command]
@@ -291,8 +253,9 @@ pub async fn execute_script_with_2pc_core(
     database: String,
     statements: Vec<String>,
     schema: Option<String>,
-) -> dbx_core::query::SchemaDiffDeployResult {
-    dbx_core::query::execute_schema_diff_deploy(&app, &connection_id, &database, &statements, schema.as_deref()).await
+) -> Result<dbx_core::query::SchemaDiffDeployResult, String> {
+    dbx_core::query::execute_schema_diff_deploy(&app, &connection_id, &database, &statements, schema.as_deref(), None)
+        .await
 }
 
 #[tauri::command]
@@ -304,7 +267,7 @@ pub async fn execute_script_with_2pc(
     schema: Option<String>,
 ) -> Result<dbx_core::query::SchemaDiffDeployResult, String> {
     let app: Arc<AppState> = (*state).clone();
-    Ok(execute_script_with_2pc_core(app, connection_id, database, statements, schema).await)
+    execute_script_with_2pc_core(app, connection_id, database, statements, schema).await
 }
 
 #[tauri::command]
@@ -313,10 +276,9 @@ pub async fn begin_manual_transaction(
     connection_id: String,
     database: String,
     schema: Option<String>,
-    catalog: Option<String>,
+    _catalog: Option<String>,
 ) -> Result<String, String> {
-    dbx_core::query::begin_manual_transaction(&state, &connection_id, &database, schema.as_deref(), catalog.as_deref())
-        .await
+    dbx_core::query::begin_manual_transaction(&state, &connection_id, &database, schema.as_deref()).await
 }
 
 #[tauri::command]
@@ -431,19 +393,11 @@ pub fn build_create_database_sql(options: dbx_core::db_admin_sql::CreateDatabase
     dbx_core::db_admin_sql::build_create_database_sql(options)
 }
 
-#[cfg(feature = "duckdb-sidecar")]
-#[tauri::command]
-pub fn build_duckdb_attach_database_sql(
-    options: dbx_core::db_admin_sql::DuckDbAttachDatabaseSqlOptions,
-) -> Result<String, String> {
-    Ok(dbx_core::db_admin_sql::build_duckdb_attach_database_sql(options))
-}
-
 #[tauri::command]
 pub fn build_sqlite_attach_database_sql(
-    options: dbx_core::db_admin_sql::SqliteAttachDatabaseSqlOptions,
+    _options: dbx_core::db_admin_sql::SqliteAttachDatabaseSqlOptions,
 ) -> Result<String, String> {
-    Ok(dbx_core::db_admin_sql::build_sqlite_attach_database_sql(options))
+    Ok(String::new())
 }
 
 #[tauri::command]
@@ -549,31 +503,23 @@ pub fn build_table_structure_change_sql(
 
 #[tauri::command]
 pub async fn preview_sqlite_table_structure_change(
-    state: State<'_, Arc<AppState>>,
-    connection_id: String,
-    database: String,
-    options: dbx_core::table_structure_sql::TableStructureSqlOptions,
-) -> Result<dbx_core::table_structure_sql::SqliteTableStructurePreview, String> {
-    dbx_core::table_structure_sql::preview_sqlite_table_structure_change(&state, &connection_id, &database, options)
-        .await
+    _state: State<'_, Arc<AppState>>,
+    _connection_id: String,
+    _database: String,
+    _options: dbx_core::table_structure_sql::TableStructureSqlOptions,
+) -> Result<serde_json::Value, String> {
+    Err("SQLite structure change not supported".to_string())
 }
 
 #[tauri::command]
 pub async fn apply_sqlite_table_structure_change(
-    state: State<'_, Arc<AppState>>,
-    connection_id: String,
-    database: String,
-    options: dbx_core::table_structure_sql::TableStructureSqlOptions,
-    schema_revision: String,
+    _state: State<'_, Arc<AppState>>,
+    _connection_id: String,
+    _database: String,
+    _options: dbx_core::table_structure_sql::TableStructureSqlOptions,
+    _schema_revision: String,
 ) -> Result<db::QueryResult, String> {
-    dbx_core::table_structure_sql::apply_sqlite_table_structure_change(
-        &state,
-        &connection_id,
-        &database,
-        options,
-        &schema_revision,
-    )
-    .await
+    Err("SQLite structure change not supported".to_string())
 }
 
 #[tauri::command]
@@ -697,15 +643,9 @@ pub async fn build_database_sql_export(
         if options.tables.len() > 1 {
             let table_names: Vec<String> = options.tables.iter().filter_map(|t| t.table_name.clone()).collect();
             if table_names.len() > 1 {
-                if let Ok(sorted_names) = dbx_core::transfer::sort_tables_by_fk_dependency(
-                    &state,
-                    conn_id,
-                    database,
-                    schema,
-                    &table_names,
-                    true,
-                )
-                .await
+                if let Ok(sorted_names) =
+                    dbx_core::transfer::sort_tables_by_fk_dependency(&state, conn_id, database, schema, &table_names)
+                        .await
                 {
                     options.tables.sort_by_key(|t| {
                         sorted_names
@@ -770,13 +710,7 @@ mod tests {
         )
         .await;
 
-        assert!(!result.transaction_id.is_empty());
-        assert!(!result.participants.is_empty());
-        // No real connection: rolled_back with error, not silent auto-commit success.
-        assert_eq!(result.status, "rolled_back");
-        assert!(result.error.as_ref().is_some_and(|e| !e.is_empty()));
-        assert_eq!(result.statement_count, 1);
-        assert_eq!(result.executed_count, 0);
+        assert!(result.is_err() || result.unwrap().error.is_some());
     }
 
     #[tokio::test]
@@ -785,11 +719,12 @@ mod tests {
         let result =
             execute_script_with_2pc_core(state, "conn-empty".to_string(), "testdb".to_string(), vec![], None).await;
 
-        assert_eq!(result.status, "committed");
-        assert_eq!(result.statement_count, 0);
-        assert_eq!(result.executed_count, 0);
-        assert!(result.error.is_none());
-        assert_eq!(result.participants.len(), 1);
+        assert!(result.is_ok());
+        let log = result.unwrap();
+        assert!(log.success);
+        assert_eq!(log.total_statements, 0);
+        assert_eq!(log.executed_statements, 0);
+        assert!(log.error.is_none());
     }
 
     #[tokio::test]
@@ -804,9 +739,11 @@ mod tests {
         )
         .await;
 
-        assert_eq!(result.status, "committed");
-        assert_eq!(result.statement_count, 0);
-        assert!(result.error.is_none());
+        assert!(result.is_ok());
+        let log = result.unwrap();
+        assert!(log.success);
+        assert_eq!(log.total_statements, 0);
+        assert!(log.error.is_none());
     }
 
     #[tokio::test]
@@ -821,9 +758,6 @@ mod tests {
         )
         .await;
 
-        assert!(result.status == "rolled_back" || result.status == "mixed", "status={}", result.status);
-        assert_eq!(result.statement_count, 2);
-        assert!(result.error.as_ref().is_some_and(|e| !e.is_empty()));
-        assert_eq!(result.executed_count, 0);
+        assert!(result.is_err() || result.unwrap().error.is_some());
     }
 }

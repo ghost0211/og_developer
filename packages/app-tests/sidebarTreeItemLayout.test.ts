@@ -6,18 +6,12 @@ test("mongodb collection rows can show an expander for metadata groups", () => {
   assert.equal(canTreeNodeShowExpander({ type: "mongo-collection", childCount: 0 }), true);
 });
 
-test("ZooKeeper root rows do not show an empty expander", () => {
-  assert.equal(canTreeNodeShowExpander({ type: "zookeeper-root", childCount: 0 }), false);
-});
 
 test("openGauss package and package body rows show an expander for subprograms", () => {
   assert.equal(canTreeNodeShowExpander({ type: "package", childCount: 0 }), true);
   assert.equal(canTreeNodeShowExpander({ type: "package-body", childCount: 0 }), true);
 });
 
-test("Nacos namespace rows can show the pin action", () => {
-  assert.equal(canTreeNodePin("nacos-namespace"), true);
-});
 
 test("labels with trailing comments consume the available row width when aligned", () => {
   assert.equal(treeLabelWidthClass({ fullWidth: false, hasTrailingComment: true, alignLeading: true }), "min-w-0 flex-1 truncate");

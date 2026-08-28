@@ -212,32 +212,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn access_rewrites_mysql_types() {
-        let t = DatabaseType::Access;
-        let src = Some(DialectKind::Mysql);
-        assert_eq!(rewrite_column_type("int(11)", t, src), "INTEGER");
-        assert_eq!(rewrite_column_type("varchar(120)", t, src), "TEXT(120)");
-        assert_eq!(rewrite_column_type("tinyint(2)", t, src), "BYTE");
-        assert_eq!(rewrite_column_type("tinyint(1)", t, src), "YESNO");
-        assert_eq!(rewrite_column_type("datetime", t, src), "DATETIME");
-        assert_eq!(rewrite_column_type("longtext", t, src), "LONGTEXT");
-    }
-
-    #[test]
-    fn sqlserver_keeps_identity_path_not_counter() {
-        let profile = profile_for(DatabaseType::SqlServer);
-        assert!(matches!(
-            profile.auto_inc,
-            crate::sql_dialect::ddl_profile::AutoIncSyntax::Suffix(s) if s.contains("IDENTITY")
-        ));
-        // No Access type map: display width stripped
-        let t = rewrite_column_type("int(11)", DatabaseType::SqlServer, Some(DialectKind::Mysql));
-        assert_eq!(t, "INT");
-    }
-
-    #[test]
-    fn mysql_keeps_display_width() {
-        let t = rewrite_column_type("int(11)", DatabaseType::Mysql, None);
-        assert_eq!(t, "int(11)");
+    fn postgres_rewrites_types() {
+        let t = DatabaseType::Postgres;
+        let src = Some(DialectKind::Opengauss);
+        assert_eq!(rewrite_column_type("int", t, src), "int");
+        assert_eq!(rewrite_column_type("varchar(120)", t, src), "varchar(120)");
     }
 }

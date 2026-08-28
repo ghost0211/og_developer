@@ -38,13 +38,6 @@ test("double click navigation mode opens other actionable rows on double click",
   assert.equal(treeNodeRowDoubleClickAction("saved-sql-file", false, "double"), "open-saved-sql");
 });
 
-test("double click navigation mode toggles expandable rows on double click", () => {
-  assert.equal(treeNodeRowDoubleClickAction("connection", false, "double", true), "toggle");
-  assert.equal(treeNodeRowDoubleClickAction("group-columns", false, "double", true), "toggle");
-  assert.equal(treeNodeRowDoubleClickAction("redis-db", false, "double", false), "toggle");
-  assert.equal(treeNodeRowDoubleClickAction("etcd-root", false, "double", false), "toggle");
-  assert.equal(treeNodeRowDoubleClickAction("zookeeper-root", false, "double", false), "toggle");
-});
 
 test("expandable non-table rows still toggle from row clicks", () => {
   assert.equal(treeNodeRowAction("connection", true), "toggle");
@@ -53,20 +46,7 @@ test("expandable non-table rows still toggle from row clicks", () => {
   assert.equal(treeNodeRowAction("group-columns", true), "toggle");
 });
 
-test("leaf data browser nodes keep their open behavior through toggle handler", () => {
-  assert.equal(treeNodeRowAction("redis-db", false), "toggle");
-  assert.equal(treeNodeRowAction("etcd-root", false), "toggle");
-  assert.equal(treeNodeRowAction("zookeeper-root", false), "toggle");
-  assert.equal(treeNodeRowAction("mongo-gridfs" as never, false), "toggle");
-  assert.equal(treeNodeRowAction("mongo-collection", false), "toggle");
-  assert.equal(treeNodeRowAction("mongo-bucket", false), "toggle");
-});
 
-test("document browser helper covers Mongo collections and GridFS buckets", () => {
-  assert.equal(isDocumentBrowserTreeNode("mongo-collection"), true);
-  assert.equal(isDocumentBrowserTreeNode("mongo-bucket"), true);
-  assert.equal(isDocumentBrowserTreeNode("redis-db"), false);
-});
 
 test("double-click follow-up clicks do not repeat side-effecting row actions", () => {
   assert.equal(shouldRunTreeNodeRowAction("toggle", 1), true);

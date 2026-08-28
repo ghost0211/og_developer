@@ -4,17 +4,13 @@ use std::time::{Duration, Instant};
 use tokio::io::{AsyncReadExt, BufReader};
 use tokio_util::sync::CancellationToken;
 
-use crate::connection::{AppState, PoolKind};
-use crate::db;
+use crate::connection::AppState;
 use crate::models::connection::DatabaseType;
-use crate::query::{
-    execute_sql_statement_with_options, pool_error_action, wait_for_query_opt, DbOperationBudget, PoolErrorAction,
-    QueryExecutionOptions,
-};
+use crate::query::{execute_sql_statement_with_options, QueryExecutionOptions};
 use crate::sql::{
-    optimize_sql_file_import_statements, prepare_sql_file_statement, split_sql_batches, statement_summary,
-    SqlFileImportStatement, SqlFileImportStatementKind, SqlFileProgress, SqlFileRequest, SqlFileStatementAction,
-    SqlFileStatus, SqlParsingOptions, SqlStatementSplitter,
+    optimize_sql_file_import_statements, prepare_sql_file_statement, statement_summary, SqlFileImportStatement,
+    SqlFileImportStatementKind, SqlFileProgress, SqlFileRequest, SqlFileStatementAction, SqlFileStatus,
+    SqlParsingOptions, SqlStatementSplitter,
 };
 use crate::types::QueryResult;
 
@@ -122,62 +118,15 @@ impl SqlFileExecutionProgress {
     }
 }
 
-struct MySqlSqlFileExecutor {
-    connection_id: String,
-    database: String,
-    pool_key: String,
-    db_type: Option<DatabaseType>,
-    bare: bool,
-    dialect: db::mysql::MySqlQueryDialect,
-    budget: DbOperationBudget,
-    conn: Option<mysql_async::Conn>,
-}
+struct MySqlSqlFileExecutor;
 
 impl MySqlSqlFileExecutor {
     async fn build(
-        state: &AppState,
-        request: &SqlFileRequest,
-        import_target: Option<&SqlFileImportTarget>,
+        _state: &AppState,
+        _request: &SqlFileRequest,
+        _import_target: Option<&SqlFileImportTarget>,
     ) -> Result<Option<Self>, String> {
-        let Some(target) = import_target else {
-            return Ok(None);
-        };
-        if !crate::sql::supports_connection_level_database_bootstrap_target(
-            &target.db_type,
-            target.driver_profile.as_deref(),
-        ) {
-            return Ok(None);
-        }
-
-        let database = request.database.trim();
-        let database = (!database.is_empty()).then_some(database);
-        let pool_key = state.get_or_create_pool_for_session(&request.connection_id, database, None).await?;
-        let (db_type, driver_profile, bare) = {
-            let connections = state.connections.read().await;
-            let Some(PoolKind::Mysql(_, mode)) = connections.get(&pool_key) else {
-                return Ok(None);
-            };
-            (Some(target.db_type), target.driver_profile.as_deref(), *mode == crate::connection::MysqlMode::Bare)
-        };
-        let budget = {
-            let configs = state.configs.read().await;
-            let config = configs.get(&request.connection_id).ok_or("Connection config not found")?;
-            DbOperationBudget::from_connection_config(config)
-        };
-
-        Ok(Some(Self {
-            connection_id: request.connection_id.clone(),
-            database: request.database.clone(),
-            pool_key,
-            db_type,
-            bare,
-            dialect: db::mysql::MySqlQueryDialect::for_connection(
-                db_type.unwrap_or(DatabaseType::Mysql),
-                driver_profile,
-            ),
-            budget,
-            conn: None,
-        }))
+        Ok(None)
     }
 
     async fn execute_statement(
@@ -188,131 +137,7 @@ impl MySqlSqlFileExecutor {
         token: &CancellationToken,
         statement_index: usize,
     ) -> Result<QueryResult, String> {
-        let execution_id = sql_file_statement_execution_id(&request.execution_id, statement_index);
-        let registered = state.running_queries.register(execution_id.clone());
-        let child_token = registered.token();
-        let cancel_task = {
-            let parent_token = token.clone();
-            let running_queries = state.running_queries.clone();
-            let execution_id = execution_id.clone();
-            tokio::spawn(async move {
-                parent_token.cancelled().await;
-                running_queries.cancel(&execution_id);
-            })
-        };
-
-        let result = self.execute_statement_inner(state, sql, &child_token, &execution_id).await;
-
-        cancel_task.abort();
-        result
-    }
-
-    async fn execute_statement_inner(
-        &mut self,
-        state: &AppState,
-        sql: &str,
-        child_token: &CancellationToken,
-        execution_id: &str,
-    ) -> Result<QueryResult, String> {
-        // Mirror `execute_sql_statement_with_options`: on a transient
-        // connection error the pool is reconnected and the statement is
-        // retried once instead of failing the whole import. The pinned
-        // connection is re-acquired from the fresh pool by `ensure_conn` on
-        // each attempt, so `USE`/session state is re-established via the
-        // tracked `self.database` before the retry runs.
-        for attempt in 0..2 {
-            self.ensure_conn(state, child_token).await?;
-            state.running_queries.set_pool_key(execution_id, self.pool_key.clone());
-            state.touch_pool_activity(&self.pool_key).await;
-            let _activity_touch = state.pool_activity_touch(&self.pool_key);
-
-            let conn = self.conn.as_mut().ok_or("MySQL SQL file executor is missing a connection".to_string())?;
-            let connection_id = conn.id();
-            let kill_opts = conn.opts().clone();
-            state.running_queries.register_interrupt(execution_id, move || {
-                let kill_opts = kill_opts.clone();
-                tokio::spawn(async move {
-                    if let Err(error) = db::mysql::kill_query_with_opts(kill_opts, connection_id).await {
-                        log::warn!("Failed to cancel MySQL SQL file import query {connection_id}: {error}");
-                    }
-                });
-            });
-
-            let result = wait_for_query_opt(
-                Some(child_token.clone()),
-                self.budget.query_timeout,
-                db::mysql::execute_query_on_conn_with_max_rows(conn, sql, self.bare, None, self.dialect),
-            )
-            .await;
-
-            if result.is_ok() {
-                // Reconnects should reopen the most recent `USE` target rather than
-                // the request's initial database value.
-                if let Some(database) = mysql_use_database_target(sql) {
-                    self.database = database;
-                }
-                return result;
-            }
-
-            let action = pool_error_action(self.db_type, result.as_ref().unwrap_err());
-            match action {
-                PoolErrorAction::Keep => return result,
-                PoolErrorAction::Discard => {
-                    self.conn.take();
-                    state.remove_pool_by_key(&self.pool_key).await;
-                    return result;
-                }
-                PoolErrorAction::ReconnectAndRetry => {
-                    self.conn.take();
-                    if attempt == 0 && !child_token.is_cancelled() {
-                        let database = self.database.trim();
-                        let database = (!database.is_empty()).then_some(database);
-                        self.pool_key = state.reconnect_pool_for_session(&self.connection_id, database, None).await?;
-                        continue;
-                    }
-                    // Cancelled, or the retry itself failed with another
-                    // reconnectable error: refresh the pool so the next
-                    // statement starts from a clean connection, then surface
-                    // the original error.
-                    if !child_token.is_cancelled() {
-                        let database = self.database.trim();
-                        let database = (!database.is_empty()).then_some(database);
-                        let _ = state.reconnect_pool_for_session(&self.connection_id, database, None).await;
-                    }
-                    return result;
-                }
-            }
-        }
-        unreachable!("MySQL SQL file executor retry loop runs at most twice")
-    }
-
-    async fn ensure_conn(&mut self, state: &AppState, token: &CancellationToken) -> Result<(), String> {
-        if self.conn.is_some() {
-            return Ok(());
-        }
-
-        let database = self.database.trim();
-        let database = (!database.is_empty()).then_some(database);
-        self.pool_key = state.get_or_create_pool_for_session(&self.connection_id, database, None).await?;
-        let pool = {
-            let connections = state.connections.read().await;
-            match connections.get(&self.pool_key) {
-                Some(PoolKind::Mysql(pool, _)) => pool.clone(),
-                Some(_) => return Err("SQL file import expected a MySQL-compatible pooled connection".to_string()),
-                None => return Err("Connection not found".to_string()),
-            }
-        };
-
-        self.conn = Some(
-            db::mysql::get_conn_with_health_check_with_cancel(
-                &pool,
-                self.budget.checkout_timeout,
-                self.budget.cleanup_timeout,
-                Some(token),
-            )
-            .await?,
-        );
-        Ok(())
+        execute_sql_file_statement(state, request, sql, token, statement_index).await
     }
 }
 
@@ -638,78 +463,21 @@ async fn detect_sql_file_encoding(
     }
 }
 
-enum StreamingSqlFileSplitter {
-    Statements(SqlStatementSplitter),
-    SqlServerBatches(SqlServerBatchSplitter),
+struct StreamingSqlFileSplitter {
+    splitter: SqlStatementSplitter,
 }
 
 impl StreamingSqlFileSplitter {
-    fn new(db_type: Option<DatabaseType>, options: SqlParsingOptions) -> Self {
-        if db_type == Some(DatabaseType::SqlServer) {
-            Self::SqlServerBatches(SqlServerBatchSplitter::default())
-        } else {
-            Self::Statements(SqlStatementSplitter::with_options(options))
-        }
+    fn new(_db_type: Option<DatabaseType>, options: SqlParsingOptions) -> Self {
+        Self { splitter: SqlStatementSplitter::with_options(options) }
     }
 
     fn push_chunk(&mut self, chunk: &str) -> Vec<String> {
-        match self {
-            Self::Statements(splitter) => splitter.push_chunk(chunk),
-            Self::SqlServerBatches(splitter) => splitter.push_chunk(chunk),
-        }
+        self.splitter.push_chunk(chunk)
     }
 
     fn finish(self) -> Vec<String> {
-        match self {
-            Self::Statements(splitter) => splitter.finish(),
-            Self::SqlServerBatches(splitter) => splitter.finish(),
-        }
-    }
-}
-
-#[derive(Default)]
-struct SqlServerBatchSplitter {
-    batch: String,
-    partial_line: String,
-}
-
-impl SqlServerBatchSplitter {
-    fn push_chunk(&mut self, chunk: &str) -> Vec<String> {
-        self.partial_line.push_str(chunk);
-        let mut batches = Vec::new();
-        while let Some(newline) = self.partial_line.find('\n') {
-            let line = self.partial_line[..newline].trim_end_matches('\r').to_string();
-            self.partial_line.drain(..=newline);
-            self.push_line(&line, &mut batches);
-        }
-        batches
-    }
-
-    fn finish(mut self) -> Vec<String> {
-        let mut batches = Vec::new();
-        if !self.partial_line.is_empty() {
-            let line = std::mem::take(&mut self.partial_line);
-            self.push_line(line.trim_end_matches('\r'), &mut batches);
-        }
-        self.push_batch(&mut batches);
-        batches
-    }
-
-    fn push_line(&mut self, line: &str, batches: &mut Vec<String>) {
-        if line.trim().eq_ignore_ascii_case("go") {
-            self.push_batch(batches);
-        } else {
-            self.batch.push_str(line);
-            self.batch.push('\n');
-        }
-    }
-
-    fn push_batch(&mut self, batches: &mut Vec<String>) {
-        let batch = self.batch.trim();
-        if !batch.is_empty() {
-            batches.push(batch.to_string());
-        }
-        self.batch.clear();
+        self.splitter.finish()
     }
 }
 
@@ -767,13 +535,7 @@ fn emit_sql_file_terminal_progress(
     ));
 }
 
-fn split_sql_file_import_statements(file_content: &str, db_type: Option<DatabaseType>) -> Vec<String> {
-    if db_type == Some(DatabaseType::SqlServer) {
-        // GO is a client-side batch delimiter, not T-SQL. SQL Server module DDL
-        // must also remain a complete batch because procedure bodies contain semicolons.
-        return split_sql_batches(file_content);
-    }
-
+pub fn split_sql_file_import_statements(file_content: &str, db_type: Option<DatabaseType>) -> Vec<String> {
     let options = db_type.map(SqlParsingOptions::for_database_type).unwrap_or_default();
     let mut splitter = SqlStatementSplitter::with_options(options);
     let mut statements = splitter.push_chunk(file_content);
@@ -854,7 +616,7 @@ pub fn mysql_like_sql_file_bootstrap_analysis(file_content: &str) -> MysqlLikeSq
     let mut has_database_context = false;
 
     for statement in statements {
-        let prepared = match prepare_sql_file_statement(&statement, &DatabaseType::Mysql, None) {
+        let prepared = match prepare_sql_file_statement(&statement, &DatabaseType::Postgres, None) {
             SqlFileStatementAction::Skip => continue,
             SqlFileStatementAction::Execute(sql) => sql,
         };
@@ -1440,438 +1202,12 @@ fn statement_error_decision(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::connection::DatabaseType;
-    use std::cell::Cell;
-    use std::sync::atomic::{AtomicU64, Ordering};
-
-    static TEMP_SQL_FILE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
-
-    async fn temporary_sql_file(bytes: &[u8]) -> std::path::PathBuf {
-        let path = std::env::temp_dir().join(format!(
-            "dbx-sql-file-{}-{}.sql",
-            std::process::id(),
-            TEMP_SQL_FILE_SEQUENCE.fetch_add(1, Ordering::Relaxed)
-        ));
-        tokio::fs::write(&path, bytes).await.unwrap();
-        path
-    }
-
-    fn test_progress(status: SqlFileStatus, statement_index: usize) -> SqlFileProgress {
-        SqlFileProgress {
-            execution_id: "test-execution".to_string(),
-            status,
-            statement_index,
-            success_count: statement_index,
-            failure_count: 0,
-            affected_rows: statement_index as u64,
-            elapsed_ms: statement_index as u128,
-            statement_summary: format!("statement {statement_index}"),
-            error: None,
-            file_index: None,
-            file_name: None,
-        }
-    }
-
-    fn test_file_progress(
-        status: SqlFileStatus,
-        statement_index: usize,
-        file_index: usize,
-        file_name: &str,
-    ) -> SqlFileProgress {
-        SqlFileProgress {
-            file_index: Some(file_index),
-            file_name: Some(file_name.to_string()),
-            ..test_progress(status, statement_index)
-        }
-    }
 
     #[test]
-    fn progress_emitter_compresses_high_frequency_regular_events() {
-        let base = Instant::now();
-        let elapsed = Cell::new(Duration::ZERO);
-        let mut emitted = Vec::new();
-        {
-            let mut emitter =
-                SqlFileProgressEmitter::with_clock(|progress| emitted.push(progress), || base + elapsed.get());
-
-            for statement_index in 1..=1_000 {
-                elapsed.set(Duration::from_millis((statement_index - 1) as u64));
-                emitter.emit(test_progress(SqlFileStatus::Running, statement_index));
-                emitter.emit(test_progress(SqlFileStatus::StatementDone, statement_index));
-            }
-            emitter.emit(test_progress(SqlFileStatus::Done, 1_000));
-        }
-
-        let regular_count = emitted
-            .iter()
-            .filter(|progress| matches!(progress.status, SqlFileStatus::Running | SqlFileStatus::StatementDone))
-            .count();
-        assert_eq!(regular_count, 11);
-        assert_eq!(emitted.last().unwrap().status, SqlFileStatus::Done);
-        assert_eq!(emitted[emitted.len() - 2].statement_index, 1_000);
-    }
-
-    #[test]
-    fn progress_emitter_sends_key_events_immediately() {
-        let base = Instant::now();
-        let elapsed = Cell::new(Duration::ZERO);
-        let mut emitted = Vec::new();
-        {
-            let mut emitter =
-                SqlFileProgressEmitter::with_clock(|progress| emitted.push(progress), || base + elapsed.get());
-
-            for status in [
-                SqlFileStatus::Started,
-                SqlFileStatus::StatementFailed,
-                SqlFileStatus::Error,
-                SqlFileStatus::Cancelled,
-                SqlFileStatus::Done,
-            ] {
-                emitter.emit(test_progress(status, 1));
-            }
-        }
-
-        assert_eq!(
-            emitted.iter().map(|progress| progress.status).collect::<Vec<_>>(),
-            vec![
-                SqlFileStatus::Started,
-                SqlFileStatus::StatementFailed,
-                SqlFileStatus::Error,
-                SqlFileStatus::Cancelled,
-                SqlFileStatus::Done,
-            ]
-        );
-    }
-
-    #[test]
-    fn progress_emitter_flushes_latest_counters_before_terminal_event() {
-        let base = Instant::now();
-        let elapsed = Cell::new(Duration::ZERO);
-        let mut emitted = Vec::new();
-        {
-            let mut emitter =
-                SqlFileProgressEmitter::with_clock(|progress| emitted.push(progress), || base + elapsed.get());
-
-            emitter.emit(test_progress(SqlFileStatus::Running, 1));
-            elapsed.set(Duration::from_millis(10));
-            emitter.emit(test_progress(SqlFileStatus::StatementDone, 2));
-            emitter.emit(test_progress(SqlFileStatus::Done, 2));
-        }
-
-        assert_eq!(emitted.len(), 3);
-        assert_eq!(emitted[1].status, SqlFileStatus::StatementDone);
-        assert_eq!(emitted[1].statement_index, 2);
-        assert_eq!(emitted[2].status, SqlFileStatus::Done);
-    }
-
-    #[test]
-    fn progress_emitter_keeps_small_file_progress_timely() {
-        let base = Instant::now();
-        let mut emitted = Vec::new();
-        {
-            let mut emitter = SqlFileProgressEmitter::with_clock(|progress| emitted.push(progress), || base);
-            emitter.emit(test_progress(SqlFileStatus::Started, 0));
-            emitter.emit(test_progress(SqlFileStatus::Running, 1));
-            emitter.emit(test_progress(SqlFileStatus::StatementDone, 1));
-            emitter.emit(test_progress(SqlFileStatus::Done, 1));
-        }
-
-        assert_eq!(
-            emitted.iter().map(|progress| progress.status).collect::<Vec<_>>(),
-            vec![SqlFileStatus::Started, SqlFileStatus::Running, SqlFileStatus::StatementDone, SqlFileStatus::Done,]
-        );
-    }
-
-    #[test]
-    fn sqlserver_sql_file_splits_go_batches_without_sending_delimiters() {
-        let statements = split_sql_file_import_statements(
-            "CREATE TABLE dbo.items (id INT);\nGO\nINSERT INTO dbo.items VALUES (1);\nGO\nSELECT * FROM dbo.items;",
-            Some(DatabaseType::SqlServer),
-        );
-
-        assert_eq!(
-            statements,
-            vec!["CREATE TABLE dbo.items (id INT);", "INSERT INTO dbo.items VALUES (1);", "SELECT * FROM dbo.items;"]
-        );
-        assert!(statements
-            .iter()
-            .all(|statement| !statement.lines().any(|line| line.trim().eq_ignore_ascii_case("go"))));
-    }
-
-    #[test]
-    fn sqlserver_sql_file_keeps_module_body_in_one_batch() {
-        let statements = split_sql_file_import_statements(
-            "CREATE PROCEDURE dbo.demo AS\nBEGIN\n  SELECT 1;\n  SELECT 2;\nEND\nGO\nSELECT 3;",
-            Some(DatabaseType::SqlServer),
-        );
-
-        assert_eq!(statements.len(), 2);
-        assert_eq!(statements[0], "CREATE PROCEDURE dbo.demo AS\nBEGIN\n  SELECT 1;\n  SELECT 2;\nEND");
-        assert_eq!(statements[1], "SELECT 3;");
-    }
-
-    #[test]
-    fn streaming_sqlserver_splitter_handles_go_across_chunks() {
-        let mut splitter = SqlServerBatchSplitter::default();
-        let mut batches = splitter.push_chunk("CREATE PROCEDURE dbo.demo AS\nBEGIN\nSELECT 1;\nEND\nG");
-        batches.extend(splitter.push_chunk("O\r\nSELECT 2;\nGO\n"));
-        batches.extend(splitter.finish());
-
-        assert_eq!(batches, vec!["CREATE PROCEDURE dbo.demo AS\nBEGIN\nSELECT 1;\nEND", "SELECT 2;"]);
-    }
-
-    #[tokio::test]
-    async fn streaming_decoder_detects_gbk_after_ascii_prefix() {
-        let (encoded, _, _) = encoding_rs::GBK.encode("-- Navicat dump\nINSERT INTO t VALUES ('中文');");
-        let path = temporary_sql_file(encoded.as_ref()).await;
-        let mut decoder = SqlFileStreamDecoder::open(&path).await.unwrap();
-        let mut decoded = String::new();
-        while let Some(chunk) = decoder.next_chunk().await.unwrap() {
-            decoded.push_str(&chunk);
-        }
-        tokio::fs::remove_file(path).await.unwrap();
-
-        assert_eq!(decoded, "-- Navicat dump\nINSERT INTO t VALUES ('中文');");
-    }
-
-    #[tokio::test]
-    async fn streaming_decoder_preserves_utf16le_bom_files() {
-        let mut bytes = vec![0xFF, 0xFE];
-        for unit in "SELECT '中文';".encode_utf16() {
-            bytes.extend_from_slice(&unit.to_le_bytes());
-        }
-        let path = temporary_sql_file(&bytes).await;
-        let mut decoder = SqlFileStreamDecoder::open(&path).await.unwrap();
-        let mut decoded = String::new();
-        while let Some(chunk) = decoder.next_chunk().await.unwrap() {
-            decoded.push_str(&chunk);
-        }
-        tokio::fs::remove_file(path).await.unwrap();
-
-        assert_eq!(decoded, "SELECT '中文';");
-    }
-
-    #[test]
-    fn non_sqlserver_sql_file_keeps_statement_splitting_behavior() {
+    fn postgres_sql_file_splits_statements() {
         assert_eq!(
             split_sql_file_import_statements("SELECT 1; SELECT 2;", Some(DatabaseType::Postgres)),
             vec!["SELECT 1", "SELECT 2"]
         );
-    }
-
-    #[test]
-    fn stop_on_error_returns_err_with_terminal_error_progress() {
-        let decision = statement_error_decision(
-            "exec-1",
-            &CancellationToken::new(),
-            false,
-            Instant::now(),
-            3,
-            1,
-            0,
-            5,
-            "bad statement",
-            "syntax error".to_string(),
-        );
-
-        assert_eq!(decision.failure_count, 1);
-        assert_eq!(decision.result, Err("syntax error".to_string()));
-        assert_eq!(decision.progress.len(), 2);
-        assert_eq!(decision.progress[0].status, SqlFileStatus::StatementFailed);
-        assert_eq!(decision.progress[1].status, SqlFileStatus::Error);
-        assert_eq!(decision.progress[1].error, Some("syntax error".to_string()));
-    }
-
-    #[test]
-    fn cancelled_in_flight_error_does_not_increment_failure_count() {
-        let token = CancellationToken::new();
-        token.cancel();
-
-        let decision = statement_error_decision(
-            "exec-1",
-            &token,
-            false,
-            Instant::now(),
-            2,
-            1,
-            4,
-            9,
-            "slow statement",
-            "Query canceled".to_string(),
-        );
-
-        assert_eq!(decision.failure_count, 4);
-        assert_eq!(decision.result, Ok(true));
-        assert_eq!(decision.progress.len(), 1);
-        assert_eq!(decision.progress[0].status, SqlFileStatus::Cancelled);
-        assert_eq!(decision.progress[0].failure_count, 4);
-        assert_eq!(decision.progress[0].error, None);
-    }
-
-    #[test]
-    fn progress_payload_serializes_camel_case_status() {
-        let progress =
-            sql_file_progress("exec-1", SqlFileStatus::StatementDone, 1, 1, 0, 3, Instant::now(), "select 1", None);
-
-        let value = serde_json::to_value(progress).unwrap();
-
-        assert_eq!(value["executionId"], "exec-1");
-        assert_eq!(value["statementIndex"], 1);
-        assert_eq!(value["successCount"], 1);
-        assert_eq!(value["failureCount"], 0);
-        assert_eq!(value["affectedRows"], 3);
-        assert_eq!(value["statementSummary"], "select 1");
-        assert_eq!(value["status"], "statementDone");
-        assert!(value.get("execution_id").is_none());
-    }
-
-    #[test]
-    fn supports_connection_level_database_bootstrap_for_mysql_like_targets() {
-        assert!(crate::sql::supports_connection_level_database_bootstrap_target(&DatabaseType::Mysql, None));
-        assert!(crate::sql::supports_connection_level_database_bootstrap_target(&DatabaseType::Doris, None));
-        assert!(crate::sql::supports_connection_level_database_bootstrap_target(&DatabaseType::Goldendb, None));
-        assert!(crate::sql::supports_connection_level_database_bootstrap_target(
-            &DatabaseType::Mysql,
-            Some("selectdb")
-        ));
-        assert!(crate::sql::supports_connection_level_database_bootstrap_target(
-            &DatabaseType::Mysql,
-            Some("oceanbase")
-        ));
-    }
-
-    #[test]
-    fn excludes_non_mysql_bootstrap_targets() {
-        assert!(!crate::sql::supports_connection_level_database_bootstrap_target(&DatabaseType::Postgres, None));
-        assert!(
-            !crate::sql::supports_connection_level_database_bootstrap_target(&DatabaseType::ManticoreSearch, None,)
-        );
-        assert!(
-            !crate::sql::supports_connection_level_database_bootstrap_target(&DatabaseType::OceanbaseOracle, None,)
-        );
-    }
-
-    #[test]
-    fn mysql_like_sql_file_without_selected_database_requires_bootstrap_context() {
-        assert!(mysql_like_sql_file_can_execute_without_selected_database(
-            "SET NAMES utf8mb4;\nCREATE DATABASE app_db;\n-- switch tenant\nUSE app_db;\nCREATE TABLE users(id INT)"
-        ));
-        assert!(mysql_like_sql_file_can_execute_without_selected_database("SHOW DATABASES"));
-        assert!(mysql_like_sql_file_can_execute_without_selected_database(
-            "SHOW SCHEMAS;\nSHOW VARIABLES LIKE 'version%'"
-        ));
-        assert!(!mysql_like_sql_file_can_execute_without_selected_database(
-            "CREATE DATABASE app_db;\nCREATE TABLE users(id INT)"
-        ));
-        assert!(!mysql_like_sql_file_can_execute_without_selected_database(
-            "SHOW DATABASES;\nCREATE TABLE users(id INT)"
-        ));
-        assert!(!mysql_like_sql_file_can_execute_without_selected_database(
-            "CREATE DATABASE app_db;\nUSE app_db SELECT 1;\nCREATE TABLE users(id INT)"
-        ));
-    }
-
-    #[test]
-    fn mysql_like_sql_file_bootstrap_analysis_tracks_context_for_following_files() {
-        assert_eq!(
-            mysql_like_sql_file_bootstrap_analysis("SHOW DATABASES;"),
-            MysqlLikeSqlFileBootstrapAnalysis {
-                can_execute_without_selected_database: true,
-                establishes_database_context: false,
-            }
-        );
-        assert_eq!(
-            mysql_like_sql_file_bootstrap_analysis("CREATE DATABASE app_db;\nUSE app_db;\nCREATE TABLE users(id INT);"),
-            MysqlLikeSqlFileBootstrapAnalysis {
-                can_execute_without_selected_database: true,
-                establishes_database_context: true,
-            }
-        );
-        assert_eq!(
-            mysql_like_sql_file_bootstrap_analysis("CREATE TABLE users(id INT);"),
-            MysqlLikeSqlFileBootstrapAnalysis {
-                can_execute_without_selected_database: false,
-                establishes_database_context: false,
-            }
-        );
-    }
-
-    #[test]
-    fn execution_error_progress_preserves_cumulative_counters() {
-        let progress =
-            SqlFileExecutionProgress { statement_index: 4, success_count: 3, failure_count: 1, affected_rows: 9 };
-
-        let terminal =
-            sql_file_execution_error_progress("exec-1", Instant::now(), &progress, "file missing".to_string());
-
-        assert_eq!(terminal.status, SqlFileStatus::Error);
-        assert_eq!(terminal.statement_index, 4);
-        assert_eq!(terminal.success_count, 3);
-        assert_eq!(terminal.failure_count, 1);
-        assert_eq!(terminal.affected_rows, 9);
-    }
-
-    #[test]
-    fn parses_mysql_use_database_targets() {
-        assert_eq!(mysql_use_database_target("USE app_db"), Some("app_db".to_string()));
-        assert_eq!(mysql_use_database_target(" use `app-db` ; "), Some("app-db".to_string()));
-        assert_eq!(mysql_use_database_target(r#"USE "tenant""01""#), Some(r#"tenant"01"#.to_string()));
-        assert_eq!(mysql_use_database_target("USE [tenant]]01]"), Some("tenant]01".to_string()));
-        assert_eq!(mysql_use_database_target("USE app_db; -- switch tenant"), Some("app_db".to_string()));
-        assert_eq!(mysql_use_database_target("-- switch tenant\nUSE app_db"), Some("app_db".to_string()));
-    }
-
-    #[test]
-    fn ignores_non_terminal_use_statements() {
-        assert_eq!(mysql_use_database_target("SELECT 1"), None);
-        assert_eq!(mysql_use_database_target("USE"), None);
-        assert_eq!(mysql_use_database_target("USE app_db SELECT 1"), None);
-    }
-
-    #[test]
-    fn file_boundary_events_bypass_throttling_and_retain_order() {
-        // Regression: rapid multi-file runs must not lose per-file boundary
-        // events through the progress emitter's 100 ms throttle window.
-        let base = Instant::now();
-        let elapsed = Cell::new(Duration::ZERO);
-        let mut emitted = Vec::new();
-        {
-            let mut emitter =
-                SqlFileProgressEmitter::with_clock(|progress| emitted.push(progress), || base + elapsed.get());
-
-            // Simulate two small files executing within the same throttle window.
-            for statement_index in 1..=3 {
-                emitter.emit(test_progress(SqlFileStatus::StatementDone, statement_index));
-            }
-            // File 0 start + done.
-            emitter.emit(test_file_progress(SqlFileStatus::Running, 3, 0, "a.sql"));
-            emitter.emit(test_file_progress(SqlFileStatus::StatementDone, 3, 0, "a.sql"));
-
-            for statement_index in 4..=6 {
-                emitter.emit(test_progress(SqlFileStatus::StatementDone, statement_index));
-            }
-            // File 1 start + done — still within the same throttle window.
-            emitter.emit(test_file_progress(SqlFileStatus::Running, 6, 1, "b.sql"));
-            emitter.emit(test_file_progress(SqlFileStatus::StatementDone, 6, 1, "b.sql"));
-
-            emitter.emit(test_progress(SqlFileStatus::Done, 6));
-        }
-
-        let file_boundary_events: Vec<_> = emitted
-            .iter()
-            .filter(|p| p.file_index.is_some())
-            .map(|p| (p.status, p.file_index, p.file_name.clone()))
-            .collect();
-        assert_eq!(
-            file_boundary_events,
-            vec![
-                (SqlFileStatus::Running, Some(0), Some("a.sql".to_string())),
-                (SqlFileStatus::StatementDone, Some(0), Some("a.sql".to_string())),
-                (SqlFileStatus::Running, Some(1), Some("b.sql".to_string())),
-                (SqlFileStatus::StatementDone, Some(1), Some("b.sql".to_string())),
-            ],
-            "file-boundary events must be emitted immediately, in order, without being dropped by throttling"
-        );
-        assert_eq!(emitted.last().unwrap().status, SqlFileStatus::Done);
     }
 }

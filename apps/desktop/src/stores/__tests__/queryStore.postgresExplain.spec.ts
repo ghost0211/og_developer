@@ -142,16 +142,6 @@ describe("queryStore PostgreSQL EXPLAIN ANALYZE", () => {
     });
   });
 
-  it("does not send the analyze flag for other engines sharing this path", async () => {
-    const { useQueryStore } = await import("@/stores/queryStore");
-    const store = useQueryStore();
-    const tabId = store.createTab("pg-1", "shop", "Query", "query", "public");
-
-    await store.explainTabSql(tabId, SOURCE_SQL, "questdb", "autotrace");
-
-    expect(mocks.buildExplainSql).toHaveBeenCalledWith("questdb", SOURCE_SQL);
-  });
-
   it("resolves an openGauss JDBC profile before building and parsing the plan", async () => {
     mocks.getConfig.mockReturnValue({ id: "pg-1", name: "openGauss JDBC", db_type: "opengauss", driver_profile: "opengauss-jdbc" });
     mocks.buildExplainSql.mockResolvedValue({ ok: true, sql: "EXPLAIN (ANALYZE, FORMAT JSON) SELECT * FROM orders" });

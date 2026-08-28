@@ -16,34 +16,19 @@ describe("dataGridColumnNameCopy", () => {
 
   it("quotes names with the database-specific identifier quote", () => {
     const names = ["type", "order"];
-    expect(formatColumnNamesForCopy(names, { separator: "comma", quote: true, databaseType: "mysql" })).toBe("`type`,`order`");
-    expect(formatColumnNamesForCopy(names, { separator: "comma", quote: true, databaseType: "clickhouse" })).toBe("`type`,`order`");
     expect(formatColumnNamesForCopy(names, { separator: "comma", quote: true, databaseType: "postgres" })).toBe('"type","order"');
-    expect(formatColumnNamesForCopy(names, { separator: "comma", quote: true, databaseType: "sqlserver" })).toBe("[type],[order]");
+    expect(formatColumnNamesForCopy(names, { separator: "comma", quote: true, databaseType: "opengauss" })).toBe('"type","order"');
   });
 
   it("escapes embedded quote characters when quoting", () => {
-    expect(formatColumnNamesForCopy(["a`b"], { separator: "tab", quote: true, databaseType: "mysql" })).toBe("`a``b`");
     expect(formatColumnNamesForCopy(['a"b'], { separator: "tab", quote: true, databaseType: "postgres" })).toBe('"a""b"');
+    expect(formatColumnNamesForCopy(['a"b'], { separator: "tab", quote: true, databaseType: "opengauss" })).toBe('"a""b"');
   });
 
-  it("ignores the quote flag for databases without SQL identifier quoting", () => {
-    expect(formatColumnNamesForCopy(["type"], { separator: "tab", quote: true, databaseType: "mongodb" })).toBe("type");
-    expect(formatColumnNamesForCopy(["type"], { separator: "tab", quote: true, databaseType: "qdrant" })).toBe("type");
-    expect(formatColumnNamesForCopy(["type"], { separator: "tab", quote: true })).toBe("type");
-  });
-
-  it("reports quoting support only for SQL databases with a usable quote character", () => {
-    expect(supportsColumnNameQuoting("mysql")).toBe(true);
-    expect(supportsColumnNameQuoting("clickhouse")).toBe(true);
+  it("reports quoting support for supported SQL databases", () => {
+    expect(supportsColumnNameQuoting("opengauss")).toBe(true);
     expect(supportsColumnNameQuoting("postgres")).toBe(true);
-    expect(supportsColumnNameQuoting("mongodb")).toBe(false);
-    expect(supportsColumnNameQuoting("redis")).toBe(false);
-    expect(supportsColumnNameQuoting("elasticsearch")).toBe(false);
-    expect(supportsColumnNameQuoting("easysearch")).toBe(false);
-    expect(supportsColumnNameQuoting("qdrant")).toBe(false);
     expect(supportsColumnNameQuoting("jdbc")).toBe(false);
-    expect(supportsColumnNameQuoting("iotdb")).toBe(false);
     expect(supportsColumnNameQuoting(undefined)).toBe(false);
   });
 

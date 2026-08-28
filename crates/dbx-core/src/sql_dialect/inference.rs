@@ -52,7 +52,7 @@ impl ColumnType {
     pub fn to_string(&self, dialect: DialectKind) -> String {
         let mut result = self.base_type.clone();
 
-        if self.is_unsigned && dialect == DialectKind::Mysql {
+        if self.is_unsigned && false {
             result.push_str(" UNSIGNED");
         }
 
@@ -66,7 +66,7 @@ impl ColumnType {
             }
         }
 
-        if self.is_array && (dialect == DialectKind::Postgres || dialect == DialectKind::DuckDb) {
+        if self.is_array && (dialect == DialectKind::Postgres || false) {
             result.push_str("[]");
         }
 
@@ -129,7 +129,7 @@ impl TypeInferenceEngine for DefaultTypeInferenceEngine {
             scale,
             length,
             is_array: source_parsed.is_array && target_caps.supports_array_type,
-            is_unsigned: source_parsed.is_unsigned && target_dialect == DialectKind::Mysql,
+            is_unsigned: source_parsed.is_unsigned && false,
             extras: source_parsed.extras,
         }
     }
@@ -150,24 +150,9 @@ impl TypeInferenceEngine for DefaultTypeInferenceEngine {
         }
 
         match (source_dialect, target_dialect) {
-            (DialectKind::Mysql, DialectKind::Postgres) => {
-                let lower = trimmed.to_ascii_lowercase();
-                if lower == "current_timestamp" || lower == "current_timestamp()" || lower == "now()" {
-                    return "CURRENT_TIMESTAMP".to_string();
-                }
-                if lower.starts_with("on update ") {
-                    return String::new();
-                }
-            }
-            (DialectKind::Postgres, DialectKind::Mysql) => {
+            (DialectKind::Postgres, DialectKind::Postgres) => {
                 let lower = trimmed.to_ascii_lowercase();
                 if lower == "current_timestamp" || lower == "now()" || lower == "transaction_timestamp()" {
-                    return "CURRENT_TIMESTAMP".to_string();
-                }
-            }
-            (DialectKind::Mysql, DialectKind::Sqlite) => {
-                let lower = trimmed.to_ascii_lowercase();
-                if lower == "current_timestamp" || lower == "current_timestamp()" || lower == "now()" {
                     return "CURRENT_TIMESTAMP".to_string();
                 }
             }
@@ -250,24 +235,10 @@ mod tests {
     }
 
     #[test]
-    fn infer_mysql_int_to_postgres() {
+    fn infer_postgres_types() {
         let engine = DefaultTypeInferenceEngine;
-        let result = engine.infer_type("INT", DialectKind::Mysql, DialectKind::Postgres);
-        assert_eq!(result.base_type, "INTEGER");
-    }
-
-    #[test]
-    fn infer_mysql_datetime_to_postgres() {
-        let engine = DefaultTypeInferenceEngine;
-        let result = engine.infer_type("DATETIME", DialectKind::Mysql, DialectKind::Postgres);
-        assert_eq!(result.base_type, "TIMESTAMP");
-    }
-
-    #[test]
-    fn infer_postgres_text_to_mysql() {
-        let engine = DefaultTypeInferenceEngine;
-        let result = engine.infer_type("TEXT", DialectKind::Postgres, DialectKind::Mysql);
-        assert_eq!(result.base_type, "LONGTEXT");
+        let result = engine.infer_type("INT", DialectKind::Opengauss, DialectKind::Postgres);
+        assert_eq!(result.base_type, "INT");
     }
 
     #[test]
@@ -289,25 +260,18 @@ mod tests {
     }
 
     #[test]
-    fn convert_default_value_mysql_to_postgres() {
+    fn convert_default_value_postgres() {
         let engine = DefaultTypeInferenceEngine;
         assert_eq!(
-            engine.convert_default_value("CURRENT_TIMESTAMP", DialectKind::Mysql, DialectKind::Postgres),
+            engine.convert_default_value("CURRENT_TIMESTAMP", DialectKind::Opengauss, DialectKind::Postgres),
             "CURRENT_TIMESTAMP"
         );
-        assert_eq!(
-            engine.convert_default_value("NOW()", DialectKind::Mysql, DialectKind::Postgres),
-            "CURRENT_TIMESTAMP"
-        );
-        assert!(engine
-            .convert_default_value("ON UPDATE CURRENT_TIMESTAMP", DialectKind::Mysql, DialectKind::Postgres)
-            .is_empty());
     }
 
     #[test]
     fn unknown_type_passthrough() {
         let engine = DefaultTypeInferenceEngine;
-        let result = engine.infer_type("GEOGRAPHY(POINT)", DialectKind::Postgres, DialectKind::Mysql);
+        let result = engine.infer_type("GEOGRAPHY(POINT)", DialectKind::Postgres, DialectKind::Opengauss);
         assert_eq!(result.base_type, "GEOGRAPHY");
     }
 

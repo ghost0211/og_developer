@@ -14,21 +14,6 @@ import type { DatabaseType } from "../../apps/desktop/src/types/database.ts";
 
 const READY_DIALECTS: DatabaseType[] = ["mysql", "postgres", "sqlite", "sqlserver", "oracle"];
 
-test("diagram structure gates reuse TableStructure capabilities", () => {
-  for (const dbType of READY_DIALECTS) {
-    const caps = getTableStructureCapabilities(dbType);
-    assert.equal(caps.createTable, true, `${dbType} createTable`);
-    assert.equal(canAddTableStructureColumn(dbType, true), caps.createTable);
-    assert.equal(canAddTableStructureColumn(dbType, false), caps.addColumn);
-    assert.equal(supportsTableStructureEditing(dbType), true, `${dbType} structure editing`);
-  }
-
-  const unsupported = getTableStructureCapabilities("mongodb");
-  assert.equal(unsupported.createTable, false);
-  assert.equal(canAddTableStructureColumn("mongodb", true), false);
-  assert.equal(canAddTableStructureColumn("mongodb", false), false);
-  assert.equal(supportsTableStructureEditing("mongodb"), false);
-});
 
 test("draft CREATE options match table-structure SQL API shape", () => {
   for (const dbType of READY_DIALECTS) {
@@ -70,11 +55,3 @@ test("live ALTER options mark pending add and drop for shared change SQL API", (
   assert.equal(dropped?.markedForDrop, true);
 });
 
-test("empty column defaults come from shared tableStructureEditorState", () => {
-  assert.equal(createEmptyColumn("x", "postgres").data_type, defaultNewColumnDataType("postgres", getDataTypeOptions("postgres")));
-  assert.equal(createEmptyColumn("x", "duckdb").data_type, defaultNewColumnDataType("duckdb", getDataTypeOptions("duckdb")));
-  assert.equal(createEmptyColumn("x", "h2").data_type, defaultNewColumnDataType("h2", getDataTypeOptions("h2")));
-  assert.ok(getDataTypeOptions("duckdb").length > 0);
-  assert.ok(getDataTypeOptions("h2").length > 0);
-  assert.ok(getDataTypeOptions("rqlite").includes("text"));
-});

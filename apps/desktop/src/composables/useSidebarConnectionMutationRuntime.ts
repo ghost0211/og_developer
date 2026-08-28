@@ -8,10 +8,7 @@ import * as api from "@/lib/backend/api";
 import { translateBackendError } from "@/i18n/backend-errors";
 import { copyToClipboard } from "@/lib/common/clipboard";
 import { uuid } from "@/lib/common/utils";
-import { connectionFilePath, defaultSqliteBackupFileName, isMemorySqlitePath, sqliteBackupSourcePath } from "@/lib/connection/connectionFile";
 import { hasEnabledTransportLayers } from "@/lib/backend/connectionTransport";
-import { isTauriRuntime } from "@/lib/backend/tauriRuntime";
-import { revealPathInFileManager } from "@/lib/backend/tauri";
 import { canConfigureVisibleSchemasForTreeNode } from "@/lib/database/databaseFeatureSupport";
 import { canCloseSidebarDatabaseConnection } from "@/lib/sidebar/sidebarDatabaseOpenState";
 import { selectedConnectionDeleteTargets, selectedConnectionDuplicateTargets } from "@/lib/sidebar/sidebarConnectionSelection";
@@ -138,57 +135,6 @@ export function useSidebarConnectionMutationRuntime(options: SidebarConnectionMu
     if (connectionId) connectionStore.startEditing(connectionId);
   }
 
-  const revealConnectionFilePath = computed<string | null>(() => {
-    if (activeNode.value.type !== "connection" || !activeNode.value.connectionId) return null;
-    const config = connectionStore.getConfig(activeNode.value.connectionId);
-    return config ? connectionFilePath(config) : null;
-  });
-
-  async function revealDatabaseFile() {
-    const path = revealConnectionFilePath.value;
-    if (!path) return;
-    try {
-      await revealPathInFileManager(path);
-    } catch (error: any) {
-      toast(translateBackendError(t, error), 5000);
-    }
-  }
-
-  const sqliteBackupSource = computed<string | null>(() => {
-    if (activeNode.value.type !== "connection" || !activeNode.value.connectionId) return null;
-    const config = connectionStore.getConfig(activeNode.value.connectionId);
-    return config ? sqliteBackupSourcePath(config) : null;
-  });
-
-  const canBackupSqliteDatabase = computed(() => {
-    const source = sqliteBackupSource.value;
-    if (!source || !activeNode.value.connectionId) return false;
-    return isTauriRuntime() && (!isMemorySqlitePath(source) || connectionStore.connectedIds.has(activeNode.value.connectionId));
-  });
-
-  async function backupSqliteDatabase() {
-    const connectionId = activeNode.value.connectionId;
-    const config = connectionId ? connectionStore.getConfig(connectionId) : undefined;
-    const sourcePath = sqliteBackupSource.value;
-    if (!connectionId || !config || !sourcePath) return;
-
-    try {
-      const { save } = await import("@tauri-apps/plugin-dialog");
-      const destinationPath = await save({
-        defaultPath: defaultSqliteBackupFileName(config),
-        filters: [{ name: "SQLite", extensions: ["db", "sqlite", "sqlite3"] }],
-      });
-      if (!destinationPath) return;
-
-      toast(t("contextMenu.backupSqliteDatabaseInProgress"), 2000);
-      if (!isMemorySqlitePath(sourcePath)) await connectionStore.ensureConnected(connectionId);
-      await api.backupSqliteDatabase(connectionId, destinationPath);
-      toast(t("contextMenu.backupSqliteDatabaseSuccess"), 3000);
-    } catch (error: any) {
-      toast(t("contextMenu.backupSqliteDatabaseFailed", { message: error?.message || String(error) }), 5000);
-    }
-  }
-
   async function disconnectConnection() {
     const node = activeNode.value;
     if (!node.connectionId) return;
@@ -225,17 +171,11 @@ export function useSidebarConnectionMutationRuntime(options: SidebarConnectionMu
   }
 
   const isPinned = computed(() => activeNode.value.pinned || connectionStore.isTreeNodePinned(activeNode.value));
-  const isNodeDefaultDatabase = computed(
-    () => (activeNode.value.type === "database" || activeNode.value.type === "redis-db" || activeNode.value.type === "mongo-db") && !!activeNode.value.connectionId && !!activeNode.value.database && connectionStore.isDefaultDatabase(activeNode.value.connectionId, activeNode.value.database),
-  );
+  const isNodeDefaultDatabase = computed(() => activeNode.value.type === "database" && !!activeNode.value.connectionId && !!activeNode.value.database && connectionStore.isDefaultDatabase(activeNode.value.connectionId, activeNode.value.database));
   const isConnected = computed(() => activeNode.value.type === "connection" && !!activeNode.value.connectionId && connectionStore.connectedIds.has(activeNode.value.connectionId));
   const isConnecting = computed(() => activeNode.value.type === "connection" && !!activeNode.value.connectionId && connectionStore.connectingIds.has(activeNode.value.connectionId));
   const canCloseDatabaseConnection = computed(() => canCloseSidebarDatabaseConnection(activeNode.value, connectionStore.isTreeNodeChildrenLoaded, (connectionId, database) => queryStore.openDatabaseKeys.has(`${connectionId}\x00${database}`)));
-  const canConfigureVisibleDatabases = computed(() => {
-    if (activeNode.value.type !== "connection" || !activeNode.value.connectionId) return false;
-    const databaseType = connectionStore.getConfig(activeNode.value.connectionId)?.db_type;
-    return databaseType !== "elasticsearch" && databaseType !== "easysearch" && databaseType !== "qdrant" && databaseType !== "milvus" && databaseType !== "weaviate" && databaseType !== "chromadb" && databaseType !== "etcd" && databaseType !== "mq" && databaseType !== "nacos";
-  });
+  const canConfigureVisibleDatabases = computed(() => activeNode.value.type === "connection" && !!activeNode.value.connectionId);
   const canConfigureVisibleSchemas = computed(() => {
     if (!activeNode.value.connectionId) return false;
     const databaseType = connectionStore.getConfig(activeNode.value.connectionId)?.db_type;
@@ -299,11 +239,6 @@ export function useSidebarConnectionMutationRuntime(options: SidebarConnectionMu
     copyFinalProxyPort,
     duplicateConnection,
     editConnection,
-    revealConnectionFilePath,
-    revealDatabaseFile,
-    sqliteBackupSource,
-    canBackupSqliteDatabase,
-    backupSqliteDatabase,
     disconnectConnection,
     cancelConnectionAttempt,
     closeDatabaseConnection,

@@ -110,7 +110,7 @@ const programWindowState = computed(() => {
 const resolvedDatabaseType = computed(() => props.databaseType ?? (props.connectionId ? effectiveDatabaseTypeForConnection(connectionStore.getConfig(props.connectionId)) : undefined));
 const dialect = computed(() => codeMirrorSqlDialect(resolvedDatabaseType.value));
 const formatDialect = computed<SqlFormatDialect>(() => sqlFormatDialectForDbType(resolvedDatabaseType.value));
-const isOpenGaussRoutine = computed(() => resolvedDatabaseType.value === "opengauss" || resolvedDatabaseType.value === "gaussdb");
+const isOpenGaussRoutine = computed(() => resolvedDatabaseType.value === "opengauss");
 
 const canEdit = computed(() => sourceEditable.value && props.objectType !== "SEQUENCE");
 

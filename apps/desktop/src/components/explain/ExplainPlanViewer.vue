@@ -46,22 +46,19 @@ const flatRows = computed(() => {
 
 const rawContent = computed(() => {
   if (!props.plan?.raw) return "";
-  // DM returns raw plan text as a string → show as-is
   if (typeof props.plan.raw === "string") return props.plan.raw;
-  // Other DBs return JSON → pretty-print
   return JSON.stringify(props.plan.raw, null, 2);
 });
 
 const isRawString = computed(() => typeof props.plan?.raw === "string");
-const rawFormatLabel = computed(() => (props.plan?.databaseType === "sqlserver" ? "XML" : isRawString.value ? "TEXT" : "JSON"));
+const rawFormatLabel = computed(() => (isRawString.value ? "TEXT" : "JSON"));
 const nodeCount = computed(() => (props.plan ? flattenExplainPlanNodes(props.plan.nodes).length : 0));
-// Measured rows exist only when the plan was produced by a mode that ran the query:
-// EXPLAIN ANALYZE on Postgres, SET STATISTICS XML on SQL Server.
+// Measured rows exist only when the plan was produced by a mode that ran the query (EXPLAIN ANALYZE)
 const measuredRowsLabel = computed(() => {
   const databaseType = props.plan?.databaseType;
-  if (databaseType !== "postgres" && databaseType !== "opengauss" && databaseType !== "gaussdb" && databaseType !== "sqlserver") return undefined;
+  if (databaseType !== "postgres" && databaseType !== "opengauss") return undefined;
   if (!flattenExplainPlanNodes(props.plan!.nodes).some((node) => extractActualRows(node) !== undefined)) return undefined;
-  return databaseType === "sqlserver" ? "ACTUAL" : "ANALYZE";
+  return "ANALYZE";
 });
 
 function tableCellText(value: unknown): string {
@@ -78,9 +75,8 @@ function tableCellText(value: unknown): string {
         {{ t("explain.title") }}
       </span>
       <span v-if="plan || hasTableView" class="text-muted-foreground">
-        {{ plan?.databaseType.toUpperCase() || "MYSQL" }}<template v-if="plan"> · {{ t("explain.nodeCount", { count: nodeCount }) }}</template>
+        {{ plan?.databaseType.toUpperCase() || "OPENGAUSS" }}<template v-if="plan"> · {{ t("explain.nodeCount", { count: nodeCount }) }}</template>
       </span>
-      <span v-if="plan?.databaseType === 'dameng' && isRawString && rawContent.includes('->')" class="ml-1 inline-flex items-center gap-1 rounded bg-green-100 px-1.5 py-0.5 font-semibold text-green-700 dark:bg-green-900/30 dark:text-green-300" style="font-size: 10px">A-TRACE</span>
       <span v-if="measuredRowsLabel" class="ml-1 inline-flex items-center gap-1 rounded bg-green-100 px-1.5 py-0.5 font-semibold text-green-700 dark:bg-green-900/30 dark:text-green-300" style="font-size: 10px">{{ measuredRowsLabel }}</span>
       <span class="flex-1" />
       <div v-if="plan || hasTableView" class="inline-flex rounded-md border bg-muted/40 p-0.5">

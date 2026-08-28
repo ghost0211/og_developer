@@ -390,13 +390,7 @@ describe("backend error wording is pinned to the Rust sources", () => {
   test.each([
     ["crates/dbx-core/src/query_result_export.rs", "Streaming export is unsupported for this query. Simplify it or use a supported driver."],
     ["crates/dbx-core/src/query_result_export.rs", "Streaming export needs a result-set session, but this driver returned no session_id."],
-    ["crates/dbx-core/src/agent_service.rs", "Failed to remove the old JRE directory: "],
-    ["crates/dbx-core/src/agent_service.rs", "is in use by drivers: "],
-    ["crates/dbx-core/src/agent_service.rs", "agent-registry.json not found in the ZIP; not a valid offline driver package."],
-    ["crates/dbx-core/src/mq/adapters/kafka.rs", "Kafka does not support unloading topics"],
     ["crates/dbx-web/src/auth.rs", "Please try again in {remaining}s"],
-    ["crates/dbx-web/src/routes/agents.rs", "Close these database connections before updating drivers: "],
-    ["src-tauri/src/commands/agents.rs", "Close these database connections before updating drivers: "],
     ["src-tauri/src/commands/fs_open.rs", "file does not exist: "],
   ])("%s still emits %j", (path, fragment) => {
     expect(rust(path)).toContain(fragment);

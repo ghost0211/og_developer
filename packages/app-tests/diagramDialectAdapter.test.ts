@@ -2,16 +2,6 @@ import { strict as assert } from "node:assert";
 import { test } from "vitest";
 import { resolveDiagramDialectAdapter } from "../../apps/desktop/src/lib/diagram/diagram-dialect-adapter.ts";
 
-test("resolveDiagramDialectAdapter default id types by dialect", () => {
-  assert.equal(resolveDiagramDialectAdapter("postgres").createDefaultIdColumn().data_type, "bigint");
-  assert.equal(resolveDiagramDialectAdapter("mysql").createDefaultIdColumn().data_type, "bigint");
-  // Prefer dialect default when listed; otherwise first integer-like option (Oracle often exposes "number").
-  assert.match(resolveDiagramDialectAdapter("oracle").createDefaultIdColumn().data_type, /^number$/i);
-  assert.match(resolveDiagramDialectAdapter("sqlite").createDefaultIdColumn().data_type, /^integer$/i);
-  assert.match(resolveDiagramDialectAdapter("clickhouse").createDefaultIdColumn().data_type, /^uint64$/i);
-  assert.match(resolveDiagramDialectAdapter("duckdb").createDefaultIdColumn().data_type, /^integer$/i);
-  assert.match(resolveDiagramDialectAdapter("h2").createDefaultIdColumn().data_type, /^bigint$/i);
-});
 
 test("resolveDiagramDialectAdapter unknown dialect falls back", () => {
   const adapter = resolveDiagramDialectAdapter(undefined);

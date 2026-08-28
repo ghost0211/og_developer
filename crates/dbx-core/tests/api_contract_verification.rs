@@ -312,8 +312,8 @@ fn database_type_serialization() {
     let json = serde_json::to_value(DatabaseType::Postgres).unwrap();
     assert_eq!(json, "postgres", "DatabaseType serializes using snake_case");
 
-    let json = serde_json::to_value(DatabaseType::Mysql).unwrap();
-    assert_eq!(json, "mysql", "DatabaseType serializes using snake_case");
+    let json = serde_json::to_value(DatabaseType::Opengauss).unwrap();
+    assert_eq!(json, "opengauss", "DatabaseType serializes using snake_case");
 }
 
 // ============================================================================

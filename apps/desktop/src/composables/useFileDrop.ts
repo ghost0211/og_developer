@@ -1,20 +1,13 @@
 import { useI18n } from "vue-i18n";
-import { uuid } from "@/lib/common/utils";
 import { isTauriRuntime } from "@/lib/backend/tauriRuntime";
 import { useConnectionStore } from "@/stores/connectionStore";
 import { useQueryStore } from "@/stores/queryStore";
 import { useToast } from "@/composables/useToast";
 import * as api from "@/lib/backend/api";
-import type { ConnectionConfig } from "@/types/database";
-import { detectDatabaseFileType } from "@/lib/database/databaseFileDetection";
 import { externalSqlFileOpenErrorMessage, readBrowserSqlFile } from "@/lib/sql/sqlFileOpen";
 
 function isSqlFilePath(path: string): boolean {
   return /\.sql$/i.test(path);
-}
-
-function getDataFileQuery(path: string): Promise<string | undefined> {
-  return api.buildDroppedFilePreviewSql({ path });
 }
 
 export function useFileDrop() {
@@ -44,60 +37,12 @@ export function useFileDrop() {
         if (event.payload.type !== "drop") return;
         for (const path of event.payload.paths) {
           const name = path.split("/").pop()?.split("\\").pop() || path;
-
-          const dataQuery = await getDataFileQuery(path);
-          if (dataQuery) {
-            const config: ConnectionConfig = {
-              id: uuid(),
-              name: `[Preview] ${name}`,
-              db_type: "duckdb",
-              driver_profile: "duckdb",
-              driver_label: "DuckDB",
-              url_params: "",
-              host: ":memory:",
-              port: 0,
-              username: "",
-              password: "",
-            };
-            const connectionId = await api.connectDb(config);
-            connectionStore.addEphemeralConnection({ ...config, id: connectionId });
-            const tabId = queryStore.createTab(connectionId, "", name, "query");
-            queryStore.updateSql(tabId, dataQuery);
-            queryStore.executeCurrentTab();
-            toast(t("welcome.fileOpened", { name }));
-            continue;
-          }
-
-          if (isSqlFilePath(path)) {
-            try {
-              const content = await api.readExternalSqlFile(path);
-              await openDroppedSqlFile(name, content, path);
-            } catch (e: any) {
-              toast(t("toolbar.sqlOpenFailed", { message: externalSqlFileOpenErrorMessage(e, (key, params) => t(key, params)) }), 5000);
-            }
-            continue;
-          }
-
-          const dbType = await detectDatabaseFileType(path);
-          if (!dbType) continue;
-          const config: ConnectionConfig = {
-            id: uuid(),
-            name,
-            db_type: dbType,
-            driver_profile: dbType,
-            driver_label: dbType === "duckdb" ? "DuckDB" : "SQLite",
-            url_params: "",
-            host: path,
-            port: 0,
-            username: "",
-            password: "",
-          };
+          if (!isSqlFilePath(path)) continue;
           try {
-            await connectionStore.addConnection(config);
-            void connectionStore.connect(config);
-            toast(t("welcome.fileOpened", { name }));
+            const content = await api.readExternalSqlFile(path);
+            await openDroppedSqlFile(name, content, path);
           } catch (e: any) {
-            toast(t("connection.saveFailed", { message: e?.message || String(e) }), 5000);
+            toast(t("toolbar.sqlOpenFailed", { message: externalSqlFileOpenErrorMessage(e, (key, params) => t(key, params)) }), 5000);
           }
         }
       });

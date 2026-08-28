@@ -4,7 +4,7 @@ import type { SqlSemanticConfidence, SqlSemanticCursorKind, SqlSemanticStatement
 export interface SqlSemanticFixture {
   name: string;
   sql: string;
-  databaseType?: "postgres" | "mysql" | "sqlserver" | "sqlite" | "duckdb" | "oracle";
+  databaseType?: "postgres";
   expected: {
     statementKind: SqlSemanticStatementKind;
     cursorKind: SqlSemanticCursorKind;
@@ -74,34 +74,6 @@ export const SQL_SEMANTIC_BASELINE_FIXTURES: SqlSemanticFixture[] = [
     },
   },
   {
-    name: "insert target columns",
-    sql: "INSERT INTO dbo.Users (|",
-    databaseType: "sqlserver",
-    expected: {
-      statementKind: "insert",
-      cursorKind: "insert_column",
-      completionScope: "columns",
-      prefix: "",
-      qualifierParts: [],
-      confidence: "medium",
-      rowSources: [{ name: "Users", kind: "mutation_target" }],
-    },
-  },
-  {
-    name: "update set columns",
-    sql: "UPDATE dbo.Users SET |",
-    databaseType: "sqlserver",
-    expected: {
-      statementKind: "update",
-      cursorKind: "update_column",
-      completionScope: "columns",
-      prefix: "",
-      qualifierParts: [],
-      confidence: "medium",
-      rowSources: [{ name: "Users", kind: "mutation_target" }],
-    },
-  },
-  {
     name: "call routine",
     sql: "CALL app.refresh_|",
     databaseType: "postgres",
@@ -125,20 +97,6 @@ export const SQL_SEMANTIC_BASELINE_FIXTURES: SqlSemanticFixture[] = [
       qualifierParts: ["ae"],
       confidence: "high",
       rowSources: [{ name: "audit_events", alias: "ae", kind: "mutation_target" }],
-    },
-  },
-  {
-    name: "table function alias",
-    sql: "SELECT * FROM JSON_TABLE(payload, '$' COLUMNS(id INT PATH '$.id')) jt WHERE jt.|",
-    databaseType: "oracle",
-    expected: {
-      statementKind: "select",
-      cursorKind: "alias_column",
-      completionScope: "columns",
-      prefix: "",
-      qualifierParts: ["JT"],
-      confidence: "high",
-      rowSources: [{ name: "JT", alias: "JT", kind: "table_function" }],
     },
   },
   {

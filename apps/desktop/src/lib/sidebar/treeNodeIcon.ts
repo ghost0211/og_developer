@@ -1,5 +1,5 @@
 import type { Component } from "vue";
-import { Archive, ArrowLeftRight, Braces, Columns3, Database, Eye, FileCode, FolderClosed, FolderOpen, Gauge, GitFork, Key, Link, Link2, ListTree, Network, Package, Plus, ScrollText, Server, ShieldCheck, Table, TableProperties, UsersRound, Zap } from "@lucide/vue";
+import { ArrowLeftRight, Braces, Columns3, Database, Eye, FileCode, FolderClosed, FolderOpen, GitFork, Key, Link, Link2, ListTree, Package, Plus, ScrollText, Table, TableProperties, UsersRound, Zap } from "@lucide/vue";
 import type { ColumnInfo, TreeNode } from "@/types/database";
 
 export type TreeNodeIconInfo = {
@@ -13,30 +13,7 @@ export function getTreeNodeIconInfo(node: TreeNode): TreeNodeIconInfo | null {
       return { icon: node.isExpanded ? FolderOpen : FolderClosed, colorClass: "text-amber-500" };
     case "connection":
     case "database":
-    case "mongo-db":
       return { icon: Database, colorClass: "text-yellow-500" };
-    case "vector-database":
-      return { icon: Database, colorClass: "text-cyan-500" };
-    case "linked-server-root":
-      return { icon: Network, colorClass: "text-blue-500" };
-    case "linked-server":
-      return { icon: Server, colorClass: "text-blue-400" };
-    case "linked-server-catalog":
-    case "linked-server-schema":
-    case "mq-tenant":
-      return { icon: FolderOpen, colorClass: "text-sky-400" };
-    case "doris-catalog":
-      return { icon: FolderOpen, colorClass: "text-emerald-500" };
-    case "nacos-namespace":
-    case "etcd-root":
-    case "mqtt-topic":
-      return { icon: FolderOpen, colorClass: "text-sky-500" };
-    case "etcd-dashboard":
-      return { icon: Gauge, colorClass: "text-sky-500" };
-    case "etcd-access-control":
-      return { icon: ShieldCheck, colorClass: "text-sky-500" };
-    case "zookeeper-root":
-      return { icon: Database, colorClass: "text-blue-500" };
     case "table":
       return { icon: Table, colorClass: "text-green-500" };
     case "view":
@@ -71,19 +48,6 @@ export function getTreeNodeIconInfo(node: TreeNode): TreeNodeIconInfo | null {
       return { icon: TableProperties, colorClass: "text-primary" };
     case "user-admin":
       return { icon: UsersRound, colorClass: "text-primary" };
-    case "redis-db":
-      return { icon: Database, colorClass: "text-red-400" };
-    case "mongo-gridfs":
-    case "mongo-buckets":
-      return { icon: Archive, colorClass: "text-cyan-500" };
-    case "mongo-bucket":
-      return { icon: Archive, colorClass: "text-cyan-400" };
-    case "mongo-collection":
-      return { icon: Table, colorClass: "text-green-400" };
-    case "vector-collection":
-      return { icon: TableProperties, colorClass: "text-cyan-400" };
-    case "elasticsearch-index":
-      return { icon: Table, colorClass: "text-emerald-400" };
     case "procedure":
       return { icon: ScrollText, colorClass: "text-blue-500" };
     case "function":

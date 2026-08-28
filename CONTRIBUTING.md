@@ -42,19 +42,6 @@ make docs              # preview the documentation site
 make cargo-check-fast  # fast Rust checks
 ```
 
-### JDBC Agent Drivers
-
-Agent driver projects live under `agents/`. Java/JDBC driver builds and tests require JDK 21; Gradle can auto-download the toolchain when available.
-
-```bash
-cd agents
-./gradlew test
-```
-
-Do not manually edit `agents/versions.json` when changing an existing agent; the release workflow automatically bumps changed modules. Only new drivers add an initial version. New Java/JDBC drivers also update `agents/settings.gradle` and the supported-agent table; native drivers register their artifacts through the agent authoring/release checklist.
-
-For a real local Java agent test, build the target `shadowJar`, back up and replace `~/.dbx/agents/drivers/<db_type>/agent.jar`, then restart DBX or reconnect the database. See the [complete website tutorial](https://dbxio.com/en/docs/contributing) for exact commands.
-
 ## Project Layout
 
 | Path | Purpose |
@@ -65,10 +52,8 @@ For a real local Java agent test, build the target `shadowJar`, back up and repl
 | `crates/dbx-web/` | Docker / Web HTTP backend |
 | `packages/cli/` | `@dbx-app/cli` |
 | `packages/mcp-server/` | `@dbx-app/mcp-server` |
-| `packages/mongo-shell/` | Private MongoDB editor parsing helpers |
 | `docs/` | Official documentation site |
 | `examples/` | Sample configs and automation scripts |
-| `agents/` | JDBC agent driver projects |
 
 ## Making Changes
 

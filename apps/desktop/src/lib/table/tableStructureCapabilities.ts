@@ -1,8 +1,8 @@
 import type { DatabaseType } from "@/types/database";
 import type { EditableStructureIndex } from "@/lib/table/tableStructureEditorSql";
 
-export type TableStructureDialect = "mysql" | "postgres" | "sqlite" | "duckdb" | "sqlserver" | "oracle" | "h2" | "clickhouse" | "informix" | "influxdb" | "unsupported";
-export type TableStructureAlterStrategy = "none" | "direct" | "sqlite-rebuild";
+export type TableStructureDialect = "postgres" | "unsupported";
+export type TableStructureAlterStrategy = "none" | "direct";
 
 export interface TableStructureCapabilities {
   dialect: TableStructureDialect;
@@ -60,36 +60,6 @@ function capabilities(overrides: Partial<TableStructureCapabilities>): TableStru
   return resolved;
 }
 
-const mysqlCapabilities = capabilities({
-  dialect: "mysql",
-  createTable: true,
-  addColumn: true,
-  dropColumn: true,
-  renameColumn: true,
-  alterExistingColumn: true,
-  alterType: true,
-  alterNullability: true,
-  alterDefault: true,
-  reorderColumn: true,
-  comment: true,
-  createIndex: true,
-  dropIndex: true,
-  rebuildIndex: true,
-  indexType: true,
-  indexComment: true,
-  alterPrimaryKey: true,
-  foreignKey: true,
-});
-
-const gbaseCapabilities = capabilities({
-  dialect: "mysql",
-  createTable: true,
-  addColumn: true,
-  dropColumn: true,
-  renameColumn: true,
-  reorderColumn: true,
-});
-
 const postgresCapabilities = capabilities({
   dialect: "postgres",
   createTable: true,
@@ -117,236 +87,9 @@ const postgresBefore11Capabilities = capabilities({
   indexInclude: false,
 });
 
-const redshiftCapabilities = capabilities({
-  ...postgresCapabilities,
-  createIndex: false,
-  dropIndex: false,
-  rebuildIndex: false,
-  indexType: false,
-  indexInclude: false,
-  indexFilter: false,
-  indexComment: false,
-  alterPrimaryKey: false,
-});
-
-const sqliteCapabilities = capabilities({
-  dialect: "sqlite",
-  createTable: true,
-  addColumn: true,
-  dropColumn: true,
-  renameColumn: true,
-  createIndex: true,
-  dropIndex: true,
-  rebuildIndex: true,
-  indexFilter: true,
-});
-
-const nativeSqliteCapabilities = capabilities({
-  ...sqliteCapabilities,
-  alterStrategy: "sqlite-rebuild",
-  alterExistingColumn: true,
-  alterType: true,
-});
-
-const duckdbCapabilities = capabilities({
-  dialect: "duckdb",
-  createTable: true,
-  addColumn: true,
-  dropColumn: true,
-  renameColumn: true,
-  createIndex: true,
-  dropIndex: true,
-  rebuildIndex: true,
-});
-
-const sqlserverCapabilities = capabilities({
-  dialect: "sqlserver",
-  createTable: true,
-  addColumn: true,
-  dropColumn: true,
-  renameColumn: true,
-  alterExistingColumn: true,
-  alterType: true,
-  alterNullability: true,
-  alterDefault: true,
-  comment: true,
-  createIndex: true,
-  dropIndex: true,
-  rebuildIndex: true,
-  indexType: true,
-  indexInclude: true,
-  indexFilter: true,
-  indexComment: true,
-});
-
-const oracleCapabilities = capabilities({
-  dialect: "oracle",
-  createTable: true,
-  addColumn: true,
-  dropColumn: true,
-  renameColumn: true,
-  alterExistingColumn: true,
-  alterType: true,
-  alterNullability: true,
-  alterDefault: true,
-  comment: true,
-  createIndex: true,
-  dropIndex: true,
-  rebuildIndex: true,
-  indexType: true,
-});
-
-// Dameng (DM8): ALTER TABLE ... DROP PRIMARY KEY / ADD PRIMARY KEY is official DDL.
-// Keep separate from oracleCapabilities so UI cannot enable PK edit without BE drop SQL.
-const damengCapabilities = capabilities({
-  ...oracleCapabilities,
-  alterPrimaryKey: true,
-});
-
-const irisCapabilities = capabilities({
-  ...oracleCapabilities,
-  // IRIS exposes %DESCRIPTION at definition time but cannot alter persisted descriptions.
-  comment: false,
-});
-
-const h2Capabilities = capabilities({
-  dialect: "h2",
-  createTable: true,
-  addColumn: true,
-  dropColumn: true,
-  renameColumn: true,
-  alterExistingColumn: true,
-  alterType: true,
-  alterNullability: true,
-  alterDefault: true,
-  comment: true,
-  createIndex: true,
-  dropIndex: true,
-  rebuildIndex: true,
-});
-
-const clickhouseCapabilities = capabilities({
-  dialect: "clickhouse",
-  createTable: true,
-  addColumn: true,
-  dropColumn: true,
-  renameColumn: true,
-  alterExistingColumn: true,
-  alterType: true,
-  alterNullability: true,
-  alterDefault: true,
-  reorderColumn: true,
-  comment: true,
-});
-
-const informixCapabilities = capabilities({
-  dialect: "informix",
-  createTable: true,
-  addColumn: true,
-  dropColumn: true,
-  renameColumn: true,
-  alterExistingColumn: true,
-  alterType: true,
-  alterNullability: true,
-  alterDefault: true,
-  createIndex: true,
-  dropIndex: true,
-  rebuildIndex: true,
-});
-
-const accessCapabilities = capabilities({
-  dialect: "h2",
-  createTable: true,
-  addColumn: true,
-  createIndex: true,
-});
-
-const influxdbCapabilities = capabilities({
-  dialect: "influxdb",
-  createTable: false,
-  addColumn: false,
-  dropColumn: false,
-  renameColumn: false,
-  alterExistingColumn: false,
-  alterType: false,
-  alterNullability: false,
-  alterDefault: false,
-  reorderColumn: false,
-  comment: false,
-});
-
-const manticoreSearchCapabilities = capabilities({
-  dialect: "mysql",
-  createTable: true,
-  addColumn: true,
-  dropColumn: true,
-});
-
-const questdbCapabilities = capabilities({
-  dialect: "postgres",
-  createTable: true,
-  addColumn: true,
-  dropColumn: true,
-  renameColumn: true,
-  alterExistingColumn: true,
-  alterType: true,
-  alterNullability: false,
-  alterDefault: false,
-  comment: false,
-  createIndex: false,
-  dropIndex: false,
-  rebuildIndex: false,
-  indexType: false,
-  indexInclude: false,
-  indexFilter: false,
-  indexComment: false,
-  alterPrimaryKey: false,
-  foreignKey: false,
-});
-
-const firebirdCapabilities = capabilities({
-  ...postgresCapabilities,
-  foreignKey: false,
-});
-
 const capabilityByType: Partial<Record<DatabaseType, TableStructureCapabilities>> = {
-  mysql: mysqlCapabilities,
-  doris: mysqlCapabilities,
-  starrocks: mysqlCapabilities,
-  goldendb: mysqlCapabilities,
-  sundb: mysqlCapabilities,
-  oscar: unsupportedCapabilities,
-  databend: mysqlCapabilities,
-  gbase: gbaseCapabilities,
   postgres: postgresCapabilities,
-  gaussdb: postgresCapabilities,
-  kwdb: postgresCapabilities,
   opengauss: postgresCapabilities,
-  questdb: questdbCapabilities,
-  redshift: redshiftCapabilities,
-  vertica: redshiftCapabilities,
-  highgo: postgresCapabilities,
-  uxdb: postgresCapabilities,
-  vastbase: postgresCapabilities,
-  kingbase: postgresCapabilities,
-  firebird: firebirdCapabilities,
-  sqlite: sqliteCapabilities,
-  rqlite: sqliteCapabilities,
-  turso: sqliteCapabilities,
-  duckdb: duckdbCapabilities,
-  sqlserver: sqlserverCapabilities,
-  oracle: oracleCapabilities,
-  dameng: damengCapabilities,
-  "oceanbase-oracle": oracleCapabilities,
-  iris: irisCapabilities,
-  yashandb: oracleCapabilities,
-  xugu: oracleCapabilities,
-  h2: h2Capabilities,
-  access: accessCapabilities,
-  clickhouse: clickhouseCapabilities,
-  informix: informixCapabilities,
-  influxdb: influxdbCapabilities,
-  manticoresearch: manticoreSearchCapabilities,
 };
 
 function postgresMajorVersion(productVersion?: string): number | undefined {
@@ -358,8 +101,7 @@ function postgresMajorVersion(productVersion?: string): number | undefined {
   return Number.isFinite(majorVersion) ? majorVersion : undefined;
 }
 
-export function getTableStructureCapabilities(dbType?: DatabaseType, connectionDbType?: DatabaseType, productVersion?: string): TableStructureCapabilities {
-  if (dbType === "sqlite" && connectionDbType === "sqlite") return nativeSqliteCapabilities;
+export function getTableStructureCapabilities(dbType?: DatabaseType, _connectionDbType?: DatabaseType, productVersion?: string): TableStructureCapabilities {
   if (dbType === "postgres") {
     const majorVersion = postgresMajorVersion(productVersion);
     if (majorVersion !== undefined && majorVersion < 11) return postgresBefore11Capabilities;

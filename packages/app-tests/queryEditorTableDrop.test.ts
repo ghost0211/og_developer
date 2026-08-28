@@ -132,41 +132,6 @@ test("detects table drag payload type without reading drag data", () => {
   assert.equal(hasTableReferencePayloadType(["text/plain", DBX_TABLE_REFERENCE_MIME]), true);
 });
 
-test("formats dropped table reference for the source database type", () => {
-  assert.equal(
-    tableReferenceInsertText({
-      kind: "dbx-table-reference",
-      connectionId: "c1",
-      database: "db",
-      schema: "sales",
-      tableName: "customer order",
-      databaseType: "postgres",
-    }),
-    '"sales"."customer order"',
-  );
-  assert.equal(
-    tableReferenceInsertText({
-      kind: "dbx-table-reference",
-      connectionId: "c1",
-      database: "db",
-      schema: "dbo",
-      tableName: "Order Detail",
-      databaseType: "sqlserver",
-    }),
-    "[dbo].[Order Detail]",
-  );
-  assert.equal(
-    tableReferenceInsertText({
-      kind: "dbx-table-reference",
-      connectionId: "c1",
-      database: "db",
-      schema: "ignored",
-      tableName: "order-detail",
-      databaseType: "mysql",
-    }),
-    "`order-detail`",
-  );
-});
 
 test("formats dropped column references for the source database type", () => {
   assert.equal(

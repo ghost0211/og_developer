@@ -2,10 +2,7 @@ use dbx_core::connection::{AppState, PoolKind};
 use dbx_core::db::postgres;
 use dbx_core::models::connection::{ConnectionConfig, DatabaseType};
 use dbx_core::storage::Storage;
-use dbx_core::transfer::{
-    get_db_type, transfer_postgres_schema_dependencies, transfer_postgres_schema_objects, transfer_table, TransferMode,
-    TransferOwnershipPolicy, TransferRequest, TransferTableNameCase,
-};
+use dbx_core::transfer::{get_db_type, transfer_table, TransferMode, TransferRequest, TransferTableNameCase};
 use serde_json::json;
 
 fn postgres_test_config(id: &str, database: &str) -> ConnectionConfig {
@@ -17,7 +14,6 @@ fn postgres_test_config(id: &str, database: &str) -> ConnectionConfig {
         driver_profile: None,
         driver_label: None,
         url_params: None,
-        agent_java_options: Vec::new(),
         host: "127.0.0.1".to_string(),
         port: 5432,
         username: "postgres".to_string(),
@@ -25,8 +21,7 @@ fn postgres_test_config(id: &str, database: &str) -> ConnectionConfig {
         database: Some(database.to_string()),
         visible_databases: None,
         visible_schemas: None,
-        attached_databases: Vec::new(),
-        init_script: None,
+        show_system_schemas: false,
         color: None,
         transport_layers: Vec::new(),
         connect_timeout_secs: 5,
@@ -37,22 +32,7 @@ fn postgres_test_config(id: &str, database: &str) -> ConnectionConfig {
         ca_cert_path: String::new(),
         client_cert_path: String::new(),
         client_key_path: String::new(),
-        sysdba: false,
-        oracle_connection_type: None,
         connection_string: None,
-        redis_connection_mode: None,
-        redis_sentinel_master: String::new(),
-        redis_sentinel_nodes: String::new(),
-        redis_sentinel_username: String::new(),
-        redis_sentinel_password: String::new(),
-        redis_sentinel_tls: false,
-        redis_cluster_nodes: String::new(),
-        redis_key_separator: dbx_core::models::connection::default_redis_key_separator(),
-        redis_scan_page_size: None,
-        redis_database_aliases: Default::default(),
-        etcd_endpoints: String::new(),
-        gbase_server: String::new(),
-        informix_server: String::new(),
         external_config: None,
         jdbc_driver_class: None,
         jdbc_driver_paths: Vec::new(),
@@ -60,7 +40,6 @@ fn postgres_test_config(id: &str, database: &str) -> ConnectionConfig {
         read_only: false,
         is_production: false,
         production_databases: vec![],
-        show_system_schemas: false,
         database_info: None,
     }
 }
@@ -217,16 +196,12 @@ async fn live_postgres_transfer_preserves_data_and_schema_objects() {
         target_schema: target_schema.clone(),
         target_catalog: None,
         tables: vec!["users".to_string(), "audit_logs".to_string(), "files".to_string()],
-        create_table: true,
         content: dbx_core::transfer::TransferContent::default(),
         objects: Vec::new(),
         mode: TransferMode::Append,
-        target_table_name_case: TransferTableNameCase::Preserve,
-        ownership_policy: TransferOwnershipPolicy::Preserve,
-        batch_size: 100,
+        table_name_case: TransferTableNameCase::Preserve,
+        batch_size: Some(100),
     };
-
-    transfer_postgres_schema_dependencies(&state, &request, &source_pool_key, &target_pool_key, |_| {}).await.unwrap();
 
     let source_db_type = get_db_type(&state, source_connection_id).await.unwrap();
     let target_db_type = get_db_type(&state, target_connection_id).await.unwrap();
@@ -246,7 +221,9 @@ async fn live_postgres_transfer_preserves_data_and_schema_objects() {
         .unwrap();
     }
 
-    transfer_postgres_schema_objects(&state, &request, &source_pool_key, &target_pool_key, |_| {}).await.unwrap();
+    dbx_core::transfer::transfer_schema_objects(&state, &request, &source_pool_key, &target_pool_key, |_| {})
+        .await
+        .unwrap();
 
     assert_eq!(
         query_scalar(&target_pool, &format!("SELECT count(*) FROM \"{}\".\"users\"", target_schema)).await,
@@ -502,13 +479,11 @@ async fn live_postgres_transfer_skips_create_ddl_for_existing_target_table() {
         target_schema: target_schema.clone(),
         target_catalog: None,
         tables: vec!["items".to_string()],
-        create_table: true,
         content: dbx_core::transfer::TransferContent::default(),
         objects: Vec::new(),
         mode: TransferMode::Append,
-        target_table_name_case: TransferTableNameCase::Preserve,
-        ownership_policy: TransferOwnershipPolicy::Preserve,
-        batch_size: 100,
+        table_name_case: TransferTableNameCase::Preserve,
+        batch_size: Some(100),
     };
 
     let source_db_type = get_db_type(&state, source_connection_id).await.unwrap();

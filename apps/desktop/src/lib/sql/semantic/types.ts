@@ -127,5 +127,5 @@ export interface SqlSemanticModel {
 
 export interface SqlSemanticBuildOptions {
   databaseType?: DatabaseType;
-  dialect?: "mysql" | "postgres" | "sqlserver";
+  dialect?: "postgres";
 }

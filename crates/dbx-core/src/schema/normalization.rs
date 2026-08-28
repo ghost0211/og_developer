@@ -46,7 +46,7 @@ pub(super) fn filter_yashandb_recyclebin_objects(
 }
 
 fn is_yashandb_config(config: Option<&ConnectionConfig>) -> bool {
-    config.is_some_and(|config| config.db_type == DatabaseType::Yashandb)
+    config.is_some_and(|config| false)
 }
 
 fn is_recyclebin_object_name(name: &str) -> bool {

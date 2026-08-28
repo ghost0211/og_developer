@@ -199,8 +199,7 @@ const isResizingSidePanel = ref(false);
 const sidePanelGuard = createSidePanelRequestGuard();
 const tableMetadataCapabilities = computed<TableMetadataCapabilities>(() => getTableMetadataCapabilities(effectiveDatabaseType.value));
 const effectiveDatabaseType = computed(() => effectiveDatabaseTypeForConnection(props.connection) ?? props.connection.db_type);
-const isVictoriaMetrics = computed(() => effectiveDatabaseType.value === "victoriametrics");
-const objectRowsLabel = computed(() => t(isVictoriaMetrics.value ? "objects.series" : "objects.rows"));
+const objectRowsLabel = computed(() => t("objects.rows"));
 const tableStructureDatabaseType = computed(() => tableStructureDatabaseTypeForConnection(props.connection) ?? props.connection.db_type);
 const sourceEditableText = ref("");
 const sourceDraft = ref("");
@@ -442,7 +441,7 @@ const objectBrowserColumns = computed<ObjectBrowserColumnKey[]>(() => {
   const columns: ObjectBrowserColumnKey[] = [];
   if (showCheckboxColumn.value) columns.push("select");
   columns.push("name", "type", "estimatedRows");
-  if (!isVictoriaMetrics.value) columns.push("totalBytes");
+  columns.push("totalBytes");
   if (hasCreatedAt.value) columns.push("created_at");
   if (hasUpdatedAt.value) columns.push("updated_at");
   columns.push("comment");
@@ -605,7 +604,7 @@ function toggleSort(key: ObjectBrowserSortKey) {
 
 const sortKeyOptions = computed<ObjectBrowserSortKey[]>(() => {
   const options: ObjectBrowserSortKey[] = ["name", "type", "estimatedRows"];
-  if (!isVictoriaMetrics.value) options.push("totalBytes");
+  options.push("totalBytes");
   if (hasCreatedAt.value) options.push("created_at");
   if (hasUpdatedAt.value) options.push("updated_at");
   options.push("comment");
@@ -1621,10 +1620,8 @@ async function confirmBatchDropTables() {
     const batchSql = plan.map(({ sql }) => sql).join(";\n");
     const result = await executeObjectBrowserSqlWithProductionGuard(batchSql, () =>
       runBatchTableDrop({
-        databaseType: effectiveDatabaseType.value,
         plan,
-        executeStatement: (sql) => api.executeQuery(props.connection.id, props.database, sql),
-        executeBatch: (sql, onProgress) => api.executeMultiWithProgress(props.connection.id, props.database, sql, onProgress),
+        executeBatch: (sql: string, onProgress) => api.executeMultiWithProgress(props.connection.id, props.database, sql, onProgress),
         onProgress: (progress) => {
           batchDropProgress.value = { completed: Math.min(progress.completed, targets.length), total: targets.length };
         },
@@ -1747,7 +1744,7 @@ function requestBatchEmptyTables() {
 async function confirmBatchEmptyTables() {
   const plan = batchEmptyPlan.value.slice();
   if (plan.length === 0) return;
-  const asynchronousMutation = effectiveDatabaseType.value === "clickhouse";
+  const asynchronousMutation = false;
   const reviewSql = plan.map(({ sql }) => sql).join(";\n");
   const result = await executeObjectBrowserSqlWithProductionGuard(reviewSql, () => {
     return runBatchTableEmpty(plan, async ({ sql }) => {
@@ -1795,13 +1792,12 @@ function tableDdlObjectType(type: ObjectBrowserRow["type"]): ObjectSourceKind | 
 async function exportDataLegacy(row: ObjectBrowserRow, format: "json") {
   try {
     const schema = row.schema || selectedSchema.value;
-    const queryColumns = props.connection.db_type === "neo4j" ? (await api.getColumns(props.connection.id, props.database, schema || props.database, row.name, props.catalog)).map((column) => column.name) : undefined;
     const result = await fetchTableDataForExport({
       databaseType: effectiveDatabaseType.value,
       identifierQuote: connectionStore.connectionIdentifierQuote?.(props.connection.id),
       schema,
       tableName: row.name,
-      columns: queryColumns,
+      columns: undefined,
       executePage: (sql) => api.executeQuery(props.connection.id, props.database, sql),
     });
 
@@ -1900,22 +1896,6 @@ async function exportTableData(row: ObjectBrowserRow, format: "csv" | "xlsx" | "
 
   let task: ExportTask | null = null;
   try {
-    if (isVictoriaMetrics.value) {
-      const result = await fetchTableDataForExport({
-        databaseType: effectiveDatabaseType.value,
-        schema,
-        tableName: row.name,
-        executePage: (sql) => api.executeQuery(props.connection.id, props.database, sql),
-      });
-      if (format === "csv") {
-        await api.exportQueryResultCsv(filePath, result.columns, result.rows);
-      } else {
-        const comments = useCommentHeader ? result.columns.map((name) => columnInfos?.find((column) => column.name.toLocaleLowerCase() === name.toLocaleLowerCase())?.comment ?? null) : undefined;
-        await api.exportQueryResultXlsx(filePath, row.name, result.columns, result.column_types ?? result.columns.map(() => ""), comments, result.rows);
-      }
-      toast(t("grid.exported"));
-      return;
-    }
     let columns: string[] | undefined;
     let columnComments: (string | null)[] | undefined;
 
@@ -1924,9 +1904,6 @@ async function exportTableData(row: ObjectBrowserRow, format: "csv" | "xlsx" | "
       if (format === "xlsx" && useCommentHeader) {
         columnComments = columnInfos.map((c) => c.comment ?? null);
       }
-    } else if (props.connection.db_type === "neo4j") {
-      const infos = await api.getColumns(props.connection.id, props.database, schema || props.database, row.name, props.catalog);
-      columns = infos.map((c) => c.name);
     }
 
     task = addExportTask(row.name, format, filePath);
@@ -1970,15 +1947,8 @@ function requestDuplicateStructure(row: ObjectBrowserRow) {
 }
 
 async function buildDuplicateStructurePlan(sourceName: string, targetName: string, schema: string | undefined, tableComment?: string | null, sourceColumns?: ColumnInfo[]) {
-  let columns = sourceColumns;
-  if (effectiveDatabaseType.value === "dameng" && !columns) {
-    try {
-      columns = await api.getColumns(props.connection.id, props.database, schema || "", sourceName, props.catalog);
-    } catch (error) {
-      console.warn(`Failed to load Dameng column comments for table clone: ${sourceName}`, error);
-    }
-  }
-  const columnComments = effectiveDatabaseType.value === "dameng" ? collectDuplicateTableColumnComments(columns ?? []) : [];
+  const columns = sourceColumns;
+  const columnComments = collectDuplicateTableColumnComments(sourceColumns ?? []);
   const sql = await buildDuplicateTableStructureSql({
     databaseType: effectiveDatabaseType.value,
     schema,
@@ -2029,7 +1999,7 @@ function copySelectedTablesToClipboard() {
 }
 
 function canPasteTableClipboard(): boolean {
-  return !isVictoriaMetrics.value && tableClipboardMatchesTarget(normalizedObjectBrowserTableClipboardEntries(), pasteTableTargetContext());
+  return tableClipboardMatchesTarget(normalizedObjectBrowserTableClipboardEntries(), pasteTableTargetContext());
 }
 
 function normalizedObjectBrowserTableClipboardEntries() {
@@ -2042,7 +2012,6 @@ function normalizedObjectBrowserTableClipboardEntries() {
 }
 
 function canTransferTableClipboard(): boolean {
-  if (isVictoriaMetrics.value) return false;
   const entries = normalizedObjectBrowserTableClipboardEntries();
   const target = pasteTableTargetContext();
   if (entries.length === 0 || props.connection.read_only) return false;
@@ -2061,7 +2030,7 @@ function pasteTableTargetContext(): TableClipboardContext {
 
 function normalizeObjectBrowserTableClipboardSchema(schema?: string, database = props.database, connectionId = props.connection.id): string | undefined {
   const connection = connectionStore.getConfig(connectionId) ?? props.connection;
-  if (!isSchemaAware(connection.db_type) && connection.db_type !== "sqlite") return undefined;
+  if (!isSchemaAware(connection.db_type)) return undefined;
   return connectionObjectTreeNodeSchema(connection, database, schema);
 }
 
@@ -2613,7 +2582,7 @@ function exportDataSubmenu(item: ObjectBrowserRow): ContextMenuItem {
     { label: "CSV", action: () => exportData(item, "csv") },
     { label: "JSON", action: () => exportData(item, "json") },
   ];
-  if (!isVictoriaMetrics.value) formats.push({ label: "SQL INSERT", action: () => exportData(item, "sql") });
+  formats.push({ label: "SQL INSERT", action: () => exportData(item, "sql") });
   formats.push({ label: "XLSX", action: () => exportDataXlsx(item) });
   return {
     label: t("contextMenu.exportData"),
@@ -2636,7 +2605,6 @@ function objectBrowserTableClipboardMenuState(item: ObjectBrowserRow) {
 }
 
 function tableClipboardMenuItems(item: ObjectBrowserRow): ContextMenuItem[] {
-  if (isVictoriaMetrics.value) return [];
   const copyItem: ContextMenuItem = { label: t("contextMenu.copyTable"), action: () => copySingleTableToClipboard(item), icon: Copy };
   const state = objectBrowserTableClipboardMenuState(item);
   if (state === "copy") return [copyItem];
@@ -2653,16 +2621,6 @@ function selectedBatchTableCountLabel(key: "batchDrop" | "batchTruncate" | "batc
 }
 
 function getTableMenuItems(item: ObjectBrowserRow): ContextMenuItem[] {
-  if (isVictoriaMetrics.value) {
-    return [
-      { label: t("contextMenu.viewData"), action: () => openViewData(item), icon: Table2 },
-      { label: t("contextMenu.newQuery"), action: () => openNewQuery(item), icon: TerminalSquare },
-      { label: "", separator: true },
-      exportDataSubmenu(item),
-      { label: "", separator: true },
-      { label: t("contextMenu.copyName"), action: () => copyName(item), icon: Copy },
-    ];
-  }
   const useBatchActions = isSelectedBatchTableContext(item);
   return [
     { label: t("contextMenu.viewData"), action: () => openViewData(item), icon: Table2 },
@@ -2743,7 +2701,7 @@ function getViewMenuItems(item: ObjectBrowserRow): ContextMenuItem[] {
 
 function getProcFuncMenuItems(item: ObjectBrowserRow): ContextMenuItem[] {
   const dbType = effectiveDatabaseTypeForConnection(props.connection);
-  const isOpenGauss = dbType === "opengauss" || dbType === "gaussdb";
+  const isOpenGauss = dbType === "opengauss";
   return [
     ...(item.type === "PROCEDURE" || item.type === "FUNCTION" ? [{ label: t("contextMenu.executeProcedure"), action: () => openProcedureExecution(item), icon: Play }] : []),
     ...(isOpenGauss && (item.type === "PROCEDURE" || item.type === "FUNCTION") ? [{ label: t("contextMenu.debugProcedure"), action: () => openProcedureDebug(item), icon: Bug }] : []),
@@ -2865,23 +2823,23 @@ function getObjectBrowserMenuItems(item: ObjectBrowserRow): ContextMenuItem[] {
       <div class="min-w-0 flex-1 truncate text-muted-foreground">
         {{ t("objects.selectedTables", { count: selectedTableCount }) }}
       </div>
-      <Button v-if="!isVictoriaMetrics" variant="ghost" size="sm" class="h-7 px-2 text-xs" @click="openBatchDatabaseExport">
+      <Button variant="ghost" size="sm" class="h-7 px-2 text-xs" @click="openBatchDatabaseExport">
         <Upload class="mr-1.5 h-3.5 w-3.5" />
         {{ t("objects.exportSelected") }}
       </Button>
-      <Button v-if="!isVictoriaMetrics" variant="ghost" size="sm" class="h-7 px-2 text-xs" @click="copySelectedTablesToClipboard">
+      <Button variant="ghost" size="sm" class="h-7 px-2 text-xs" @click="copySelectedTablesToClipboard">
         <Clipboard class="mr-1.5 h-3.5 w-3.5" />
         {{ t("objects.copyTableSelected") }}
       </Button>
-      <Button v-if="!isVictoriaMetrics && supportsTruncateTable" variant="ghost" size="sm" class="h-7 px-2 text-xs text-destructive" @click="requestBatchTruncateTables">
+      <Button v-if="supportsTruncateTable" variant="ghost" size="sm" class="h-7 px-2 text-xs text-destructive" @click="requestBatchTruncateTables">
         <Scissors class="mr-1.5 h-3.5 w-3.5" />
         {{ t("objects.truncateSelected") }}
       </Button>
-      <Button v-if="!isVictoriaMetrics" variant="ghost" size="sm" class="h-7 px-2 text-xs text-destructive" @click="requestBatchEmptyTables">
+      <Button variant="ghost" size="sm" class="h-7 px-2 text-xs text-destructive" @click="requestBatchEmptyTables">
         <Eraser class="mr-1.5 h-3.5 w-3.5" />
         {{ t("contextMenu.batchEmpty", { count: selectedTableCount }) }}
       </Button>
-      <Button v-if="!isVictoriaMetrics" variant="ghost" size="sm" class="h-7 px-2 text-xs text-destructive" @click="requestBatchDropTables">
+      <Button variant="ghost" size="sm" class="h-7 px-2 text-xs text-destructive" @click="requestBatchDropTables">
         <Trash2 class="mr-1.5 h-3.5 w-3.5" />
         {{ t("objects.dropSelected") }}
       </Button>
@@ -2945,7 +2903,7 @@ function getObjectBrowserMenuItems(item: ObjectBrowserRow): ContextMenuItem[] {
                 <GripVertical class="h-3 w-3" />
               </div>
             </div>
-            <div v-if="!isVictoriaMetrics" class="relative flex min-w-0 items-center">
+            <div class="relative flex min-w-0 items-center">
               <button class="flex min-w-0 items-center gap-1 truncate pr-4 text-left" type="button" :title="t('objects.statisticsHint')" @click="toggleSort('totalBytes')">
                 <span class="truncate">{{ t("objects.size") }}</span>
                 <component :is="sortIconFor('totalBytes')" v-if="sortIconFor('totalBytes')" class="h-3 w-3 shrink-0" />
@@ -3038,7 +2996,7 @@ function getObjectBrowserMenuItems(item: ObjectBrowserRow): ContextMenuItem[] {
                   <div class="truncate text-xs tabular-nums text-muted-foreground" :title="item.estimatedRows == null ? '' : formatObjectBrowserCount(item.estimatedRows)">
                     {{ formatObjectBrowserCount(item.estimatedRows) }}
                   </div>
-                  <div v-if="!isVictoriaMetrics" class="truncate text-xs tabular-nums text-muted-foreground" :title="item.totalBytes == null ? '' : formatObjectBrowserBytes(item.totalBytes)">
+                  <div class="truncate text-xs tabular-nums text-muted-foreground" :title="item.totalBytes == null ? '' : formatObjectBrowserBytes(item.totalBytes)">
                     {{ formatObjectBrowserBytes(item.totalBytes) }}
                   </div>
                   <div v-if="hasCreatedAt" class="truncate text-xs tabular-nums text-muted-foreground" :title="formatObjectBrowserTimestamp(item.created_at)">
@@ -3084,9 +3042,7 @@ function getObjectBrowserMenuItems(item: ObjectBrowserRow): ContextMenuItem[] {
                       <span v-if="item.estimatedRows != null && item.estimatedRows > 0" class="object-browser-stat-badge object-browser-stat-badge-rows rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-primary">{{
                         formatObjectBrowserCount(item.estimatedRows)
                       }}</span>
-                      <span v-if="!isVictoriaMetrics && item.totalBytes != null && item.totalBytes > 0" class="object-browser-stat-badge object-browser-stat-badge-bytes rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground">{{
-                        formatObjectBrowserBytes(item.totalBytes)
-                      }}</span>
+                      <span v-if="item.totalBytes != null && item.totalBytes > 0" class="object-browser-stat-badge object-browser-stat-badge-bytes rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground">{{ formatObjectBrowserBytes(item.totalBytes) }}</span>
                     </div>
                     <!-- Always reserve timestamp/comment slots when the dataset has them so every card shares one height. -->
                     <div v-if="hasCreatedAt || hasUpdatedAt" class="flex min-h-[15px] items-center gap-1 text-[10px] leading-[15px] text-muted-foreground/70">

@@ -1,10 +1,7 @@
-import * as api from "@/lib/backend/api";
 import { connectionObjectTreeNodeSchema, effectiveDatabaseTypeForConnection, metadataSchemaForConnection } from "@/lib/database/jdbcDialect";
 import { invalidateTableMetadataCache, loadTableMetadata } from "@/lib/metadata/tableMetadataCache";
 import { canApplyDataTabMetadata } from "@/lib/sidebar/dataTabOpenPolicy";
-import { isNoSnapshotErrorResult, isQueryExecutionErrorResult } from "@/lib/query/queryResultError";
 import { buildTableSelectSql } from "@/lib/table/tableSelectSql";
-import { editableRowIdentifierColumns, usesSyntheticRowIdKey } from "@/lib/table/tableEditing";
 import { tableOpenPageLimit } from "@/lib/table/tableOpenPageLimit";
 import { uuid } from "@/lib/common/utils";
 import { beginDataTabNavigation, endDataTabNavigation, isCurrentDataTabNavigation } from "@/lib/tabs/dataTabNavigationGeneration";
@@ -35,12 +32,6 @@ async function openTableTarget(target: NavigationTarget, options: { tableInfoTab
   const config = connectionStore.getConfig(target.connectionId);
   const tableSchema = connectionObjectTreeNodeSchema(config, target.database, target.schema);
   const tabTitle = target.catalog ? `${target.catalog}.${tableSchema || target.database}.${target.tableName}` : tableSchema ? `${tableSchema}.${target.tableName}` : target.tableName;
-  if (config?.db_type === "qdrant" || config?.db_type === "milvus" || config?.db_type === "weaviate" || config?.db_type === "chromadb") {
-    await connectionStore.ensureConnected(target.connectionId);
-    const tabId = queryStore.createTab(target.connectionId, target.database || "default", tabTitle, "vector");
-    queryStore.updateSql(tabId, target.tableName);
-    return;
-  }
   const tabId = queryStore.createTab(target.connectionId, target.database, tabTitle, "data", tableSchema, undefined, undefined, { forceNew: true });
   const targetTab = queryStore.tabs.find((tab) => tab.id === tabId);
   if (targetTab) targetTab.tableInfoTab = options.tableInfoTab;
@@ -104,37 +95,6 @@ async function openTableTarget(target: NavigationTarget, options: { tableInfoTab
     const identifierQuote = connectionStore.connectionIdentifierQuote?.(target.connectionId);
     const querySchema = metadataSchemaForConnection(config, target.database, tableSchema);
     const targetTableType = target.tableType ?? "TABLE";
-    if (config.db_type === "neo4j") {
-      const columns = await api.getColumns(target.connectionId, target.database, querySchema, target.tableName);
-      const primaryKeys = editableRowIdentifierColumns(effectiveDbType, columns, undefined, targetTableType);
-      const sql = await buildTableSelectSql({
-        databaseType: effectiveDbType,
-        identifierQuote,
-        schema: tableSchema,
-        catalog: target.catalog,
-        database: target.database,
-        tableName: target.tableName,
-        tableType: targetTableType,
-        columns: columns.map((column) => column.name),
-        primaryKeys,
-        whereInput: target.whereInput,
-        limit: pageLimit,
-      });
-      if (!isPreparationCurrent()) return;
-      queryStore.updateSql(tabId, sql);
-      queryStore.setTableMeta(tabId, {
-        catalog: target.catalog,
-        database: target.database,
-        schema: tableSchema,
-        tableName: target.tableName,
-        tableType: targetTableType,
-        columns,
-        primaryKeys,
-      });
-      firstExecuteStarted = true;
-      await queryStore.executeTabSql(tabId, sql, { pagination: { limit: pageLimit, offset: 0 } });
-      return;
-    }
     const sql = await buildTableSelectSql({
       databaseType: effectiveDbType,
       identifierQuote,
@@ -158,42 +118,8 @@ async function openTableTarget(target: NavigationTarget, options: { tableInfoTab
       primaryKeys: [],
     });
     firstExecuteStarted = true;
-    // 取消计数快照：isCancelling 是瞬态的（取消失败/查询先完成会被清掉），
-    // 比对计数才能跨越 executeTabSql 生命周期识别"执行期间用户请求过停止"
-    const cancelCountBeforeExecute = queryStore.tabs.find((tab) => tab.id === tabId)?.cancelRequestCount ?? 0;
     await queryStore.executeTabSql(tabId, sql, { pagination: { limit: pageLimit, offset: 0 } });
     if (!isCurrentTarget()) return;
-    // 首次查询被停止/失败（executeTabSql 以 Error 结果表达，不抛出）时，
-    // 后续不得自动启动第二次查询（synthetic row-id/TDengine 重查）——用户
-    // 停止了查询，流程不能替他再跑一次；元数据落地不受影响
-    const tabAfterFirstExecute = queryStore.tabs.find((tab) => tab.id === tabId);
-    const firstResult = tabAfterFirstExecute?.result;
-    const cancelRequestedDuringExecute = (tabAfterFirstExecute?.cancelRequestCount ?? 0) > cancelCountBeforeExecute;
-    const firstQueryFailed = cancelRequestedDuringExecute || tabAfterFirstExecute?.isCancelling === true || (firstResult !== undefined && isQueryExecutionErrorResult(firstResult));
-    // executeTabSql surfaces query failures as an "Error" result instead of throwing.
-    // A snapshot-less lake table fails the data preview above but its metadata still
-    // reads fine — retry with LIMIT 0 so the user sees the table structure (columns +
-    // empty grid) rather than a cryptic server error. The flag also skips the
-    // synthetic-row-id re-query below, which is another data read that would fail
-    // the same way on a snapshot-less table.
-    const fellBackToLimitZero = isNoSnapshotErrorResult(queryStore.tabs.find((tab) => tab.id === tabId)?.result);
-    if (fellBackToLimitZero) {
-      const emptySql = await buildTableSelectSql({
-        databaseType: effectiveDbType,
-        identifierQuote,
-        schema: tableSchema,
-        catalog: target.catalog,
-        database: target.database,
-        tableName: target.tableName,
-        tableType: targetTableType,
-        whereInput: target.whereInput,
-        limit: 0,
-      });
-      if (!isCurrentTarget()) return;
-      queryStore.updateSql(tabId, emptySql);
-      await queryStore.executeTabSql(tabId, emptySql, { pagination: { limit: pageLimit, offset: 0 } });
-      if (!isCurrentTarget()) return;
-    }
     try {
       // 复用共享表元数据缓存（30s TTL + in-flight 去重）
       const { metadata } = await loadTableMetadata({
@@ -211,7 +137,6 @@ async function openTableTarget(target: NavigationTarget, options: { tableInfoTab
       // 异步窗口内 tab 可能已被复用为其他目标：旧请求的元数据不得落地、
       // 不得解除新目标的 pending
       if (!isCurrentTarget()) return;
-      const useRowId = usesSyntheticRowIdKey(effectiveDbType, primaryKeys, targetTableType);
       queryStore.setTableMeta(tabId, {
         schema: tableSchema,
         catalog: target.catalog,
@@ -221,25 +146,6 @@ async function openTableTarget(target: NavigationTarget, options: { tableInfoTab
         columns,
         primaryKeys,
       });
-      if (!fellBackToLimitZero && !firstQueryFailed && (useRowId || config.db_type === "tdengine")) {
-        const newSql = await buildTableSelectSql({
-          databaseType: effectiveDbType,
-          identifierQuote,
-          schema: tableSchema,
-          catalog: target.catalog,
-          database: target.database,
-          tableName: target.tableName,
-          tableType: targetTableType,
-          whereInput: target.whereInput,
-          primaryKeys,
-          columns: columns.map((column) => column.name),
-          includeRowId: true,
-          limit: pageLimit,
-        });
-        if (!isCurrentTarget()) return;
-        queryStore.updateSql(tabId, newSql);
-        await queryStore.executeTabSql(tabId, newSql, { pagination: { limit: pageLimit, offset: 0 } });
-      }
     } catch (reason) {
       console.error("[DBX] ERROR fetching table metadata:", reason);
     }

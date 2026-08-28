@@ -132,16 +132,4 @@ describe("queryStore switchTab", () => {
     queryStore.updateDataGridHiddenColumnKeys(tabId, []);
     expect(tab.result.local_hidden_column_keys).toBeUndefined();
   });
-
-  it("opens one reusable Nacos dashboard tab per connection", async () => {
-    const { useQueryStore } = await import("@/stores/queryStore");
-    const queryStore = useQueryStore();
-
-    const tabId = queryStore.openNacosDashboard("nacos-1");
-    const reopenedTabId = queryStore.openNacosDashboard("nacos-1");
-
-    expect(reopenedTabId).toBe(tabId);
-    expect(queryStore.tabs.filter((tab) => tab.mode === "nacos-dashboard")).toHaveLength(1);
-    expect(queryStore.activeTabId).toBe(tabId);
-  });
 });

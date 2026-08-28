@@ -16,7 +16,7 @@ import { createDraftIndex, nextUniqueColumnName } from "@/lib/diagram/draft-tabl
 import { resolveDiagramDialectAdapter } from "@/lib/diagram/diagram-dialect-adapter";
 import { cardinalityChoiceFromPair, cardinalityPairFromChoice, edgeCardinalityPair, type CardinalityChoice } from "@/lib/diagram/cardinality";
 import { canAddTableStructureColumn, getTableStructureCapabilities } from "@/lib/table/tableStructureCapabilities";
-import { combineDataTypeForDatabase, combineDataTypeForDatabaseWithLengthUnit, dataTypeLengthInputValue, dataTypeLengthUnitValue, getDataTypeLengthUnitOptions, getDataTypeOptions, getDefaultLengthForType, isDataTypeLengthDisabled, splitDataType } from "@/lib/table/tableStructureEditorState";
+import { combineDataTypeForDatabase, dataTypeLengthInputValue, getDataTypeOptions, getDefaultLengthForType, isDataTypeLengthDisabled, splitDataType } from "@/lib/table/tableStructureEditorState";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 const { t } = useI18n();
@@ -367,10 +367,6 @@ function columnLengthEnabled(dataType: string): boolean {
   return !isDataTypeLengthDisabled(databaseType.value, columnBaseType(dataType));
 }
 
-function columnLengthUnitOptions(dataType: string): readonly string[] {
-  return getDataTypeLengthUnitOptions(databaseType.value, dataType);
-}
-
 function updateColumnBaseType(index: number, baseType: string) {
   const next = combineDataTypeForDatabase(databaseType.value, baseType, getDefaultLengthForType(databaseType.value, baseType));
   updateColumn(index, { data_type: next });
@@ -381,17 +377,7 @@ function updateColumnLength(index: number, value: string | number) {
   const col = table?.columns[index];
   if (!col) return;
   const baseType = columnBaseType(col.data_type);
-  const next = combineDataTypeForDatabaseWithLengthUnit(databaseType.value, baseType, String(value), dataTypeLengthUnitValue(databaseType.value, col.data_type));
-  updateColumn(index, { data_type: next });
-}
-
-function updateColumnLengthUnit(index: number, value: unknown) {
-  const table = selectedTable.value;
-  const col = table?.columns[index];
-  if (!col) return;
-  const unit = value === "__default" || value == null ? "" : String(value);
-  const baseType = columnBaseType(col.data_type);
-  const next = combineDataTypeForDatabaseWithLengthUnit(databaseType.value, baseType, dataTypeLengthInputValue(databaseType.value, col.data_type), unit);
+  const next = combineDataTypeForDatabase(databaseType.value, baseType, String(value));
   updateColumn(index, { data_type: next });
 }
 
@@ -485,15 +471,6 @@ const dataTypeOptionsForColumn = computed(() => {
                     :placeholder="t('structureEditor.length')"
                     @update:model-value="(v: string | number) => updateColumnLength(index, v)"
                   />
-                  <Select v-if="columnLengthUnitOptions(col.data_type).length" :model-value="dataTypeLengthUnitValue(databaseType, col.data_type) || '__default'" :disabled="!isColumnEditable(col.name)" @update:model-value="(v: unknown) => updateColumnLengthUnit(index, v)">
-                    <SelectTrigger class="h-7 w-14 shrink-0 px-1 text-[10px] font-mono" :aria-label="t('structureEditor.lengthUnit')" :title="t('structureEditor.lengthUnit')">
-                      <SelectValue :placeholder="t('structureEditor.unitPlaceholder')" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__default">{{ t("structureEditor.defaultAction") }}</SelectItem>
-                      <SelectItem v-for="unit in columnLengthUnitOptions(col.data_type)" :key="unit" :value="unit">{{ unit }}</SelectItem>
-                    </SelectContent>
-                  </Select>
                 </div>
                 <label class="flex items-center gap-1 text-[10px] text-muted-foreground">
                   <input type="checkbox" :checked="col.is_primary_key" :disabled="!isColumnEditable(col.name)" @change="updateColumn(index, { is_primary_key: ($event.target as HTMLInputElement).checked })" />

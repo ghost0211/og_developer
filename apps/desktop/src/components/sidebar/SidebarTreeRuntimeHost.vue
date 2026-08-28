@@ -1,10 +1,9 @@
 <script setup lang="ts">
-import { computed, nextTick, watch, onBeforeUnmount, inject, reactive, ref, shallowRef } from "vue";
+import { computed, watch, onBeforeUnmount, inject, reactive, ref, shallowRef } from "vue";
 import { createRoutedSidebarDialogController } from "./sidebarDialogControllerRouting";
 import { useSqlHighlighter } from "@/composables/useSqlHighlighter";
 import { useSidebarDataOpenRuntime } from "@/composables/useSidebarDataOpenRuntime";
 import { useSidebarConnectionMutationRuntime } from "@/composables/useSidebarConnectionMutationRuntime";
-import { useSidebarDatabaseSpecificMutationRuntime } from "@/composables/useSidebarDatabaseSpecificMutationRuntime";
 import { useSidebarTableMutationRuntime } from "@/composables/useSidebarTableMutationRuntime";
 import { useSidebarTreeExportRuntime } from "@/composables/useSidebarTreeExportRuntime";
 import { useSidebarTreeToolRuntime } from "@/composables/useSidebarTreeToolRuntime";
@@ -22,7 +21,6 @@ import {
   ListTree,
   Pencil,
   Play,
-  Power,
   Plug,
   Unplug,
   Pin,
@@ -46,13 +44,11 @@ import {
   UsersRound,
   Activity,
   Gauge,
-  CalendarClock,
-  HardDriveDownload,
   FilePlus,
   SquarePen,
   ListX,
-  Info,
   Bug,
+  Power,
   X,
   Settings2,
 } from "@lucide/vue";
@@ -71,7 +67,6 @@ import { canTreeNodePin, canTreeNodeShowExpander } from "@/lib/sidebar/sidebarTr
 import { sidebarConnectionVisibleFilterMenu } from "@/lib/sidebar/sidebarVisibleFilterMenu";
 import { objectTypesForGroupNode } from "@/lib/table/tableTree";
 import { loadSidebarObjectGroup } from "@/lib/sidebar/sidebarObjectGroupRouting";
-import { mysqlObjectTemplateForGroup } from "@/lib/sidebar/mysqlObjectTemplates";
 import { buildTableDeleteTemplate, buildTableInsertTemplate, buildTableSelectTemplate, buildTableUpdateTemplate } from "@/lib/table/tableSqlTemplates";
 import { driverStoreFocusForInstallError } from "@/lib/connection/agentDriverInstallHint";
 import {
@@ -94,21 +89,17 @@ import {
   usesTreeSchemaMode,
   isSingleDatabase,
 } from "@/lib/database/databaseCapabilities";
-import { copyNameForTreeNode, isDocumentBrowserTreeNode, objectSourceKindForTreeNode, shouldRunTreeNodeRowAction, treeNodeRowAction, treeNodeRowDoubleClickAction } from "@/lib/sidebar/treeNodeClick";
-import { mongoCollectionTableTypeFromNode, mongoDropIndexFailureCount } from "@/lib/sidebar/mongoCollectionMutation";
+import { copyNameForTreeNode, objectSourceKindForTreeNode, shouldRunTreeNodeRowAction, treeNodeRowAction, treeNodeRowDoubleClickAction } from "@/lib/sidebar/treeNodeClick";
 import { dataTabOpenModeFromTreeClick, type DataTabOpenMode } from "@/lib/sidebar/dataTabOpenPolicy";
 import { isCopySidebarSelectionShortcut, isEditSidebarConnectionShortcut, isPasteSidebarSelectionShortcut } from "@/lib/editor/keyboardShortcuts";
 import { handleSidebarTreeDeleteShortcut } from "@/lib/sidebar/sidebarTreeDeleteShortcut";
 import { dataTableDoubleClickAction } from "@/lib/tabs/dataTabActivation";
-import { attachedDatabaseNameFromPath, buildCreateDatabaseSql, buildDuckDbAttachDatabaseSql, buildSqliteAttachDatabaseSql, supportsCreateDatabaseCharset, uniqueAttachedDatabaseName } from "@/lib/database/createDatabaseSql";
-import { appendCreateDatabaseErrorHint } from "@/lib/database/createDatabaseErrorHints";
-import { SQLITE_DATABASE_FILE_EXTENSIONS } from "@/lib/database/databaseFileDetection";
+import { buildCreateDatabaseSql } from "@/lib/database/createDatabaseSql";
 import {
   buildCreateSchemaSql,
   buildDropDatabaseSql,
   buildDropObjectSql,
   buildDropSchemaSql,
-  damengDropSchemaExecutionSchema,
   buildGetDatabaseCommentSql,
   buildGetSchemaCommentSql,
   buildUpdateDatabasePropertiesSql,
@@ -140,7 +131,6 @@ import { connectionPasteTargetGroupId, selectedConnectionClipboardTargets, selec
 import { connectionSupportsDatabaseUserAdmin, resolveDatabaseUserAdminProviderForConnection, type DatabaseUserIdentity } from "@/lib/database/databaseUserAdmin";
 import { authorizationPlanSql, authorizationPlanStatus, buildCreateDatabaseAuthorizationPlan, executeAuthorizationPlan, type AuthorizationPlan, type AuthorizationStepResult } from "@/lib/database/databaseAuthorizationPlan";
 import { connectionSupportsProcessList } from "@/lib/database/processListDrivers";
-import { connectionSupportsServerDashboard } from "@/lib/database/mysqlServerStatus";
 import { connectionSupportsServerDashboard as connectionSupportsPgServerDashboard } from "@/lib/database/postgresServerStatus";
 import { sidebarTreeContextKey } from "@/lib/sidebar/sidebarTreeContext";
 import { batchTableEmptyFeedback, runBatchTableEmpty } from "@/lib/sidebar/batchTableEmpty";
@@ -148,13 +138,11 @@ import { runBatchTableTruncate } from "@/lib/table/batchTableTruncate";
 import { runBatchTableDrop } from "@/lib/table/batchTableDrop";
 import { buildSidebarDdlTemplateSql, sidebarDdlTargetsForExecutionContext } from "@/lib/sidebar/sidebarDdlTemplate";
 import { sidebarStructureExportTargets } from "@/lib/sidebar/sidebarExportRuntime";
-import { isTauriRuntime } from "@/lib/backend/tauriRuntime";
 import { copyToClipboard } from "@/lib/common/clipboard";
 import { rankSavedSqlHistory, type SavedSqlHistoryScope } from "@/lib/savedSql/savedSqlHistory";
-import { isSqlServerLinkedNode } from "@/lib/database/sqlServerLinkedServers";
 import { flattenTree } from "@/composables/useFlatTree";
 import { createDatabaseCollationOptionsForCharset, nextCreateDatabaseCollation, normalizeCreateDatabaseCharset, parseCreateDatabaseCharsetMetadata } from "@/lib/database/createDatabaseCharsetOptions";
-import { executeWithProductionContextGuard, executeWithProductionSqlGuard } from "@/lib/database/productionExecutionGuard";
+import { executeWithProductionSqlGuard } from "@/lib/database/productionExecutionGuard";
 import type { SidebarDataOpenRequest } from "@/lib/sidebar/sidebarDataOpenCoordinator";
 import { createSidebarActionTarget, findSidebarActionTarget, releaseRemovedSidebarActionTarget, type SidebarActionTarget } from "@/lib/sidebar/sidebarActionTarget";
 import { createSidebarMenuContext, normalizeSidebarMenuDescriptors } from "@/lib/sidebar/sidebarTreeMenuDescriptors";
@@ -220,32 +208,11 @@ import {
   createDatabasePreviewSql,
   createDatabaseAuthorizationResults,
   createDatabaseAuthorizationApplying,
-  showCreateNacosNamespaceDialog,
-  createNacosNamespaceId,
-  createNacosNamespaceName,
-  createNacosNamespaceDesc,
-  createNacosNamespaceLoading,
-  showEditNacosNamespaceDialog,
-  editNacosNamespaceName,
-  editNacosNamespaceDesc,
-  editNacosNamespaceLoading,
   createDatabaseCharsetOptions,
   createDatabaseCollationsByCharset,
   createDatabaseCharsetLoading,
   showDropDatabaseConfirm,
   dropDatabaseLoading,
-  showDropMongoCollectionConfirm,
-  dropMongoCollectionLoading,
-  showDropMongoIndexConfirm,
-  dropMongoIndexLoading,
-  showDropAllMongoIndexesConfirm,
-  dropAllMongoIndexesLoading,
-  showCreateMongoIndexDialog,
-  mongoCreateIndexForm,
-  mongoCreateIndexFieldOptions,
-  mongoCreateIndexError,
-  mongoCreateIndexLoading,
-  showFlushRedisDbConfirm,
   showCreateSchemaDialog,
   createSchemaName,
   showDropSchemaConfirm,
@@ -357,10 +324,6 @@ const {
   copyFinalProxyPort,
   duplicateConnection,
   editConnection,
-  revealConnectionFilePath,
-  revealDatabaseFile,
-  canBackupSqliteDatabase,
-  backupSqliteDatabase,
   disconnectConnection,
   cancelConnectionAttempt,
   closeDatabaseConnection,
@@ -392,53 +355,6 @@ const {
   openVisibleDatabases: (node) => emit("open-visible-databases", node),
   openVisibleSchemas: (node) => emit("open-visible-schemas", node),
 });
-
-const {
-  canDropMongoDatabase,
-  canDropMongoCollection,
-  canRenameMongoCollection,
-  prepareRenameMongoCollectionDialog,
-  confirmRenameMongoCollection,
-  showRenameMongoCollectionDialog,
-  renameMongoCollectionName,
-  renameMongoCollectionError,
-  renameMongoCollectionPreview,
-  renameMongoCollectionLoading,
-  mongoIndexNameForNode,
-  canDropMongoIndexNode,
-  canDropMongoIndex,
-  canDropAllMongoIndexes,
-  mongoIndexDropPreview,
-  mongoDropAllIndexesPreview,
-  refreshMongoIndexTreeAfterMutation,
-  canCreateMongoIndex,
-  mongoIndexKeyTypes,
-  mongoCreateIndexCanSubmit,
-  mongoCreateIndexCanAddField,
-  prepareCreateMongoIndexDialog,
-  addMongoCreateIndexField,
-  removeMongoCreateIndexField,
-  confirmCreateMongoIndex,
-  openCreateNacosNamespaceDialog,
-  confirmCreateNacosNamespace,
-  openEditNacosNamespaceDialog,
-  confirmEditNacosNamespace,
-  dropMongoCollection,
-  dropMongoIndex,
-  dropAllMongoIndexes,
-  flushRedisDb,
-  prepareRedisDatabaseAliasDialog,
-  confirmRedisDatabaseAlias,
-  clearRedisDatabaseAlias,
-  showRedisDatabaseAliasDialog,
-  redisDatabaseAliasInput,
-  redisDatabaseAliasSaving,
-  confirmFlushRedisDb,
-  confirmDropMongoDatabase,
-  confirmDropMongoCollection,
-  confirmDropMongoIndex,
-  confirmDropAllMongoIndexes,
-} = useSidebarDatabaseSpecificMutationRuntime({ activeNode, connectionStore });
 
 const { isTableNotView, supportsTruncate, canDropTableCascade, canTruncateTableCascade, refreshDropTablePreviewSql, refreshTruncateTablePreviewSql, dropTable, refreshTableList, confirmDropTable, emptyTable, confirmEmptyTable, truncateTable, confirmTruncateTable } = useSidebarTableMutationRuntime({
   activeNode,
@@ -595,124 +511,19 @@ async function toggle() {
     }
 
     if (node.type === "connection" && node.connectionId) {
-      const config = connectionStore.getConfig(node.connectionId);
-      if (config?.db_type === "redis") {
-        await connectionStore.loadRedisDatabases(node.connectionId);
-      } else if (config?.db_type === "etcd") {
-        await connectionStore.loadEtcdRoot(node.connectionId);
-      } else if (config?.db_type === "zookeeper") {
-        await connectionStore.loadZooKeeperRoot(node.connectionId);
-      } else if (config?.db_type === "mongodb") {
-        await connectionStore.loadMongoDatabases(node.connectionId);
-      } else if (config?.db_type === "elasticsearch" || config?.db_type === "easysearch") {
-        // Expand: list indices (like other db types list databases).
-        await connectionStore.loadElasticsearchIndices(node.connectionId);
-      } else if (config?.db_type === "milvus") {
-        await connectionStore.loadMilvusDatabases(node.connectionId);
-      } else if (config?.db_type === "qdrant" || config?.db_type === "weaviate" || config?.db_type === "chromadb") {
-        await connectionStore.loadVectorCollections(node.connectionId);
-      } else if (config?.db_type === "mq") {
-        await connectionStore.loadMqTenants(node.connectionId);
-      } else if (config?.db_type === "nacos") {
-        await connectionStore.loadNacosNamespaces(node.connectionId);
-      } else if (config?.db_type === "mqtt") {
-        await connectionStore.loadMqttTopics(node.connectionId);
-      } else {
-        await connectionStore.loadDatabases(node.connectionId);
-      }
-    } else if (node.type === "redis-db" && node.connectionId && node.database) {
-      await connectionStore.ensureConnected(node.connectionId);
-      const alias = connectionStore.getRedisDatabaseAlias(node.connectionId, node.database);
-      const databaseLabel = alias ? `db${node.database} · ${alias}` : `db${node.database}`;
-      const tabTitle = `${connectionStore.getConfig(node.connectionId)?.name || "Redis"}:${databaseLabel}`;
-      queryStore.createTab(node.connectionId, node.database, tabTitle, "redis");
-    } else if (node.type === "mq-tenant" && node.connectionId) {
-      await connectionStore.ensureConnected(node.connectionId);
-      queryStore.openMqAdmin(node.connectionId, { tenant: node.mqTenant || node.label, initialTab: node.mqInitialTab });
-    } else if (node.type === "mqtt-topic" && node.connectionId) {
-      await connectionStore.ensureConnected(node.connectionId);
-      const topicFromId = node.id.endsWith(":mqtt-topic:__console__") ? undefined : node.id.split(":mqtt-topic:")[1] || node.label;
-      queryStore.openMqttAdmin(node.connectionId, topicFromId ? { initialTopic: topicFromId } : undefined);
-    } else if (node.type === "nacos-namespace" && node.connectionId) {
-      await connectionStore.ensureConnected(node.connectionId);
-      queryStore.openNacosAdmin(node.connectionId, { namespace: node.nacosNamespace || "", namespaceName: node.nacosNamespaceName || node.label });
-    } else if (node.type === "etcd-root" && node.connectionId) {
-      await connectionStore.ensureConnected(node.connectionId);
-      const tabTitle = `${connectionStore.getConfig(node.connectionId)?.name || "etcd"}:keys`;
-      queryStore.createTab(node.connectionId, "", tabTitle, "etcd");
-      refreshActiveKvBrowserAfterOpen("etcd", node.connectionId);
-    } else if (node.type === "etcd-dashboard" && node.connectionId) {
-      await connectionStore.ensureConnected(node.connectionId);
-      const tabTitle = `${connectionStore.getConfig(node.connectionId)?.name || "etcd"}:dashboard`;
-      queryStore.createTab(node.connectionId, "", tabTitle, "etcd-dashboard");
-    } else if (node.type === "etcd-access-control" && node.connectionId) {
-      await connectionStore.ensureConnected(node.connectionId);
-      const tabTitle = `${connectionStore.getConfig(node.connectionId)?.name || "etcd"}:access-control`;
-      queryStore.createTab(node.connectionId, "", tabTitle, "etcd-access-control");
-    } else if (node.type === "zookeeper-root" && node.connectionId) {
-      await connectionStore.ensureConnected(node.connectionId);
-      const tabTitle = `${connectionStore.getConfig(node.connectionId)?.name || "ZooKeeper"}:keys`;
-      queryStore.createTab(node.connectionId, "", tabTitle, "zookeeper");
-      refreshActiveKvBrowserAfterOpen("zookeeper", node.connectionId);
+      await connectionStore.loadDatabases(node.connectionId);
     } else if (node.type === "user-admin" && node.connectionId) {
       await connectionStore.ensureConnected(node.connectionId);
       queryStore.openUserAdmin(node.connectionId);
-    } else if (node.type === "dameng-job-admin" && node.connectionId) {
-      await connectionStore.ensureConnected(node.connectionId);
-      queryStore.openDamengJobAdmin(node.connectionId);
-    } else if (node.type === "mongo-db" && node.connectionId && node.database) {
-      await connectionStore.loadMongoCollections(node.connectionId, node.database);
-    } else if (node.type === "vector-database" && node.connectionId && node.database) {
-      await connectionStore.loadVectorCollections(node.connectionId, node.database);
-    } else if (node.type === "mongo-collection" && node.connectionId && node.database) {
-      await connectionStore.loadTableGroups(node.connectionId, node.database, node.label, node.schema, node.id);
-    } else if (node.type === "elasticsearch-index" && node.connectionId) {
-      await connectionStore.ensureConnected(node.connectionId);
-      const tab = queryStore.createTab(node.connectionId, node.database || "default", node.label, "mongo");
-      queryStore.updateSql(tab, node.label);
-    } else if (node.type === "vector-collection" && node.connectionId) {
-      await connectionStore.ensureConnected(node.connectionId);
-      const collectionRef = (node.meta as { collectionId?: string } | undefined)?.collectionId ?? node.label;
-      const tab = queryStore.createTab(node.connectionId, node.database || "default", node.label, "vector");
-      queryStore.updateSql(tab, collectionRef);
-      if (connectionStore.getConfig(node.connectionId)?.db_type !== "milvus") {
-        api
-          .vectorGetCollectionDetail(node.connectionId, node.database || "default", collectionRef)
-          .then((info) => {
-            if (info.dimension == null) return;
-            if (node.meta) {
-              (node.meta as Record<string, unknown>).dimension = info.dimension;
-            } else {
-              node.meta = { dimension: info.dimension } as any;
-            }
-          })
-          .catch(() => {});
-      }
     } else if (node.type === "database" && node.connectionId && hasTreeNodeDatabaseContext(node)) {
-      if (node.catalog && node.catalog !== "internal") {
-        await connectionStore.loadDorisCatalogTables(node);
+      const config = connectionStore.getConfig(node.connectionId);
+      const effectiveDbType = effectiveDatabaseTypeForConnection(config);
+      if (usesTreeSchemaMode(effectiveDbType) && !connectionUsesDatabaseObjectTreeMode(config)) {
+        await connectionStore.loadSchemas(node.connectionId, node.database);
       } else {
-        const config = connectionStore.getConfig(node.connectionId);
-        const effectiveDbType = effectiveDatabaseTypeForConnection(config);
-        if (config?.db_type === "sqlserver") {
-          await connectionStore.loadSqlServerDatabaseObjects(node.connectionId, node.database);
-        } else if (usesTreeSchemaMode(effectiveDbType) && !connectionUsesDatabaseObjectTreeMode(config)) {
-          await connectionStore.loadSchemas(node.connectionId, node.database);
-        } else {
-          await connectionStore.loadTables(node.connectionId, node.database);
-        }
+        await connectionStore.loadTables(node.connectionId, node.database);
       }
-    } else if (node.type === "doris-catalog" && node.connectionId) {
-      await connectionStore.loadDorisCatalogDatabases(node);
     } else if (node.type === "schema" && node.connectionId && hasTreeNodeDatabaseContext(node) && node.schema) {
-      await connectionStore.loadTables(node.connectionId, node.database, node.schema);
-    } else if (node.type === "linked-server-root" && node.connectionId) {
-      await connectionStore.loadSqlServerLinkedServers(node.connectionId);
-    } else if (node.type === "linked-server" && node.connectionId) {
-      await connectionStore.loadSqlServerLinkedServerCatalogs(node);
-    } else if (node.type === "linked-server-catalog" && node.connectionId) {
-      await connectionStore.loadSqlServerLinkedServerSchemas(node);
-    } else if (node.type === "linked-server-schema" && node.connectionId && hasTreeNodeDatabaseContext(node) && node.schema) {
       await connectionStore.loadTables(node.connectionId, node.database, node.schema);
     } else if ((node.type === "table" || node.type === "view" || node.type === "materialized_view") && node.connectionId && hasTreeNodeDatabaseContext(node)) {
       await connectionStore.loadTableGroups(node.connectionId, node.database, node.label, node.schema, node.id, node.catalog);
@@ -772,10 +583,6 @@ function runRowClickAction(clickDetail: number) {
     void openObjectBrowser();
     return;
   }
-  if (node.type === "mongo-gridfs") {
-    openMongoTreeData(node);
-    return;
-  }
   if (node.type === "job" || node.type === "scheduler") {
     openEditJobDialog(node);
     return;
@@ -786,17 +593,9 @@ function runRowClickAction(clickDetail: number) {
     scheduleOpenData(node);
   } else if (action === "open-source") {
     openObjectSourceDialog(false);
-  } else if (isDocumentBrowserTreeNode(node.type)) {
-    openMongoTreeData(node);
   } else if (action === "toggle") {
     toggle();
   }
-}
-
-function refreshActiveKvBrowserAfterOpen(mode: "etcd" | "zookeeper", connectionId: string) {
-  void nextTick(() => {
-    window.dispatchEvent(new CustomEvent("dbx-refresh-active-kv-browser", { detail: { mode, connectionId } }));
-  });
 }
 
 function openDriverStoreForInstallError(errMsg: string, node: TreeNode = activeNode.value) {
@@ -869,12 +668,7 @@ function onKeydown(event: KeyboardEvent) {
       activeNode: activeNode.value,
       selectedNodes: selectedTreeNodesInVisibleOrder(),
       databaseTypeForNode,
-      requestHBaseTableDelete: () => {
-        ensureDangerDialogRouting();
-        routeTreeItemDialogController();
-        requestDeleteHBaseTable();
-        return true;
-      },
+      requestHBaseTableDelete: () => false,
       requestDefaultDelete: requestDeleteSelectedNode,
     })
   ) {
@@ -921,7 +715,7 @@ function normalizedTreeClipboardTableEntries(): TableClipboardTableContext[] {
 }
 
 function canPasteTreeClipboardToCurrentNode(): boolean {
-  return currentDatabaseType() !== "victoriametrics" && tableClipboardMatchesTarget(normalizedTreeClipboardTableEntries(), pasteTableTargetContext());
+  return tableClipboardMatchesTarget(normalizedTreeClipboardTableEntries(), pasteTableTargetContext());
 }
 
 function canTransferTreeClipboardToCurrentNode(): boolean {
@@ -954,7 +748,6 @@ function openTransferFromTreeClipboard(): boolean {
 }
 
 function requestPasteTreeClipboard(): boolean {
-  if (currentDatabaseType() === "victoriametrics") return false;
   claimTreeItemDialogOwnership();
   ensureDangerDialogRouting();
   routeTreeItemDialogController();
@@ -1007,10 +800,6 @@ function requestRenameSelectedNode(): boolean {
     connectionStore.startEditing(editTarget.connectionId);
     return true;
   }
-  if (canRenameMongoCollection.value) {
-    openRenameMongoCollectionDialog();
-    return true;
-  }
   if (canRenameObject.value) {
     openRenameObjectDialog();
     return true;
@@ -1020,24 +809,6 @@ function requestRenameSelectedNode(): boolean {
     return true;
   }
   return false;
-}
-
-function openRenameMongoCollectionDialog() {
-  claimTreeItemDialogOwnership();
-  routeTreeItemDialogController();
-  prepareRenameMongoCollectionDialog();
-}
-
-function openCreateMongoIndexDialog() {
-  claimTreeItemDialogOwnership();
-  routeTreeItemDialogController();
-  prepareCreateMongoIndexDialog();
-}
-
-function openRedisDatabaseAliasDialog() {
-  claimTreeItemDialogOwnership();
-  routeTreeItemDialogController();
-  prepareRedisDatabaseAliasDialog();
 }
 
 function requestEditSelectedConnection(): boolean {
@@ -1062,14 +833,6 @@ function requestDeleteSelectedNode(): boolean {
   }
   if (canDropDatabase.value) {
     dropDatabase();
-    return true;
-  }
-  if (canDropMongoDatabase.value) {
-    dropDatabase();
-    return true;
-  }
-  if (canDropMongoCollection.value) {
-    dropMongoCollection();
     return true;
   }
   if (canDropSchema.value) {
@@ -1105,8 +868,6 @@ function onDoubleClick(event: MouseEvent) {
     openObjectSourceDialog(false);
   } else if (action === "open-saved-sql") {
     openSavedSqlFile();
-  } else if (action === "toggle" && (activeNode.value.type === "mongo-gridfs" || isDocumentBrowserTreeNode(activeNode.value.type))) {
-    openMongoTreeData(activeNode.value);
   } else if (action === "toggle") {
     toggle();
   }
@@ -1135,29 +896,6 @@ function findExistingSameTableDataTab() {
   const config = connectionStore.getConfig(node.connectionId);
   const tableSchema = connectionObjectTreeNodeSchema(config, node.database, node.schema);
   return queryStore.tabs.find((tab) => tab.mode === "data" && tab.connectionId === node.connectionId && tab.database === node.database && (tab.tableMeta?.catalog || "") === (node.catalog || "") && (tab.schema || "") === (tableSchema || "") && (tab.tableMeta?.tableName || tab.title) === node.label);
-}
-
-function openMongoTreeData(node: TreeNode) {
-  if (!node.connectionId || !node.database) return;
-  if (node.type === "mongo-gridfs") {
-    queryStore.openMongoGridFs(node.connectionId, node.database);
-    return;
-  }
-  const tabTitle = `${node.database}.${node.label}`;
-  if (node.type === "mongo-bucket") {
-    queryStore.openMongoBucket(node.connectionId, node.database, node.label);
-    return;
-  }
-  if (node.type !== "mongo-collection") return;
-  const tab = queryStore.createTab(node.connectionId, node.database, tabTitle, "mongo");
-  queryStore.updateSql(tab, node.label);
-  queryStore.setTableMeta(tab, {
-    database: node.database,
-    tableName: node.label,
-    tableType: mongoCollectionTableTypeFromNode(node),
-    columns: [],
-    primaryKeys: [],
-  });
 }
 
 async function openSavedSqlFile() {
@@ -1227,25 +965,7 @@ async function openServerDashboard() {
   try {
     await connectionStore.ensureConnected(node.connectionId);
     connectionStore.activeConnectionId = node.connectionId;
-    if (currentDatabaseType() === "nacos") {
-      queryStore.openNacosDashboard(node.connectionId);
-    } else if (connectionSupportsPgServerDashboard(connectionStore.getConfig(node.connectionId))) {
-      queryStore.openPostgresDashboard(node.connectionId);
-    } else {
-      queryStore.openMysqlDashboard(node.connectionId);
-    }
-  } catch (e: any) {
-    toast(t("connection.connectFailed", { message: translateBackendError(t, e) }), 5000);
-  }
-}
-
-async function openDamengJobAdmin() {
-  const node = activeNode.value;
-  if (!node.connectionId) return;
-  try {
-    await connectionStore.ensureConnected(node.connectionId);
-    connectionStore.activeConnectionId = node.connectionId;
-    queryStore.openDamengJobAdmin(node.connectionId);
+    queryStore.openPostgresDashboard(node.connectionId);
   } catch (e: any) {
     toast(t("connection.connectFailed", { message: translateBackendError(t, e) }), 5000);
   }
@@ -1290,14 +1010,6 @@ async function newQuery() {
 // SQL template helpers have been extracted to @/lib/tableSqlTemplates.ts
 // ---- Template actions ----
 
-function openRedisInstanceInfo() {
-  const node = activeNode.value;
-  if (!node.connectionId) return;
-  const config = connectionStore.getConfig(node.connectionId);
-  const dbName = config?.name || "Redis";
-  queryStore.createTab(node.connectionId, "0", `${dbName} - ${t("contextMenu.instanceInfo")}`, "redis-dashboard");
-}
-
 async function loadTemplateContext(allowView = false) {
   const node = activeNode.value;
   if (!node.connectionId || !hasTreeNodeDatabaseContext(node)) return null;
@@ -1318,18 +1030,7 @@ async function loadTemplateContext(allowView = false) {
     console.warn("[DBX][tableSqlTemplate:getColumns:error]", e);
   }
 
-  let tableType = node.tableType;
-  if (dbType === "tdengine") {
-    try {
-      const querySchema = connectionObjectTreeQuerySchema(config, node.database, tableSchema);
-      const tables = await api.listTables(node.connectionId, node.database, querySchema, node.label, 200, undefined, undefined, node.catalog);
-      const matched = tables.find((table) => table.name.toLowerCase() === node.label.toLowerCase());
-      if (matched?.table_type) tableType = matched.table_type;
-    } catch (e) {
-      console.warn("[DBX][tableSqlTemplate:listTables:error]", e);
-    }
-  }
-
+  const tableType = node.tableType;
   const identifierQuote = connectionStore.connectionIdentifierQuote(node.connectionId);
   return { node, dbType, identifierQuote, tableSchema, columns, tableType };
 }
@@ -1417,7 +1118,6 @@ async function newDeleteTemplate() {
 }
 
 async function generateDdlTemplate() {
-  if (currentDatabaseType() === "victoriametrics") return;
   const targets = selectedDdlTargets();
   if (!targets.length) return;
   const tabTarget = targets.find((target) => target.id === activeNode.value.id) ?? targets[0]!;
@@ -1453,7 +1153,6 @@ function selectedDdlTargets() {
 }
 
 async function openDdl() {
-  if (currentDatabaseType() === "victoriametrics") return;
   const targets = selectedDdlTargets();
   if (!targets.length) return;
   if (targets.length > 1) {
@@ -1511,10 +1210,6 @@ async function copySelectedNames() {
 function updateTreeClipboardForNodes(nodes: TreeNode[]) {
   const tableNodes = nodes.filter((node): node is DuplicateStructureSource => node.type === "table" && !!node.connectionId && !!node.database && typeof node.label === "string");
   if (tableNodes.length === 0) {
-    connectionStore.treeClipboard = null;
-    return;
-  }
-  if (tableNodes.some((node) => databaseTypeForNode(node) === "victoriametrics")) {
     connectionStore.treeClipboard = null;
     return;
   }
@@ -1830,12 +1525,10 @@ function requestDropTableChildObject() {
 }
 
 function canDropTreeNode(node: TreeNode): boolean {
-  if (isSqlServerLinkedNode(node)) return false;
   if (node.type === "table") return !!node.connectionId && !!node.database;
   if (node.type === "view" || node.type === "materialized_view" || node.type === "procedure" || node.type === "function" || node.type === "sequence" || node.type === "synonym" || node.type === "package" || node.type === "package-body" || node.type === "type" || node.type === "job") {
     return !!node.connectionId && !!node.database && !!dropObjectSqlOptionsForNode(node);
   }
-  if (canDropMongoIndexNode(node)) return true;
   return canDropTableChildObjectNode(node);
 }
 
@@ -1987,9 +1680,6 @@ async function dropSqlForTreeNode(node: TreeNode, options?: { cascade?: boolean 
   }
   const objectOptions = dropObjectSqlOptionsForNode(node);
   if (objectOptions) return buildDropObjectSql(objectOptions);
-  if (canDropMongoIndexNode(node)) {
-    return `db.getCollection("${(node.tableName || "").replace(/\\/g, "\\\\").replace(/"/g, '\\"')}").dropIndex(${JSON.stringify(mongoIndexNameForNode(node))})`;
-  }
   const childOptions = dropTableChildObjectSqlOptionsForNode(node);
   if (childOptions && canDropTableChildObjectNode(node)) return buildDropTableChildObjectSql(childOptions);
   return null;
@@ -2016,11 +1706,6 @@ async function emptySqlForTreeNode(node: TreeNode): Promise<string | null> {
 
 async function refreshBatchDropPreviewSql() {
   const targets = batchDropTargets.value;
-  const mongoIndexTargets = targets.filter(canDropMongoIndexNode);
-  if (mongoIndexTargets.length) {
-    batchDropPreviewSql.value = mongoIndexTargets.map((target) => mongoIndexDropPreview(target, mongoIndexNameForNode(target))).join("\n");
-    return;
-  }
   const statements: string[] = [];
   const useCascade = canBatchDropCascade.value && batchDropCascade.value;
   for (const target of targets) {
@@ -2102,10 +1787,6 @@ function requestDropSelectedNode(): boolean {
   }
   if (activeNode.value.type === "view" || activeNode.value.type === "procedure" || activeNode.value.type === "function") {
     requestDropObject();
-    return true;
-  }
-  if (canDropMongoIndex.value) {
-    dropMongoIndex();
     return true;
   }
   if (canDropTableChildObject.value) {
@@ -2301,68 +1982,6 @@ async function confirmBatchDrop() {
   const targets = batchDropTargets.value.slice();
   if (!targets.length) return;
   try {
-    const mongoIndexTargets = targets.filter(canDropMongoIndexNode);
-    if (mongoIndexTargets.length) {
-      const grouped = new Map<string, TreeNode[]>();
-      for (const target of mongoIndexTargets) {
-        const key = JSON.stringify([target.connectionId, target.database, target.tableName || ""]);
-        const list = grouped.get(key) ?? [];
-        list.push(target);
-        grouped.set(key, list);
-      }
-      const mongoIndexGroups = [...grouped.values()];
-      // Confirm every production target before changing any collection so a
-      // cancellation cannot leave a cross-database batch partially applied.
-      for (const groupTargets of mongoIndexGroups) {
-        const groupFirst = groupTargets[0];
-        if (!groupFirst?.connectionId || !groupFirst.database || !groupFirst.tableName) return;
-        const confirmed = await executeWithProductionContextGuard({
-          connection: connectionStore.getConfig(groupFirst.connectionId),
-          database: groupFirst.database,
-          reviewText: groupTargets.map((target) => mongoIndexDropPreview(target, mongoIndexNameForNode(target))).join("\n"),
-          source: t("production.sourceSidebar"),
-          execute: async () => ({ confirmed: true }),
-        });
-        if (confirmed === undefined) return;
-      }
-
-      let droppedCount = 0;
-      let failedCount = 0;
-      let firstGroupError: unknown;
-      for (const groupTargets of mongoIndexGroups) {
-        const groupFirst = groupTargets[0];
-        if (!groupFirst?.connectionId || !groupFirst.database || !groupFirst.tableName) continue;
-        const names = groupTargets.map((target) => mongoIndexNameForNode(target));
-        try {
-          await connectionStore.ensureConnected(groupFirst.connectionId);
-          const result = await api.mongoDropIndexes(groupFirst.connectionId, groupFirst.database, groupFirst.tableName, JSON.stringify(names.length === 1 ? names[0] : names), names.length === 1);
-          const dropped = new Set(result.dropped_names);
-          droppedCount += result.dropped_names.length;
-          failedCount += mongoDropIndexFailureCount(result);
-          for (const target of groupTargets) {
-            const indexName = mongoIndexNameForNode(target);
-            if (!dropped.has(indexName)) continue;
-            connectionStore.removeTreeNode(target.id);
-            releaseActiveNodeReference([target.id]);
-          }
-        } catch (error) {
-          // A transport-level failure has no per-index payload; retain prior
-          // successes and continue with independent collection groups.
-          failedCount += groupTargets.length;
-          firstGroupError ??= error;
-        } finally {
-          await refreshMongoIndexTreeAfterMutation(groupFirst);
-        }
-      }
-      if (droppedCount === 0 && firstGroupError && failedCount === mongoIndexTargets.length) throw firstGroupError;
-      if (failedCount > 0) {
-        toast(t("contextMenu.dropIndexesPartialFailure", { success: droppedCount, failed: failedCount }), 5000);
-      } else {
-        toast(t("contextMenu.batchDropSuccess", { count: droppedCount }), 3000);
-      }
-      showBatchDropConfirm.value = false;
-      return;
-    }
     const useCascade = batchDropCascade.value && targets.every((node) => node.type !== "table" || supportsDropTableCascade(databaseTypeForNode(node)));
     if (targets.every((node) => node.type === "table" && node.connectionId && node.database)) {
       const first = targets[0]!;
@@ -2383,10 +2002,8 @@ async function confirmBatchDrop() {
         source: t("production.sourceSidebar"),
         execute: () =>
           runBatchTableDrop({
-            databaseType: databaseTypeForNode(first),
             plan,
-            executeStatement: (sql) => api.executeQuery(first.connectionId!, first.database!, sql),
-            executeBatch: (sql, onProgress) => api.executeMultiWithProgress(first.connectionId!, first.database!, sql, onProgress),
+            executeBatch: (sql: string, onProgress) => api.executeMultiWithProgress(first.connectionId!, first.database!, sql, onProgress),
             onProgress: (progress) => {
               batchDropProgress.value = { completed: Math.min(progress.completed, targets.length), total: targets.length };
             },
@@ -2456,7 +2073,7 @@ async function confirmBatchTruncate() {
 async function confirmBatchEmpty() {
   const targets = batchEmptyTargets.value.slice();
   if (!targets.length) return;
-  const asynchronousMutation = targets.every((target) => databaseTypeForNode(target) === "clickhouse");
+  const asynchronousMutation = false;
   const result = await runBatchTableEmpty(targets, async (target) => {
     if (!target.connectionId || !target.database) throw new Error("Missing table connection context");
     await connectionStore.ensureConnected(target.connectionId);
@@ -2484,13 +2101,7 @@ async function confirmBatchEmpty() {
 
 const canCreateTable = computed(() => {
   const config = activeNode.value.connectionId ? connectionStore.getConfig(activeNode.value.connectionId) : undefined;
-  const supportsHBaseTableCreation = config?.db_type === "hbase" && !config.read_only;
-  return (
-    (activeNode.value.type === "database" || activeNode.value.type === "schema" || activeNode.value.type === "group-tables") &&
-    !isSqlServerLinkedNode(activeNode.value) &&
-    !!activeNode.value.database &&
-    (supportsHBaseTableCreation || supportsTableStructureEditing(tableStructureDatabaseTypeForConnection(config)))
-  );
+  return (activeNode.value.type === "database" || activeNode.value.type === "schema" || activeNode.value.type === "group-tables") && !!activeNode.value.database && supportsTableStructureEditing(tableStructureDatabaseTypeForConnection(config));
 });
 
 const canCreateDatabase = computed(() => {
@@ -2498,40 +2109,16 @@ const canCreateDatabase = computed(() => {
   return activeNode.value.type === "connection" && canCreateConnectionNamespace(config);
 });
 
-const canCreateNacosNamespace = computed(() => {
-  const config = activeNode.value.connectionId ? connectionStore.getConfig(activeNode.value.connectionId) : undefined;
-  return activeNode.value.type === "connection" && config?.db_type === "nacos" && !config.read_only;
-});
-
-const canEditNacosNamespace = computed(() => {
-  if (activeNode.value.type !== "nacos-namespace" || !activeNode.value.connectionId || !activeNode.value.nacosNamespace) return false;
-  const config = connectionStore.getConfig(activeNode.value.connectionId);
-  return config?.db_type === "nacos" && !config.read_only;
-});
-
-const isDuckDbConnection = computed(() => {
-  const config = activeNode.value.connectionId ? connectionStore.getConfig(activeNode.value.connectionId) : undefined;
-  return activeNode.value.type === "connection" && config?.db_type === "duckdb" && connectionNamespaceCreationTarget(config) === "attach";
-});
-
-const isSqliteAttachConnection = computed(() => {
-  const config = activeNode.value.connectionId ? connectionStore.getConfig(activeNode.value.connectionId) : undefined;
-  return activeNode.value.type === "connection" && config?.db_type === "sqlite" && connectionNamespaceCreationTarget(config) === "attach";
-});
-
 const isConnectionSchemaCreation = computed(() => {
   const config = activeNode.value.connectionId ? connectionStore.getConfig(activeNode.value.connectionId) : undefined;
   return activeNode.value.type === "connection" && connectionNamespaceCreationTarget(config) === "schema";
 });
 
-const canSetCreateDatabaseCharset = computed(() => {
-  const config = activeNode.value.connectionId ? connectionStore.getConfig(activeNode.value.connectionId) : undefined;
-  return connectionNamespaceCreationTarget(config) === "database" && supportsCreateDatabaseCharset(config?.db_type, config?.driver_profile);
-});
+const canSetCreateDatabaseCharset = computed(() => false);
 
 const canDropDatabase = computed(() => {
   const config = activeNode.value.connectionId ? connectionStore.getConfig(activeNode.value.connectionId) : undefined;
-  return activeNode.value.type === "database" && !isSqlServerLinkedNode(activeNode.value) && supportsDatabaseCreation(config?.db_type);
+  return activeNode.value.type === "database" && supportsDatabaseCreation(config?.db_type);
 });
 
 const databasePropertyGroups = computed(() => {
@@ -2541,22 +2128,22 @@ const databasePropertyGroups = computed(() => {
 
 const canEditDatabaseProperties = computed(() => {
   const config = activeNode.value.connectionId ? connectionStore.getConfig(activeNode.value.connectionId) : undefined;
-  return canEditDatabasePropertiesForNode(config, activeNode.value) && !isSqlServerLinkedNode(activeNode.value);
+  return canEditDatabasePropertiesForNode(config, activeNode.value);
 });
 
-const canEditDatabaseCharsetCollation = computed(() => databasePropertyGroups.value.includes("charsetCollation"));
+const canEditDatabaseCharsetCollation = computed(() => false);
 
 const canEditDatabaseComment = computed(() => databasePropertyGroups.value.includes("databaseComment"));
 
 const canCreateSchema = computed(() => {
   const config = activeNode.value.connectionId ? connectionStore.getConfig(activeNode.value.connectionId) : undefined;
-  return canCreateDatabaseNodeNamespace(config, activeNode.value) && !isSqlServerLinkedNode(activeNode.value) && !connectionUsesDatabaseObjectTreeMode(config);
+  return canCreateDatabaseNodeNamespace(config, activeNode.value) && !connectionUsesDatabaseObjectTreeMode(config);
 });
 
 const canDropSchema = computed(() => {
   const config = activeNode.value.connectionId ? connectionStore.getConfig(activeNode.value.connectionId) : undefined;
   const dbType = effectiveDatabaseTypeForConnection(config);
-  return activeNode.value.type === "schema" && !isSqlServerLinkedNode(activeNode.value) && (usesTreeSchemaMode(dbType) || dbType === "dameng") && !connectionUsesDatabaseObjectTreeMode(config);
+  return activeNode.value.type === "schema" && usesTreeSchemaMode(dbType) && !connectionUsesDatabaseObjectTreeMode(config);
 });
 
 const canEditSchemaComment = computed(() => {
@@ -2576,10 +2163,6 @@ const canBatchTruncateCascade = computed(() => {
 
 async function refreshDropDatabasePreviewSql() {
   const node = activeNode.value;
-  if (node.type === "mongo-db") {
-    dropDatabasePreviewSql.value = `db.getSiblingDB(${JSON.stringify(node.label)}).dropDatabase();`;
-    return;
-  }
   dropDatabasePreviewSql.value = "";
   dropDatabasePreviewSql.value = await buildDropDatabaseSql({
     databaseType: currentDatabaseType(),
@@ -2708,7 +2291,7 @@ async function confirmEditDatabaseProperties() {
       target: "database" as const,
       name: node.database || node.label,
     };
-    const options = propertyGroups.includes("charsetCollation") ? { ...base, charset: editDatabaseCharset.value, collation: editDatabaseCollation.value } : propertyGroups.includes("databaseComment") ? { ...base, comment: editDatabaseCommentText.value } : null;
+    const options = propertyGroups.includes("databaseComment") ? { ...base, comment: editDatabaseCommentText.value } : null;
     if (!options) return;
     const sql = await buildUpdateDatabasePropertiesSql(options);
     await executeTreeNodeSqlWithProductionGuard(node, sql, { database: node.database || node.label });
@@ -2794,15 +2377,7 @@ async function confirmEditSchemaComment() {
   }
 }
 
-async function openCreateDatabase() {
-  if (isDuckDbConnection.value) {
-    await createDuckDbAttachedDatabaseFile();
-    return;
-  }
-  if (isSqliteAttachConnection.value) {
-    await attachSqliteDatabaseFile();
-    return;
-  }
+function openCreateDatabase() {
   openCreateDatabaseDialog();
 }
 
@@ -2891,8 +2466,6 @@ function openConnectionNamespaceCreation() {
 }
 
 function connectionNamespaceCreationLabel() {
-  if (isDuckDbConnection.value) return t("contextMenu.createDuckDbFile");
-  if (isSqliteAttachConnection.value) return t("contextMenu.attachSqliteDatabase");
   if (isConnectionSchemaCreation.value) return t("contextMenu.createSchema");
   return t("contextMenu.createDatabase");
 }
@@ -2943,98 +2516,6 @@ async function loadCreateDatabaseCharsetMetadata(target: "create" | "edit" = "cr
   }
 }
 
-function ensureDuckDbFileExtension(path: string): string {
-  return /\.(duckdb|db)$/i.test(path) ? path : `${path}.duckdb`;
-}
-
-async function createDuckDbAttachedDatabaseFile() {
-  const node = activeNode.value;
-  if (!node.connectionId) return;
-  if (!isTauriRuntime()) {
-    toast(t("contextMenu.createDuckDbFileDesktopOnly"), 4000);
-    return;
-  }
-
-  try {
-    const { save } = await import("@tauri-apps/plugin-dialog");
-    const selectedPath = await save({
-      defaultPath: "database.duckdb",
-      filters: [{ name: "DuckDB", extensions: ["duckdb", "db"] }],
-    });
-    if (!selectedPath) return;
-
-    const path = ensureDuckDbFileExtension(selectedPath);
-    await connectionStore.ensureConnected(node.connectionId);
-    const existingDatabases = await api.listDatabases(node.connectionId);
-    const name = uniqueAttachedDatabaseName(
-      attachedDatabaseNameFromPath(path, "duckdb_database"),
-      existingDatabases.map((database) => database.name),
-    );
-    const sql = await buildDuckDbAttachDatabaseSql(path, name);
-    const executionResult = await executeTreeNodeSqlWithProductionGuard(node, sql, { database: "" });
-    if (executionResult === undefined) return;
-
-    const config = connectionStore.getConfig(node.connectionId);
-    if (config) {
-      await connectionStore.updateConnection({
-        ...config,
-        attached_databases: [...(config.attached_databases ?? []), { name, path }],
-      });
-    }
-    await connectionStore.ensureVisibleDatabase(node.connectionId, name);
-    await connectionStore.loadDatabases(node.connectionId, { force: true });
-    connectionStore.selectedTreeNodeId = `${node.connectionId}:${name}`;
-    toast(t("contextMenu.createDuckDbFileSuccess", { name }), 3000);
-  } catch (e: any) {
-    toast(t("contextMenu.tableOperationFailed", { message: e?.message || String(e) }), 5000);
-  }
-}
-
-async function attachSqliteDatabaseFile() {
-  const node = activeNode.value;
-  if (!node.connectionId) return;
-  if (!isTauriRuntime()) {
-    toast(t("contextMenu.attachSqliteDatabaseDesktopOnly"), 4000);
-    return;
-  }
-
-  try {
-    const { open } = await import("@tauri-apps/plugin-dialog");
-    const selected = await open({
-      title: t("contextMenu.attachSqliteDatabase"),
-      multiple: false,
-      filters: [{ name: "SQLite", extensions: SQLITE_DATABASE_FILE_EXTENSIONS }],
-    });
-    const path = Array.isArray(selected) ? selected[0] : selected;
-    if (!path || typeof path !== "string") return;
-
-    await connectionStore.ensureConnected(node.connectionId);
-    const existingDatabases = await api.listDatabases(node.connectionId);
-    const name = uniqueAttachedDatabaseName(
-      attachedDatabaseNameFromPath(path, "sqlite_database"),
-      existingDatabases.map((database) => database.name),
-      ["main", "temp"],
-    );
-    const sql = await buildSqliteAttachDatabaseSql(path, name);
-    const executionResult = await executeTreeNodeSqlWithProductionGuard(node, sql, { database: "" });
-    if (executionResult === undefined) return;
-
-    const config = connectionStore.getConfig(node.connectionId);
-    if (config) {
-      await connectionStore.updateConnection({
-        ...config,
-        attached_databases: [...(config.attached_databases ?? []), { name, path }],
-      });
-    }
-    await connectionStore.ensureVisibleDatabase(node.connectionId, name);
-    await connectionStore.loadDatabases(node.connectionId, { force: true });
-    connectionStore.selectedTreeNodeId = `${node.connectionId}:${name}`;
-    toast(t("contextMenu.attachSqliteDatabaseSuccess", { name }), 3000);
-  } catch (e: any) {
-    toast(t("contextMenu.tableOperationFailed", { message: e?.message || String(e) }), 5000);
-  }
-}
-
 async function confirmCreateDatabase() {
   const node = sidebarFormTarget.value ?? activeNode.value;
   const name = createDatabaseName.value.trim();
@@ -3042,14 +2523,6 @@ async function confirmCreateDatabase() {
   try {
     await connectionStore.ensureConnected(node.connectionId);
     const config = connectionStore.getConfig(node.connectionId);
-    if (config?.db_type === "mongodb") {
-      showCreateDatabaseDialog.value = false;
-      await api.mongoCreateDatabase(node.connectionId, name);
-      toast(t("contextMenu.createDatabaseSuccess", { name }), 3000);
-      await connectionStore.ensureVisibleDatabase(node.connectionId, name);
-      await connectionStore.loadMongoDatabases(node.connectionId);
-      return;
-    }
     const sql = await buildCreateDatabaseSql({
       databaseType: config?.db_type,
       driverProfile: config?.driver_profile,
@@ -3088,10 +2561,7 @@ async function applyCreateDatabaseAuthorizationPlan() {
       execute: () => executeAuthorizationPlan(plan, (step) => api.executeMulti(node.connectionId!, step.database, step.sql, undefined, undefined, { maxRows: 1000, continueOnError: true })),
     });
     if (!results) return;
-    const displayResults = results.map((result) => ({
-      ...result,
-      message: result.message && result.step.operation === "createDatabase" ? appendCreateDatabaseErrorHint(config?.db_type, result.message, t) : result.message,
-    }));
+    const displayResults = results;
     createDatabaseAuthorizationResults.value = displayResults;
     const created = displayResults.some((result) => result.step.id === "create-database" && result.status === "success");
     const status = authorizationPlanStatus(displayResults);
@@ -3101,7 +2571,7 @@ async function applyCreateDatabaseAuthorizationPlan() {
     }
     toast(t(status === "success" ? "contextMenu.createDatabaseSuccess" : status === "partial" ? "contextMenu.createDatabasePartial" : "contextMenu.createDatabaseFailed", { name }), status === "success" ? 3000 : 5000);
   } catch (error: any) {
-    const message = appendCreateDatabaseErrorHint(connectionStore.getConfig(node.connectionId)?.db_type, error?.message || String(error), t);
+    const message = error?.message || String(error);
     toast(t("contextMenu.tableOperationFailed", { message }), 8000);
   } finally {
     createDatabaseAuthorizationApplying.value = false;
@@ -3144,11 +2614,6 @@ function dropDatabase() {
 
 async function confirmDropDatabase() {
   const node = sidebarDangerTarget.value ?? activeNode.value;
-  if (node.type === "mongo-db") {
-    await confirmDropMongoDatabase();
-    return;
-  }
-
   const connectionId = node.connectionId;
   if (!connectionId || dropDatabaseLoading.value) return;
   dropDatabaseLoading.value = true;
@@ -3195,8 +2660,6 @@ async function confirmCreateSchema() {
     toast(t("contextMenu.createSchemaSuccess", { name }), 3000);
     if (isConnectionLevelSchemaCreation) {
       await connectionStore.loadDatabases(node.connectionId, { force: true });
-    } else if (config?.db_type === "sqlserver") {
-      await connectionStore.loadSqlServerDatabaseObjects(node.connectionId, targetDatabase || "", { force: true });
     } else {
       await connectionStore.loadSchemas(node.connectionId, targetDatabase || "", { force: true });
     }
@@ -3217,22 +2680,15 @@ async function confirmDropSchema() {
     await connectionStore.ensureConnected(node.connectionId);
     const config = connectionStore.getConfig(node.connectionId);
     const dbType = effectiveDatabaseTypeForConnection(config);
-    let dropExecutionSchema: string | undefined;
-    if (dbType === "dameng") {
-      dropExecutionSchema = damengDropSchemaExecutionSchema(config?.username, node.label) ?? undefined;
-      if (!dropExecutionSchema) throw new Error(t("contextMenu.dropDamengSchemaRequiresDifferentDba"));
-    }
     const sql =
       dropSchemaPreviewSql.value ||
       (await buildDropSchemaSql({
         databaseType: databaseTypeForNode(node),
         name: node.label,
       }));
-    await executeTreeNodeSqlWithProductionGuard(node, sql, { database: node.database, schema: dropExecutionSchema });
+    await executeTreeNodeSqlWithProductionGuard(node, sql, { database: node.database, schema: undefined });
     toast(t("contextMenu.dropSchemaSuccess", { name: node.label }), 3000);
-    if (config?.db_type === "sqlserver") {
-      await connectionStore.loadSqlServerDatabaseObjects(node.connectionId, node.database, { force: true });
-    } else if (isSingleDatabase(dbType)) {
+    if (isSingleDatabase(dbType)) {
       await connectionStore.loadDatabases(node.connectionId, { force: true });
     } else {
       await connectionStore.loadSchemas(node.connectionId, node.database, { force: true });
@@ -3244,7 +2700,6 @@ async function confirmDropSchema() {
 
 function duplicateStructure(source: TreeNode = activeNode.value) {
   if (!isDuplicateStructureSource(source)) return;
-  if (databaseTypeForNode(source) === "victoriametrics") return;
   duplicateStructureSource.value = source;
   duplicateTableName.value = `${source.label}_copy`;
   showDuplicateDialog.value = true;
@@ -3258,7 +2713,6 @@ async function confirmDuplicateStructure() {
   const node = duplicateStructureSource.value || (isDuplicateStructureSource(activeNode.value) ? activeNode.value : null);
   const newName = duplicateTableName.value.trim();
   if (!newName || !node) return;
-  if (databaseTypeForNode(node) === "victoriametrics") return;
   showDuplicateDialog.value = false;
   try {
     await connectionStore.ensureConnected(node.connectionId);
@@ -3419,12 +2873,6 @@ function openPasteTableDialog() {
 function createTable() {
   const node = activeNode.value;
   if (!node.connectionId || !node.database) return;
-  if (connectionStore.getConfig(node.connectionId)?.db_type === "hbase") {
-    const tabId = queryStore.createTab(node.connectionId, node.database, node.database, "hbase", undefined, "");
-    const tab = queryStore.tabs.find((candidate) => candidate.id === tabId);
-    if (tab) tab.hbaseCreateTableOnOpen = true;
-    return;
-  }
   queryStore.openTableStructure(node.connectionId, node.database, node.schema, "");
 }
 
@@ -3433,8 +2881,7 @@ function createView() {
   if (!node.connectionId || !node.database) return;
   connectionStore.activeConnectionId = node.connectionId;
   const viewName = "new_view";
-  const effectiveDbType = effectiveDatabaseTypeForConnection(connectionStore.getConfig(node.connectionId));
-  const viewSqlName = effectiveDbType === "informix" || !node.schema ? viewName : `${node.schema}.${viewName}`;
+  const viewSqlName = !node.schema ? viewName : `${node.schema}.${viewName}`;
   const tabId = queryStore.createTab(node.connectionId, node.database, t("contextMenu.createView"), "query", node.schema, undefined, node.catalog);
   queryStore.updateSql(tabId, `CREATE VIEW ${viewSqlName} AS\nSELECT\n  *\nFROM table_name;\n`);
   queryStore.setObjectSource(tabId, {
@@ -3442,36 +2889,6 @@ function createView() {
     name: viewName,
     objectType: "VIEW",
   });
-}
-
-function requestDeleteHBaseTable() {
-  showHBaseDeleteTableConfirm.value = true;
-}
-
-async function confirmDeleteHBaseTable() {
-  const node = sidebarDangerTarget.value ?? activeNode.value;
-  if (!node.connectionId || !node.database || connectionStore.getConfig(node.connectionId)?.db_type !== "hbase") return;
-  try {
-    await connectionStore.ensureConnected(node.connectionId);
-    await api.hbaseDeleteTable(node.connectionId, node.database, node.label);
-    closeDroppedTableObjectTabsForNode(node);
-    connectionStore.removePinnedTreeNodes([node]);
-    await connectionStore.refreshObjectListTreeNode(node.connectionId, node.database);
-    toast(t("hbase.tableDeleted", { table: node.database === "default" ? node.label : `${node.database}:${node.label}` }));
-  } catch (error: any) {
-    toast(t("contextMenu.tableOperationFailed", { message: error?.message || String(error) }), 5000);
-    throw error;
-  }
-}
-
-function createMysqlObjectTemplate() {
-  const node = activeNode.value;
-  if (!node.connectionId || !node.database) return;
-  const template = mysqlObjectTemplateForGroup(connectionStore.getConfig(node.connectionId), node);
-  if (!template) return;
-  connectionStore.activeConnectionId = node.connectionId;
-  const tabId = queryStore.createTab(node.connectionId, node.database, t(template.titleKey), "query", node.schema, undefined, node.catalog);
-  queryStore.updateSql(tabId, template.sql);
 }
 
 const canExpand = computed(() => {
@@ -3485,7 +2902,7 @@ const canExpand = computed(() => {
   if (activeNode.value.type === "sequence" || activeNode.value.type === "synonym") {
     const config = activeNode.value.connectionId ? connectionStore.getConfig(activeNode.value.connectionId) : undefined;
     const dbType = config ? effectiveDatabaseTypeForConnection(config) : undefined;
-    if (dbType === "opengauss" || dbType === "gaussdb") return true;
+    if (dbType === "opengauss") return true;
   }
   return canTreeNodeShowExpander({
     type: activeNode.value.type,
@@ -3500,9 +2917,7 @@ const canOpenSqlFileExecution = computed(() => {
 });
 
 const canExportAllDatabases = computed(() => {
-  if (activeNode.value.type !== "connection" || !activeNode.value.connectionId) return false;
-  const dbType = connectionStore.getConfig(activeNode.value.connectionId)?.db_type;
-  return !["redis", "mongodb", "elasticsearch", "easysearch", "qdrant", "milvus", "weaviate", "chromadb", "etcd", "zookeeper", "mq", "nacos"].includes(dbType || "");
+  return activeNode.value.type === "connection" && !!activeNode.value.connectionId;
 });
 
 const canOpenDiagram = computed(() => {
@@ -3520,12 +2935,12 @@ const canOpenObjectBrowser = computed(() => {
 const canOpenTableImport = computed(() => {
   const node = activeNode.value;
   const supportedNode = node.type === "table" || ((node.type === "database" || node.type === "schema" || node.type === "group-tables") && canCreateTable.value);
-  return supportedNode && !isSqlServerLinkedNode(node) && !!node.connectionId && !!node.database && supportsTableImport(currentDatabaseType());
+  return supportedNode && !!node.connectionId && !!node.database && supportsTableImport(currentDatabaseType());
 });
 
 const canOpenStructureEditor = computed(() => {
   const editableNode = activeNode.value.type === "table" || ((activeNode.value.type === "column" || activeNode.value.type === "index") && !!activeNode.value.tableName);
-  return editableNode && !isSqlServerLinkedNode(activeNode.value) && !!activeNode.value.connectionId && !!activeNode.value.database && supportsTableStructureEditing(currentTableStructureDatabaseType());
+  return editableNode && !!activeNode.value.connectionId && !!activeNode.value.database && supportsTableStructureEditing(currentTableStructureDatabaseType());
 });
 
 const canOpenFieldLineage = computed(() => {
@@ -3542,7 +2957,6 @@ const isSelected = computed(() => connectionStore.selectedTreeNodeId === activeN
 const isMultiSelected = computed(() => connectionStore.selectedTreeNodeIdsSet.has(activeNode.value.id));
 
 const dangerDialogRoutes: Array<{ flag: { value: boolean }; createRequest: () => SidebarDangerDialogRequest }> = [];
-const showHBaseDeleteTableConfirm = shallowRef(false);
 
 let stopDangerDialogRouting: (() => void) | null = null;
 
@@ -3608,17 +3022,6 @@ routeDangerDialog(showDropTableConfirm, () =>
     confirm: confirmDropTable,
   }),
 );
-
-routeDangerDialog(showHBaseDeleteTableConfirm, () => {
-  const table = activeNode.value.database && activeNode.value.database !== "default" ? `${activeNode.value.database}:${activeNode.value.label}` : activeNode.value.label;
-  return dangerRequest({
-    title: t("hbase.deleteTable"),
-    message: t("hbase.deleteTableConfirm", { table }),
-    details: table,
-    confirmLabel: t("common.delete"),
-    confirm: confirmDeleteHBaseTable,
-  });
-});
 
 routeDangerDialog(showEmptyTableConfirm, () =>
   dangerRequest({
@@ -3756,58 +3159,6 @@ routeDangerDialog(showDropDatabaseConfirm, () =>
   }),
 );
 
-routeDangerDialog(showDropMongoCollectionConfirm, () =>
-  dangerRequest({
-    title: t("contextMenu.confirmDropCollectionTitle"),
-    message: t("contextMenu.confirmDropCollectionMessage", { name: activeNode.value.label }),
-    confirmLabel: t("contextMenu.dropCollection"),
-    get loading() {
-      return dropMongoCollectionLoading.value;
-    },
-    closeOnConfirm: false,
-    confirm: confirmDropMongoCollection,
-  }),
-);
-
-routeDangerDialog(showDropMongoIndexConfirm, () =>
-  dangerRequest({
-    title: t("contextMenu.confirmDropIndexTitle"),
-    message: t("contextMenu.confirmDropMongoIndexMessage", { name: mongoIndexNameForNode(activeNode.value), collection: activeNode.value.tableName || "" }),
-    details: mongoIndexDropPreview(activeNode.value, mongoIndexNameForNode(activeNode.value)),
-    confirmLabel: t("contextMenu.dropIndex"),
-    get loading() {
-      return dropMongoIndexLoading.value;
-    },
-    closeOnConfirm: false,
-    confirm: confirmDropMongoIndex,
-  }),
-);
-
-routeDangerDialog(showDropAllMongoIndexesConfirm, () =>
-  dangerRequest({
-    title: t("contextMenu.dropAllIndexes"),
-    message: t("contextMenu.confirmDropMongoAllIndexesMessage", { name: activeNode.value.tableName || activeNode.value.label }),
-    detailsText: t("contextMenu.confirmDropMongoAllIndexesDetails"),
-    sql: mongoDropAllIndexesPreview(activeNode.value),
-    confirmLabel: t("contextMenu.dropAllIndexes"),
-    get loading() {
-      return dropAllMongoIndexesLoading.value;
-    },
-    closeOnConfirm: false,
-    confirm: confirmDropAllMongoIndexes,
-  }),
-);
-
-routeDangerDialog(showFlushRedisDbConfirm, () =>
-  dangerRequest({
-    title: t("redis.flushDb"),
-    message: t("redis.flushDbMessage"),
-    details: t("redis.flushDbDetails", { db: activeNode.value.database }),
-    confirmLabel: t("redis.flushDbConfirm"),
-    confirm: confirmFlushRedisDb,
-  }),
-);
-
 routeDangerDialog(showDropSchemaConfirm, () =>
   dangerRequest({
     title: t("contextMenu.confirmDropSchemaTitle"),
@@ -3931,39 +3282,6 @@ function databaseDialogCapabilities() {
 
 function databaseSpecificDialogCapabilities() {
   return {
-    showCreateNacosNamespaceDialog,
-    createNacosNamespaceId,
-    createNacosNamespaceName,
-    createNacosNamespaceDesc,
-    createNacosNamespaceLoading,
-    confirmCreateNacosNamespace,
-    showEditNacosNamespaceDialog,
-    editNacosNamespaceName,
-    editNacosNamespaceDesc,
-    editNacosNamespaceLoading,
-    confirmEditNacosNamespace,
-    showRenameMongoCollectionDialog,
-    renameMongoCollectionName,
-    renameMongoCollectionError,
-    renameMongoCollectionPreview,
-    renameMongoCollectionLoading,
-    confirmRenameMongoCollection,
-    showCreateMongoIndexDialog,
-    mongoCreateIndexForm,
-    mongoCreateIndexFieldOptions,
-    mongoCreateIndexError,
-    mongoCreateIndexLoading,
-    mongoIndexKeyTypes,
-    mongoCreateIndexCanSubmit,
-    mongoCreateIndexCanAddField,
-    addMongoCreateIndexField,
-    removeMongoCreateIndexField,
-    confirmCreateMongoIndex,
-    showRedisDatabaseAliasDialog,
-    redisDatabaseAliasInput,
-    redisDatabaseAliasSaving,
-    confirmRedisDatabaseAlias,
-    clearRedisDatabaseAlias,
     showCreateSchemaDialog,
     createSchemaName,
     confirmCreateSchema,
@@ -4140,9 +3458,6 @@ function buildConnectionSidebarMenu(context: SidebarMenuFactoryContext): boolean
     if (supportsQueryActions) {
       items.push({ label: t("contextMenu.newQuery"), action: newQuery, icon: TerminalSquare });
     }
-    if (currentDatabaseType() === "redis") {
-      items.push({ label: t("contextMenu.instanceInfo"), action: openRedisInstanceInfo, icon: Info });
-    }
     if (supportsQueryActions) {
       const sqlHistoryMenu = savedSqlHistorySubmenu();
       if (sqlHistoryMenu) items.push(sqlHistoryMenu);
@@ -4153,11 +3468,8 @@ function buildConnectionSidebarMenu(context: SidebarMenuFactoryContext): boolean
     if (node.connectionId && connectionSupportsProcessList(connectionStore.getConfig(node.connectionId))) {
       items.push({ label: t("contextMenu.processList"), action: openProcessList, icon: Activity });
     }
-    if (node.connectionId && (currentDatabaseType() === "nacos" || connectionSupportsServerDashboard(connectionStore.getConfig(node.connectionId)) || connectionSupportsPgServerDashboard(connectionStore.getConfig(node.connectionId)))) {
+    if (node.connectionId && connectionSupportsPgServerDashboard(connectionStore.getConfig(node.connectionId))) {
       items.push({ label: t("contextMenu.serverDashboard"), action: openServerDashboard, icon: Gauge });
-    }
-    if (currentDatabaseType() === "dameng") {
-      items.push({ label: t("contextMenu.damengJobAdmin"), action: openDamengJobAdmin, icon: CalendarClock });
     }
     if (canCopyFinalProxyPort.value) {
       items.push({ label: t("contextMenu.copyFinalProxyPort"), action: copyFinalProxyPort, icon: Network });
@@ -4173,13 +3485,6 @@ function buildConnectionSidebarMenu(context: SidebarMenuFactoryContext): boolean
         label: connectionNamespaceCreationLabel(),
         action: openConnectionNamespaceCreation,
         icon: Plus,
-      });
-    }
-    if (canCreateNacosNamespace.value) {
-      items.push({
-        label: t("nacos.createNamespace"),
-        action: openCreateNacosNamespaceDialog,
-        icon: FolderPlus,
       });
     }
     items.push({ label: "", separator: true });
@@ -4219,20 +3524,6 @@ function buildConnectionSidebarMenu(context: SidebarMenuFactoryContext): boolean
       });
     }
     items.push({ label: t("contextMenu.editConnection"), action: editConnection, icon: Pencil, shortcut: shortcutEditConnection.value });
-    if (revealConnectionFilePath.value) {
-      items.push({
-        label: t("contextMenu.revealDatabaseFile"),
-        action: revealDatabaseFile,
-        icon: FolderOpen,
-      });
-    }
-    if (canBackupSqliteDatabase.value) {
-      items.push({
-        label: t("contextMenu.backupSqliteDatabase"),
-        action: backupSqliteDatabase,
-        icon: HardDriveDownload,
-      });
-    }
     items.push({ label: connectionDuplicateMenuLabel(), action: duplicateConnection, icon: CopyPlus });
     items.push({ label: "", separator: true });
     items.push({
@@ -4275,20 +3566,6 @@ function buildDatabaseSidebarMenu(context: SidebarMenuFactoryContext): boolean {
   const { node, items } = context;
   // 4. Database / Schema
   if (node.type === "database" || node.type === "schema") {
-    if (currentDatabaseType() === "hbase") {
-      items.push({ label: t("contextMenu.copyName"), action: copyName, icon: Copy, shortcut: shortcutCopyName.value });
-      if (canCreateTable.value) {
-        items.push({ label: "", separator: true });
-        items.push({ label: t("contextMenu.createTable"), action: createTable, icon: Plus });
-      }
-      items.push({
-        label: t("contextMenu.refreshChildren"),
-        action: refresh,
-        icon: RefreshCw,
-        shortcut: shortcutRefresh,
-      });
-      return true;
-    }
     if (canCloseDatabaseConnection.value) {
       items.push({ label: t("contextMenu.closeDatabaseConnection"), action: closeDatabaseConnection, icon: Unplug });
       items.push({ label: "", separator: true });
@@ -4303,7 +3580,7 @@ function buildDatabaseSidebarMenu(context: SidebarMenuFactoryContext): boolean {
       const sqlHistoryMenu = savedSqlHistorySubmenu();
       if (sqlHistoryMenu) items.push(sqlHistoryMenu);
     }
-    if (node.type === "database" && currentDatabaseType() !== "cloudflare-d1") {
+    if (node.type === "database") {
       if (!isNodeDefaultDatabase.value) {
         items.push({ label: t("contextMenu.setDefaultDatabase"), action: setNodeAsDefaultDatabase, icon: Database });
       } else {
@@ -4385,136 +3662,9 @@ function buildDatabaseSidebarMenu(context: SidebarMenuFactoryContext): boolean {
 
 function buildSpecialSidebarMenu(context: SidebarMenuFactoryContext): boolean {
   const { node, items } = context;
-  // 5. Redis DB / Mongo DB
-  if (currentDatabaseType() === "hbase" && node.type === "group-tables") {
-    if (canCreateTable.value) {
-      items.push({ label: t("contextMenu.createTable"), action: createTable, icon: Plus });
-      items.push({ label: "", separator: true });
-    }
-    items.push({ label: t("contextMenu.copyName"), action: copyName, icon: Copy, shortcut: shortcutCopyName.value });
-    items.push({
-      label: t("contextMenu.refreshChildren"),
-      action: refresh,
-      icon: RefreshCw,
-      shortcut: shortcutRefresh,
-    });
-    return true;
-  }
-
-  if (currentDatabaseType() === "hbase" && node.type === "table") {
-    items.push({ label: t("contextMenu.copyName"), action: copyName, icon: Copy, shortcut: shortcutCopyName.value });
-    items.push({ label: "", separator: true });
-    items.push({ label: t("contextMenu.viewData"), action: openDataImmediately, icon: TableProperties });
-    items.push({
-      label: t("contextMenu.openInNewDataTab"),
-      action: openDataInNewTabImmediately,
-      icon: CopyPlus,
-      shortcut: shortcutOpenDataInNewTab.value,
-    });
-    items.push({
-      label: t("contextMenu.refreshChildren"),
-      action: refresh,
-      icon: RefreshCw,
-      shortcut: shortcutRefresh,
-    });
-    if (!connectionStore.getConfig(node.connectionId || "")?.read_only) {
-      items.push({ label: "", separator: true });
-      items.push({
-        label: t("hbase.deleteTable"),
-        action: requestDeleteHBaseTable,
-        icon: Trash2,
-        shortcut: shortcutDelete,
-        variant: "destructive" as const,
-      });
-    }
-    return true;
-  }
-
-  if (node.type === "etcd-root" || node.type === "etcd-dashboard" || node.type === "etcd-access-control" || node.type === "zookeeper-root") {
-    items.push({ label: t("contextMenu.openConnection"), action: toggle, icon: Database });
-    return true;
-  }
 
   if (node.type === "user-admin") {
     items.push({ label: t("contextMenu.openUserAdmin"), action: openUserAdmin, icon: UsersRound });
-    return true;
-  }
-
-  if (node.type === "dameng-job-admin") {
-    items.push({ label: t("contextMenu.openDamengJobAdmin"), action: openDamengJobAdmin, icon: CalendarClock });
-    return true;
-  }
-
-  if (node.type === "redis-db" || node.type === "mongo-db") {
-    items.push({ label: t("contextMenu.newQuery"), action: newQuery, icon: TerminalSquare });
-    if (!isNodeDefaultDatabase.value) {
-      items.push({ label: t("contextMenu.setDefaultDatabase"), action: setNodeAsDefaultDatabase, icon: Database });
-    } else {
-      items.push({ label: t("contextMenu.clearDefaultDatabase"), action: clearNodeDefaultDatabase, icon: Database });
-    }
-    if (node.type === "mongo-db") {
-      items.push({ label: "", separator: true });
-      items.push({ label: t("transfer.dataTransfer"), action: openTransfer, icon: ArrowRightLeft });
-    }
-    if (node.type === "redis-db") {
-      items.push({ label: "", separator: true });
-      items.push({ label: t("redis.setDatabaseAlias"), action: openRedisDatabaseAliasDialog, icon: Pencil });
-      items.push({ label: t("redis.flushDb"), action: flushRedisDb, icon: Eraser, variant: "destructive" as const });
-    }
-    if (canDropMongoDatabase.value) {
-      items.push({ label: "", separator: true });
-      items.push({
-        label: t("contextMenu.dropDatabase"),
-        action: dropDatabase,
-        icon: Trash2,
-        shortcut: shortcutDelete,
-        variant: "destructive" as const,
-      });
-    }
-    return true;
-  }
-
-  if (node.type === "nacos-namespace") {
-    items.push({ label: t("contextMenu.openConnection"), action: toggle, icon: FolderOpen });
-    if (canEditNacosNamespace.value) {
-      items.push({ label: t("nacos.editNamespace"), action: openEditNacosNamespaceDialog, icon: Pencil });
-    }
-    items.push({
-      label: t("contextMenu.refreshChildren"),
-      action: refresh,
-      icon: RefreshCw,
-      shortcut: shortcutRefresh,
-    });
-    items.push({ label: "", separator: true });
-    items.push({ label: t("contextMenu.copyName"), action: copyName, icon: Copy, shortcut: shortcutCopyName.value });
-    return true;
-  }
-
-  if (node.type === "mongo-collection") {
-    items.push({ label: t("contextMenu.copyName"), action: copyName, icon: Copy, shortcut: shortcutCopyName.value });
-    items.push({ label: "", separator: true });
-    items.push({ label: t("contextMenu.viewData"), action: toggle, icon: TableProperties });
-    items.push({ label: t("contextMenu.newQuery"), action: newQuery, icon: TerminalSquare });
-    if (canRenameMongoCollection.value) {
-      items.push({
-        label: t("contextMenu.renameObject"),
-        action: openRenameMongoCollectionDialog,
-        icon: Pencil,
-        shortcut: shortcutRename,
-      });
-    }
-    if (canDropMongoCollection.value) {
-      items.push({ label: "", separator: true });
-      items.push({ label: t("contextMenu.dropCollection"), action: dropMongoCollection, icon: Trash2, shortcut: shortcutDelete, variant: "destructive" as const });
-    }
-    return true;
-  }
-
-  if (node.type === "elasticsearch-index" || node.type === "vector-collection") {
-    items.push({ label: t("contextMenu.copyName"), action: copyName, icon: Copy, shortcut: shortcutCopyName.value });
-    items.push({ label: "", separator: true });
-    items.push({ label: t("contextMenu.viewData"), action: toggle, icon: TableProperties });
-    items.push({ label: t("contextMenu.newQuery"), action: newQuery, icon: TerminalSquare });
     return true;
   }
 
@@ -4530,17 +3680,6 @@ function buildObjectSidebarMenu(context: SidebarMenuFactoryContext): boolean {
   const { node, items, deleteMenuLabel, deleteMenuAction, truncateMenuLabel, truncateMenuAction, emptyMenuLabel, emptyMenuAction } = context;
   // 6. Table / View / Materialized View
   if (node.type === "table" || node.type === "view" || node.type === "materialized_view") {
-    if (currentDatabaseType() === "victoriametrics" && node.type === "table") {
-      items.push({ label: t("contextMenu.copyName"), action: copyName, icon: Copy, shortcut: shortcutCopyName.value });
-      items.push({ label: "", separator: true });
-      items.push({ label: t("contextMenu.viewData"), action: openDataImmediately, icon: TableProperties });
-      items.push({ label: t("contextMenu.openInNewDataTab"), action: openDataInNewTabImmediately, icon: CopyPlus });
-      items.push({ label: t("contextMenu.newQuery"), action: newQuery, icon: TerminalSquare });
-      items.push({ label: "", separator: true });
-      items.push(exportDataSubmenu(false));
-      items.push({ label: t("contextMenu.refreshChildren"), action: refresh, icon: RefreshCw, shortcut: shortcutRefresh });
-      return true;
-    }
     const destructiveActions: ContextMenuItem[] = [];
     items.push({ label: t("contextMenu.copyName"), action: copyName, icon: Copy, shortcut: shortcutCopyName.value });
     items.push({ label: "", separator: true });
@@ -4695,16 +3834,7 @@ function buildObjectSidebarMenu(context: SidebarMenuFactoryContext): boolean {
       items.push({ label: "", separator: true });
       items.push({ label: t("contextMenu.editIndex"), action: openStructureEditor, icon: PencilRuler });
     }
-    if (node.type === "index" && canDropMongoIndex.value) {
-      items.push({ label: "", separator: true });
-      items.push({
-        label: deleteMenuLabel(t("contextMenu.dropIndex")),
-        action: deleteMenuAction(dropMongoIndex),
-        icon: Trash2,
-        shortcut: shortcutDelete,
-        variant: "destructive" as const,
-      });
-    } else if (canDropTableChildObject.value) {
+    if (canDropTableChildObject.value) {
       items.push({ label: "", separator: true });
       items.push({
         label: deleteMenuLabel(dropTableChildObjectMenuLabel()),
@@ -4723,7 +3853,7 @@ function buildObjectSidebarMenu(context: SidebarMenuFactoryContext): boolean {
     items.push({ label: t("contextMenu.executeProcedure"), action: openProcedureExecution, icon: Play });
     const config = node.connectionId ? connectionStore.getConfig(node.connectionId) : undefined;
     const dbType = config ? effectiveDatabaseTypeForConnection(config) : undefined;
-    if (dbType === "opengauss" || dbType === "gaussdb") {
+    if (dbType === "opengauss") {
       items.push({ label: t("contextMenu.debugProcedure"), action: openProcedureDebug, icon: Bug });
     }
     items.push({ label: t("contextMenu.viewSource"), action: () => openObjectSourceDialog(false), icon: Code2 });
@@ -4847,7 +3977,6 @@ function buildObjectSidebarMenu(context: SidebarMenuFactoryContext): boolean {
 }
 
 function treeTableClipboardMenuItems(node: TreeNode): ContextMenuItem[] {
-  if (currentDatabaseType() === "victoriametrics") return [];
   const copyItem: ContextMenuItem = { label: t("contextMenu.copyTable"), action: copySelectedNames, icon: Copy };
   if (!node.connectionId || !node.database) return [copyItem];
   const state = tableClipboardMenuState(
@@ -4870,7 +3999,7 @@ function createGroupObjectTemplate() {
   if (!node.connectionId || !node.database) return;
   const config = connectionStore.getConfig(node.connectionId);
   const dbType = effectiveDatabaseTypeForConnection(config);
-  const isOpenGauss = dbType === "opengauss" || dbType === "gaussdb";
+  const isOpenGauss = dbType === "opengauss";
   const schemaName = node.schema ? `${node.schema}.` : "";
   const templates: Partial<Record<TreeNode["type"], { title: string; name: string; objectType: string; sql: string }>> = {};
   templates["group-procedures"] = {
@@ -5063,13 +4192,10 @@ function buildObjectGroupSidebarMenu(context: SidebarMenuFactoryContext): boolea
   const { node, items } = context;
   // 9. Group Labels (group-columns, group-tables, etc.)
   if (isGroupLabel(node)) {
-    const mysqlObjectTemplate = node.connectionId ? mysqlObjectTemplateForGroup(connectionStore.getConfig(node.connectionId), node) : null;
-    const hasMongoCreateIndexAction = node.type === "group-indexes" && canCreateMongoIndex.value;
-    const hasMongoDropAllIndexesAction = node.type === "group-indexes" && canDropAllMongoIndexes.value;
     const canCreateJobDialog = (node.type === "group-jobs" || node.type === "group-schedulers") && !!node.connectionId && !!node.database;
     const creatableObjectGroups = new Set<TreeNode["type"]>(["group-procedures", "group-functions", "group-packages", "group-package-bodies", "group-types", "group-sequences", "group-synonyms", "group-triggers", "group-materialized-views"]);
     const canCreateGroupObject = creatableObjectGroups.has(node.type) && !!node.connectionId && !!node.database;
-    const hasGroupAction = (node.type === "group-tables" && canCreateTable.value) || (node.type === "group-views" && !!node.connectionId && !!node.database) || !!mysqlObjectTemplate || hasMongoCreateIndexAction || hasMongoDropAllIndexesAction || canCreateGroupObject || canCreateJobDialog;
+    const hasGroupAction = (node.type === "group-tables" && canCreateTable.value) || (node.type === "group-views" && !!node.connectionId && !!node.database) || canCreateGroupObject || canCreateJobDialog;
     const canLoadAllObjectGroup = !!objectTypesForGroupNode(node.type);
     if (node.type === "group-tables" && canCreateTable.value) {
       items.push({ label: t("contextMenu.createTable"), action: createTable, icon: Plus });
@@ -5103,16 +4229,6 @@ function buildObjectGroupSidebarMenu(context: SidebarMenuFactoryContext): boolea
         "group-materialized-views": t("contextMenu.createMaterializedView"),
       };
       items.push({ label: labelByGroup[node.type] ?? t("contextMenu.createObject"), action: createGroupObjectTemplate, icon: Plus });
-    }
-    if (mysqlObjectTemplate) {
-      items.push({ label: t(mysqlObjectTemplate.titleKey), action: createMysqlObjectTemplate, icon: Plus });
-    }
-    if (hasMongoCreateIndexAction) {
-      items.push({ label: t("contextMenu.createMongoIndex"), action: openCreateMongoIndexDialog, icon: Plus });
-    }
-    if (hasMongoDropAllIndexesAction) {
-      if (hasMongoCreateIndexAction) items.push({ label: "", separator: true });
-      items.push({ label: t("contextMenu.dropAllIndexes"), action: dropAllMongoIndexes, icon: Trash2, variant: "destructive" as const });
     }
     if (hasGroupAction) {
       items.push({ label: "", separator: true });

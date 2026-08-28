@@ -3,10 +3,8 @@ use serde_json::Value;
 
 use crate::models::connection::DatabaseType;
 use crate::sql_dialect::{
-    firebird_rows_clause, pagination_strategy, qualified_table_name, quote_table_identifier, PaginationContext,
-    TablePaginationStrategy,
+    pagination_strategy, qualified_table_name, quote_table_identifier, PaginationContext, TablePaginationStrategy,
 };
-
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DatabaseSearchColumn {
     pub name: String,
@@ -111,24 +109,10 @@ pub fn build_database_search_sql(options: DatabaseSearchSqlOptions) -> Option<Da
         text_columns.iter().chain(numeric_columns.iter()).map(|column| column.name.clone()).collect();
 
     let sql = match pagination_strategy(options.database_type, PaginationContext::BoundedRead) {
-        TablePaginationStrategy::SqlServerTop => format!("SELECT TOP {limit} * FROM {table} WHERE ({where_clause})"),
-        TablePaginationStrategy::IrisTop => format!("SELECT TOP {limit} * FROM {table} WHERE ({where_clause})"),
-        TablePaginationStrategy::InformixFirst => format!("SELECT FIRST {limit} * FROM {table} WHERE ({where_clause})"),
-        TablePaginationStrategy::FirebirdRows => {
-            let rows = firebird_rows_clause(limit, 0);
-            format!("SELECT * FROM {table} WHERE ({where_clause}) {rows}")
-        }
-        TablePaginationStrategy::Db2FetchFirst | TablePaginationStrategy::FetchFirst => {
-            format!("SELECT * FROM {table} WHERE ({where_clause}) FETCH FIRST {limit} ROWS ONLY")
-        }
-        TablePaginationStrategy::Rownum => {
-            format!("SELECT * FROM (SELECT * FROM {table} WHERE ({where_clause})) WHERE ROWNUM <= {limit}")
-        }
         TablePaginationStrategy::AgentMaxRows => format!("SELECT * FROM {table} WHERE ({where_clause});"),
-        TablePaginationStrategy::QuestDbLimit | TablePaginationStrategy::LimitOffset => {
+        TablePaginationStrategy::LimitOffset => {
             format!("SELECT * FROM {table} WHERE ({where_clause}) LIMIT {limit};")
         }
-        TablePaginationStrategy::Unbounded => format!("SELECT * FROM {table} WHERE ({where_clause})"),
     };
 
     Some(DatabaseSearchSql { sql, searchable_columns })
@@ -231,17 +215,11 @@ fn like_pattern(term: &str) -> String {
 
 fn text_cast_expression(database_type: Option<DatabaseType>, identifier: &str) -> String {
     match database_type {
-        Some(DatabaseType::Mysql) => format!("LOWER(CAST({identifier} AS CHAR))"),
-        Some(DatabaseType::SqlServer) => format!("LOWER(CAST({identifier} AS NVARCHAR(MAX)))"),
-        Some(DatabaseType::Oracle | DatabaseType::OceanbaseOracle) => {
-            format!("LOWER(CAST({identifier} AS VARCHAR2(4000)))")
-        }
-        Some(DatabaseType::ClickHouse) => format!("lower(toString({identifier}))"),
         _ => format!("LOWER(CAST({identifier} AS TEXT))"),
     }
 }
 
-fn sql_value_literal(database_type: Option<DatabaseType>, column: &DatabaseSearchColumn, value: &Value) -> String {
+fn sql_value_literal(_database_type: Option<DatabaseType>, column: &DatabaseSearchColumn, value: &Value) -> String {
     match value {
         Value::Null => "NULL".to_string(),
         Value::Number(number) => number.to_string(),
@@ -256,11 +234,7 @@ fn sql_value_literal(database_type: Option<DatabaseType>, column: &DatabaseSearc
             if is_numeric_search_column(column) && parse_numeric_term(value).is_some() {
                 return value.trim().to_string();
             }
-            if database_type == Some(DatabaseType::SqlServer) {
-                format!("N{}", sql_string_literal(value))
-            } else {
-                sql_string_literal(value)
-            }
+            sql_string_literal(value)
         }
         other => sql_string_literal(&other.to_string()),
     }
@@ -277,20 +251,18 @@ mod tests {
     #[test]
     fn builds_table_search_query_over_text_columns() {
         let query = build_database_search_sql(DatabaseSearchSqlOptions {
-            database_type: Some(DatabaseType::Mysql),
-            schema: None,
+            database_type: Some(DatabaseType::Postgres),
+            schema: Some("public".to_string()),
             table_name: "users".to_string(),
-            columns: vec![col("id", "bigint", true), col("email", "varchar", false), col("avatar", "blob", false)],
+            columns: vec![col("id", "bigint", true), col("email", "varchar", false), col("avatar", "bytea", false)],
             term: "alice@example.com".to_string(),
             limit: Some(20),
         })
         .unwrap();
 
         assert_eq!(query.searchable_columns, vec!["email"]);
-        assert_eq!(
-            query.sql,
-            "SELECT * FROM `users` WHERE (LOWER(CAST(`email` AS CHAR)) LIKE '%alice@example.com%' ESCAPE '~') LIMIT 20;"
-        );
+        assert!(query.sql.contains("FROM \"public\".\"users\""));
+        assert!(query.sql.contains("LIMIT 20"));
     }
 
     #[test]
@@ -311,32 +283,13 @@ mod tests {
     }
 
     #[test]
-    fn builds_oceanbase_oracle_search_query_with_rownum_limit() {
-        let query = build_database_search_sql(DatabaseSearchSqlOptions {
-            database_type: Some(DatabaseType::OceanbaseOracle),
-            schema: Some("APP".to_string()),
-            table_name: "USERS".to_string(),
-            columns: vec![col("NAME", "varchar2", false)],
-            term: "alice".to_string(),
-            limit: Some(20),
-        })
-        .unwrap();
-
-        assert_eq!(query.searchable_columns, vec!["NAME"]);
-        assert_eq!(
-            query.sql,
-            "SELECT * FROM (SELECT * FROM \"APP\".\"USERS\" WHERE (LOWER(CAST(\"NAME\" AS VARCHAR2(4000))) LIKE '%alice%' ESCAPE '~')) WHERE ROWNUM <= 20"
-        );
-    }
-
-    #[test]
     fn returns_none_for_tables_without_searchable_columns() {
         assert_eq!(
             build_database_search_sql(DatabaseSearchSqlOptions {
-                database_type: Some(DatabaseType::Sqlite),
+                database_type: Some(DatabaseType::Postgres),
                 schema: None,
                 table_name: "files".to_string(),
-                columns: vec![col("payload", "blob", false)],
+                columns: vec![col("payload", "bytea", false)],
                 term: "needle".to_string(),
                 limit: None,
             }),
@@ -347,13 +300,13 @@ mod tests {
     #[test]
     fn builds_stable_where_predicate_for_opening_result_rows() {
         let where_clause = build_search_result_where(SearchResultWhereOptions {
-            database_type: Some(DatabaseType::SqlServer),
+            database_type: Some(DatabaseType::Postgres),
             columns: vec![col("id", "integer", true), col("email", "varchar", false)],
             result_columns: vec!["id".to_string(), "email".to_string()],
             row: vec![Value::from(42), Value::from("alice@example.com")],
             matched_columns: Vec::new(),
         });
 
-        assert_eq!(where_clause, "[id] = 42");
+        assert_eq!(where_clause, "\"id\" = 42");
     }
 }

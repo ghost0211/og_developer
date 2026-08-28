@@ -64,8 +64,9 @@ mod integration_tests {
             .collect();
         merged.values.extend(resolved);
 
-        let db_val = merged.values.get("db_type").and_then(|v| v.as_str()).unwrap_or("mysql");
-        let database_type: DatabaseType = serde_json::from_str(&format!("\"{db_val}\"")).unwrap_or(DatabaseType::Mysql);
+        let db_val = merged.values.get("db_type").and_then(|v| v.as_str()).unwrap_or("postgres");
+        let database_type: DatabaseType =
+            serde_json::from_str(&format!("\"{db_val}\"")).unwrap_or(DatabaseType::Postgres);
 
         let opts = SchemaDiffPreparationOptions {
             source_tables: vec![],

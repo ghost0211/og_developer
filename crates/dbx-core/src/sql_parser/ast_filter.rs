@@ -363,7 +363,7 @@ mod tests {
             target_rules: vec![],
             source_owners: vec![],
             target_owners: vec![],
-            database_type: crate::models::connection::DatabaseType::Mysql,
+            database_type: crate::models::connection::DatabaseType::Opengauss,
             target_schema: None,
             ignore_comments: false,
             cascade_delete: false,
@@ -371,7 +371,7 @@ mod tests {
             ..Default::default()
         };
 
-        let filtered = AstTransmitFilter::filter_diff_preparation_options(opts, "mysql");
+        let filtered = AstTransmitFilter::filter_diff_preparation_options(opts, "opengauss");
         assert_eq!(filtered.source_functions.len(), 1);
         assert_eq!(filtered.source_functions[0].name, "t1");
     }

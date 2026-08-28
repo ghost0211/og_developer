@@ -1,42 +1,12 @@
-pub mod agent_driver;
-pub mod clickhouse_driver;
-pub mod cloudberry;
-pub mod cloudflare_d1;
-pub use cloudflare_d1 as cloudflare_d1_driver;
-pub mod document_result;
-pub mod doris;
-pub mod duckdb_sql;
-#[cfg(feature = "duckdb-sidecar")]
-pub mod duckdb_worker_process;
-#[cfg(feature = "duckdb-sidecar")]
-pub mod duckdb_worker_protocol;
-pub mod easysearch_driver;
-pub mod elasticsearch_driver;
-pub mod elasticsearch_sql;
 pub mod file_validator;
-pub mod hbase_driver;
 pub mod http_tunnel;
-pub mod influxdb_driver;
-pub mod manticoresearch;
-pub mod mongo_driver;
-pub mod mysql;
-pub mod mysql_compatible;
-pub mod ob_oracle;
 pub mod postgres;
 pub mod proxy_tunnel;
-pub mod questdb;
-pub mod redis_driver;
-pub mod rqlite_driver;
 pub mod sqlite;
-pub mod sqlserver;
 pub mod ssh_host_key;
 pub mod ssh_prompt;
 pub mod ssh_tunnel;
-pub mod starrocks;
 pub mod transport_layer_tunnel;
-pub mod turso_driver;
-pub mod vector_driver;
-pub mod victoriametrics_driver;
 pub mod wkb;
 
 use reqwest::ClientBuilder;

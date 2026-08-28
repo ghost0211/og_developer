@@ -20,12 +20,6 @@ describe("sidebar tree item layout", () => {
     expect(alignedCommentLeadingWidth(undefined, true)).toBeUndefined();
   });
 
-  it("renders etcd leaf actions without expanders", () => {
-    expect(canTreeNodeShowExpander({ type: "etcd-root", childCount: 0 })).toBe(false);
-    expect(canTreeNodeShowExpander({ type: "etcd-dashboard", childCount: 0 })).toBe(false);
-    expect(canTreeNodeShowExpander({ type: "etcd-access-control", childCount: 0 })).toBe(false);
-  });
-
   it("never shows an expander for a sequence leaf even when it has children", () => {
     expect(canTreeNodeShowExpander({ type: "sequence", childCount: 0 })).toBe(false);
     expect(canTreeNodeShowExpander({ type: "sequence" })).toBe(false);

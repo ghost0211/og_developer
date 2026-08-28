@@ -8,15 +8,12 @@ export interface ConnectionDeepLinkDraft {
   driverLabel: string;
   host?: string;
   port?: number;
-  portExplicit?: boolean;
   username?: string;
   password?: string;
   database?: string;
   urlParams?: string;
   ssl?: boolean;
   connectionString?: string;
-  oracleConnectionType?: "service_name" | "sid";
-  useMongoUrl?: boolean;
   oneTime?: boolean;
 }
 
@@ -46,8 +43,8 @@ function optionalBooleanParam(params: URLSearchParams, ...keys: string[]): boole
   return value === "true" || value === "1" || value === "yes" || value === "on";
 }
 
-function draftFromConnectionUrl(value: string, preferredProfile?: string): ConnectionDeepLinkDraft {
-  const parsed = parseConnectionUrl(value, preferredProfile);
+function draftFromConnectionUrl(value: string): ConnectionDeepLinkDraft {
+  const parsed = parseConnectionUrl(value);
   return {
     name: parsed.name,
     dbType: parsed.dbType,
@@ -55,15 +52,12 @@ function draftFromConnectionUrl(value: string, preferredProfile?: string): Conne
     driverLabel: parsed.driverLabel,
     host: parsed.host,
     port: parsed.port,
-    portExplicit: parsed.portExplicit,
     username: parsed.username,
     password: parsed.password,
     database: parsed.database,
     urlParams: parsed.urlParams,
     ssl: parsed.ssl,
     connectionString: parsed.connectionString,
-    oracleConnectionType: parsed.oracleConnectionType,
-    useMongoUrl: parsed.useMongoUrl,
   };
 }
 
@@ -79,13 +73,12 @@ export function parseConnectionDeepLink(value: string): ConnectionDeepLinkDraft 
   if (normalizePath(url) !== CONNECTION_DEEP_LINK_TARGET) return null;
 
   const params = url.searchParams;
-  const preferredProfile = optionalParam(params, "type");
   const rawConnectionUrl = optionalParam(params, "url");
   const draft: ConnectionDeepLinkDraft = rawConnectionUrl
-    ? draftFromConnectionUrl(rawConnectionUrl, preferredProfile)
+    ? draftFromConnectionUrl(rawConnectionUrl)
     : (() => {
-        const profile = connectionProfileForScheme(preferredProfile || "mysql");
-        if (!profile) throw new Error(`Unsupported connection type: ${preferredProfile}`);
+        const profile = connectionProfileForScheme(optionalParam(params, "type") || "opengauss");
+        if (!profile) throw new Error(`Unsupported connection type: ${optionalParam(params, "type")}`);
         return {
           dbType: profile.type,
           driverProfile: profile.profile,
@@ -103,7 +96,6 @@ export function parseConnectionDeepLink(value: string): ConnectionDeepLinkDraft 
     name: optionalParam(params, "name") ?? draft.name,
     host: optionalParam(params, "host") ?? draft.host,
     port: explicitPort ?? draft.port,
-    ...((explicitPort !== undefined && draft.dbType === "sqlserver") || draft.portExplicit ? { portExplicit: true } : {}),
     username: optionalParam(params, "user") ?? draft.username,
     password: optionalParam(params, "password") ?? draft.password,
     database: optionalParam(params, "database") ?? draft.database,

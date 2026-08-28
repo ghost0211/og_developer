@@ -57,7 +57,7 @@ let searchRequestId = 0;
 let scopeRequestId = 0;
 let selectionRevision = 0;
 
-const POSTGRES_SEARCH_TYPES = new Set<DatabaseType>(["postgres", "opengauss", "gaussdb", "kwdb", "questdb", "highgo", "vastbase"]);
+const POSTGRES_SEARCH_TYPES = new Set<DatabaseType>(["postgres", "opengauss"]);
 
 function connectionDatabase(connection: ConnectionConfig): string {
   return resolveDefaultDatabase(connection, []);
