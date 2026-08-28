@@ -478,7 +478,21 @@ while IFS= read -r line; do
       printf '{{"jsonrpc":"2.0","id":%s,"result":{{"plan":"Seq Scan on t1"}}}}\n' "$id"
       ;;
     executeQuery)
-      printf '{{"jsonrpc":"2.0","id":%s,"result":{{"columns":["val"],"column_types":["text"],"rows":[["hello"]],"affected_rows":0,"execution_time_ms":0}}}}\n' "$id"
+      sql=$(printf '%s' "$line" | sed -E 's/.*"sql":"([^"]+)".*/\1/')
+      case "$sql" in
+        *pg_get_tabledef*)
+          printf '{{"jsonrpc":"2.0","id":%s,"result":{{"columns":["val"],"column_types":["text"],"rows":[["CREATE TABLE public.t1 (id integer);"]],"affected_rows":0,"execution_time_ms":0}}}}\n' "$id"
+          ;;
+        *pg_database*)
+          printf '{{"jsonrpc":"2.0","id":%s,"result":{{"columns":["datname"],"column_types":["text"],"rows":[["postgres"]],"affected_rows":0,"execution_time_ms":0}}}}\n' "$id"
+          ;;
+        *pg_class*|*pg_views*|*pg_proc*|*gs_source*|*pg_matviews*)
+          printf '{{"jsonrpc":"2.0","id":%s,"result":{{"columns":["source"],"column_types":["text"],"rows":[["SELECT 1;"]],"affected_rows":0,"execution_time_ms":0}}}}\n' "$id"
+          ;;
+        *)
+          printf '{{"jsonrpc":"2.0","id":%s,"result":{{"columns":["val"],"column_types":["text"],"rows":[["hello"]],"affected_rows":0,"execution_time_ms":0}}}}\n' "$id"
+          ;;
+      esac
       ;;
     *)
       printf '{{"jsonrpc":"2.0","id":%s,"result":null}}\n' "$id"
@@ -553,10 +567,41 @@ done
         },
     );
 
-    // 1. Verify list_databases_core sends "connection"
+    // 1. Verify list_databases_core sends "connection".
+    // Postgres-family configs enumerate databases via SQL on the same session
+    // (the openGauss JDBC driver's getCatalogs() only reports the current
+    // database), so this exercises the mock's executeQuery ("postgres" row).
     let dbs = list_databases_core(&state, &config.id).await.expect("list_databases_core succeeds");
     assert_eq!(dbs.len(), 1);
     assert_eq!(dbs[0].name, "postgres");
+
+    // 1b. Non-postgres-family (plain jdbc) configs still use the plugin's
+    // listDatabases method.
+    let jdbc_config: ConnectionConfig = serde_json::from_value(serde_json::json!({
+        "id": "conn-contract-jdbc",
+        "name": "Test Plain JDBC",
+        "db_type": "jdbc",
+        "driver_profile": "jdbc",
+        "host": "127.0.0.1",
+        "port": 5432,
+        "username": "sa",
+        "password": "password",
+        "database": "postgres",
+        "query_timeout_secs": 30
+    }))
+    .unwrap();
+    state.configs.write().await.insert(jdbc_config.id.clone(), jdbc_config.clone());
+    state.connections.write().await.insert(
+        jdbc_config.id.clone(),
+        PoolKind::ExternalDriver {
+            driver_id: "jdbc".to_string(),
+            config: Arc::new(jdbc_config.clone()),
+            session: session.clone(),
+        },
+    );
+    let jdbc_dbs = list_databases_core(&state, &jdbc_config.id).await.expect("list_databases_core (jdbc) succeeds");
+    assert_eq!(jdbc_dbs.len(), 1);
+    assert_eq!(jdbc_dbs[0].name, "postgres");
 
     // 2. Verify list_schemas_core sends "connection"
     let schemas = list_schemas_core(&state, &config.id, "postgres").await.expect("list_schemas_core succeeds");
@@ -677,10 +722,10 @@ done
         let conn =
             params.get("connection").unwrap_or_else(|| panic!("method {method} params must contain 'connection'"));
         assert!(conn.is_object(), "method {method} 'connection' must be an object");
-        assert_eq!(
-            conn.get("id").and_then(|i| i.as_str()),
-            Some("conn-contract-1"),
-            "method {method} connection id must match"
+        let conn_id = conn.get("id").and_then(|i| i.as_str());
+        assert!(
+            matches!(conn_id, Some("conn-contract-1") | Some("conn-contract-jdbc")),
+            "method {method} connection id must match a test config, got {conn_id:?}"
         );
     }
 

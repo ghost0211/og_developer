@@ -3,7 +3,7 @@
   OG Developer — openGauss dedicated connection dialog.
 -->
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
 import { uuid } from "@/lib/common/utils";
 import { useI18n } from "vue-i18n";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -16,18 +16,33 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Switch } from "@/components/ui/switch";
-import type { ConnectionConfig, DatabaseConnectionInfo, DatabaseType, HttpTunnelConfig, ProxyTunnelConfig, SshTunnelConfig, TransportLayerConfig } from "@/types/database";
-import { useConnectionStore } from "@/stores/connectionStore";
+import type { ConnectionConfig, DatabaseConnectionInfo, DatabaseType, HttpTunnelConfig, JdbcDriverInfo, ProxyTunnelConfig, SshTunnelConfig, TransportLayerConfig } from "@/types/database";
+import { CONNECTION_ATTEMPT_CANCELLED_MESSAGE, useConnectionStore } from "@/stores/connectionStore";
 import { useTunnelProfileStore } from "@/stores/tunnelProfileStore";
 import { useToast } from "@/composables/useToast";
 import DatabaseIcon from "@/components/icons/DatabaseIcon.vue";
 import * as api from "@/lib/backend/api";
 import { isTauriRuntime } from "@/lib/backend/tauriRuntime";
+import type { ConnectionDeepLinkDraft } from "@/lib/connection/connectionDeepLink";
+import { appendConnectionErrorHints } from "@/lib/connection/connectionErrorHints";
+import { applyParsedConnectionUrl, parseConnectionUrl } from "@/lib/connection/connectionUrl";
+import { connectionUrlPlaceholder } from "@/lib/connection/connectionPresentation";
 import { parseGaussdbHosts, serializeGaussdbHosts, type GaussdbHostEntry } from "@/lib/connection/gaussdbHosts";
 import { databaseInfoRows, normalizeDatabaseConnectionInfo } from "@/lib/connection/connectionDatabaseInfo";
 import { connectionAttemptTimeoutMessage, connectionAttemptTimeoutMs } from "@/lib/connection/connectionAttemptTimeout";
-import { OPENGAUSS_JDBC_DRIVER_CLASS, OPENGAUSS_JDBC_DRIVER_PROFILE, gaussdbIdentifierQuoteStyle, opengaussConnectionMode, setGaussdbIdentifierQuoteStyle, setOpengaussConnectionMode, type GaussdbIdentifierQuoteStyle, type OpengaussConnectionMode } from "@/lib/database/jdbcDialect";
-import { CircleHelp, FolderOpen, Loader2, Plus, RefreshCw, ShieldAlert, ShieldCheck, Sparkles, Trash2 } from "@lucide/vue";
+import {
+  OPENGAUSS_JDBC_DRIVER_CLASS,
+  OPENGAUSS_JDBC_DRIVER_COORDINATE,
+  OPENGAUSS_JDBC_DRIVER_PROFILE,
+  gaussdbIdentifierQuoteStyle,
+  opengaussConnectionMode,
+  setGaussdbIdentifierQuoteStyle,
+  setOpengaussConnectionMode,
+  type GaussdbIdentifierQuoteStyle,
+  type OpengaussConnectionMode,
+} from "@/lib/database/jdbcDialect";
+import { canSaveVisibleDatabaseSelection, filterDatabaseNamesForVisiblePicker, normalizeVisibleDatabaseSelection } from "@/lib/database/visibleDatabases";
+import { CheckSquare, CircleHelp, FolderOpen, ListFilter, Loader2, Pipette, Plus, RefreshCw, Search, ShieldAlert, ShieldCheck, Sparkles, Square, Trash2 } from "@lucide/vue";
 
 export type ConfigTab = "connection" | "advanced" | "tls" | "transport" | "ai-recognize";
 
@@ -66,19 +81,23 @@ export interface ConnectionForm {
   client_key_path?: string;
   transport_layers?: TransportLayerConfig[];
   read_only?: boolean;
+  one_time?: boolean;
   database_info?: DatabaseConnectionInfo;
 }
 
 const props = defineProps<{
   open: boolean;
-  editingConnectionId?: string | null;
-  initialGroupId?: string | null;
+  editConfig?: ConnectionConfig;
+  prefillConfig?: ConnectionDeepLinkDraft | null;
   initialTab?: ConfigTab;
 }>();
 
 const emit = defineEmits<{
   "update:open": [value: boolean];
   saved: [connection: ConnectionConfig];
+  connectStarted: [name: string];
+  connectSucceeded: [name: string];
+  connectFailed: [message: string];
 }>();
 
 const { t } = useI18n();
@@ -116,7 +135,7 @@ function defaultConnectionForm(): ConnectionForm {
 }
 
 const form = ref<ConnectionForm>(defaultConnectionForm());
-const editingGroupId = ref<string | null>(null);
+const editingId = computed(() => props.editConfig?.id || null);
 const opengaussDriverCustomOpen = ref(false);
 
 // Multi-host state for GaussDB / openGauss
@@ -267,58 +286,420 @@ async function parseAiRecognize() {
   }
 }
 
-// File picker helpers
-async function pickFilePath(target: "ca" | "client_cert" | "client_key" | "jdbc_jar" | "ssh_key") {
-  if (!isTauriRuntime()) return;
+// File picker helpers & installed driver management
+const installedJdbcDrivers = ref<JdbcDriverInfo[]>([]);
+const isImportingDriver = ref(false);
+
+async function loadInstalledJdbcDrivers() {
   try {
-    const { open: openDialog } = await import("@tauri-apps/plugin-dialog");
-    const filters = target === "jdbc_jar" ? [{ name: "JAR Files", extensions: ["jar"] }] : [{ name: "All Files", extensions: ["*"] }];
-    const selected = await openDialog({ multiple: false, directory: false, filters });
-    if (typeof selected === "string") {
-      if (target === "ca") form.value.ca_cert_path = selected;
-      else if (target === "client_cert") form.value.client_cert_path = selected;
-      else if (target === "client_key") form.value.client_key_path = selected;
-      else if (target === "jdbc_jar") form.value.jdbc_driver_paths = [selected];
-      else if (target === "ssh_key") sshConfig.value.key_path = selected;
-    }
-  } catch (e) {
-    console.error("File pick error:", e);
+    installedJdbcDrivers.value = await api.listJdbcDrivers();
+  } catch {
+    installedJdbcDrivers.value = [];
   }
 }
 
-// Hydrate form when dialog opens or editingConnectionId changes
+function chooseWebFile(accept: string): Promise<File | null> {
+  return new Promise((resolve) => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = accept;
+    input.onchange = () => resolve(input.files?.[0] ?? null);
+    input.click();
+  });
+}
+
+async function pickFilePath(target: "ca" | "client_cert" | "client_key" | "jdbc_jar" | "ssh_key") {
+  if (isTauriRuntime()) {
+    try {
+      const { open: openDialog } = await import("@tauri-apps/plugin-dialog");
+      const filters = target === "jdbc_jar" ? [{ name: "JAR Files", extensions: ["jar"] }] : [{ name: "All Files", extensions: ["*"] }];
+      const selected = await openDialog({ multiple: false, directory: false, filters });
+      if (typeof selected === "string") {
+        if (target === "ca") form.value.ca_cert_path = selected;
+        else if (target === "client_cert") form.value.client_cert_path = selected;
+        else if (target === "client_key") form.value.client_key_path = selected;
+        else if (target === "jdbc_jar") {
+          form.value.jdbc_driver_paths = [selected];
+          await loadInstalledJdbcDrivers();
+        } else if (target === "ssh_key") sshConfig.value.key_path = selected;
+      }
+    } catch (e) {
+      console.error("File pick error:", e);
+    }
+  } else {
+    if (target === "jdbc_jar") {
+      const file = await chooseWebFile(".jar");
+      if (!file) return;
+      isImportingDriver.value = true;
+      try {
+        const imported = await api.importJdbcDrivers([file]);
+        await loadInstalledJdbcDrivers();
+        if (imported && imported.length > 0) {
+          form.value.jdbc_driver_paths = [imported[0].path];
+          toast(t("settings.jdbcImportSuccess", { count: imported.length }), 2000);
+        }
+      } catch (e: any) {
+        toast(e?.message || String(e), 4000);
+      } finally {
+        isImportingDriver.value = false;
+      }
+    }
+  }
+}
+
 watch(
-  () => [props.open, props.editingConnectionId] as const,
-  ([isOpen, configId]) => {
+  () => [props.open, opengaussDriverMode.value] as const,
+  ([isOpen, mode]) => {
+    if (isOpen && mode === "jdbc") {
+      void loadInstalledJdbcDrivers();
+    }
+  },
+  { immediate: true },
+);
+
+// Color picker state
+const colorOptions = [
+  { value: "", class: "bg-transparent border-dashed", labelKey: "connection.colorNone" },
+  { value: "#22c55e", class: "bg-green-500", labelKey: "connection.colorGreen" },
+  { value: "#eab308", class: "bg-yellow-500", labelKey: "connection.colorYellow" },
+  { value: "#f97316", class: "bg-orange-500", labelKey: "connection.colorOrange" },
+  { value: "#ef4444", class: "bg-red-500", labelKey: "connection.colorRed" },
+  { value: "#3b82f6", class: "bg-blue-500", labelKey: "connection.colorBlue" },
+  { value: "#a855f7", class: "bg-purple-500", labelKey: "connection.colorPurple" },
+];
+
+const isPresetColor = (color: string | undefined) => colorOptions.some((c) => c.value === (color || ""));
+const customColorInput = ref("");
+const customColorOpen = ref(false);
+
+function applyCustomColor(value: string) {
+  form.value.color = value;
+  customColorInput.value = value;
+}
+
+function handlePresetClick(color: string) {
+  form.value.color = color;
+  customColorInput.value = "";
+}
+
+function handleCustomColorPicked(value: string) {
+  applyCustomColor(value);
+}
+
+function handleCustomColorInput(value: string) {
+  applyCustomColor(value);
+}
+
+// Connection URL parse
+const connectionUrlInput = ref("");
+
+function applyConnectionUrl() {
+  const input = connectionUrlInput.value.trim();
+  if (!input) return;
+  try {
+    const parsed = parseConnectionUrl(input);
+    const updated = applyParsedConnectionUrl(form.value, parsed);
+    form.value = {
+      ...form.value,
+      ...updated,
+    };
+    if (parsed.host?.includes(",")) {
+      multiHostMode.value = true;
+      multiHostEntries.value = parseGaussdbHosts(parsed.host, parsed.port);
+    } else if (parsed.host) {
+      multiHostMode.value = false;
+      multiHostEntries.value = [{ host: parsed.host, port: parsed.port || 5432 }];
+    }
+    if (!form.value.name.trim()) {
+      form.value.name = parsed.database || parsed.host || parsed.driverLabel;
+    }
+    toast(t("connection.parseConnectionUrlApplied"), 2000);
+  } catch (e: any) {
+    toast(t("connection.parseConnectionUrlFailed", { message: e?.message || String(e) }), 5000);
+  }
+}
+
+// Helper to load database names via one-time connection
+async function fetchDatabaseList(): Promise<string[]> {
+  const config = buildFinalConnectionConfig();
+  await ensureRequiredOpengaussJdbcRuntime(config);
+  const draftId = `__draft_db_list_${uuid()}`;
+  const draftConfig = { ...config, id: draftId, one_time: true };
+  try {
+    await api.connectDb(draftConfig);
+    const dbs = await api.listDatabases(draftId);
+    return dbs.map((d: any) => d.name);
+  } finally {
+    await api.disconnectDb(draftId).catch(() => undefined);
+  }
+}
+
+// Visible Databases state
+const showVisibleDatabasesDialog = ref(false);
+const isLoadingVisibleDatabases = ref(false);
+const visibleDatabaseNames = ref<string[]>([]);
+const visibleDatabaseSelection = ref<Set<string>>(new Set());
+const visibleDatabaseSearchText = ref("");
+const visibleDatabaseError = ref("");
+const visibleDatabaseShowSystem = ref(false);
+
+const hasVisibleDatabaseFilter = computed(() => Array.isArray(form.value.visible_databases));
+const visibleDatabaseSummary = computed(() => {
+  const configured = form.value.visible_databases;
+  if (!Array.isArray(configured)) return t("visibleDatabases.showAll");
+  return t("visibleDatabases.selectedCount", { selected: configured.length, total: visibleDatabaseNames.value.length || configured.length });
+});
+
+const defaultListedVisibleDatabaseNames = computed(() => {
+  return filterDatabaseNamesForVisiblePicker(visibleDatabaseNames.value, form.value);
+});
+
+const listedVisibleDatabaseNames = computed(() => (visibleDatabaseShowSystem.value ? visibleDatabaseNames.value : defaultListedVisibleDatabaseNames.value));
+
+const filteredVisibleDatabaseNames = computed(() => {
+  const query = visibleDatabaseSearchText.value.trim().toLowerCase();
+  if (!query) return listedVisibleDatabaseNames.value;
+  return listedVisibleDatabaseNames.value.filter((name) => name.toLowerCase().includes(query));
+});
+
+const visibleDatabaseSelectedCount = computed(() => visibleDatabaseSelection.value.size);
+const visibleDatabaseTotalCount = computed(() => listedVisibleDatabaseNames.value.length);
+const visibleDatabaseCanSave = computed(() => canSaveVisibleDatabaseSelection([...visibleDatabaseSelection.value]));
+const visibleDatabaseHasSystemObjects = computed(() => defaultListedVisibleDatabaseNames.value.length < visibleDatabaseNames.value.length);
+
+async function openVisibleDatabasesPicker() {
+  if (isLoadingVisibleDatabases.value) return;
+  isLoadingVisibleDatabases.value = true;
+  visibleDatabaseError.value = "";
+  visibleDatabaseSearchText.value = "";
+  try {
+    const names = await fetchDatabaseList();
+    visibleDatabaseNames.value = names;
+    visibleDatabaseShowSystem.value = false;
+    const configured = form.value.visible_databases;
+    const initialSelection = Array.isArray(configured) ? normalizeVisibleDatabaseSelection(configured, names) : filterDatabaseNamesForVisiblePicker(names, form.value);
+    visibleDatabaseSelection.value = new Set(initialSelection);
+    const defaultVisible = new Set(defaultListedVisibleDatabaseNames.value);
+    visibleDatabaseShowSystem.value = initialSelection.some((name) => !defaultVisible.has(name));
+    showVisibleDatabasesDialog.value = true;
+  } catch (e: any) {
+    visibleDatabaseNames.value = [];
+    visibleDatabaseSelection.value = new Set();
+    visibleDatabaseError.value = e?.message || String(e);
+    showVisibleDatabasesDialog.value = true;
+  } finally {
+    isLoadingVisibleDatabases.value = false;
+  }
+}
+
+function toggleVisibleDatabase(database: string) {
+  const next = new Set(visibleDatabaseSelection.value);
+  if (next.has(database)) next.delete(database);
+  else next.add(database);
+  visibleDatabaseSelection.value = next;
+}
+
+function selectAllVisibleDatabases() {
+  visibleDatabaseSelection.value = new Set(listedVisibleDatabaseNames.value);
+}
+
+function clearVisibleDatabaseSelection() {
+  visibleDatabaseSelection.value = new Set();
+}
+
+function showAllVisibleDatabases() {
+  form.value.visible_databases = undefined;
+  visibleDatabaseSelection.value = new Set();
+  showVisibleDatabasesDialog.value = false;
+}
+
+function saveVisibleDatabaseSelection() {
+  if (!visibleDatabaseCanSave.value) return;
+  form.value.visible_databases = normalizeVisibleDatabaseSelection([...visibleDatabaseSelection.value], visibleDatabaseNames.value);
+  showVisibleDatabasesDialog.value = false;
+}
+
+// Production Databases state
+const showProductionDatabasesDialog = ref(false);
+const isLoadingProductionDatabases = ref(false);
+const productionDatabaseNames = ref<string[]>([]);
+const productionDatabaseSelection = ref<Set<string>>(new Set());
+const productionDatabaseSearchText = ref("");
+const productionDatabaseError = ref("");
+
+const productionProtectionEnabled = computed({
+  get: () => !!form.value.is_production || (form.value.production_databases?.length ?? 0) > 0,
+  set: (enabled: boolean) => {
+    if (!enabled) {
+      form.value.is_production = false;
+      form.value.production_databases = [];
+    } else if (!form.value.is_production && !form.value.production_databases?.length) {
+      form.value.is_production = true;
+    }
+  },
+});
+
+const productionScope = computed<"connection" | "databases">({
+  get: () => (form.value.is_production ? "connection" : "databases"),
+  set: (scope) => {
+    if (scope === "connection") {
+      form.value.is_production = true;
+      form.value.production_databases = [];
+    } else {
+      form.value.is_production = false;
+    }
+  },
+});
+
+const filteredProductionDatabaseNames = computed(() => {
+  const query = productionDatabaseSearchText.value.trim().toLowerCase();
+  if (!query) return productionDatabaseNames.value;
+  return productionDatabaseNames.value.filter((name) => name.toLowerCase().includes(query));
+});
+
+const productionDatabaseSelectedCount = computed(() => productionDatabaseSelection.value.size);
+const productionDatabaseCanSave = computed(() => productionDatabaseNames.value.length > 0 && productionDatabaseSelection.value.size > 0);
+
+const productionDatabaseSummary = computed(() => {
+  const selected = form.value.production_databases?.length || 0;
+  if (!selected) return t("production.noDatabasesSelected");
+  if (!productionDatabaseNames.value.length) return t("production.databasesConfiguredCount", { count: selected });
+  return t("production.databasesSelectedCount", { selected, total: productionDatabaseNames.value.length });
+});
+
+function initialProductionDatabaseSelection(databaseNames: string[]): string[] {
+  const configured = form.value.production_databases || [];
+  return configured.length ? normalizeProductionDatabaseSelection(configured, databaseNames) : databaseNames;
+}
+
+function normalizeProductionDatabaseSelection(selectedNames: Iterable<string>, databaseNames: string[]): string[] {
+  const available = new Map(databaseNames.map((name) => [name.toLowerCase(), name]));
+  const selected = new Set<string>();
+  for (const name of selectedNames) {
+    const canonicalName = available.get(name.toLowerCase());
+    if (canonicalName) selected.add(canonicalName);
+  }
+  return [...selected];
+}
+
+async function openProductionDatabasesPicker() {
+  if (isLoadingProductionDatabases.value) return;
+  isLoadingProductionDatabases.value = true;
+  productionDatabaseError.value = "";
+  productionDatabaseSearchText.value = "";
+  try {
+    const names = visibleDatabaseNames.value.length ? visibleDatabaseNames.value : await fetchDatabaseList();
+    productionDatabaseNames.value = names;
+    visibleDatabaseNames.value = names;
+    productionDatabaseSelection.value = new Set(initialProductionDatabaseSelection(names));
+    showProductionDatabasesDialog.value = true;
+  } catch (e: any) {
+    productionDatabaseNames.value = [];
+    productionDatabaseSelection.value = new Set();
+    productionDatabaseError.value = e?.message || String(e);
+    showProductionDatabasesDialog.value = true;
+  } finally {
+    isLoadingProductionDatabases.value = false;
+  }
+}
+
+function toggleProductionDatabase(database: string) {
+  const next = new Set(productionDatabaseSelection.value);
+  if (next.has(database)) next.delete(database);
+  else next.add(database);
+  productionDatabaseSelection.value = next;
+}
+
+function selectAllProductionDatabases() {
+  productionDatabaseSelection.value = new Set(productionDatabaseNames.value);
+}
+
+function clearProductionDatabaseSelection() {
+  productionDatabaseSelection.value = new Set();
+}
+
+function saveProductionDatabaseSelection() {
+  if (!productionDatabaseCanSave.value) return;
+  productionProtectionEnabled.value = true;
+  form.value.is_production = false;
+  form.value.production_databases = normalizeProductionDatabaseSelection(productionDatabaseSelection.value, productionDatabaseNames.value);
+  showProductionDatabasesDialog.value = false;
+}
+
+function applyConnectionPrefill(draft: ConnectionDeepLinkDraft) {
+  if (draft.host) form.value.host = draft.host;
+  if (draft.port) form.value.port = draft.port;
+  if (draft.username) form.value.username = draft.username;
+  if (draft.password) form.value.password = draft.password;
+  if (draft.database) form.value.database = draft.database;
+  if (draft.urlParams) form.value.url_params = draft.urlParams;
+  if (draft.ssl !== undefined) form.value.ssl = draft.ssl;
+  if (draft.name?.trim()) form.value.name = draft.name.trim();
+  if (draft.oneTime) form.value.one_time = true;
+  setOpengaussConnectionMode(form.value, draft.driverProfile === OPENGAUSS_JDBC_DRIVER_PROFILE ? "jdbc" : "native");
+  if (draft.oneTime) {
+    void nextTick(() => {
+      void handleSave();
+    });
+  }
+}
+
+// JDBC mode needs the plugin runtime plus the official driver jar; both are
+// auto-provisioned from Maven when missing so "save" never strands a config
+// that cannot connect.
+async function ensureRequiredOpengaussJdbcRuntime(config: ConnectionConfig): Promise<void> {
+  if (opengaussConnectionMode(config) !== "jdbc") return;
+  const status = await api.jdbcPluginStatus();
+  if (!(status.installed && status.compatible)) {
+    testResult.value = { ok: true, message: t("connection.opengaussJdbcPluginInstalling") };
+    await api.installJdbcPlugin();
+  }
+  if ((config.jdbc_driver_paths ?? []).length) return;
+  testResult.value = { ok: true, message: t("connection.opengaussJdbcDriverInstalling") };
+  const installed = await api.installJdbcDriverFromMaven(OPENGAUSS_JDBC_DRIVER_COORDINATE);
+  const paths = installed.map((driver) => driver.path).filter(Boolean);
+  if (paths.length) {
+    config.jdbc_driver_paths = paths;
+    form.value.jdbc_driver_paths = [...paths];
+  }
+}
+
+// Hydrate form when dialog opens or the edit target changes
+watch(
+  () => [props.open, props.editConfig] as const,
+  ([isOpen, editConfig]) => {
     if (!isOpen) return;
     activeTab.value = props.initialTab || "connection";
     testResult.value = null;
-    if (configId) {
-      const existing = connectionStore.getConfig(configId);
-      if (existing) {
-        form.value = JSON.parse(JSON.stringify(existing));
-        editingGroupId.value = connectionStore.groupIdForConnection(configId);
-        opengaussDriverCustomOpen.value = (existing.jdbc_driver_paths || []).length > 0;
-        syncTransportLayersFromForm();
-        if (existing.host.includes(",")) {
-          multiHostMode.value = true;
-          multiHostEntries.value = parseGaussdbHosts(existing.host, existing.port);
-        } else {
-          multiHostMode.value = false;
-          multiHostEntries.value = [{ host: existing.host || "127.0.0.1", port: existing.port || 5432 }];
-        }
-        return;
+    if (editConfig) {
+      form.value = JSON.parse(JSON.stringify(editConfig));
+      opengaussDriverCustomOpen.value = (editConfig.jdbc_driver_paths || []).length > 0;
+      syncTransportLayersFromForm();
+      if (editConfig.host?.includes(",")) {
+        multiHostMode.value = true;
+        multiHostEntries.value = parseGaussdbHosts(editConfig.host, editConfig.port);
+      } else {
+        multiHostMode.value = false;
+        multiHostEntries.value = [{ host: editConfig.host || "127.0.0.1", port: editConfig.port || 5432 }];
       }
+      return;
     }
     // New connection
     form.value = defaultConnectionForm();
-    editingGroupId.value = props.initialGroupId || null;
     opengaussDriverCustomOpen.value = false;
     multiHostMode.value = false;
     multiHostEntries.value = [{ host: "127.0.0.1", port: 5432 }];
     syncTransportLayersFromForm();
+    if (props.prefillConfig) applyConnectionPrefill(props.prefillConfig);
   },
   { immediate: true },
+);
+
+watch(
+  () => props.prefillConfig,
+  (draft) => {
+    if (props.open && draft && !props.editConfig) applyConnectionPrefill(draft);
+  },
 );
 
 function buildFinalConnectionConfig(): ConnectionConfig {
@@ -326,7 +707,7 @@ function buildFinalConnectionConfig(): ConnectionConfig {
   if (multiHostMode.value) {
     updateMultiHostFromEntries();
   }
-  const id = form.value.id || props.editingConnectionId || uuid();
+  const id = editingId.value || form.value.id || uuid();
   const name = form.value.name.trim() || `${form.value.host}:${form.value.port}`;
   return {
     ...form.value,
@@ -385,18 +766,37 @@ function formatErrorText(error: unknown): string {
 }
 
 async function handleSave() {
+  if (isSubmitting.value) return;
   isSubmitting.value = true;
   try {
     const config = buildFinalConnectionConfig();
-    if (props.editingConnectionId) {
+    await ensureRequiredOpengaussJdbcRuntime(config);
+    if (editingId.value) {
       await connectionStore.updateConnection(config);
-    } else {
-      await connectionStore.addConnection(config, editingGroupId.value);
+      connectionStore.stopEditing();
+      emit("saved", config);
+      emit("update:open", false);
+      return;
     }
+    await connectionStore.addConnection(config);
     emit("saved", config);
     emit("update:open", false);
+    await nextTick();
+    // New connections follow the legacy "save and connect" flow.
+    emit("connectStarted", config.name);
+    void connectionStore
+      .connect(config)
+      .then(() => {
+        emit("connectSucceeded", config.name);
+      })
+      .catch((e: any) => {
+        const message = String(e?.message || e);
+        if (message.includes(CONNECTION_ATTEMPT_CANCELLED_MESSAGE)) return;
+        if (config.one_time) void connectionStore.removeConnection(config.id);
+        emit("connectFailed", appendConnectionErrorHints(config, message, t));
+      });
   } catch (e: any) {
-    toast(t("connection.saveFailed", { error: e.message || String(e) }), 5000);
+    toast(t("connection.saveFailed", { message: e.message || String(e) }), 5000);
   } finally {
     isSubmitting.value = false;
   }
@@ -414,7 +814,7 @@ function handleClose() {
         <div class="flex items-center gap-2">
           <DatabaseIcon db-type="opengauss" class="h-6 w-6 shrink-0" />
           <DialogTitle class="text-base font-semibold">
-            {{ editingConnectionId ? t("connection.editTitle") : t("connection.newTitle") }}
+            {{ editingId ? t("connection.editTitle") : t("connection.newTitle") }}
           </DialogTitle>
           <Badge variant="outline" class="text-xs font-normal">openGauss</Badge>
         </div>
@@ -438,7 +838,39 @@ function handleClose() {
           <!-- Connection Tab -->
           <TabsContent value="connection" class="mt-0 space-y-4">
             <div class="space-y-1.5">
-              <Label class="text-xs font-medium">{{ t("connection.name") }}</Label>
+              <div class="flex items-center justify-between">
+                <Label class="text-xs font-medium">{{ t("connection.name") }}</Label>
+                <div class="flex items-center gap-1.5">
+                  <button
+                    v-for="color in colorOptions"
+                    :key="color.value || 'none'"
+                    type="button"
+                    class="h-5 w-5 rounded-full border ring-offset-background transition hover:scale-105"
+                    :class="[color.class, (form.color || '') === color.value ? 'ring-2 ring-ring ring-offset-2' : 'border-border']"
+                    :title="t(color.labelKey)"
+                    @click="handlePresetClick(color.value)"
+                  />
+                  <Popover v-model:open="customColorOpen">
+                    <PopoverTrigger as-child>
+                      <button
+                        type="button"
+                        class="h-5 w-5 rounded-full border flex items-center justify-center hover:scale-105 transition"
+                        :class="[!isPresetColor(form.color) && form.color ? 'border-border ring-2 ring-ring ring-offset-2' : 'border-dashed border-border']"
+                        :style="!isPresetColor(form.color) && form.color ? { backgroundColor: form.color } : {}"
+                        :title="t('connection.colorCustom')"
+                      >
+                        <Pipette class="h-3 w-3" :class="!isPresetColor(form.color) && form.color ? 'text-white' : 'text-muted-foreground'" />
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent class="w-auto p-2" align="end">
+                      <div class="flex items-center gap-2">
+                        <input type="color" :value="form.color || '#3b82f6'" @input="handleCustomColorPicked(($event.target as HTMLInputElement).value)" class="h-6 w-6 cursor-pointer rounded border-0 p-0" />
+                        <Input type="text" :value="customColorInput || form.color || ''" @input="handleCustomColorInput(($event.target as HTMLInputElement).value)" class="w-32 h-7 text-xs font-mono" :placeholder="t('connection.customColorPlaceholder')" />
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+              </div>
               <Input v-model="form.name" :placeholder="t('connection.namePlaceholder')" class="h-8 text-xs" />
             </div>
 
@@ -471,11 +903,26 @@ function handleClose() {
                 <div v-if="!opengaussDriverCustomOpen" class="text-xs text-muted-foreground bg-muted/30 p-2 rounded">
                   {{ t("connection.opengaussJdbcBundledHint") }}
                 </div>
-                <div v-else class="flex gap-2 items-center">
-                  <Input :model-value="form.jdbc_driver_paths?.[0] || ''" @update:model-value="(v: string | number) => (form.jdbc_driver_paths = v ? [String(v)] : [])" placeholder="opengauss-jdbc.jar" class="h-8 text-xs flex-1" />
-                  <Button type="button" variant="outline" size="sm" class="h-8 px-2" @click="pickFilePath('jdbc_jar')">
-                    <FolderOpen class="h-3.5 w-3.5" />
-                  </Button>
+                <div v-else class="space-y-2">
+                  <div v-if="installedJdbcDrivers.length > 0" class="space-y-1">
+                    <Select :model-value="form.jdbc_driver_paths?.[0] || ''" @update:model-value="(v: any) => (form.jdbc_driver_paths = v ? [String(v)] : [])">
+                      <SelectTrigger class="h-8 text-xs">
+                        <SelectValue :placeholder="t('connection.opengaussJdbcDriverPlaceholder')" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem v-for="d in installedJdbcDrivers" :key="d.path" :value="d.path">
+                          {{ d.name }}
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div class="flex gap-2 items-center">
+                    <Input :model-value="form.jdbc_driver_paths?.[0] || ''" @update:model-value="(v: string | number) => (form.jdbc_driver_paths = v ? [String(v)] : [])" :placeholder="t('connection.opengaussJdbcDriverPlaceholder')" class="h-8 text-xs flex-1 font-mono" />
+                    <Button type="button" variant="outline" size="sm" class="h-8 px-2" :disabled="isImportingDriver" @click="pickFilePath('jdbc_jar')">
+                      <Loader2 v-if="isImportingDriver" class="h-3.5 w-3.5 animate-spin" />
+                      <FolderOpen v-else class="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -521,6 +968,17 @@ function handleClose() {
                 <Button type="button" variant="outline" size="sm" class="h-7 text-xs gap-1 w-full" @click="addMultiHostEntry">
                   <Plus class="h-3 w-3" />
                   <span>{{ t("connection.addHost") }}</span>
+                </Button>
+              </div>
+            </div>
+
+            <!-- URL (Optional) Paste / Parse -->
+            <div class="space-y-1.5">
+              <Label class="text-xs font-medium">{{ t("connection.connectionUrlOptional") }}</Label>
+              <div class="flex gap-2">
+                <Input v-model="connectionUrlInput" class="h-8 text-xs font-mono flex-1" :placeholder="connectionUrlPlaceholder(form.db_type)" @keydown.enter.prevent="applyConnectionUrl" />
+                <Button type="button" variant="outline" size="sm" class="h-8 px-2.5 text-xs shrink-0" :disabled="!connectionUrlInput.trim()" @click="applyConnectionUrl">
+                  {{ t("connection.parseConnectionUrl") }}
                 </Button>
               </div>
             </div>
@@ -611,15 +1069,37 @@ function handleClose() {
               </div>
 
               <!-- Production Environment Safety -->
-              <div class="flex items-center justify-between">
-                <div>
-                  <div class="text-xs font-medium flex items-center gap-1.5">
+              <div class="rounded-md border border-red-500/25 bg-red-500/[0.035] p-3 space-y-3">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-1.5">
                     <ShieldAlert class="h-3.5 w-3.5 text-red-500" />
-                    <span>{{ t("production.title") }}</span>
+                    <span class="text-xs font-medium">{{ t("production.title") }}</span>
                   </div>
-                  <div class="text-[11px] text-muted-foreground">{{ t("production.markerHint") }}</div>
+                  <Switch :model-value="productionProtectionEnabled" @update:model-value="productionProtectionEnabled = $event" />
                 </div>
-                <Switch :model-value="!!form.is_production" @update:model-value="(v: boolean) => (form.is_production = v)" />
+                <p v-if="!productionProtectionEnabled" class="text-[11px] text-muted-foreground">{{ t("production.disabledDescription") }}</p>
+                <template v-else>
+                  <div class="space-y-1.5">
+                    <Label class="text-xs font-medium">{{ t("production.scope") }}</Label>
+                    <Tabs v-model="productionScope" class="w-full">
+                      <TabsList class="grid h-7 w-full grid-cols-2">
+                        <TabsTrigger value="connection" class="text-xs">{{ t("production.allDatabases") }}</TabsTrigger>
+                        <TabsTrigger value="databases" class="text-xs">{{ t("production.selectedDatabases") }}</TabsTrigger>
+                      </TabsList>
+                    </Tabs>
+                    <p class="text-[11px] text-muted-foreground">
+                      {{ productionScope === "connection" ? t("production.connectionDescription") : t("production.databaseDescription") }}
+                    </p>
+                  </div>
+                  <div v-if="productionScope === 'databases'" class="flex items-center justify-between pt-1">
+                    <div class="text-xs text-muted-foreground">{{ productionDatabaseSummary }}</div>
+                    <Button type="button" variant="outline" size="sm" class="h-7 text-xs gap-1.5" :disabled="isLoadingProductionDatabases" @click="openProductionDatabasesPicker">
+                      <Loader2 v-if="isLoadingProductionDatabases" class="h-3 w-3 animate-spin" />
+                      <ListFilter v-else class="h-3 w-3" />
+                      <span>{{ t("production.selectDatabases") }}</span>
+                    </Button>
+                  </div>
+                </template>
               </div>
             </div>
 
@@ -840,12 +1320,18 @@ function handleClose() {
       </Tabs>
 
       <!-- Footer: Test Connection, Save, Cancel -->
-      <DialogFooter class="p-3 border-t bg-muted/10 shrink-0 flex items-center justify-between sm:justify-between">
+      <DialogFooter class="mx-0 mb-0 px-4 py-3.5 border-t bg-muted/10 shrink-0 flex items-center justify-between sm:justify-between">
         <div class="flex items-center gap-2 min-w-0">
           <Button type="button" variant="outline" size="sm" class="h-8 text-xs gap-1.5" :disabled="isTesting" @click="handleTestConnection">
             <Loader2 v-if="isTesting" class="h-3.5 w-3.5 animate-spin" />
             <RefreshCw v-else class="h-3.5 w-3.5" />
             <span>{{ t("connection.testConnection") }}</span>
+          </Button>
+
+          <Button type="button" variant="outline" size="sm" class="h-8 text-xs gap-1.5" :disabled="isTesting || isLoadingVisibleDatabases" @click="openVisibleDatabasesPicker">
+            <Loader2 v-if="isLoadingVisibleDatabases" class="h-3.5 w-3.5 animate-spin" />
+            <ListFilter v-else class="h-3.5 w-3.5" />
+            <span>{{ hasVisibleDatabaseFilter ? visibleDatabaseSummary : t("contextMenu.selectVisibleDatabases") }}</span>
           </Button>
 
           <!-- Test Result Badge & Info -->
@@ -874,9 +1360,140 @@ function handleClose() {
           </Button>
           <Button type="button" size="sm" class="h-8 text-xs" :disabled="isSubmitting" @click="handleSave">
             <Loader2 v-if="isSubmitting" class="h-3.5 w-3.5 animate-spin" />
-            <span>{{ t("common.save") }}</span>
+            <span>{{ isSubmitting ? t("common.loading") : editingId ? t("connection.save") : t("connection.saveAndConnect") }}</span>
           </Button>
         </div>
+      </DialogFooter>
+    </DialogContent>
+  </Dialog>
+
+  <!-- Visible Databases Dialog -->
+  <Dialog :open="showVisibleDatabasesDialog" @update:open="showVisibleDatabasesDialog = $event">
+    <DialogContent class="sm:max-w-[480px]">
+      <DialogHeader>
+        <DialogTitle>{{ t("visibleDatabases.title") }}</DialogTitle>
+        <p class="text-xs text-muted-foreground">
+          {{ t("visibleDatabases.description", { connection: form.name || form.host || "openGauss" }) }}
+        </p>
+      </DialogHeader>
+
+      <div class="flex items-center gap-2 rounded-md border bg-background px-2">
+        <Search class="h-4 w-4 shrink-0 text-muted-foreground" />
+        <Input v-model="visibleDatabaseSearchText" :placeholder="t('visibleDatabases.searchPlaceholder')" class="h-8 border-0 px-0 shadow-none focus-visible:ring-0 text-xs" :disabled="isLoadingVisibleDatabases || !!visibleDatabaseError" />
+      </div>
+
+      <div class="flex items-center justify-between text-xs text-muted-foreground">
+        <span>
+          {{
+            t("visibleDatabases.selectedCount", {
+              selected: visibleDatabaseSelectedCount,
+              total: visibleDatabaseTotalCount,
+            })
+          }}
+        </span>
+        <div class="flex items-center gap-2">
+          <button type="button" class="hover:text-foreground disabled:opacity-50 text-xs" :disabled="isLoadingVisibleDatabases" @click="selectAllVisibleDatabases">
+            {{ t("visibleDatabases.selectAll") }}
+          </button>
+          <button type="button" class="hover:text-foreground disabled:opacity-50 text-xs" :disabled="isLoadingVisibleDatabases" @click="clearVisibleDatabaseSelection">
+            {{ t("visibleDatabases.clear") }}
+          </button>
+          <button type="button" class="hover:text-foreground disabled:opacity-50 text-xs" :disabled="isLoadingVisibleDatabases" @click="showAllVisibleDatabases">
+            {{ t("visibleDatabases.showAll") }}
+          </button>
+        </div>
+      </div>
+
+      <p v-if="!isLoadingVisibleDatabases && !visibleDatabaseError && !visibleDatabaseCanSave" class="text-xs text-destructive">
+        {{ t("visibleDatabases.emptySelection") }}
+      </p>
+
+      <label v-if="visibleDatabaseHasSystemObjects" class="flex h-7 items-center gap-2 rounded-md px-1 text-xs text-muted-foreground cursor-pointer">
+        <input v-model="visibleDatabaseShowSystem" type="checkbox" class="h-3.5 w-3.5 accent-primary" :disabled="isLoadingVisibleDatabases || !!visibleDatabaseError" />
+        <span>{{ t("visibleDatabases.showSystemDatabases") }}</span>
+      </label>
+
+      <div class="h-64 overflow-y-auto rounded-md border bg-background/50 p-1">
+        <div v-if="isLoadingVisibleDatabases" class="flex h-full items-center justify-center gap-2 text-xs text-muted-foreground">
+          <Loader2 class="h-4 w-4 animate-spin" />
+          {{ t("common.loading") }}
+        </div>
+        <div v-else-if="visibleDatabaseError" class="p-3 text-xs text-destructive leading-5">
+          {{ t("visibleDatabases.loadFailed", { message: visibleDatabaseError }) }}
+        </div>
+        <div v-else-if="!filteredVisibleDatabaseNames.length" class="p-3 text-xs text-muted-foreground">
+          {{ t("grid.noSearchResults") }}
+        </div>
+        <template v-else>
+          <button v-for="database in filteredVisibleDatabaseNames" :key="database" type="button" class="flex h-7 w-full min-w-0 items-center gap-2 rounded-sm px-2 text-left text-xs hover:bg-accent hover:text-accent-foreground" @click="toggleVisibleDatabase(database)">
+            <CheckSquare v-if="visibleDatabaseSelection.has(database)" class="h-3.5 w-3.5 shrink-0 text-primary" />
+            <Square v-else class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            <span class="truncate">{{ database }}</span>
+          </button>
+        </template>
+      </div>
+
+      <DialogFooter class="flex items-center justify-end gap-2">
+        <Button type="button" variant="outline" size="sm" class="h-8 text-xs" @click="showVisibleDatabasesDialog = false">{{ t("common.cancel") }}</Button>
+        <Button type="button" size="sm" class="h-8 text-xs" :disabled="isLoadingVisibleDatabases || !!visibleDatabaseError || !visibleDatabaseCanSave" @click="saveVisibleDatabaseSelection">
+          {{ t("visibleDatabases.save") }}
+        </Button>
+      </DialogFooter>
+    </DialogContent>
+  </Dialog>
+
+  <!-- Production Databases Dialog -->
+  <Dialog :open="showProductionDatabasesDialog" @update:open="showProductionDatabasesDialog = $event">
+    <DialogContent class="sm:max-w-[460px]">
+      <DialogHeader>
+        <DialogTitle>{{ t("production.databasePickerTitle") }}</DialogTitle>
+        <p class="text-xs text-muted-foreground">
+          {{ t("production.databasePickerDescription", { connection: form.name || form.host || "openGauss" }) }}
+        </p>
+      </DialogHeader>
+
+      <div class="flex items-center gap-2 rounded-md border bg-background px-2">
+        <Search class="h-4 w-4 shrink-0 text-muted-foreground" />
+        <Input v-model="productionDatabaseSearchText" :placeholder="t('production.databaseSearchPlaceholder')" class="h-8 border-0 px-0 shadow-none focus-visible:ring-0 text-xs" :disabled="isLoadingProductionDatabases || !!productionDatabaseError" />
+      </div>
+
+      <div class="flex items-center justify-between text-xs text-muted-foreground">
+        <span>{{ t("production.databasesSelectedCount", { selected: productionDatabaseSelectedCount, total: productionDatabaseNames.length }) }}</span>
+        <div class="flex items-center gap-2">
+          <button type="button" class="hover:text-foreground disabled:opacity-50 text-xs" :disabled="isLoadingProductionDatabases || !!productionDatabaseError" @click="selectAllProductionDatabases">
+            {{ t("visibleDatabases.selectAll") }}
+          </button>
+          <button type="button" class="hover:text-foreground disabled:opacity-50 text-xs" :disabled="isLoadingProductionDatabases || !!productionDatabaseError" @click="clearProductionDatabaseSelection">
+            {{ t("visibleDatabases.clear") }}
+          </button>
+        </div>
+      </div>
+
+      <div class="h-64 overflow-y-auto rounded-md border bg-background/50 p-1">
+        <div v-if="isLoadingProductionDatabases" class="flex h-full items-center justify-center gap-2 text-xs text-muted-foreground">
+          <Loader2 class="h-4 w-4 animate-spin" />
+          {{ t("common.loading") }}
+        </div>
+        <div v-else-if="productionDatabaseError" class="p-3 text-xs text-destructive leading-5">
+          {{ t("production.databaseLoadFailed", { message: productionDatabaseError }) }}
+        </div>
+        <div v-else-if="!filteredProductionDatabaseNames.length" class="p-3 text-xs text-muted-foreground">
+          {{ productionDatabaseNames.length ? t("grid.noSearchResults") : t("production.noDatabasesAvailable") }}
+        </div>
+        <template v-else>
+          <button v-for="database in filteredProductionDatabaseNames" :key="database" type="button" class="flex h-7 w-full min-w-0 items-center gap-2 rounded-sm px-2 text-left text-xs hover:bg-accent hover:text-accent-foreground" @click="toggleProductionDatabase(database)">
+            <CheckSquare v-if="productionDatabaseSelection.has(database)" class="h-3.5 w-3.5 shrink-0 text-primary" />
+            <Square v-else class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            <span class="truncate">{{ database }}</span>
+          </button>
+        </template>
+      </div>
+
+      <DialogFooter class="flex items-center justify-end gap-2">
+        <Button type="button" variant="outline" size="sm" class="h-8 text-xs" @click="showProductionDatabasesDialog = false">{{ t("common.cancel") }}</Button>
+        <Button type="button" size="sm" class="h-8 text-xs" :disabled="isLoadingProductionDatabases || !!productionDatabaseError || !productionDatabaseCanSave" @click="saveProductionDatabaseSelection">
+          {{ t("visibleDatabases.save") }}
+        </Button>
       </DialogFooter>
     </DialogContent>
   </Dialog>

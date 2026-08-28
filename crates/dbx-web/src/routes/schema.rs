@@ -218,7 +218,7 @@ pub async fn get_object_source(
 ) -> Result<Json<dbx_core::db::ObjectSource>, AppError> {
     let database = q.database.as_deref().unwrap_or("");
     let schema = q.schema.as_deref().unwrap_or("");
-    let name = q.table.as_deref().unwrap_or("");
+    let name = q.name.as_deref().or(q.table.as_deref()).unwrap_or("");
     let object_type = q.object_type.ok_or_else(|| AppError::from("Missing object_type".to_string()))?;
     let result = dbx_core::schema::get_object_source_core(
         &state.app,
@@ -506,14 +506,27 @@ pub async fn list_object_references(
     let database = q.database.as_deref().unwrap_or("");
     let schema = q.schema.as_deref().unwrap_or("");
     let object_name = q.name.as_deref().ok_or_else(|| AppError::from("name is required".to_string()))?;
-    let object_type = q.object_type.unwrap_or(dbx_core::types::ObjectSourceKind::View);
+    let object_type = q.object_type_name.as_deref().unwrap_or_else(|| match q.object_type {
+        Some(dbx_core::types::ObjectSourceKind::Procedure) => "procedure",
+        Some(dbx_core::types::ObjectSourceKind::Function) => "function",
+        Some(dbx_core::types::ObjectSourceKind::Package) => "package",
+        Some(dbx_core::types::ObjectSourceKind::PackageBody) => "package_body",
+        Some(dbx_core::types::ObjectSourceKind::View) => "view",
+        Some(dbx_core::types::ObjectSourceKind::MaterializedView) => "materialized_view",
+        Some(dbx_core::types::ObjectSourceKind::Sequence) => "sequence",
+        Some(dbx_core::types::ObjectSourceKind::Type) => "type",
+        Some(dbx_core::types::ObjectSourceKind::Synonym) => "synonym",
+        _ => "view",
+    });
+    let direction = q.direction.as_deref().unwrap_or("references");
     let result = dbx_core::schema::list_object_references_core(
         &state.app,
         &q.connection_id,
         database,
         schema,
+        object_type,
         object_name,
-        &object_type,
+        direction,
     )
     .await
     .map_err(AppError::from)?;

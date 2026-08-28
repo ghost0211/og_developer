@@ -472,15 +472,24 @@ pub async fn list_type_attributes(
 
 #[tauri::command]
 pub async fn list_object_references(
-    _state: State<'_, Arc<AppState>>,
-    _connection_id: String,
-    _database: String,
-    _schema: String,
-    _name: String,
-    _object_type: db::ObjectSourceKind,
-    _direction: Option<String>,
+    state: State<'_, Arc<AppState>>,
+    connection_id: String,
+    database: String,
+    schema: String,
+    name: String,
+    object_type: String,
+    direction: Option<String>,
 ) -> Result<Vec<dbx_core::schema::ObjectReferenceInfo>, String> {
-    Ok(Vec::new())
+    dbx_core::schema::list_object_references_core(
+        &state,
+        &connection_id,
+        &database,
+        &schema,
+        &object_type,
+        &name,
+        direction.as_deref().unwrap_or("references"),
+    )
+    .await
 }
 
 #[tauri::command]

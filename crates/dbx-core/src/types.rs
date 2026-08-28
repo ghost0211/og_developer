@@ -560,9 +560,9 @@ pub struct OfflineImportPlan {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SynonymTargetInfo {
-    pub schema: Option<String>,
-    pub name: String,
-    pub object_type: Option<String>,
+    pub target_schema: String,
+    pub target_name: String,
+    pub target_kind: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -570,14 +570,20 @@ pub struct SynonymTargetInfo {
 pub struct TypeAttributeInfo {
     pub name: String,
     pub data_type: String,
+    #[serde(default)]
+    pub is_nullable: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub comment: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ObjectReferenceInfo {
-    pub schema: Option<String>,
+    pub schema: String,
     pub name: String,
     pub object_type: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
 }
 
 #[cfg(test)]
