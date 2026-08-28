@@ -173,8 +173,7 @@ pub fn build_view_ddl_sql(input: BuildViewDdlInput) -> String {
 
     let qualified_name = postgres_qualified_name(input.schema.as_deref(), &input.name);
 
-    if input.database_type.is_none() || input.database_type.is_some_and(|database_type| is_postgres_like(database_type))
-    {
+    if input.database_type.is_none() || input.database_type.is_some_and(is_postgres_like) {
         return format!("CREATE OR REPLACE VIEW {qualified_name} AS\n{}", ensure_semicolon(source));
     }
 

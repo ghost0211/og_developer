@@ -54,7 +54,6 @@ pub(super) fn capabilities_for(database_type: Option<DatabaseType>) -> TableStru
             index_comment: true,
             alter_primary_key: true,
             foreign_key: true,
-            ..base
         },
         _ => base,
     }

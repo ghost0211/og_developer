@@ -1729,18 +1729,10 @@ pub(crate) fn config_for_pool_key<'a>(
 }
 
 fn session_scoped_pool_key_for(
-    config: Option<&ConnectionConfig>,
+    _config: Option<&ConnectionConfig>,
     base_pool_key: String,
     client_session_id: Option<&str>,
 ) -> String {
-    let shares_base_pool =
-        config.is_some_and(|config| false || (false && db::sqlite::is_memory_database_path(&config.host)));
-    if shares_base_pool {
-        // DuckDB and D1 already use connection-scoped handles. In-memory SQLite databases
-        // only exist inside one connection, so a session-scoped handle would point tabs at
-        // a different empty database.
-        return base_pool_key;
-    }
     session_scoped_pool_key(base_pool_key, client_session_id)
 }
 

@@ -658,7 +658,6 @@ mod tests {
                 schema: Some("public".to_string()),
                 table_name: "users".to_string(),
                 cascade: Some(true),
-                ..Default::default()
             }),
             "DROP TABLE public.users CASCADE;"
         );

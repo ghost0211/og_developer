@@ -312,9 +312,7 @@ fn has_dialect_specific_write_statement(sql: &str, database_type: DatabaseType) 
     if is_postgresql_family_database(database_type) {
         contains_unquoted_keyword(sql, &PostgreSqlDialect {}, "INTO")
     } else {
-        match database_type {
-            _ => false,
-        }
+        false
     }
 }
 

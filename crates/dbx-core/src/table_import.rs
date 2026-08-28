@@ -3196,12 +3196,10 @@ fn build_import_execution_batches(
     )
 }
 
-fn effective_import_batch_size(db_type: &DatabaseType, requested: usize) -> usize {
+fn effective_import_batch_size(_db_type: &DatabaseType, requested: usize) -> usize {
     // Some backends impose stricter limits than the UI batch setting; clamp here so every
     // import path, including streaming producers, uses the same safe value.
-    let max_rows = match db_type {
-        _ => usize::MAX,
-    };
+    let max_rows = usize::MAX;
     requested.max(1).min(max_rows)
 }
 
@@ -3209,16 +3207,10 @@ fn normalize_import_temporal_value(
     value: &serde_json::Value,
     data_type: Option<&str>,
     _db_type: &DatabaseType,
-    kingbase_oracle_mode: bool,
+    _kingbase_oracle_mode: bool,
     date_time_format: Option<&str>,
 ) -> serde_json::Value {
-    let date_type_preserves_time = (false || (false && kingbase_oracle_mode))
-        && data_type.is_some_and(|data_type| data_type.trim().eq_ignore_ascii_case("date"));
-    crate::temporal_format::normalize_temporal_import_value(
-        value,
-        if date_type_preserves_time { Some("datetime") } else { data_type },
-        date_time_format,
-    )
+    crate::temporal_format::normalize_temporal_import_value(value, data_type, date_time_format)
 }
 
 fn is_textual_import_target_type(data_type: &str) -> bool {
@@ -3357,9 +3349,7 @@ fn build_import_insert_batches_with_format(
 
 pub fn truncate_sql(table: &str, schema: &str, db_type: &DatabaseType) -> String {
     let full_table = qualified_table(table, schema, db_type, None);
-    match db_type {
-        _ => format!("TRUNCATE TABLE {full_table}"),
-    }
+    format!("TRUNCATE TABLE {full_table}")
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -3463,38 +3453,28 @@ fn infer_column_type(rows: &[Vec<serde_json::Value>], source_index: usize) -> Im
     inferred.unwrap_or(ImportInferredType::Text)
 }
 
-fn text_data_type(db_type: &DatabaseType) -> &'static str {
-    match db_type {
-        _ => "TEXT",
-    }
+fn text_data_type(_db_type: &DatabaseType) -> &'static str {
+    "TEXT"
 }
 
-fn integer_data_type(db_type: &DatabaseType) -> &'static str {
-    match db_type {
-        _ => "BIGINT",
-    }
+fn integer_data_type(_db_type: &DatabaseType) -> &'static str {
+    "BIGINT"
 }
 
 fn decimal_data_type(_db_type: &DatabaseType) -> &'static str {
     "DOUBLE PRECISION"
 }
 
-fn boolean_data_type(db_type: &DatabaseType) -> &'static str {
-    match db_type {
-        _ => "BOOLEAN",
-    }
+fn boolean_data_type(_db_type: &DatabaseType) -> &'static str {
+    "BOOLEAN"
 }
 
-fn date_data_type(db_type: &DatabaseType) -> &'static str {
-    match db_type {
-        _ => "DATE",
-    }
+fn date_data_type(_db_type: &DatabaseType) -> &'static str {
+    "DATE"
 }
 
-fn timestamp_data_type(db_type: &DatabaseType) -> &'static str {
-    match db_type {
-        _ => "TIMESTAMP",
-    }
+fn timestamp_data_type(_db_type: &DatabaseType) -> &'static str {
+    "TIMESTAMP"
 }
 
 fn json_data_type(_db_type: &DatabaseType) -> &'static str {

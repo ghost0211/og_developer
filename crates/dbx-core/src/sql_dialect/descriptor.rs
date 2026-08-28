@@ -9,6 +9,7 @@ pub enum DialectKind {
 }
 
 impl DialectKind {
+    #[allow(non_upper_case_globals)]
     pub const OpenGauss: DialectKind = DialectKind::Opengauss;
 
     pub fn from_database_type(db_type: DatabaseType) -> Self {

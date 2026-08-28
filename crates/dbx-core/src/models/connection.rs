@@ -413,6 +413,7 @@ pub enum DatabaseType {
 }
 
 impl DatabaseType {
+    #[allow(non_upper_case_globals)]
     pub const OpenGauss: DatabaseType = DatabaseType::Opengauss;
 }
 

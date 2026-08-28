@@ -1454,8 +1454,6 @@ export default {
       "invalid-quote": "Quote must be exactly one character.",
       "quote-conflicts": "Quote must not be part of a column or row separator.",
     },
-    mongoJsonPreview: "JSON Preview",
-    mongoJsonPreviewEmpty: "Select a MongoDB document to preview.",
     copyJson: "Copy JSON",
     copyDdl: "Copy DDL",
     copyCell: "Copy Cell",

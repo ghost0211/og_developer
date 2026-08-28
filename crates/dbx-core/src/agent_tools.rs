@@ -1046,12 +1046,7 @@ fn build_browse_query(
     }
     let _limit = limit.max(1) as u64;
 
-    match db_type {
-        // Milvus v2 omitting outputFields defaults to returning only scalar fields (no vectors).
-        // TODO: ChromaDB Cloud 支持自定义租户和数据库，当前只实现了本地部署
-        // （固定 default_tenant / default_database），后续支持云服务时需改为可配置。
-        _ => Err(format!("Unsupported database type: {:?}", db_type)),
-    }
+    Err(format!("Unsupported database type: {:?}", db_type))
 }
 
 #[cfg(test)]

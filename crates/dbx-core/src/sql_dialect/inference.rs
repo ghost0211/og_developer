@@ -149,14 +149,11 @@ impl TypeInferenceEngine for DefaultTypeInferenceEngine {
             return String::new();
         }
 
-        match (source_dialect, target_dialect) {
-            (DialectKind::Postgres, DialectKind::Postgres) => {
-                let lower = trimmed.to_ascii_lowercase();
-                if lower == "current_timestamp" || lower == "now()" || lower == "transaction_timestamp()" {
-                    return "CURRENT_TIMESTAMP".to_string();
-                }
+        if let (DialectKind::Postgres, DialectKind::Postgres) = (source_dialect, target_dialect) {
+            let lower = trimmed.to_ascii_lowercase();
+            if lower == "current_timestamp" || lower == "now()" || lower == "transaction_timestamp()" {
+                return "CURRENT_TIMESTAMP".to_string();
             }
-            _ => {}
         }
 
         trimmed.to_string()

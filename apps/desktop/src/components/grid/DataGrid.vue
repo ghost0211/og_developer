@@ -241,7 +241,6 @@ dayjs.extend(timezone);
 const SqlPreviewPanel = defineAsyncComponent(() => import("@/components/editor/SqlPreviewPanel.vue"));
 const ImagePreviewDialog = defineAsyncComponent(() => import("@/components/grid/ImagePreviewDialog.vue"));
 const DataGridCellDetailDialog = defineAsyncComponent(() => import("@/components/grid/DataGridCellDetailDialog.vue"));
-const DataGridMongoJsonPreview = defineAsyncComponent(() => import("@/components/grid/DataGridMongoJsonPreview.vue"));
 const DataGridDetailDialogs = defineAsyncComponent(() => import("@/components/grid/DataGridDetailDialogs.vue"));
 const DataGridBulkEditDialog = defineAsyncComponent(() => import("@/components/grid/DataGridBulkEditDialog.vue"));
 const DataGridCopyColumnNamesDialog = defineAsyncComponent(() => import("@/components/grid/DataGridCopyColumnNamesDialog.vue"));
@@ -606,7 +605,6 @@ const detailCell = ref<{ rowIndex: number; col: number } | null>(null);
 const hoveredDetailCell = ref<{ rowIndex: number; col: number } | null>(null);
 const quickDownloadMenuCell = ref<{ rowIndex: number; col: number } | null>(null);
 const showCellDetail = ref(false);
-const showMongoJsonPreview = ref(false);
 const activeCellDetailTab = ref<CellDetailTab>(defaultCellDetailTab());
 const cellDetailDialogOpen = ref(false);
 const cellDetailDialogTarget = ref<{ rowIndex: number; col: number } | null>(null);
@@ -3939,26 +3937,6 @@ const activeCellDetail = computed(() => {
   return cell ? cellDetailFor(cell.rowIndex, cell.col) : null;
 });
 
-const canShowMongoJsonPreview = computed(() => false);
-const mongoJsonPreviewOpen = computed(() => false);
-const mongoJsonPreviewFullText = computed(() => "");
-const mongoJsonPreviewText = computed(() => "");
-const mongoJsonPreviewUsesCodeEditor = computed(() => false);
-
-watch(canShowMongoJsonPreview, (available) => {
-  if (!available) showMongoJsonPreview.value = false;
-});
-
-// Result-set switches remount the grid, but re-executing the same result set
-// keeps this component alive. Clear the ephemeral preview before fresh query
-// data arrives so it cannot retain a stale row selection or drawer state.
-watch(
-  () => props.loading,
-  (loading) => {
-    if (loading) showMongoJsonPreview.value = false;
-  },
-);
-
 const dialogCellDetail = computed(() => {
   const target = cellDetailDialogTarget.value;
   return target ? cellDetailFor(target.rowIndex, target.col) : null;
@@ -4229,20 +4207,6 @@ function closeCellDetails() {
   resetDetailEdit();
   showCellDetail.value = false;
   detailCell.value = null;
-}
-
-function toggleMongoJsonPreview() {
-  if (!canShowMongoJsonPreview.value) return;
-  showMongoJsonPreview.value = !showMongoJsonPreview.value;
-  if (showMongoJsonPreview.value) closeCellDetails();
-}
-
-function closeMongoJsonPreview() {
-  showMongoJsonPreview.value = false;
-}
-
-function copyMongoJsonPreview() {
-  if (mongoJsonPreviewFullText.value) copyText(mongoJsonPreviewFullText.value);
 }
 
 function cellDetailEditText(detail: DataGridCellDetail): string {
@@ -5691,7 +5655,6 @@ function selectExportMenuItem(value: string) {
 
 // --- Cell selection and detail ---
 function showCellDetails(rowIndex: number, colIndex: number) {
-  closeMongoJsonPreview();
   resetDetailEdit();
   detailCell.value = { rowIndex, col: colIndex };
   activeCellDetailTab.value = defaultCellDetailTab();
@@ -7351,7 +7314,6 @@ const CELL_DETAIL_TABLE_MIN_VISIBLE_ROWS = 1.5;
 const CELL_DETAIL_TABLE_HORIZONTAL_SCROLLBAR_HEIGHT = 10;
 const CELL_DETAIL_TABLE_MIN_VISIBLE_HEIGHT = Math.ceil(CELL_DETAIL_TABLE_HEADER_HEIGHT + CANVAS_DATA_GRID_ROW_HEIGHT * CELL_DETAIL_TABLE_MIN_VISIBLE_ROWS + CELL_DETAIL_TABLE_HORIZONTAL_SCROLLBAR_HEIGHT);
 const DRAWER_MAX_WIDTH = 900;
-const MONGO_JSON_PREVIEW_DEFAULT_WIDTH = 420;
 function clampCellDetailPanelSize(value: number, layout = cellDetailPanelLayout.value): number {
   const min = layout === "bottom" ? CELL_DETAIL_PANEL_MIN_HEIGHT : CELL_DETAIL_PANEL_MIN_WIDTH;
   const max = layout === "bottom" ? CELL_DETAIL_PANEL_MAX_HEIGHT : DRAWER_MAX_WIDTH;
@@ -7429,16 +7391,12 @@ function onDdlKeydown(e: KeyboardEvent) {
 const ddlLoading = ref(false);
 const ddlWidth = ref(settingsStore.editorSettings.tableInfoDrawerWidth);
 const detailPanelHeight = ref(settingsStore.editorSettings.cellDetailDrawerWidth);
-const mongoJsonPreviewWidth = ref(MONGO_JSON_PREVIEW_DEFAULT_WIDTH);
 const ddlWrap = ref(true);
 const isResizingDdl = ref(false);
-const isResizingMongoJsonPreview = ref(false);
 let ddlResizeStartX = 0;
 let ddlResizeStartWidth = 0;
 let detailResizeStartY = 0;
 let detailResizeStartHeight = 0;
-let mongoJsonPreviewResizeStartX = 0;
-let mongoJsonPreviewResizeStartWidth = 0;
 const indexes = ref<IndexInfo[]>([]);
 const indexesLoaded = ref(false);
 const indexesLoading = ref(false);
@@ -7523,10 +7481,6 @@ const detailPanelStyle = computed(() =>
       }
     : { width: `${detailPanelHeight.value}px` },
 );
-
-const mongoJsonPreviewStyle = computed(() => ({
-  width: `${mongoJsonPreviewWidth.value}px`,
-}));
 
 const contentGridStyle = computed(() =>
   cellDetailPanelIsBottom.value && showCellDetail.value && activeCellDetail.value
@@ -7887,27 +7841,6 @@ function onDetailResizeEnd() {
   window.removeEventListener("mouseup", onDetailResizeEnd);
 }
 
-function onMongoJsonPreviewResizeStart(event: MouseEvent) {
-  isResizingMongoJsonPreview.value = true;
-  mongoJsonPreviewResizeStartX = event.clientX;
-  mongoJsonPreviewResizeStartWidth = mongoJsonPreviewWidth.value;
-  document.body.classList.add("select-none", "cursor-col-resize");
-  window.addEventListener("mousemove", onMongoJsonPreviewResizeMove);
-  window.addEventListener("mouseup", onMongoJsonPreviewResizeEnd);
-}
-
-function onMongoJsonPreviewResizeMove(event: MouseEvent) {
-  if (!isResizingMongoJsonPreview.value) return;
-  mongoJsonPreviewWidth.value = clampCellDetailPanelSize(mongoJsonPreviewResizeStartWidth + mongoJsonPreviewResizeStartX - event.clientX, "right");
-}
-
-function onMongoJsonPreviewResizeEnd() {
-  isResizingMongoJsonPreview.value = false;
-  document.body.classList.remove("select-none", "cursor-col-resize");
-  window.removeEventListener("mousemove", onMongoJsonPreviewResizeMove);
-  window.removeEventListener("mouseup", onMongoJsonPreviewResizeEnd);
-}
-
 const loadingElapsed = ref(0);
 let _loadingFrame: number | undefined;
 let _loadingStart = 0;
@@ -7978,7 +7911,6 @@ onUnmounted(() => {
   autoRefresh.stop();
   onDdlResizeEnd();
   onDetailResizeEnd();
-  onMongoJsonPreviewResizeEnd();
   finishCellSelection();
   clearTimeout(highlightedColumnTimer);
   if (serverFilterSearchTimer !== undefined) {
@@ -8471,21 +8403,6 @@ const gridContextMenuItems = computed<ContextMenuItem[]>(() => {
                 <TooltipContent side="bottom" class="max-w-sm">
                   {{ t("grid.keylessEditWarningHint") }}
                 </TooltipContent>
-              </Tooltip>
-              <Tooltip v-if="canShowMongoJsonPreview">
-                <TooltipTrigger as-child>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    :class="['data-grid-topbar-action-button h-5 shrink-0 text-xs px-1.5', compactDataGridToolbar ? 'data-grid-topbar-action-button--compact' : '', mongoJsonPreviewOpen ? 'text-primary bg-primary/10 hover:bg-primary/15' : '']"
-                    :aria-pressed="mongoJsonPreviewOpen"
-                    @click="toggleMongoJsonPreview"
-                  >
-                    <Code2 class="data-grid-topbar-action-icon w-3 h-3" />
-                    <span class="data-grid-topbar-action-label" :class="{ 'data-grid-topbar-action-label--compact': compactDataGridToolbar }">{{ t("grid.mongoJsonPreview") }}</span>
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">{{ t("grid.mongoJsonPreview") }}</TooltipContent>
               </Tooltip>
             </template>
 
@@ -9860,18 +9777,6 @@ const gridContextMenuItems = computed<ContextMenuItem[]>(() => {
               </TabsContent>
             </Tabs>
           </div>
-          <DataGridMongoJsonPreview
-            v-if="mongoJsonPreviewOpen"
-            :full-text="mongoJsonPreviewFullText"
-            :text="mongoJsonPreviewText"
-            :uses-code-editor="mongoJsonPreviewUsesCodeEditor"
-            :panel-style="mongoJsonPreviewStyle"
-            :resizing="isResizingMongoJsonPreview"
-            @copy="copyMongoJsonPreview"
-            @close="closeMongoJsonPreview"
-            @resize-start="onMongoJsonPreviewResizeStart"
-            @context-menu="onDrawerContextMenu"
-          />
         </div>
       </div>
     </CustomContextMenu>

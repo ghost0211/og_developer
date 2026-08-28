@@ -320,7 +320,7 @@ impl SpatialColumnBuilder {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct QueryResult {
     pub columns: Vec<String>,
     /// Database type name for each column, parallel to `columns`. May be empty
@@ -360,26 +360,6 @@ pub struct QueryResult {
     /// between the tabular view and the original JSON.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub elasticsearch_raw_body: Option<String>,
-}
-
-impl Default for QueryResult {
-    fn default() -> Self {
-        Self {
-            columns: vec![],
-            column_types: vec![],
-            column_sortables: vec![],
-            spatial_columns: vec![],
-            spatial_values: vec![],
-            rows: vec![],
-            affected_rows: 0,
-            execution_time_ms: 0,
-            messages: vec![],
-            truncated: false,
-            session_id: None,
-            has_more: false,
-            elasticsearch_raw_body: None,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

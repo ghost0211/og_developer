@@ -436,10 +436,7 @@ pub async fn operation_budget_for_pool_key(
     let config = crate::connection::config_for_pool_key(pool_key, &configs);
     let connect_timeout =
         config.map(|c| Duration::from_secs(c.connect_timeout_secs)).unwrap_or(Duration::from_secs(10));
-    let mut budget = DbOperationBudget::default();
-    budget.connect_timeout = connect_timeout;
-    budget.query_timeout = query_timeout;
-    budget
+    DbOperationBudget { connect_timeout, query_timeout, ..Default::default() }
 }
 
 fn resolve_query_timeout(timeout_secs: Option<u64>) -> Option<Duration> {
@@ -570,8 +567,7 @@ async fn do_execute_typed(
     };
     let operation_budget = operation_budget_for_pool_key(state, pool_key, query_timeout).await;
     if let Some((name, database_type)) = read_only_connection {
-        crate::query_execution_sql::check_read_only(sql, &name, database_type)
-            .map_err(|e| QueryExecutionError::Sql(e))?;
+        crate::query_execution_sql::check_read_only(sql, &name, database_type).map_err(QueryExecutionError::Sql)?;
     }
     let pool_db_type = connection_database_type_for_pool_key(state, pool_key).await;
     let connections = state.connections.read().await;
@@ -1070,7 +1066,7 @@ pub async fn execute_statements_in_transaction_on_pool_typed(
     schema: Option<&str>,
     _catalog: Option<&str>,
 ) -> Result<db::QueryResult, QueryExecutionError> {
-    check_read_only_for_connection_multi(state, pool_key, statements).await.map_err(|e| QueryExecutionError::Sql(e))?;
+    check_read_only_for_connection_multi(state, pool_key, statements).await.map_err(QueryExecutionError::Sql)?;
 
     let db_type = connection_database_type(state, connection_id).await;
     let connections = state.connections.read().await;
@@ -1101,7 +1097,7 @@ pub async fn execute_statements_in_transaction_on_pool_typed(
                     serde_json::json!({ "statements": statements, "database": database, "schema": schema }),
                 )
                 .await;
-            res.map_err(|e| QueryExecutionError::Legacy(e))
+            res.map_err(QueryExecutionError::Legacy)
         }
     };
 

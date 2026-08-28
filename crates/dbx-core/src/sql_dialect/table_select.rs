@@ -27,9 +27,9 @@ pub fn build_table_data_select_sql(options: TableDataSelectSqlOptions) -> String
 
 pub fn build_table_select_sql(options: TableSelectSqlOptions) -> String {
     let database_type = options.database_type;
-    let table = qualified_table_name(database_type, options.schema.as_deref(), &options.table_name);
+    let table = qualified_table_name(database_type, options.schema, options.table_name);
     let limit = options.limit;
-    let select_columns = build_select_columns(database_type, &options.columns);
+    let select_columns = build_select_columns(database_type, options.columns);
     format!("SELECT {select_columns} FROM {table} LIMIT {limit}")
 }
 

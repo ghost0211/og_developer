@@ -457,7 +457,7 @@ pub async fn close_query_session(
     State(state): State<Arc<WebState>>,
     Json(req): Json<CloseSessionRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let closed = dbx_core::query::close_query_session(
+    dbx_core::query::close_query_session(
         &state.app,
         &req.connection_id,
         &req.database,
@@ -468,7 +468,7 @@ pub async fn close_query_session(
     .await
     .map_err(AppError::from)?;
 
-    Ok(Json(serde_json::json!(closed)))
+    Ok(Json(serde_json::json!(())))
 }
 
 pub async fn close_client_connection_session(

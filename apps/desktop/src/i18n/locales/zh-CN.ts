@@ -1456,8 +1456,6 @@ export default withEnglishFallback({
       "invalid-quote": "引用字符必须正好是一个字符。",
       "quote-conflicts": "引用字符不能出现在列分隔符或行分隔符中。",
     },
-    mongoJsonPreview: "JSON 预览",
-    mongoJsonPreviewEmpty: "选择一条 MongoDB 文档以预览。",
     copyJson: "复制 JSON",
     copyDdl: "复制 DDL",
     copyCell: "复制单元格",

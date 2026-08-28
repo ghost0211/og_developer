@@ -213,10 +213,8 @@ fn like_pattern(term: &str) -> String {
     pattern
 }
 
-fn text_cast_expression(database_type: Option<DatabaseType>, identifier: &str) -> String {
-    match database_type {
-        _ => format!("LOWER(CAST({identifier} AS TEXT))"),
-    }
+fn text_cast_expression(_database_type: Option<DatabaseType>, identifier: &str) -> String {
+    format!("LOWER(CAST({identifier} AS TEXT))")
 }
 
 fn sql_value_literal(_database_type: Option<DatabaseType>, column: &DatabaseSearchColumn, value: &Value) -> String {
