@@ -1330,7 +1330,7 @@ impl AppState {
                     .await?;
                 let mut info = database_info_from_protocol_value(&response);
                 if crate::schema::is_opengauss_family_config(&config) {
-                    let compatibility = session
+                    let mut compatibility = session
                         .invoke_with_timeout::<db::QueryResult>(
                             "executeQuery",
                             serde_json::json!({
@@ -1345,7 +1345,27 @@ impl AppState {
                         )
                         .await
                         .ok()
-                        .and_then(|result| db::postgres::sql_compatibility_from_query_result(&result));
+                        .and_then(|result| db::postgres::sql_compatibility_from_query_result(&result))
+                        .map(|value| value.trim().to_ascii_uppercase());
+                    // Some openGauss JDBC drivers cannot run the pg_database
+                    // probe over the plugin session; fall back to the native
+                    // wire pool so the compatibility mode is still detected
+                    // (and package/synonym groups stay scoped correctly).
+                    if compatibility.is_none() {
+                        let database = config.effective_database().map(str::to_string);
+                        if let Ok(Some(pool)) = crate::schema::opengauss_metadata_postgres_pool(
+                            self,
+                            connection_id,
+                            database.as_deref().unwrap_or(""),
+                            &pool_key,
+                        )
+                        .await
+                        {
+                            compatibility = db::postgres::postgres_sql_compatibility(&pool)
+                                .await
+                                .map(|value| value.trim().to_ascii_uppercase());
+                        }
+                    }
                     let product_version = session
                         .invoke_with_timeout::<db::QueryResult>(
                             "executeQuery",

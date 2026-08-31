@@ -232,10 +232,11 @@ pub async fn connection_identifier_quote(
 
 #[tauri::command]
 pub async fn connection_database_info(
-    _state: State<'_, Arc<AppState>>,
-    _connection_id: String,
+    state: State<'_, Arc<AppState>>,
+    connection_id: String,
+    database: Option<String>,
 ) -> Result<Option<DatabaseConnectionInfo>, String> {
-    Ok(None)
+    state.connection_database_info(&connection_id, database.as_deref()).await
 }
 
 #[tauri::command]
