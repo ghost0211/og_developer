@@ -53,11 +53,24 @@ async fn native_postgres_metadata_pool(
     let url = postgres_config.connection_url_with_host(&host, port);
     let connect_timeout = std::time::Duration::from_secs(postgres_config.effective_connect_timeout_secs());
     match db::postgres::connect(&url, connect_timeout).await {
-        Ok(pool) => Ok(Some(pool)),
+        Ok(pool) => {
+            // Native metadata is available again; clear any earlier negative
+            // memo so later calls keep using it.
+            let memo_key = format!("{connection_id}:{}", database.trim());
+            state.opengauss_native_metadata_unavailable.write().await.remove(&memo_key);
+            // Reuse this pool across metadata calls instead of re-handshaking
+            // for every object group expand.
+            state.opengauss_native_metadata_pools.write().await.insert(memo_key, pool.clone());
+            Ok(Some(pool))
+        }
         Err(error) => {
             log::debug!(
                 "[schema][native_postgres_metadata_pool] native connect failed (fallback to jdbc session): {error}"
             );
+            // Remember the failure so subsequent metadata queries don't retry
+            // the (possibly slow) native connect on every call.
+            let memo_key = format!("{connection_id}:{}", database.trim());
+            state.opengauss_native_metadata_unavailable.write().await.insert(memo_key);
             Ok(None)
         }
     }
@@ -74,6 +87,18 @@ pub async fn opengauss_metadata_postgres_pool(
     match connections.get(pool_key) {
         Some(PoolKind::Postgres(p)) => Ok(Some(p.clone())),
         Some(PoolKind::ExternalDriver { .. }) if db_config.as_ref().is_some_and(is_opengauss_family_config) => {
+            let memo_key = format!("{connection_id}:{}", database.trim());
+            // Reuse a previously established native metadata pool.
+            if let Some(pool) = state.opengauss_native_metadata_pools.read().await.get(&memo_key) {
+                return Ok(Some(pool.clone()));
+            }
+            // Skip the native connect attempt once it has failed for this
+            // connection/database; the JDBC plugin session stays the metadata
+            // source and the sidebar stays responsive.
+            if state.opengauss_native_metadata_unavailable.read().await.contains(&memo_key) {
+                drop(connections);
+                return Ok(None);
+            }
             let native_config = db_config.clone().expect("opengauss family config present");
             drop(connections);
             native_postgres_metadata_pool(state, connection_id, database, &native_config).await

@@ -138,6 +138,15 @@ pub struct AppState {
     /// (openGauss-lite closes the connection on put_line over the wire).
     /// Output capture is skipped there once learned.
     gms_output_unsupported_pools: Arc<RwLock<std::collections::HashSet<String>>>,
+    /// openGauss JDBC sessions where the native wire metadata pool could not
+    /// be established (TLS/URL/credential mismatch). Once learned, later
+    /// metadata calls skip the expensive native connect attempt and fall back
+    /// to the JDBC plugin immediately. Keyed by "connection_id:database".
+    pub opengauss_native_metadata_unavailable: Arc<RwLock<std::collections::HashSet<String>>>,
+    /// Successful native wire pools used for openGauss metadata queries, keyed
+    /// by "connection_id:database". Reused across metadata calls so expanding
+    /// schema trees doesn't re-handshake on every object group.
+    pub opengauss_native_metadata_pools: Arc<RwLock<HashMap<String, deadpool_postgres::Pool>>>,
     /// Server-notice receivers for native openGauss/GaussDB pools, keyed by
     /// pool_key. The receiver observes RAISE NOTICE from every connection in
     /// the pool; execution drains the backlog around each query.
@@ -378,6 +387,8 @@ impl AppState {
             plugins: PluginRegistry::new(plugin_dir),
             postgres_cancel_contexts: Arc::new(RwLock::new(HashMap::new())),
             gms_output_unsupported_pools: Arc::new(RwLock::new(std::collections::HashSet::new())),
+            opengauss_native_metadata_unavailable: Arc::new(RwLock::new(std::collections::HashSet::new())),
+            opengauss_native_metadata_pools: Arc::new(RwLock::new(HashMap::new())),
             postgres_notice_receivers: Arc::new(RwLock::new(HashMap::new())),
             transaction_sessions: Arc::new(RwLock::new(HashMap::new())),
             opengauss_debug_sessions: Arc::new(RwLock::new(HashMap::new())),
@@ -1561,6 +1572,13 @@ impl AppState {
                 activity.remove(key);
                 cancel_contexts.remove(key);
             }
+            // Forget any learned native-metadata failures for this connection
+            // so a reconnect (with possibly fixed TLS/URL settings) can retry.
+            let prefix = format!("{connection_id}:");
+            let mut unavailable = self.opengauss_native_metadata_unavailable.write().await;
+            let mut native_pools = self.opengauss_native_metadata_pools.write().await;
+            unavailable.retain(|k| !(k == connection_id || k.starts_with(&prefix)));
+            native_pools.retain(|k, _| !(k == connection_id || k.starts_with(&prefix)));
         }
         let mut conns = self.connections.write().await;
         let mut removed = Vec::with_capacity(keys_to_remove.len());
