@@ -8,6 +8,7 @@ import { useQueryStore } from "@/stores/queryStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { copyToClipboard } from "@/lib/common/clipboard";
 import { formatSqlForDisplay, type SqlFormatDialect } from "@/lib/sql/sqlFormatter";
+import type { CodeMirrorSqlDialectName } from "@/lib/editor/codemirrorSqlDialect";
 import { buildEditableObjectSource, buildExecutableObjectSourceStatements, executeObjectSourceSave, formatObjectSourceSaveError } from "@/lib/table/objectSourceEditor";
 import { loadObjectSourceWithRoutineFallback } from "@/lib/table/objectSourceLoad";
 import { executeWithProductionSqlGuard } from "@/lib/database/productionExecutionGuard";
@@ -28,7 +29,7 @@ const props = withDefaults(
     signature?: string;
     objectType: ObjectSourceKind;
     databaseType?: DatabaseType;
-    dialect: "postgres";
+    dialect: CodeMirrorSqlDialectName;
     formatDialect?: SqlFormatDialect;
     initialEditing?: boolean;
   }>(),

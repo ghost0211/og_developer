@@ -1,4 +1,5 @@
 import type { DatabaseType } from "@/types/database";
+import type { CodeMirrorSqlDialectName } from "@/lib/editor/codemirrorSqlDialect";
 
 export interface SqlSemanticSpan {
   start: number;
@@ -127,5 +128,5 @@ export interface SqlSemanticModel {
 
 export interface SqlSemanticBuildOptions {
   databaseType?: DatabaseType;
-  dialect?: "postgres";
+  dialect?: CodeMirrorSqlDialectName;
 }

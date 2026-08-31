@@ -293,7 +293,7 @@ function increaseTableFontSize() {
 
 const activeSqlFormatDialect = computed<SqlFormatDialect>(() => sqlFormatDialectForDbType(activeEffectiveDatabaseType.value));
 
-const editorDialect = computed<"postgres">(() => codeMirrorSqlDialect(activeEffectiveDatabaseType.value));
+const editorDialect = computed<CodeMirrorSqlDialectName>(() => codeMirrorSqlDialect(activeEffectiveDatabaseType.value));
 const editorSyntaxDialect = computed<CodeMirrorSqlDialectName>(() => codeMirrorSqlDialectForConnection(props.activeConnection));
 
 const shortcutModifier = computed(() => (navigator.platform.toLowerCase().includes("mac") ? "Cmd" : "Ctrl"));

@@ -13,9 +13,9 @@ function installLocalStorage() {
 
 function gaussdbConnection(style: "double" | "backtick"): ConnectionConfig {
   return {
-    id: `opengauss-${style}`,
-    name: "openGauss",
-    db_type: "opengauss",
+    id: `gaussdb-${style}`,
+    name: "GaussDB",
+    db_type: "gaussdb",
     host: "127.0.0.1",
     port: 5432,
     username: "gaussdb",
@@ -47,7 +47,7 @@ describe("connectionStore GaussDB identifier quote override", () => {
   it("loads and caches auto compatibility quotes once per connection", async () => {
     const config: ConnectionConfig = {
       ...gaussdbConnection("double"),
-      id: "opengauss-auto",
+      id: "gaussdb-auto",
       external_config: undefined,
     };
     const connectionIdentifierQuote = vi.fn().mockResolvedValue("`");

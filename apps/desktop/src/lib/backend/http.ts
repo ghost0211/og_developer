@@ -543,6 +543,22 @@ export async function syncSavedSqlDirectory(_request: SavedSqlSyncRequest): Prom
   throw new Error("SQL directory sync is only available in the desktop app.");
 }
 
+export async function isSqliteDatabaseFile(_path: string): Promise<boolean> {
+  throw new Error("SQLite file detection is only available in the desktop app.");
+}
+
+export async function backupSqliteDatabase(_database: string): Promise<string> {
+  throw new Error("SQLite backup is only available in the desktop app.");
+}
+
+export async function redisListDatabases(_connectionId: string): Promise<{ db: number }[]> {
+  throw new Error("Redis is not supported.");
+}
+
+export async function mongoListDatabases(_connectionId: string): Promise<string[]> {
+  throw new Error("MongoDB is not supported.");
+}
+
 // ---------------------------------------------------------------------------
 // Schema
 // ---------------------------------------------------------------------------

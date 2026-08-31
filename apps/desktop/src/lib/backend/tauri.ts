@@ -1831,6 +1831,22 @@ export async function deleteDatabaseBackupFiles(paths: string[]): Promise<number
   return invoke("delete_database_backup_files", { paths });
 }
 
+export async function isSqliteDatabaseFile(path: string): Promise<boolean> {
+  return invoke("is_sqlite_database_file", { path });
+}
+
+export async function backupSqliteDatabase(database: string): Promise<string> {
+  return invoke("backup_sqlite_database", { database });
+}
+
+export async function redisListDatabases(connectionId: string): Promise<{ db: number }[]> {
+  return invoke("redis_list_databases", { connectionId });
+}
+
+export async function mongoListDatabases(connectionId: string): Promise<string[]> {
+  return invoke("mongo_list_databases", { connectionId });
+}
+
 export async function syncSavedSqlDirectory(request: SavedSqlSyncRequest): Promise<void> {
   return invoke("sync_saved_sql_directory", { request });
 }

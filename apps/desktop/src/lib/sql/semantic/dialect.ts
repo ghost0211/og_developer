@@ -1,4 +1,5 @@
 import type { DatabaseType } from "@/types/database";
+import type { CodeMirrorSqlDialectName } from "@/lib/editor/codemirrorSqlDialect";
 
 export interface SqlSemanticProjectionAliasVisibility {
   where: boolean;
@@ -69,7 +70,7 @@ export function sqlReferenceAnalysisDialectFor(options: { databaseType?: Databas
   return options.fallbackDialect;
 }
 
-export function sqlSemanticDialectFor(options: { databaseType?: DatabaseType; dialect?: "postgres" }): SqlSemanticDialectAdapter {
+export function sqlSemanticDialectFor(options: { databaseType?: DatabaseType; dialect?: CodeMirrorSqlDialectName }): SqlSemanticDialectAdapter {
   if (options.dialect && SQL_SEMANTIC_DIALECTS[options.dialect]) return SQL_SEMANTIC_DIALECTS[options.dialect];
   switch (options.databaseType) {
     case "postgres":

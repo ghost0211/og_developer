@@ -1,4 +1,5 @@
 import type { DatabaseType } from "@/types/database";
+import type { CodeMirrorSqlDialectName } from "@/lib/editor/codemirrorSqlDialect";
 import { sqlSemanticDialectFor } from "@/lib/sql/semantic/dialect";
 import { tokenizeSqlSemantic } from "@/lib/sql/semantic/tokens";
 import type { SqlSemanticToken } from "@/lib/sql/semantic/types";
@@ -6,7 +7,7 @@ import { createSemanticSelectionRangeIndex, type SemanticSelectionContext, type 
 
 export interface SqlSemanticSelectionOptions {
   databaseType?: DatabaseType;
-  dialect?: "postgres";
+  dialect?: CodeMirrorSqlDialectName;
 }
 
 interface SqlSelectionToken {

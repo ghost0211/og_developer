@@ -6,7 +6,7 @@ import { useToast } from "@/composables/useToast";
 import { useTheme } from "@/composables/useTheme";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { loadEditorTheme, editorFontTheme } from "@/lib/editor/editorThemes";
-import { createDbxCodeMirrorSqlDialect } from "@/lib/editor/codemirrorSqlDialect";
+import { createDbxCodeMirrorSqlDialect, type CodeMirrorSqlDialectName } from "@/lib/editor/codemirrorSqlDialect";
 import { copyToClipboard } from "@/lib/common/clipboard";
 import { formatSqlForDisplay, type SqlFormatDialect } from "@/lib/sql/sqlFormatter";
 import { loadObjectDdl } from "@/lib/metadata/objectDdlCache";
@@ -28,7 +28,7 @@ const props = withDefaults(
     /** Effective database type selects database-specific syntax rules; older callers can still rely on the dialect fallback. */
     databaseType?: DatabaseType;
     /** SQL dialect fallback for syntax highlighting when the effective database type is unavailable. */
-    dialect: "postgres";
+    dialect: CodeMirrorSqlDialectName;
     /** SQL formatter dialect. Kept separate from the syntax-highlighting dialect because several PG-compatible DBs highlight as MySQL. */
     formatDialect?: SqlFormatDialect;
   }>(),

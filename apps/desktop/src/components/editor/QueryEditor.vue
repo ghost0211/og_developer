@@ -126,7 +126,7 @@ const props = defineProps<{
   clientSessionId?: string;
   completionContextVersion?: number;
   databaseType?: DatabaseType;
-  dialect?: "postgres";
+  dialect?: CodeMirrorSqlDialectName;
   syntaxDialect?: CodeMirrorSqlDialectName;
   formatDialect?: SqlFormatDialect;
   formatRequestId?: number;

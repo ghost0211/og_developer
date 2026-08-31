@@ -130,7 +130,13 @@ export const savedSqlStorageDir = forward("savedSqlStorageDir");
 export const openSavedSqlStorageDir = forward("openSavedSqlStorageDir");
 export const revealPathInFileManager = forward("revealPathInFileManager");
 export const deleteDatabaseBackupFiles = forward("deleteDatabaseBackupFiles");
+export const isSqliteDatabaseFile = forward("isSqliteDatabaseFile");
+export const backupSqliteDatabase = forward("backupSqliteDatabase");
 export const syncSavedSqlDirectory = forward("syncSavedSqlDirectory");
+
+// Redis / MongoDB (legacy commands kept for UI completeness)
+export const redisListDatabases = forward("redisListDatabases");
+export const mongoListDatabases = forward("mongoListDatabases");
 
 // Schema
 export const listDatabases = forward("listDatabases");
