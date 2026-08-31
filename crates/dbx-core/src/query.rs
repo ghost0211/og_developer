@@ -1125,10 +1125,15 @@ pub async fn begin_manual_transaction(
     schema: Option<&str>,
 ) -> Result<String, String> {
     let pool_key = format!("{connection_id}:{database}");
-    let connections = state.connections.read().await;
-    let pool = connections.get(&pool_key).ok_or_else(|| "Connection not found".to_string())?;
+    let pool_kind = {
+        let connections = state.connections.read().await;
+        connections.get(&pool_key).cloned().or_else(|| connections.get(connection_id).cloned())
+    };
+    let Some(pool_kind) = pool_kind else {
+        return Err("Connection not found".to_string());
+    };
 
-    let txn_conn = match pool {
+    let txn_conn = match pool_kind {
         PoolKind::Postgres(p) => {
             let conn = p.get().await.map_err(|e| format!("Failed to check out connection from pool: {e}"))?;
             conn.execute("BEGIN", &[]).await.map_err(|e| format!("Failed to BEGIN transaction: {e}"))?;
@@ -1139,7 +1144,34 @@ pub async fn begin_manual_transaction(
             }
             TxnConnection::Postgres(Box::new(conn))
         }
-        _ => return Err("Manual transactions not supported for this database type".to_string()),
+        PoolKind::ExternalDriver { .. } => {
+            // openGauss JDBC (ExternalDriver) sessions cannot open a manual
+            // transaction; use the native wire pool instead, which speaks
+            // the postgres protocol and supports BEGIN snapshots.
+            let config = state
+                .configs
+                .read()
+                .await
+                .get(connection_id)
+                .cloned()
+                .ok_or_else(|| format!("Connection config not found: {connection_id}"))?;
+            if !crate::schema::is_opengauss_family_config(&config) {
+                return Err("Manual transactions not supported for this database type".to_string());
+            }
+            let internal_pool =
+                crate::schema::opengauss_metadata_postgres_pool(state, connection_id, database, &pool_key).await?;
+            let Some(p) = internal_pool else {
+                return Err("Cannot open a backup snapshot: native wire pool unavailable".to_string());
+            };
+            let conn = p.get().await.map_err(|e| format!("Failed to check out connection from pool: {e}"))?;
+            conn.execute("BEGIN", &[]).await.map_err(|e| format!("Failed to BEGIN transaction: {e}"))?;
+            if let Some(s) = schema {
+                conn.execute(&format!("SET LOCAL search_path TO \"{s}\""), &[])
+                    .await
+                    .map_err(|e| format!("SET search_path failed: {e}"))?;
+            }
+            TxnConnection::Postgres(Box::new(conn))
+        }
     };
 
     let txn_session_id = uuid::Uuid::new_v4().to_string();

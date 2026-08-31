@@ -1073,12 +1073,12 @@ pub async fn begin_database_backup_snapshot_core(
         .get(connection_id)
         .map(|config| config.db_type)
         .ok_or_else(|| format!("Connection config not found: {connection_id}"))?;
-    if !matches!(db_type, DatabaseType::Postgres) {
-        return Err("Consistent database backup snapshots are only supported for MySQL and PostgreSQL".to_string());
+    if !matches!(db_type, DatabaseType::Postgres | DatabaseType::OpenGauss) {
+        return Err("Consistent database backup snapshots are only supported for PostgreSQL and openGauss".to_string());
     }
 
     let session_id = crate::query::begin_database_backup_snapshot(state, connection_id, database).await?;
-    let schemas = if matches!(db_type, DatabaseType::Postgres) {
+    let schemas = if matches!(db_type, DatabaseType::Postgres | DatabaseType::OpenGauss) {
         const POSTGRES_BACKUP_SCHEMAS_SQL: &str = "SELECT n.nspname FROM pg_catalog.pg_namespace n \
              WHERE n.nspname NOT IN ('information_schema', 'pg_catalog', 'pg_toast') \
              AND n.nspname NOT LIKE 'pg_toast_temp_%' \
