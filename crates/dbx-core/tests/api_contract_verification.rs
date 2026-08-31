@@ -713,7 +713,11 @@ done
     // Read logged JSON-RPC requests
     let logged = std::fs::read_to_string(&calls).expect("read calls log");
     let lines: Vec<&str> = logged.lines().collect();
-    assert!(lines.len() >= 16, "Expected at least 16 RPC calls, got {}", lines.len());
+    // openGauss-family JDBC metadata (indexes, foreign keys, triggers,
+    // functions, sequences) resolves through the native wire driver pool; only
+    // the remaining plugin methods issue RPCs, all of which must carry
+    // "connection".
+    assert!(lines.len() >= 12, "Expected at least 12 RPC calls, got {}", lines.len());
 
     for line in lines {
         let val: serde_json::Value = serde_json::from_str(line).unwrap();
