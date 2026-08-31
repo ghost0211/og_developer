@@ -43,6 +43,34 @@ const viewMode = ref<"create" | "detail">("create");
 const selectedProjectId = ref<string | null>(null);
 const searchProjectQuery = ref("");
 
+// reka-ui Select treats an empty string value as "no selection", so the
+// unbound option cannot be selected back once a connection is chosen.
+// Use a sentinel value for the unbound choice and map it to undefined at
+// the edges.
+const UNBOUND_CONNECTION_VALUE = "__none__";
+
+function connectionSentinelValue(value: string | undefined): string {
+  return value || UNBOUND_CONNECTION_VALUE;
+}
+
+function connectionValueFromSentinel(value: string): string | undefined {
+  return value && value !== UNBOUND_CONNECTION_VALUE ? value : undefined;
+}
+
+const createConnectionSentinel = computed({
+  get: () => connectionSentinelValue(createConnectionId.value),
+  set: (value: string) => {
+    createConnectionId.value = connectionValueFromSentinel(value);
+  },
+});
+
+const editConnectionSentinel = computed({
+  get: () => connectionSentinelValue(editConnectionId.value),
+  set: (value: string) => {
+    editConnectionId.value = connectionValueFromSentinel(value);
+  },
+});
+
 // Create Form State
 const createName = ref("");
 const createPath = ref("");
@@ -440,12 +468,12 @@ watch(
 
             <div class="space-y-1.5">
               <Label class="text-xs font-semibold">{{ t("projectHub.connectionOptional") }}</Label>
-              <Select v-model="createConnectionId">
+              <Select v-model="createConnectionSentinel">
                 <SelectTrigger class="h-8 text-xs">
                   <SelectValue :placeholder="t('projectHub.unboundConnectionOption')" />
                 </SelectTrigger>
                 <SelectContent class="text-xs">
-                  <SelectItem value="">{{ t("projectHub.unboundConnectionOption") }}</SelectItem>
+                  <SelectItem :value="UNBOUND_CONNECTION_VALUE">{{ t("projectHub.unboundConnectionOption") }}</SelectItem>
                   <SelectItem v-for="c in connectionStore.connections" :key="c.id" :value="c.id"> {{ c.name }} ({{ c.db_type }}) </SelectItem>
                 </SelectContent>
               </Select>
@@ -537,12 +565,12 @@ watch(
 
             <div class="space-y-1.5">
               <Label class="text-xs font-semibold">{{ t("projectHub.boundConnection") }}</Label>
-              <Select v-model="editConnectionId">
+              <Select v-model="editConnectionSentinel">
                 <SelectTrigger class="h-8 text-xs">
                   <SelectValue :placeholder="t('projectHub.unboundConnectionOption')" />
                 </SelectTrigger>
                 <SelectContent class="text-xs">
-                  <SelectItem value="">{{ t("projectHub.unboundConnectionOption") }}</SelectItem>
+                  <SelectItem :value="UNBOUND_CONNECTION_VALUE">{{ t("projectHub.unboundConnectionOption") }}</SelectItem>
                   <SelectItem v-for="c in connectionStore.connections" :key="c.id" :value="c.id"> {{ c.name }} ({{ c.db_type }}) </SelectItem>
                 </SelectContent>
               </Select>
