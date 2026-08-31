@@ -704,7 +704,21 @@ watch(flatNodes, (nodes) => {
 watch(
   () => flatNodes.value.length,
   (count, previous) => {
-    if (count < previous) treeScrollerRemountKey.value++;
+    if (count < previous) {
+      // Collapses shrink the list; this vue-virtual-scroller build leaves stale
+      // rows in the DOM, so we remount via the key. Preserve scroll position
+      // across the remount instead of snapping back to the top.
+      const scroller = currentTreeScroller();
+      const preservedScrollTop = scroller ? scroller.scrollTop : 0;
+      treeScrollerRemountKey.value++;
+      void nextTick(() => {
+        const nextScroller = currentTreeScroller();
+        if (nextScroller && preservedScrollTop > 0) {
+          nextScroller.scrollTop = preservedScrollTop;
+          scheduleSidebarScrollMetricsUpdate();
+        }
+      });
+    }
   },
 );
 
