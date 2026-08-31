@@ -6004,7 +6004,7 @@ export default withEnglishFallback({
     dropTableIfExists: "导出前添加 DROP TABLE IF EXISTS",
     omitAutoIncrement: "省略 AUTO_INCREMENT（用于全新安装的初始化脚本）",
     includeData: "表数据 (INSERT)",
-    includeObjects: "视图 / 存储过程 / 函数 / 序列",
+    includeObjects: "视图 / 物化视图 / 存储过程 / 函数 / 包 / 同义词 / 类型 / 序列",
     databaseSelection: "选择数据库",
     selectedDatabases: "已选择 {selected}/{total}",
     selectAllDatabases: "全选",

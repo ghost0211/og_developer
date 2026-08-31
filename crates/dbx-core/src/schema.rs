@@ -354,8 +354,31 @@ pub async fn list_schemas_core_with_visible_filter(
     _catalog: Option<&str>,
 ) -> Result<Vec<String>, String> {
     let pool = get_schema_pool(state, connection_id, database).await?;
+    let db_config = connection_config(state, connection_id).await;
     match pool {
         PoolKind::Postgres(p) => db::postgres::list_schemas(&p).await,
+        PoolKind::ExternalDriver { config, session, .. }
+            if db_config.as_ref().is_some_and(is_opengauss_family_config) =>
+        {
+            // The official openGauss JDBC driver's getSchemas() can report an
+            // empty/limited list; load schemas through the native wire driver
+            // when available, falling back to the plugin otherwise.
+            let pool_key = state
+                .get_or_create_pool(connection_id, if database.trim().is_empty() { None } else { Some(database) })
+                .await?;
+            match opengauss_metadata_postgres_pool(state, connection_id, database, &pool_key).await {
+                Ok(Some(p)) => db::postgres::list_schemas(&p).await,
+                Ok(None) | Err(_) => {
+                    session
+                        .invoke_with_timeout::<Vec<String>>(
+                            "listSchemas",
+                            serde_json::json!({ "connection": config.as_ref(), "database": database }),
+                            agent_metadata_timeout(Some(config.as_ref())),
+                        )
+                        .await
+                }
+            }
+        }
         PoolKind::ExternalDriver { config, session, .. } => {
             session
                 .invoke_with_timeout::<Vec<String>>(
@@ -510,8 +533,30 @@ pub async fn list_objects_core(
     _limit: Option<usize>,
 ) -> Result<Vec<db::ObjectInfo>, String> {
     let pool = get_schema_pool(state, connection_id, database).await?;
+    let db_config = connection_config(state, connection_id).await;
     match pool {
         PoolKind::Postgres(p) => db::postgres::list_objects(&p, schema).await,
+        PoolKind::ExternalDriver { config, session, .. }
+            if db_config.as_ref().is_some_and(is_opengauss_family_config) =>
+        {
+            // The official openGauss JDBC plugin only exposes standard JDBC
+            // metadata; packages, synonyms and other openGauss-specific objects
+            // live in openGauss catalogs, so enumerate through the native wire
+            // driver when available.
+            let pool_key = state
+                .get_or_create_pool(connection_id, if database.trim().is_empty() { None } else { Some(database) })
+                .await?;
+            match opengauss_metadata_postgres_pool(state, connection_id, database, &pool_key).await {
+                Ok(Some(p)) => db::postgres::list_objects(&p, schema).await,
+                Ok(None) | Err(_) => session
+                    .invoke_with_timeout::<Vec<db::ObjectInfo>>(
+                        "listObjects",
+                        serde_json::json!({ "connection": config.as_ref(), "database": database, "schema": schema }),
+                        agent_metadata_timeout(Some(config.as_ref())),
+                    )
+                    .await,
+            }
+        }
         PoolKind::ExternalDriver { config, session, .. } => {
             session
                 .invoke_with_timeout::<Vec<db::ObjectInfo>>(
@@ -559,8 +604,26 @@ pub async fn list_completion_objects_core(
     _catalog: Option<&str>,
 ) -> Result<Vec<db::ObjectInfo>, String> {
     let pool = get_schema_pool(state, connection_id, database).await?;
+    let db_config = connection_config(state, connection_id).await;
     match pool {
         PoolKind::Postgres(p) => db::postgres::list_objects(&p, schema).await,
+        PoolKind::ExternalDriver { config, session, .. }
+            if db_config.as_ref().is_some_and(is_opengauss_family_config) =>
+        {
+            let pool_key = state
+                .get_or_create_pool(connection_id, if database.trim().is_empty() { None } else { Some(database) })
+                .await?;
+            match opengauss_metadata_postgres_pool(state, connection_id, database, &pool_key).await {
+                Ok(Some(p)) => db::postgres::list_objects(&p, schema).await,
+                Ok(None) | Err(_) => session
+                    .invoke_with_timeout::<Vec<db::ObjectInfo>>(
+                        "listObjects",
+                        serde_json::json!({ "connection": config.as_ref(), "database": database, "schema": schema }),
+                        agent_metadata_timeout(Some(config.as_ref())),
+                    )
+                    .await,
+            }
+        }
         PoolKind::ExternalDriver { config, session, .. } => {
             session
                 .invoke_with_timeout::<Vec<db::ObjectInfo>>(

@@ -68,6 +68,7 @@ struct DatabaseExportObjectCounts {
     extensions: usize,
     procedures: usize,
     functions: usize,
+    additional: usize,
 }
 
 fn exports_database_tables(request: &DatabaseExportRequest) -> bool {
@@ -92,7 +93,7 @@ fn database_export_total_objects(request: &DatabaseExportRequest, counts: &Datab
         total += counts.views;
     }
     if exports_database_routines(request) {
-        total += counts.procedures + counts.functions;
+        total += counts.procedures + counts.functions + counts.additional;
     }
     total
 }
@@ -1405,6 +1406,7 @@ pub async fn export_database_sql_core(
     // 8. Discover optional schema-wide objects before calculating workload.
     let mut procedures: Vec<crate::types::ObjectInfo> = Vec::new();
     let mut functions: Vec<crate::types::ObjectInfo> = Vec::new();
+    let mut additional_objects: Vec<crate::types::ObjectInfo> = Vec::new();
 
     if exports_database_routines(request) {
         match crate::schema::list_objects_core(
@@ -1430,6 +1432,11 @@ pub async fn export_database_sql_core(
                         procedures.push(obj.clone());
                     } else if ot.contains("FUNCTION") {
                         functions.push(obj.clone());
+                    } else if matches!(
+                        ot.as_str(),
+                        "PACKAGE" | "PACKAGE_BODY" | "SYNONYM" | "TYPE" | "MATERIALIZED_VIEW" | "TRIGGER"
+                    ) {
+                        additional_objects.push(obj.clone());
                     }
                 }
             }
@@ -1449,6 +1456,7 @@ pub async fn export_database_sql_core(
             extensions: postgres_extensions.len(),
             procedures: procedures.len(),
             functions: functions.len(),
+            additional: additional_objects.len(),
         },
     );
 
@@ -2048,9 +2056,71 @@ pub async fn export_database_sql_core(
 
             object_index += 1;
         }
-    }
 
-    // For MySQL: re-enable foreign key checks
+        // Export additional openGauss objects (packages, synonyms, types,
+        // materialized views).
+        for additional in &additional_objects {
+            if is_export_cancelled(&request.export_id).await {
+                return Err("Export cancelled".to_string());
+            }
+            let object_name = &additional.name;
+            let object_type = match additional.object_type.to_uppercase().as_str() {
+                "PACKAGE" => ObjectSourceKind::Package,
+                "PACKAGE_BODY" => ObjectSourceKind::PackageBody,
+                "SYNONYM" => ObjectSourceKind::Synonym,
+                "TYPE" => ObjectSourceKind::Type,
+                "MATERIALIZED_VIEW" => ObjectSourceKind::MaterializedView,
+                _ => continue,
+            };
+
+            on_progress(ExportProgress {
+                export_id: request.export_id.clone(),
+                current_object: object_name.clone(),
+                object_index,
+                total_objects,
+                rows_exported: total_rows_exported,
+                total_rows: None,
+                status: ExportStatus::Running,
+                error: None,
+                preparing: false,
+            });
+
+            match crate::schema::get_object_source_core(
+                state,
+                &request.connection_id,
+                &request.database,
+                &request.schema,
+                object_name,
+                &object_type,
+                additional.signature.as_deref(),
+                None,
+            )
+            .await
+            {
+                Ok(obj_source) => {
+                    let source = build_database_export_object_source_sql(
+                        db_type,
+                        &object_type,
+                        object_name,
+                        &obj_source.source,
+                        request.drop_table_if_exists,
+                    );
+                    if !source.is_empty() {
+                        writeln!(file, "{source}\n").map_err(|e| format!("Failed to write file: {e}"))?;
+                    }
+                }
+                Err(e) => {
+                    record_export_error(
+                        &mut file,
+                        request.fail_on_error,
+                        format!("exporting {object_type:?} {object_name}: {e}"),
+                    )?;
+                }
+            }
+
+            object_index += 1;
+        }
+    }
     if false {
         writeln!(file, "SET FOREIGN_KEY_CHECKS = 1;").map_err(|e| format!("Failed to write file: {e}"))?;
     }

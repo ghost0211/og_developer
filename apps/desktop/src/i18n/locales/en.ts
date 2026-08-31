@@ -6008,7 +6008,7 @@ export default {
     dropTableIfExists: "Add DROP TABLE IF EXISTS before DDL",
     omitAutoIncrement: "Omit AUTO_INCREMENT (for fresh-install scripts)",
     includeData: "Table data (INSERT)",
-    includeObjects: "Views / Procedures / Functions / Sequences",
+    includeObjects: "Views / Materialized views / Procedures / Functions / Packages / Synonyms / Types / Sequences",
     databaseSelection: "Databases",
     selectedDatabases: "{selected}/{total} selected",
     selectAllDatabases: "Select all",
