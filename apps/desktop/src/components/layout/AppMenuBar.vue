@@ -396,7 +396,7 @@ const shortcutClass = "ml-auto pl-5 text-[10px] font-mono text-muted-foreground/
             </DropdownMenuSubContent>
           </DropdownMenuPortal>
         </DropdownMenuSub>
-        <DropdownMenuItem :class="menuItemClass" @select="emit('toggle-fullscreen')">
+        <DropdownMenuItem v-if="!isDesktop" :class="menuItemClass" @select="emit('toggle-fullscreen')">
           <Maximize2 :class="menuIconClass" />
           <span>{{ t(isFullscreen ? "diagram.exitFullscreen" : "diagram.fullscreen") }}</span>
         </DropdownMenuItem>
