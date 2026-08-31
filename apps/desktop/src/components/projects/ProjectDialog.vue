@@ -591,7 +591,7 @@ watch(
       </div>
 
       <!-- Bottom Footer -->
-      <DialogFooter class="px-4 py-2 border-t bg-muted/20 shrink-0 flex flex-row items-center justify-between select-none">
+      <DialogFooter class="px-4 py-3 border-t bg-muted/20 shrink-0 flex flex-row items-center justify-between select-none m-0">
         <div class="text-[11px] text-muted-foreground">
           {{ t("projectHub.footerHint") }}
         </div>
