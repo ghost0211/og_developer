@@ -125,6 +125,8 @@ public final class DbxJdbcPlugin {
     private static String sharedConnectionKey = "";
     private static Connection sharedConnection;
     private static final Map<String, QuerySession> QUERY_SESSIONS = new HashMap<>();
+    // per-connection-key result of the gms_output package probe; null = not probed yet.
+    private static final Map<String, Boolean> OUTPUT_PACKAGE_SUPPORT = new HashMap<>();
 
     record JdbcDriverQuirks(
         boolean skipExecutionContext,
@@ -894,7 +896,35 @@ public final class DbxJdbcPlugin {
     }
 
     private static boolean openGaussOutputSupported(JsonNode connection) {
-        return isOpenGaussConnection(connection);
+        if (!isOpenGaussConnection(connection)) {
+            return false;
+        }
+        // The gms_output/dbms_output packages are not present on every
+        // openGauss install (e.g. light/trimmed builds). Probe the catalog once
+        // so we never run gms_output SQL against a server that lacks it; the
+        // probe result is cached per connection key.
+        String key = connectionKey(connection);
+        synchronized (OUTPUT_PACKAGE_SUPPORT) {
+            Boolean cached = OUTPUT_PACKAGE_SUPPORT.get(key);
+            if (cached != null) {
+                return cached;
+            }
+        }
+        boolean supported = false;
+        try (Connection conn = openConnection(connection);
+             Statement statement = conn.createStatement();
+             ResultSet rs = statement.executeQuery(
+                 "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = 'gms_output')")) {
+            if (rs.next()) {
+                supported = rs.getBoolean(1);
+            }
+        } catch (SQLException | AbstractMethodError | UnsupportedOperationException ignored) {
+            supported = false;
+        }
+        synchronized (OUTPUT_PACKAGE_SUPPORT) {
+            OUTPUT_PACKAGE_SUPPORT.put(key, supported);
+        }
+        return supported;
     }
 
     private static void enableOpenGaussOutput(Connection conn) {
