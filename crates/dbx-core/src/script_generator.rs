@@ -303,7 +303,7 @@ pub fn apply_idempotent_strategy(sql: &str, db_type: DatabaseType, strategy: Ide
         return sql.to_string();
     }
 
-    let statements = split_sql_statements(sql);
+    let statements = split_sql_statements_with_database_type(sql, db_type);
     let mut result = Vec::new();
 
     for stmt in statements {
@@ -337,6 +337,10 @@ pub fn apply_idempotent_strategy(sql: &str, db_type: DatabaseType, strategy: Ide
     }
 
     result.join("\n")
+}
+
+fn split_sql_statements_with_database_type(sql: &str, db_type: DatabaseType) -> Vec<String> {
+    crate::sql::split_sql_statements_for_database(sql, db_type)
 }
 
 fn split_sql_statements(sql: &str) -> Vec<String> {

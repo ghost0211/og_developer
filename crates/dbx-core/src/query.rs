@@ -11,7 +11,7 @@ use tokio_util::sync::CancellationToken;
 use crate::connection::{AppState, PoolKind, TransactionSession, TxnConnection};
 use crate::db;
 use crate::models::connection::{ConnectionConfig, DatabaseType};
-use crate::sql::{split_sql_statements, starts_with_executable_sql_keyword};
+use crate::sql::{split_sql_statements, split_sql_statements_for_database, starts_with_executable_sql_keyword};
 
 pub const QUERY_TIMEOUT: Duration = Duration::from_secs(30);
 pub const MAX_ROWS: usize = 10000;
@@ -862,13 +862,19 @@ pub async fn execute_multi_core_with_options_for_client_and_progress_typed(
     options: QueryExecutionOptions,
     _progress: Option<ExecuteMultiProgressCallback>,
 ) -> Result<Vec<ExecuteMultiResult>, QueryExecutionError> {
-    let statements = split_sql_statements(sql);
+    let pool_key = format!("{connection_id}:{database}");
+    // Database-aware splitting keeps PL/SQL blocks (BEGIN...END) intact for
+    // openGauss; generic splitting would cut the block at its first semicolon.
+    let db_type = connection_database_type_for_pool_key(state, &pool_key).await;
+    let statements = match db_type {
+        Some(db_type) => split_sql_statements_for_database(sql, db_type),
+        None => split_sql_statements(sql),
+    };
     if statements.is_empty() {
         return Ok(Vec::new());
     }
 
-    let pool_key = format!("{connection_id}:{database}");
-    let pool_db_type = connection_database_type_for_pool_key(state, &pool_key).await;
+    let pool_db_type = db_type;
     let connections = state.connections.read().await;
     let pool =
         connections.get(&pool_key).ok_or_else(|| QueryExecutionError::Legacy("Connection not found".to_string()))?;
@@ -1240,7 +1246,25 @@ pub async fn execute_in_manual_transaction(
 
     let row_limit = max_rows.unwrap_or(MAX_ROWS).max(1);
     let mut conn = connection.lock().await;
-    let statements = split_sql_statements(sql);
+    // Database-aware splitting keeps PL/SQL blocks (BEGIN...END) intact for
+    // openGauss when exporting through a snapshot session.
+    let db_type = {
+        let connection_id = {
+            let sessions = state.transaction_sessions.read().await;
+            sessions.get(txn_session_id).map(|session| session.connection_id.clone())
+        };
+        match connection_id {
+            Some(connection_id) => {
+                let configs = state.configs.read().await;
+                configs.get(&connection_id).map(|config| config.db_type)
+            }
+            None => None,
+        }
+    };
+    let statements = match db_type {
+        Some(db_type) => split_sql_statements_for_database(sql, db_type),
+        None => split_sql_statements(sql),
+    };
     let mut results = Vec::with_capacity(statements.len());
 
     for statement in &statements {

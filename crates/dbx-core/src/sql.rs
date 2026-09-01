@@ -2501,6 +2501,19 @@ mod tests {
     }
 
     #[test]
+    fn keeps_opengauss_anonymous_plsql_block_intact() {
+        let sql = "BEGIN \n  raise notice '%','1';\nend;";
+        let statements = split_sql_statements_for_database(sql, DatabaseType::OpenGauss);
+        assert_eq!(
+            statements.len(),
+            1,
+            "anonymous block must not be split at its internal semicolon, got {statements:?}"
+        );
+        assert!(statements[0].to_ascii_lowercase().contains("begin"));
+        assert!(statements[0].to_ascii_lowercase().contains("end"));
+    }
+
+    #[test]
     fn decodes_utf8_bom_sql_file_bytes() {
         let sql = decode_sql_file_bytes(b"\xEF\xBB\xBFCREATE TABLE t(id int);").unwrap();
         assert_eq!(sql, "CREATE TABLE t(id int);");
