@@ -1730,6 +1730,16 @@ pub async fn export_database_sql_core(
             let col_types = columns.iter().map(|c| Some(c.data_type.clone())).collect::<Vec<_>>();
             let col_extras = columns.iter().map(|c| c.extra.clone()).collect::<Vec<_>>();
 
+            if col_names.is_empty() {
+                record_export_error(
+                    &mut file,
+                    request.fail_on_error,
+                    format!("exporting data for table {table_name}: no columns reported by metadata"),
+                )?;
+                object_index += 1;
+                continue;
+            }
+
             if !col_names.is_empty() {
                 if let Some(snapshot_session_id) = request.snapshot_session_id.as_deref() {
                     let sql = database_export_select_sql(&col_names, table_name, &request.schema, &db_type);
