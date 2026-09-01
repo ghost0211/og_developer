@@ -2491,20 +2491,41 @@ export async function beginDatabaseBackupSnapshot(connectionId: string, database
 }
 
 export async function exportDatabaseSql(request: DatabaseExportRequest, onProgress: (progress: ExportProgress) => void): Promise<void> {
-  const unlisten: UnlistenFn = await listen<ExportProgress>("database-export-progress", (event) => {
-    if (event.payload.exportId === request.exportId) {
-      onProgress(event.payload);
-      if (event.payload.status === "Done" || event.payload.status === "Error" || event.payload.status === "Cancelled") {
-        unlisten();
+  return new Promise<void>((resolve, reject) => {
+    let settled = false;
+    let unlisten: UnlistenFn = () => {};
+    void (async () => {
+      unlisten = await listen<ExportProgress>("database-export-progress", (event) => {
+        if (event.payload.exportId !== request.exportId) return;
+        onProgress(event.payload);
+        if (event.payload.status === "Done") {
+          settled = true;
+          unlisten();
+          resolve();
+        } else if (event.payload.status === "Error" || event.payload.status === "Cancelled") {
+          if (!settled) {
+            settled = true;
+            unlisten();
+            reject(new Error(event.payload.error || "Export failed"));
+          }
+        }
+      });
+      try {
+        await invoke("export_database_sql", { request });
+      } catch (e) {
+        if (!settled) {
+          settled = true;
+          unlisten();
+          reject(e);
+        }
       }
-    }
+    })().catch((e) => {
+      if (!settled) {
+        settled = true;
+        reject(e);
+      }
+    });
   });
-  try {
-    await invoke("export_database_sql", { request });
-  } catch (e) {
-    unlisten();
-    throw e;
-  }
 }
 
 export async function cancelDatabaseExport(exportId: string): Promise<void> {
