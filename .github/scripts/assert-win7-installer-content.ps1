@@ -19,7 +19,7 @@ if ($installer.ExitCode -ne 0) {
 }
 
 $expectedFiles = @(
-  (Join-Path $installDirectory "dbx.exe"),
+  (Join-Path $installDirectory "ogdeveloper.exe"),
   (Join-Path $installDirectory "webview2-fixed-runtime\msedgewebview2.exe"),
   (Join-Path $installDirectory "uninstall.exe")
 )
