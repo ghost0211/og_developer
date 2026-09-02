@@ -49,7 +49,7 @@ import type { SavedSqlFile } from "@/types/database";
 import i18n from "@/i18n";
 import { translateBackendError } from "@/i18n/backend-errors";
 
-const HIDDEN_QUERY_KEY_DATABASE_TYPES = new Set<DatabaseType>(["opengauss", "postgres", "jdbc"]);
+const HIDDEN_QUERY_KEY_DATABASE_TYPES = new Set<DatabaseType>(["opengauss", "postgres", "mysql", "sqlserver", "oracle", "jdbc"]);
 const BACKGROUND_CLIENT_SESSION_SUFFIXES = ["count", "explain", "export"] as const;
 const CANCEL_QUERY_TIMEOUT_MS = 10_000;
 const CANCEL_ACK_SETTLE_TIMEOUT_MS = 2_000;

@@ -184,9 +184,7 @@ impl std::fmt::Display for SecretStr {
 
 impl Drop for SecretStr {
     fn drop(&mut self) {
-        for byte in &mut self.inner {
-            *byte = 0;
-        }
+        self.inner.fill(0);
     }
 }
 

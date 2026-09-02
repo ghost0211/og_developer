@@ -23,7 +23,7 @@ struct ExecuteMultiProgress {
 }
 
 #[tauri::command]
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::result_large_err)]
 pub async fn execute_query(
     state: State<'_, Arc<AppState>>,
     connection_id: String,
@@ -73,7 +73,7 @@ pub async fn execute_query(
 }
 
 #[tauri::command]
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::result_large_err)]
 pub async fn execute_multi(
     app: AppHandle,
     state: State<'_, Arc<AppState>>,

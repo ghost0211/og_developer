@@ -314,8 +314,7 @@ fn decode_pgvector_bytes(raw: &[u8]) -> Option<Vec<f32>> {
     if raw.len() != expected_len {
         return None;
     }
-    let floats: Vec<f32> =
-        raw[4..].chunks_exact(4).map(|chunk| f32::from_be_bytes([chunk[0], chunk[1], chunk[2], chunk[3]])).collect();
+    let floats: Vec<f32> = raw[4..].as_chunks::<4>().0.iter().map(|chunk| f32::from_be_bytes(*chunk)).collect();
     Some(floats)
 }
 
@@ -768,7 +767,9 @@ fn decode_pg_text_wkb(value: &str) -> Option<super::wkb::DecodedGeometry> {
     }
     let bytes = hex
         .as_bytes()
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|pair| {
             let text = std::str::from_utf8(pair).ok()?;
             u8::from_str_radix(text, 16).ok()

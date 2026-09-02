@@ -1855,7 +1855,7 @@ fn decode_opengauss_functiondef_record(source: &str) -> Option<String> {
 
     let definition_hex = &hex[RECORD_HEADER_HEX_LEN..];
     let mut definition = Vec::with_capacity(definition_len);
-    for pair in definition_hex.as_bytes().chunks_exact(2) {
+    for pair in definition_hex.as_bytes().as_chunks::<2>().0 {
         let pair = std::str::from_utf8(pair).ok()?;
         definition.push(u8::from_str_radix(pair, 16).ok()?);
     }

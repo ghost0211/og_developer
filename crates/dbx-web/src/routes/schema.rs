@@ -506,7 +506,7 @@ pub async fn list_object_references(
     let database = q.database.as_deref().unwrap_or("");
     let schema = q.schema.as_deref().unwrap_or("");
     let object_name = q.name.as_deref().ok_or_else(|| AppError::from("name is required".to_string()))?;
-    let object_type = q.object_type_name.as_deref().unwrap_or_else(|| match q.object_type {
+    let object_type = q.object_type_name.as_deref().unwrap_or(match q.object_type {
         Some(dbx_core::types::ObjectSourceKind::Procedure) => "procedure",
         Some(dbx_core::types::ObjectSourceKind::Function) => "function",
         Some(dbx_core::types::ObjectSourceKind::Package) => "package",
