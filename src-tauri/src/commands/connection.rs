@@ -179,7 +179,7 @@ pub async fn connect_db(
     state.configs.write().await.insert(id.clone(), connected_config);
     state.storage.save_connections(&[connected_db_config]).await.map_err(|e| e.to_string())?;
 
-    Ok("Connected".to_string())
+    Ok(id)
 }
 
 #[tauri::command]

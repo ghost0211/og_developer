@@ -9,7 +9,9 @@ const props = defineProps<{
 
 const assetIcons: Record<string, string> = {
   opengauss: "opengauss",
+  opengauss_jdbc: "opengauss",
   gaussdb: "opengauss",
+  gaussdb_m_jdbc: "opengauss",
   postgres: "postgres",
   postgresql: "postgres",
   jdbc: "postgres",

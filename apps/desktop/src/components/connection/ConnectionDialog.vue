@@ -5272,7 +5272,7 @@ function openExternalUrl(url: string) {
                   <Input v-model="form.name" v-connection-dialog-auto-focus class="col-span-3" :placeholder="t('connection.namePlaceholder')" />
                 </div>
 
-                <div class="grid grid-cols-4 items-center gap-4">
+                <div v-if="pickerAvailable" class="grid grid-cols-4 items-center gap-4">
                   <Label :class="connectionLabelClass">{{ t("connection.type") }}</Label>
                   <button v-if="pickerAvailable" type="button" class="col-span-3 flex items-center gap-2 rounded-md border bg-muted/20 px-3 py-2 hover:bg-muted/40 cursor-pointer transition" @click="backToDatabasePicker()">
                     <DatabaseIcon :db-type="selectedDbIcon" class="h-4 w-4 shrink-0" />
