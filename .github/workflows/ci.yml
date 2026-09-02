@@ -123,6 +123,12 @@ jobs:
         shell: pwsh
         run: |
           $bundleDir = "target/x86_64-win7-windows-msvc/release/bundle/nsis"
+          # tauri 2 resolves the main binary via mainBinaryName (ogdeveloper),
+          # while cargo --package dbx emits dbx.exe; provide the expected name.
+          $releaseDir = "target/x86_64-win7-windows-msvc/release"
+          if (Test-Path "$releaseDir/dbx.exe") {
+            Copy-Item "$releaseDir/dbx.exe" "$releaseDir/ogdeveloper.exe" -Force
+          }
           pnpm tauri bundle --bundles nsis --target x86_64-win7-windows-msvc --config src-tauri/tauri.webview2-win7-fixed.conf.json
           $installer = Get-ChildItem $bundleDir -Filter "*.exe" |
             Sort-Object LastWriteTimeUtc -Descending |
