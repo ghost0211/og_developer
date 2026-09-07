@@ -1071,7 +1071,26 @@ impl AppState {
                         }
                     }
                 }
-                PoolKind::ExternalDriver { .. } => false,
+                PoolKind::ExternalDriver { config, session, .. } => {
+                    // The plugin process may still be alive while its JDBC
+                    // connection was terminated server-side (openGauss
+                    // session_timeout). A cheap ping detects that; a dead
+                    // plugin process also fails here and triggers a rebuild.
+                    let probe = session
+                        .invoke_with_timeout::<serde_json::Value>(
+                            "testConnection",
+                            serde_json::json!({ "connection": config.as_ref() }),
+                            Some(crate::db::connection_timeout()),
+                        )
+                        .await;
+                    match probe {
+                        Ok(_) => false,
+                        Err(err) => {
+                            log::warn!("JDBC driver pool '{pool_key}' is stale: {err}");
+                            true
+                        }
+                    }
+                }
             }
         };
 
@@ -1827,10 +1846,14 @@ fn base_pool_key_for_with_catalog(
 }
 
 fn should_validate_existing_pool_before_reuse(db_type: DatabaseType) -> bool {
-    // PostgreSQL uses deadpool's Fast recycling and the query executor's
-    // ReconnectAndRetry path. An eager SELECT 1 here would add a network
-    // round-trip before every query without improving recovery behavior.
-    !matches!(db_type, DatabaseType::Postgres)
+    // PostgreSQL-family pools use deadpool's Fast recycling without eager
+    // validation, and servers may terminate idle sessions (openGauss
+    // `session_timeout` does so after 10 minutes). An eager SELECT 1 on
+    // reuse costs one round-trip but lets the first touch of a stale pool
+    // rebuild it here instead of surfacing SQLSTATE 57P01 to the user; the
+    // query executor's ReconnectAndRetry path remains as a second line of
+    // defense. JDBC driver sessions are validated on first use instead.
+    !matches!(db_type, DatabaseType::Jdbc)
 }
 
 fn default_plugin_dir() -> PathBuf {

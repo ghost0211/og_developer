@@ -11,6 +11,7 @@ use tokio_util::sync::CancellationToken;
 use crate::connection::{AppState, PoolKind, TransactionSession, TxnConnection};
 use crate::db;
 use crate::models::connection::{ConnectionConfig, DatabaseType};
+use crate::query_execution_sql::is_write_sql;
 use crate::sql::{split_sql_statements, split_sql_statements_for_database, starts_with_executable_sql_keyword};
 
 pub const QUERY_TIMEOUT: Duration = Duration::from_secs(30);
@@ -268,7 +269,10 @@ pub fn pool_error_action(db_type: Option<DatabaseType>, err: &str) -> PoolErrorA
     match db_type {
         Some(DatabaseType::Postgres | DatabaseType::OpenGauss) => {
             if is_connection_error(err) {
-                PoolErrorAction::Discard
+                // Stale pools (e.g. openGauss session_timeout terminating idle
+                // sessions) must be rebuilt transparently instead of surfacing
+                // SQLSTATE 57P01 to the user; see execute_with_connection_retry.
+                PoolErrorAction::ReconnectAndRetry
             } else {
                 PoolErrorAction::Keep
             }
@@ -278,11 +282,16 @@ pub fn pool_error_action(db_type: Option<DatabaseType>, err: &str) -> PoolErrorA
 }
 
 pub fn should_discard_pool_after_error(db_type: Option<DatabaseType>, err: &str) -> bool {
-    pool_error_action(db_type, err) == PoolErrorAction::Discard
+    matches!(pool_error_action(db_type, err), PoolErrorAction::Discard | PoolErrorAction::ReconnectAndRetry)
 }
 
+/// Removes a stale pool so the next operation rebuilds it from scratch.
+/// Deliberately does NOT wait for a graceful close: the server has already
+/// terminated the session (e.g. openGauss session_timeout), so draining
+/// would only delay the retry behind a doomed close.
 async fn discard_pool_after_error(state: &AppState, pool_key: &str, db_type: Option<DatabaseType>, err: &str) {
     if should_discard_pool_after_error(db_type, err) {
+        log::warn!("[query] discarding stale pool '{pool_key}' after connection error: {err}");
         let mut connections = state.connections.write().await;
         connections.remove(pool_key);
     }
@@ -479,6 +488,21 @@ fn external_driver_query_params(
     })
 }
 
+/// Connection-class error reported by the JDBC plugin after the server has
+/// terminated the session (e.g. openGauss session_timeout, SQLSTATE 57P01).
+/// The plugin session itself stays alive (it is a separate process), so the
+/// pool is reused with a dead JDBC connection unless it is rebuilt.
+fn is_external_driver_connection_error(err: &str) -> bool {
+    let lower = err.to_lowercase();
+    lower.contains("terminating connection")
+        || lower.contains("server closed the connection")
+        || lower.contains("connection reset")
+        || lower.contains("broken pipe")
+        || lower.contains("an i/o error occurred while sending to the backend")
+        || lower.contains("this connection has been closed")
+        || lower.contains("connection refused")
+}
+
 fn external_driver_fetch_query_page_params(
     config: &ConnectionConfig,
     session_id: &str,
@@ -544,6 +568,61 @@ pub async fn do_execute(
     do_execute_typed(state, pool_key, database, sql, schema, cancel_token, options)
         .await
         .map_err(|e| e.into_legacy_string())
+}
+
+async fn do_execute_typed_with_retry(
+    state: &AppState,
+    pool_key: &str,
+    database: Option<&str>,
+    sql: &str,
+    schema: Option<&str>,
+    cancel_token: Option<CancellationToken>,
+    options: QueryExecutionOptions,
+) -> Result<db::QueryResult, QueryExecutionError> {
+    let db_type = connection_database_type_for_pool_key(state, pool_key).await;
+    let connection_id = pool_key.split(':').next().unwrap_or(pool_key).to_string();
+    let write_statement = is_write_sql(sql);
+    let mut result =
+        do_execute_typed(state, pool_key, database, sql, schema, cancel_token.clone(), options.clone()).await;
+    if let Err(err) = &result {
+        // Cancellation/timeout are never retried; connection-class errors on a
+        // read-only statement get one fresh-pool attempt. Writes are not
+        // replayed because the server may have already committed them.
+        let retryable = matches!(query_execution_error_action(db_type, err), PoolErrorAction::ReconnectAndRetry)
+            || (matches!(db_type, Some(DatabaseType::Jdbc))
+                && matches!(err, QueryExecutionError::Sql(e) if is_external_driver_connection_error(e)));
+        if retryable && !write_statement && !is_canceled(&cancel_token) {
+            log::warn!("[query] retrying once on fresh pool after connection error: {err}");
+            rebuild_pool_after_connection_error(state, &connection_id, database, pool_key).await;
+            result = do_execute_typed(state, pool_key, database, sql, schema, cancel_token, options).await;
+        }
+    }
+    result
+}
+
+/// The pool a failed attempt was served from may have been discarded by
+/// `discard_pool_after_error`; rebuild it under the same key before retrying.
+async fn rebuild_pool_after_connection_error(
+    state: &AppState,
+    connection_id: &str,
+    database: Option<&str>,
+    pool_key: &str,
+) {
+    state.remove_pool_by_key(pool_key).await;
+    let database = database.filter(|db| !db.trim().is_empty());
+    if let Err(err) = state.get_or_create_pool_for_session(connection_id, database, None).await {
+        log::warn!("[query] pool rebuild for '{pool_key}' failed: {err}");
+    }
+}
+
+fn query_execution_error_action(db_type: Option<DatabaseType>, err: &QueryExecutionError) -> PoolErrorAction {
+    match err {
+        // Cancellation and timeouts are not pool health signals; retrying a
+        // timed-out statement could replay it on a fresh connection.
+        QueryExecutionError::Canceled { .. } | QueryExecutionError::Timeout(_) => PoolErrorAction::Keep,
+        QueryExecutionError::Sql(err) | QueryExecutionError::Legacy(err) => pool_error_action(db_type, err),
+        QueryExecutionError::DuckDb { .. } => PoolErrorAction::Keep,
+    }
 }
 
 async fn do_execute_typed(
@@ -675,7 +754,12 @@ async fn do_execute_typed(
     match result {
         Ok(res) => Ok(res),
         Err(err) => {
-            discard_pool_after_error(state, pool_key, pool_db_type, &err).await;
+            if matches!(pool_db_type, Some(DatabaseType::Jdbc)) && is_external_driver_connection_error(&err) {
+                log::warn!("[query] discarding stale JDBC driver pool '{pool_key}' after connection error: {err}");
+                state.remove_pool_by_key(pool_key).await;
+            } else {
+                discard_pool_after_error(state, pool_key, pool_db_type, &err).await;
+            }
             Err(QueryExecutionError::Sql(err))
         }
     }
@@ -705,7 +789,9 @@ pub async fn execute_sql_statement_with_options(
     let pool_key = state
         .get_or_create_pool_for_session(connection_id, Some(database), options.client_session_id.as_deref())
         .await?;
-    do_execute(state, &pool_key, Some(database), sql, schema, cancel_token, options).await
+    do_execute_typed_with_retry(state, &pool_key, Some(database), sql, schema, cancel_token, options)
+        .await
+        .map_err(|e| e.into_legacy_string())
 }
 
 pub async fn execute_sql_statement_with_options_typed(
@@ -721,7 +807,7 @@ pub async fn execute_sql_statement_with_options_typed(
         .get_or_create_pool_for_session(connection_id, Some(database), options.client_session_id.as_deref())
         .await
         .map_err(QueryExecutionError::Legacy)?;
-    do_execute_typed(state, &pool_key, Some(database), sql, schema, cancel_token, options).await
+    do_execute_typed_with_retry(state, &pool_key, Some(database), sql, schema, cancel_token, options).await
 }
 
 pub async fn close_query_session(
@@ -874,22 +960,84 @@ pub async fn execute_multi_core_with_options_for_client_and_progress_typed(
         return Ok(Vec::new());
     }
 
+    let first_attempt = execute_multi_statements_once(
+        state,
+        connection_id,
+        database,
+        schema,
+        cancel_token.clone(),
+        &options,
+        &statements,
+        db_type,
+    )
+    .await;
+    let (ref attempt_results, ref attempt_failure) = first_attempt;
+    let is_connection_failure = attempt_failure.as_ref().is_some_and(|err| {
+        matches!(pool_error_action(db_type, err), PoolErrorAction::ReconnectAndRetry)
+            || (matches!(db_type, Some(DatabaseType::Jdbc)) && is_external_driver_connection_error(err))
+    });
+    let retryable = is_connection_failure
+        && attempt_results.iter().all(|item| item.error.is_none() && !item.execution_error)
+        && !statements.iter().any(|stmt| is_write_sql(stmt))
+        && !is_canceled(&cancel_token);
+    if retryable {
+        let err = attempt_failure.clone().unwrap_or_default();
+        log::warn!("[query] retrying batch once on fresh pool after connection error: {err}");
+        rebuild_pool_after_connection_error(state, connection_id, Some(database), &pool_key).await;
+        let (results, _) = execute_multi_statements_once(
+            state,
+            connection_id,
+            database,
+            schema,
+            cancel_token,
+            &options,
+            &statements,
+            db_type,
+        )
+        .await;
+        // The retried batch starts from a fresh pool and re-runs every
+        // statement in order, superseding the partial first attempt.
+        return Ok(results);
+    }
+    let (mut results, failure) = first_attempt;
+    if let Some(err) = failure {
+        // Mark the failing statement so callers see the error in sequence.
+        let failed_index = results.len();
+        results.push(ExecuteMultiResult::execution_error_with_index(error_query_result(err), failed_index));
+    }
+    Ok(results)
+}
+
+async fn execute_multi_statements_once(
+    state: &AppState,
+    connection_id: &str,
+    database: &str,
+    schema: Option<&str>,
+    cancel_token: Option<CancellationToken>,
+    options: &QueryExecutionOptions,
+    statements: &[String],
+    db_type: Option<DatabaseType>,
+) -> (Vec<ExecuteMultiResult>, Option<String>) {
+    let pool_key = format!("{connection_id}:{database}");
     let pool_db_type = db_type;
     let connections = state.connections.read().await;
     let pool =
-        connections.get(&pool_key).ok_or_else(|| QueryExecutionError::Legacy("Connection not found".to_string()))?;
+        connections.get(&pool_key).ok_or_else(|| QueryExecutionError::Legacy("Connection not found".to_string()));
+    let pool = match pool {
+        Ok(pool) => pool,
+        Err(err) => return (Vec::new(), Some(err.into_legacy_string())),
+    };
 
-    let (results, pool_action) = match pool {
+    let outcome: Result<(Vec<ExecuteMultiResult>, Option<String>), QueryExecutionError> = match pool {
         PoolKind::Postgres(p) => {
             let p = p.clone();
-            let stmts = statements.to_vec();
             let schema = schema.map(|s| s.to_string());
             let cancel_context = state.get_postgres_cancel_context(&pool_key).await;
             let budget =
                 operation_budget_for_pool_key(state, &pool_key, resolve_query_timeout(options.timeout_secs)).await;
             drop(connections);
             let mut results = Vec::new();
-            for (i, stmt) in stmts.iter().enumerate() {
+            for (i, stmt) in statements.iter().enumerate() {
                 let res = db::postgres::execute_query_with_schema_and_max_rows_and_cancel(
                     &p,
                     schema.as_deref().unwrap_or("public"),
@@ -906,43 +1054,40 @@ pub async fn execute_multi_core_with_options_for_client_and_progress_typed(
                 match res {
                     Ok(r) => results.push(ExecuteMultiResult::success_with_index(r, i)),
                     Err(err) => {
-                        let _action = pool_error_action(pool_db_type, &err);
-                        results.push(ExecuteMultiResult::execution_error_with_index(error_query_result(err), i));
-                        return Ok(results);
+                        return (results, Some(err));
                     }
                 }
             }
-            (results, None::<PoolErrorAction>)
+            Ok((results, None))
         }
         PoolKind::ExternalDriver { config, session, .. } => {
             let config = config.clone();
             let session = session.clone();
-            let stmts = statements.to_vec();
             drop(connections);
             let mut results = Vec::new();
-            for (i, stmt) in stmts.into_iter().enumerate() {
-                let params = external_driver_query_params(config.as_ref(), database, schema, &stmt, options.max_rows);
+            for (i, stmt) in statements.iter().enumerate() {
+                let params = external_driver_query_params(config.as_ref(), database, schema, stmt, options.max_rows);
                 let res = session.invoke::<db::QueryResult>("executeQuery", params).await;
                 match res {
                     Ok(r) => results.push(ExecuteMultiResult::success_with_index(r, i)),
                     Err(e) => {
-                        results.push(ExecuteMultiResult::execution_error_with_index(error_query_result(e), i));
-                        break;
+                        return (results, Some(e));
                     }
                 }
             }
-            (results, None::<PoolErrorAction>)
+            Ok((results, None))
         }
     };
 
-    if let Some(action) = pool_action {
-        if action == PoolErrorAction::Discard {
-            let mut connections = state.connections.write().await;
-            connections.remove(&pool_key);
+    match outcome {
+        Ok((results, failure)) => {
+            if failure.is_some() {
+                discard_pool_after_error(state, &pool_key, pool_db_type, failure.as_deref().unwrap_or("")).await;
+            }
+            (results, failure)
         }
+        Err(err) => (Vec::new(), Some(err.into_legacy_string())),
     }
-
-    Ok(results)
 }
 
 pub async fn execute_statements(
@@ -1079,6 +1224,37 @@ pub async fn execute_statements_in_transaction_on_pool_typed(
     check_read_only_for_connection_multi(state, pool_key, statements).await.map_err(QueryExecutionError::Sql)?;
 
     let db_type = connection_database_type(state, connection_id).await;
+    let mut result =
+        execute_transaction_on_pool_once(state, pool_key, connection_id, database, statements, schema).await;
+    if let Err(err) = &result {
+        let retryable = !is_write_sql_for_statements(statements)
+            && matches!(pool_error_action(db_type, &err.to_string()), PoolErrorAction::ReconnectAndRetry);
+        if retryable {
+            log::warn!("[query] retrying transaction once on fresh pool after connection error: {err}");
+            rebuild_pool_after_connection_error(state, connection_id, Some(database), pool_key).await;
+            result =
+                execute_transaction_on_pool_once(state, pool_key, connection_id, database, statements, schema).await;
+        } else if should_discard_pool_after_error(db_type, &err.to_string()) {
+            state.remove_pool_by_key(pool_key).await;
+        }
+    }
+    result
+}
+
+fn is_write_sql_for_statements(statements: &[String]) -> bool {
+    statements.iter().any(|stmt| is_write_sql(stmt))
+}
+
+async fn execute_transaction_on_pool_once(
+    state: &AppState,
+    pool_key: &str,
+    _connection_id: &str,
+    database: &str,
+    statements: &[String],
+    schema: Option<&str>,
+) -> Result<db::QueryResult, QueryExecutionError> {
+    check_read_only_for_connection_multi(state, pool_key, statements).await.map_err(QueryExecutionError::Sql)?;
+
     let connections = state.connections.read().await;
     let pool =
         connections.get(pool_key).ok_or_else(|| QueryExecutionError::Legacy("Connection not found".to_string()))?;
@@ -1116,10 +1292,6 @@ pub async fn execute_statements_in_transaction_on_pool_typed(
             res.map_err(QueryExecutionError::Legacy)
         }
     };
-
-    if let Err(ref err) = result {
-        discard_pool_after_error(state, pool_key, db_type, &err.to_string()).await;
-    }
 
     result
 }
