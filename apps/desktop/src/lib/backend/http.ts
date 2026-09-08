@@ -1789,18 +1789,6 @@ export async function previewTransferOwnership(request: TransferRequest): Promis
   return post("/api/transfer/ownership-preview", { request });
 }
 
-export interface SortTablesByFkOptions {
-  connectionId: string;
-  database: string;
-  schema: string;
-  tables: string[];
-  parentsFirst: boolean;
-}
-
-export async function sortTablesByFkDependency(options: SortTablesByFkOptions): Promise<string[]> {
-  return post("/api/transfer/sort-tables-by-fk", options);
-}
-
 // ---------------------------------------------------------------------------
 // Table File Import
 // ---------------------------------------------------------------------------

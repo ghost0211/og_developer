@@ -2129,24 +2129,6 @@ export async function previewTransferOwnership(request: TransferRequest): Promis
   return invoke("preview_transfer_ownership", { request });
 }
 
-export interface SortTablesByFkOptions {
-  connectionId: string;
-  database: string;
-  schema: string;
-  tables: string[];
-  parentsFirst: boolean;
-}
-
-export async function sortTablesByFkDependency(options: SortTablesByFkOptions): Promise<string[]> {
-  return invoke("sort_tables_by_fk_dependency", {
-    connectionId: options.connectionId,
-    database: options.database,
-    schema: options.schema,
-    tables: options.tables,
-    parentsFirst: options.parentsFirst,
-  });
-}
-
 // --- Table File Import ---
 export type TableImportMode = "append" | "truncate";
 export type TableImportStatus = "running" | "done" | "error" | "cancelled";

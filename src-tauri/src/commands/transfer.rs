@@ -267,19 +267,3 @@ pub async fn cancel_transfer(transfer_id: String) -> Result<(), String> {
     dbx_core::transfer::set_cancelled(&transfer_id).await;
     Ok(())
 }
-
-/// Sort table names by foreign key dependency.
-/// `parents_first: true` → parent tables first (insert/export order).
-/// `parents_first: false` → child tables first (drop order).
-#[allow(dead_code)]
-#[tauri::command]
-pub async fn sort_tables_by_fk_dependency(
-    state: tauri::State<'_, std::sync::Arc<AppState>>,
-    connection_id: String,
-    database: String,
-    schema: String,
-    tables: Vec<String>,
-    _parents_first: bool,
-) -> Result<Vec<String>, String> {
-    dbx_core::transfer::sort_tables_by_fk_dependency(&state, &connection_id, &database, &schema, &tables).await
-}

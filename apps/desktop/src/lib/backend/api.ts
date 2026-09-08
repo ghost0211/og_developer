@@ -340,7 +340,6 @@ export const listFilesInFolder = forward("listFilesInFolder");
 export const startTransfer = forward("startTransfer");
 export const cancelTransfer = forward("cancelTransfer");
 export const previewTransferOwnership = forward("previewTransferOwnership");
-export const sortTablesByFkDependency = forward("sortTablesByFkDependency");
 
 // Table File Import
 export const previewTableImportFile = forward("previewTableImportFile");
