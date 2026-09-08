@@ -48,7 +48,13 @@ jobs:
           # nsis + msi per src-tauri/tauri.conf.json (targets: all)
           if ($env:TAURI_SIGNING_PRIVATE_KEY -and $env:TAURI_UPDATER_PUBKEY) {
             $override = @{ bundle = @{ createUpdaterArtifacts = $true }; plugins = @{ updater = @{ pubkey = $env:TAURI_UPDATER_PUBKEY } } } | ConvertTo-Json -Compress -Depth 5
-            pnpm tauri build --config $override
+            $overridePath = Join-Path $PWD "tauri.updater.override.json"
+            Set-Content -Path $overridePath -Value $override -NoNewline -Encoding utf8
+            try {
+              pnpm tauri build --config $overridePath
+            } finally {
+              Remove-Item $overridePath -Force -ErrorAction SilentlyContinue
+            }
           } else {
             pnpm tauri build
           }
