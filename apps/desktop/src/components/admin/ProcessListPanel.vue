@@ -96,7 +96,7 @@ const grantCommand = computed(() => {
 
 async function copyGrantCommand() {
   await copyToClipboard(grantCommand.value);
-  toast(`已复制授权 SQL: ${grantCommand.value}`, 2000);
+  toast(t("processList.grantCopied", { sql: grantCommand.value }, `已复制授权 SQL: ${grantCommand.value}`), 2000);
 }
 
 // Formatted duration helper
@@ -211,7 +211,7 @@ async function load(options: { silent?: boolean } = {}) {
     await connectionStore.ensureConnected(props.connection.id);
     const activeDriver = driver.value;
     if (!activeDriver) {
-      throw new Error(`当前连接类型暂不支持会话监控：${currentConnection.value.db_type}`);
+      throw new Error(t("processList.monitorUnsupported", { type: currentConnection.value.db_type }, `当前连接类型暂不支持会话监控：${currentConnection.value.db_type}`));
     }
 
     // Identify own session
@@ -527,12 +527,12 @@ onBeforeUnmount(stopTimer);
       <div class="flex items-center gap-2">
         <Info class="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
         <span>
-          当前用户 <strong>{{ currentDbUser }}</strong> 仅能查看自身会话。openGauss 安全策略要求 <strong>monadmin</strong>（监控管理员）或 <strong>sysadmin</strong> 角色方可查看全库所有用户的进程与 SQL。
+          {{ t("processList.ownSessionOnlyHint", { user: currentDbUser }, `当前用户 ${currentDbUser} 仅能查看自身会话。openGauss 安全策略要求 monadmin（监控管理员）或 sysadmin 角色方可查看全库所有用户的进程与 SQL。`) }}
         </span>
       </div>
       <Button variant="outline" size="sm" class="h-6 gap-1 px-2 text-[11px] border-amber-500/40 hover:bg-amber-500/20 shrink-0" @click="copyGrantCommand">
         <Copy class="h-3 w-3" />
-        <span>复制授权 SQL ({{ props.connection.db_type === "opengauss" ? "GRANT monadmin" : "GRANT pg_read_all_stats" }})</span>
+        <span>{{ t("processList.copyGrantSql", "复制授权 SQL") }} ({{ props.connection.db_type === "opengauss" ? "GRANT monadmin" : "GRANT pg_read_all_stats" }})</span>
       </Button>
     </div>
 
@@ -543,7 +543,7 @@ onBeforeUnmount(stopTimer);
         <div class="flex items-center gap-2 p-1.5 rounded bg-background border">
           <Activity class="h-4 w-4 text-primary" />
           <div>
-            <div class="text-[10px] text-muted-foreground">总会话数</div>
+            <div class="text-[10px] text-muted-foreground">{{ t("processList.statTotal", "总会话数") }}</div>
             <div class="font-bold text-sm font-mono">{{ stats.total }}</div>
           </div>
         </div>
@@ -551,7 +551,7 @@ onBeforeUnmount(stopTimer);
         <div class="flex items-center gap-2 p-1.5 rounded bg-background border">
           <Play class="h-4 w-4 text-emerald-500 fill-current" />
           <div>
-            <div class="text-[10px] text-muted-foreground">活跃查询</div>
+            <div class="text-[10px] text-muted-foreground">{{ t("processList.statActive", "活跃查询") }}</div>
             <div class="font-bold text-sm font-mono text-emerald-600 dark:text-emerald-400">{{ stats.active }}</div>
           </div>
         </div>
@@ -559,7 +559,7 @@ onBeforeUnmount(stopTimer);
         <div class="flex items-center gap-2 p-1.5 rounded bg-background border">
           <Lock class="h-4 w-4 text-amber-500" />
           <div>
-            <div class="text-[10px] text-muted-foreground">锁等待中</div>
+            <div class="text-[10px] text-muted-foreground">{{ t("processList.statWaiting", "锁等待中") }}</div>
             <div class="font-bold text-sm font-mono" :class="stats.waiting > 0 ? 'text-amber-500 font-bold' : ''">{{ stats.waiting }}</div>
           </div>
         </div>
@@ -567,7 +567,7 @@ onBeforeUnmount(stopTimer);
         <div class="flex items-center gap-2 p-1.5 rounded bg-background border">
           <Clock class="h-4 w-4 text-blue-500" />
           <div>
-            <div class="text-[10px] text-muted-foreground">事务中空闲</div>
+            <div class="text-[10px] text-muted-foreground">{{ t("processList.statIdleInXact", "事务中空闲") }}</div>
             <div class="font-bold text-sm font-mono text-blue-500">{{ stats.idleInXact }}</div>
           </div>
         </div>
@@ -575,7 +575,7 @@ onBeforeUnmount(stopTimer);
         <div class="flex items-center gap-2 p-1.5 rounded bg-background border">
           <Clock class="h-4 w-4 text-purple-500" />
           <div>
-            <div class="text-[10px] text-muted-foreground">最长耗时</div>
+            <div class="text-[10px] text-muted-foreground">{{ t("processList.statMaxTime", "最长耗时") }}</div>
             <div class="font-bold text-sm font-mono">{{ formatDuration(stats.maxTime) }}</div>
           </div>
         </div>
@@ -584,15 +584,21 @@ onBeforeUnmount(stopTimer);
       <!-- Quick Status Filter Segment -->
       <div class="flex items-center justify-between border-b bg-muted/10 px-3 py-1 text-xs shrink-0 select-none">
         <div class="flex items-center gap-1">
-          <button type="button" class="px-2 py-0.5 rounded text-[11px] font-medium transition-colors" :class="stateFilter === 'all' ? 'bg-primary text-primary-foreground font-semibold' : 'text-muted-foreground hover:bg-muted'" @click="stateFilter = 'all'">全部 ({{ stats.total }})</button>
-          <button type="button" class="px-2 py-0.5 rounded text-[11px] font-medium transition-colors" :class="stateFilter === 'active' ? 'bg-emerald-600 text-white font-semibold' : 'text-muted-foreground hover:bg-muted'" @click="stateFilter = 'active'">活跃 ({{ stats.active }})</button>
-          <button type="button" class="px-2 py-0.5 rounded text-[11px] font-medium transition-colors" :class="stateFilter === 'waiting' ? 'bg-amber-500 text-white font-semibold' : 'text-muted-foreground hover:bg-muted'" @click="stateFilter = 'waiting'">等待锁 ({{ stats.waiting }})</button>
+          <button type="button" class="px-2 py-0.5 rounded text-[11px] font-medium transition-colors" :class="stateFilter === 'all' ? 'bg-primary text-primary-foreground font-semibold' : 'text-muted-foreground hover:bg-muted'" @click="stateFilter = 'all'">
+            {{ t("processList.filterAll", "全部") }} ({{ stats.total }})
+          </button>
+          <button type="button" class="px-2 py-0.5 rounded text-[11px] font-medium transition-colors" :class="stateFilter === 'active' ? 'bg-emerald-600 text-white font-semibold' : 'text-muted-foreground hover:bg-muted'" @click="stateFilter = 'active'">
+            {{ t("processList.filterActive", "活跃") }} ({{ stats.active }})
+          </button>
+          <button type="button" class="px-2 py-0.5 rounded text-[11px] font-medium transition-colors" :class="stateFilter === 'waiting' ? 'bg-amber-500 text-white font-semibold' : 'text-muted-foreground hover:bg-muted'" @click="stateFilter = 'waiting'">
+            {{ t("processList.filterWaiting", "等待锁") }} ({{ stats.waiting }})
+          </button>
           <button type="button" class="px-2 py-0.5 rounded text-[11px] font-medium transition-colors" :class="stateFilter === 'idle_in_transaction' ? 'bg-blue-600 text-white font-semibold' : 'text-muted-foreground hover:bg-muted'" @click="stateFilter = 'idle_in_transaction'">
-            事务空闲 ({{ stats.idleInXact }})
+            {{ t("processList.filterIdleInXact", "事务空闲") }} ({{ stats.idleInXact }})
           </button>
         </div>
 
-        <div class="text-[11px] text-muted-foreground">点击行可查看完整 SQL 及会话详情</div>
+        <div class="text-[11px] text-muted-foreground">{{ t("processList.clickRowHint", "点击行可查看完整 SQL 及会话详情") }}</div>
       </div>
 
       <!-- Main Sessions Table -->
@@ -670,9 +676,9 @@ onBeforeUnmount(stopTimer);
               <td class="px-3 py-1.5 text-right whitespace-nowrap" @click.stop>
                 <div class="flex items-center justify-end gap-1">
                   <!-- Cancel Running Query -->
-                  <Button v-if="driver?.buildCancelSql" variant="ghost" size="sm" class="h-6 gap-1 px-1.5 text-[11px] text-amber-600 hover:bg-amber-500/10 hover:text-amber-600" :title="'取消当前执行中的查询'" @click="requestCancel(row)">
+                  <Button v-if="driver?.buildCancelSql" variant="ghost" size="sm" class="h-6 gap-1 px-1.5 text-[11px] text-amber-600 hover:bg-amber-500/10 hover:text-amber-600" :title="t('processList.cancelQueryTitle', '取消当前执行中的查询')" @click="requestCancel(row)">
                     <Ban class="h-3 w-3" />
-                    <span>取消</span>
+                    <span>{{ t("processList.cancelShort", "取消") }}</span>
                   </Button>
 
                   <!-- Kill Session -->
@@ -685,7 +691,7 @@ onBeforeUnmount(stopTimer);
                     @click="requestKill(row)"
                   >
                     <Trash2 class="h-3 w-3" />
-                    <span>终止</span>
+                    <span>{{ t("processList.killShort", "终止") }}</span>
                   </Button>
                 </div>
               </td>
@@ -704,21 +710,21 @@ onBeforeUnmount(stopTimer);
       <div v-if="selectedSession" class="border-t bg-muted/20 p-3 flex flex-col gap-2 shrink-0 max-h-56 overflow-hidden">
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-2">
-            <span class="font-bold text-xs">会话详情 (PID: {{ selectedSession.id }})</span>
+            <span class="font-bold text-xs">{{ t("processList.sessionDetails", { pid: selectedSession.id }, `会话详情 (PID: ${selectedSession.id})`) }}</span>
             <Badge variant="outline" class="text-[10px]">{{ selectedSession.user }} @ {{ selectedSession.client || selectedSession.host || "local" }}</Badge>
             <Badge v-if="selectedSession.db" variant="secondary" class="text-[10px]">{{ selectedSession.db }}</Badge>
             <Badge v-if="selectedSession.state" variant="outline" class="text-[10px]">{{ selectedSession.state }}</Badge>
-            <span class="text-muted-foreground text-[11px]">耗时: {{ formatDuration(selectedSession.time) }}</span>
+            <span class="text-muted-foreground text-[11px]">{{ t("processList.elapsed", "耗时") }}: {{ formatDuration(selectedSession.time) }}</span>
           </div>
 
           <div class="flex items-center gap-1">
             <Button variant="ghost" size="sm" class="h-6 gap-1 px-2 text-[11px]" @click="openInSqlEditor(selectedSession.query || selectedSession.info)">
               <ExternalLink class="h-3 w-3" />
-              <span>在 SQL 编辑器中打开</span>
+              <span>{{ t("processList.openInSqlEditor", "在 SQL 编辑器中打开") }}</span>
             </Button>
             <Button variant="ghost" size="sm" class="h-6 gap-1 px-2 text-[11px]" @click="openPreview(selectedSession.query || selectedSession.info)">
               <Copy class="h-3 w-3" />
-              <span>复制 SQL</span>
+              <span>{{ t("processList.copySql", "复制 SQL") }}</span>
             </Button>
             <Button variant="ghost" size="sm" class="h-6 w-6 p-0" @click="selectedSession = null">
               <X class="h-3.5 w-3.5" />
@@ -726,7 +732,7 @@ onBeforeUnmount(stopTimer);
           </div>
         </div>
 
-        <pre class="flex-1 min-h-0 overflow-auto whitespace-pre-wrap break-all rounded bg-background border p-2 font-mono text-xs text-foreground leading-relaxed">{{ selectedSession.query || selectedSession.info || "-- 暂无活跃 SQL" }}</pre>
+        <pre class="flex-1 min-h-0 overflow-auto whitespace-pre-wrap break-all rounded bg-background border p-2 font-mono text-xs text-foreground leading-relaxed">{{ selectedSession.query || selectedSession.info || t("processList.noActiveSql", "-- 暂无活跃 SQL") }}</pre>
       </div>
     </div>
 
@@ -734,8 +740,8 @@ onBeforeUnmount(stopTimer);
     <div v-else-if="activeMainTab === 'blocking'" class="flex-1 min-h-0 flex flex-col p-3 overflow-auto">
       <div v-if="blockingLocks.length === 0" class="flex flex-col items-center justify-center p-16 gap-3 text-muted-foreground">
         <CheckCircle2 class="h-10 w-10 text-emerald-500" />
-        <span class="text-sm font-medium text-foreground">数据库当前运行顺畅，未检测到锁阻塞链路</span>
-        <span class="text-xs">所有事务正常获取并释放锁，无死锁或排他锁阻塞情况。</span>
+        <span class="text-sm font-medium text-foreground">{{ t("processList.noBlockingTitle", "数据库当前运行顺畅，未检测到锁阻塞链路") }}</span>
+        <span class="text-xs">{{ t("processList.noBlockingDesc", "所有事务正常获取并释放锁，无死锁或排他锁阻塞情况。") }}</span>
       </div>
 
       <div v-else class="space-y-3">
@@ -744,19 +750,19 @@ onBeforeUnmount(stopTimer);
             <AlertTriangle class="h-5 w-5 text-destructive" />
             <span class="font-bold text-sm text-destructive">{{ t("processList.blockingAlert", { count: blockingLocks.length }, `检测到 ${blockingLocks.length} 条锁阻塞链路`) }}</span>
           </div>
-          <span class="text-xs text-destructive/80">以下会话正在等待排他锁，可选择一键终止阻塞源会话以解除阻塞。</span>
+          <span class="text-xs text-destructive/80">{{ t("processList.blockingHint", "以下会话正在等待排他锁，可选择一键终止阻塞源会话以解除阻塞。") }}</span>
         </div>
 
         <div class="w-full overflow-auto rounded-md border">
           <table class="w-full border-collapse text-xs">
             <thead class="bg-muted/50 border-b">
               <tr>
-                <th class="py-2 px-3 text-left w-[200px]">阻塞源 (Blocking Session)</th>
-                <th class="py-2 px-3 text-left w-[200px]">被阻塞者 (Blocked Session)</th>
-                <th class="py-2 px-3 text-left w-[140px]">锁定对象 (Relation)</th>
-                <th class="py-2 px-3 text-left w-[140px]">锁模式 (Lock Mode)</th>
-                <th class="py-2 px-3 text-left w-[100px]">等待时长</th>
-                <th class="py-2 px-3 text-right w-[120px]">操作</th>
+                <th class="py-2 px-3 text-left w-[200px]">{{ t("processList.blockingSource", "阻塞源 (Blocking Session)") }}</th>
+                <th class="py-2 px-3 text-left w-[200px]">{{ t("processList.blockedTarget", "被阻塞者 (Blocked Session)") }}</th>
+                <th class="py-2 px-3 text-left w-[140px]">{{ t("processList.colRelation", "锁定对象 (Relation)") }}</th>
+                <th class="py-2 px-3 text-left w-[140px]">{{ t("processList.colLockMode", "锁模式 (Lock Mode)") }}</th>
+                <th class="py-2 px-3 text-left w-[100px]">{{ t("processList.colWaitTime", "等待时长") }}</th>
+                <th class="py-2 px-3 text-right w-[120px]">{{ t("processList.colActions", "操作") }}</th>
               </tr>
             </thead>
             <tbody class="divide-y font-mono">
@@ -765,7 +771,7 @@ onBeforeUnmount(stopTimer);
                 <td class="py-2 px-3">
                   <div class="font-bold text-destructive flex items-center gap-1">
                     <span>PID: {{ chain.blockingPid }}</span>
-                    <Badge variant="destructive" class="text-[9px] px-1 py-0">阻塞源</Badge>
+                    <Badge variant="destructive" class="text-[9px] px-1 py-0">{{ t("processList.blockingSourceShort", "阻塞源") }}</Badge>
                   </div>
                   <div class="text-muted-foreground text-[11px]">{{ chain.blockingUser }} @ {{ chain.blockingDb || "db" }}</div>
                   <div class="text-[10px] text-muted-foreground/80 truncate max-w-[200px]" :title="chain.blockingQuery || ''">
@@ -791,7 +797,7 @@ onBeforeUnmount(stopTimer);
                 <!-- Mode -->
                 <td class="py-2 px-3">
                   <span class="text-destructive font-semibold">{{ chain.grantedMode }}</span>
-                  <span class="text-muted-foreground text-[10px] block">➔ 等待: {{ chain.requestedMode }}</span>
+                  <span class="text-muted-foreground text-[10px] block">➔ {{ t("processList.waitingFor", { mode: chain.requestedMode }, `等待: ${chain.requestedMode}`) }}</span>
                 </td>
 
                 <!-- Wait time -->
@@ -801,7 +807,7 @@ onBeforeUnmount(stopTimer);
 
                 <!-- Action -->
                 <td class="py-2 px-3 text-right">
-                  <Button variant="destructive" size="sm" class="h-6 px-2 text-[11px]" @click="requestKill({ id: chain.blockingPid, user: chain.blockingUser } as ProcessRow)"> 终止阻塞源 </Button>
+                  <Button variant="destructive" size="sm" class="h-6 px-2 text-[11px]" @click="requestKill({ id: chain.blockingPid, user: chain.blockingUser } as ProcessRow)"> {{ t("processList.killBlockingSource", "终止阻塞源") }} </Button>
                 </td>
               </tr>
             </tbody>
@@ -813,13 +819,13 @@ onBeforeUnmount(stopTimer);
     <!-- Main Content Area: Tab 3 - Resource Locks List -->
     <div v-else-if="activeMainTab === 'locks'" class="flex-1 min-h-0 flex flex-col">
       <div class="flex items-center justify-between border-b bg-muted/15 px-3 py-1.5 text-xs select-none">
-        <span class="text-muted-foreground">其他会话资源锁清单 (共 {{ resourceLocks.length }} 条记录)</span>
-        <span class="text-[11px] text-muted-foreground">当前连接自身的锁不列入此页</span>
+        <span class="text-muted-foreground">{{ t("processList.resourceLockSummary", { count: resourceLocks.length }, `其他会话资源锁清单 (共 ${resourceLocks.length} 条记录)`) }}</span>
+        <span class="text-[11px] text-muted-foreground">{{ t("processList.resourceLockScopeHint", "当前连接自身的锁不列入此页") }}</span>
       </div>
 
       <div v-if="resourceLocks.length === 0" class="flex flex-1 flex-col items-center justify-center gap-2 p-12 text-sm text-muted-foreground">
         <CheckCircle2 class="h-8 w-8 text-emerald-500" />
-        <span>当前没有其他会话持有资源锁</span>
+        <span>{{ t("processList.noOtherResourceLocks", "当前没有其他会话持有资源锁") }}</span>
       </div>
 
       <div v-else class="min-h-0 flex-1 overflow-auto">
@@ -827,13 +833,13 @@ onBeforeUnmount(stopTimer);
           <thead class="sticky top-0 bg-muted/90 backdrop-blur border-b select-none font-sans text-muted-foreground">
             <tr>
               <th class="py-1.5 px-3 text-left w-[80px]">PID</th>
-              <th class="py-1.5 px-3 text-left w-[120px]">用户</th>
-              <th class="py-1.5 px-3 text-left w-[120px]">锁类型</th>
-              <th class="py-1.5 px-3 text-left w-[160px]">锁定对象 (Relation)</th>
-              <th class="py-1.5 px-3 text-left w-[160px]">锁模式 (Mode)</th>
-              <th class="py-1.5 px-3 text-left w-[90px]">状态 (Granted)</th>
-              <th class="py-1.5 px-3 text-left w-[90px]">耗时</th>
-              <th class="py-1.5 px-3 text-left">关联查询</th>
+              <th class="py-1.5 px-3 text-left w-[120px]">{{ t("processList.colUser", "用户") }}</th>
+              <th class="py-1.5 px-3 text-left w-[120px]">{{ t("processList.colLockType", "锁类型") }}</th>
+              <th class="py-1.5 px-3 text-left w-[160px]">{{ t("processList.colRelation", "锁定对象 (Relation)") }}</th>
+              <th class="py-1.5 px-3 text-left w-[160px]">{{ t("processList.colLockModeShort", "锁模式 (Mode)") }}</th>
+              <th class="py-1.5 px-3 text-left w-[90px]">{{ t("processList.colGranted", "状态 (Granted)") }}</th>
+              <th class="py-1.5 px-3 text-left w-[90px]">{{ t("processList.colTime", "耗时") }}</th>
+              <th class="py-1.5 px-3 text-left">{{ t("processList.colRelatedQuery", "关联查询") }}</th>
             </tr>
           </thead>
           <tbody class="divide-y">
@@ -845,7 +851,7 @@ onBeforeUnmount(stopTimer);
               <td class="py-1.5 px-3">{{ lk.mode }}</td>
               <td class="py-1.5 px-3">
                 <Badge :variant="lk.granted ? 'outline' : 'destructive'" class="text-[10px] px-1.5 py-0">
-                  {{ lk.granted ? "已持有" : "等待中" }}
+                  {{ lk.granted ? t("processList.lockGranted", "已持有") : t("processList.lockWaiting", "等待中") }}
                 </Badge>
               </td>
               <td class="py-1.5 px-3 text-muted-foreground">{{ formatDuration(lk.time) }}</td>
@@ -931,7 +937,7 @@ onBeforeUnmount(stopTimer);
         </DialogHeader>
         <pre class="max-h-[60vh] overflow-auto whitespace-pre-wrap break-words rounded-md border bg-muted/30 p-3 font-mono text-xs leading-relaxed">{{ previewText }}</pre>
         <div class="text-[11px] text-muted-foreground/80 bg-muted/40 p-2 rounded border border-border/50">
-          💡 <strong>说明</strong>：在 openGauss / PostgreSQL 中，活动会话的 SQL 记录长度受服务端参数 <code>track_activity_query_size</code> 控制。若语句较长被服务端截断，管理员可通过 <code>ALTER SYSTEM SET track_activity_query_size = 4096;</code>（重启生效）增大记录长度。
+          {{ t("processList.previewTruncationHint", "💡 说明：在 openGauss / PostgreSQL 中，活动会话的 SQL 记录长度受服务端参数 track_activity_query_size 控制。若语句较长被服务端截断，管理员可通过 ALTER SYSTEM SET track_activity_query_size = 4096;（重启生效）增大记录长度。") }}
         </div>
         <DialogFooter>
           <Button variant="outline" class="gap-1.5" @click="copyPreview">

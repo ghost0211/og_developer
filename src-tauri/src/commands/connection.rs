@@ -183,9 +183,28 @@ pub async fn connect_db(
 }
 
 #[tauri::command]
-pub async fn disconnect_db(state: State<'_, Arc<AppState>>, id: String) -> Result<(), String> {
-    state.remove_connection_pools_detached(&id).await;
-    state.reset_connection_transport(&id).await;
+pub async fn disconnect_db(
+    state: State<'_, Arc<AppState>>,
+    connection_id: String,
+    client_attempt: Option<u64>,
+) -> Result<(), String> {
+    // 对齐 dbx-web 的 /connection/disconnect：带 client_attempt 的断开仅在
+    // 该尝试仍是当前连接尝试时生效，避免关闭旧对话框时取消新建立的连接。
+    let should_disconnect = if let Some(client_attempt) = client_attempt {
+        state.supersede_connection_attempt_if_client_attempt(&connection_id, client_attempt).await
+    } else {
+        state.supersede_connection_attempt(&connection_id).await;
+        true
+    };
+    if !should_disconnect {
+        return Ok(());
+    }
+    state.running_queries.cancel_connection(&connection_id);
+    state.remove_connection_pools_detached(&connection_id).await;
+    state.reset_connection_transport(&connection_id).await;
+    if connection_id.starts_with("__visible_draft_") || connection_id.starts_with("__visible_schema_draft_") {
+        state.configs.write().await.remove(&connection_id);
+    }
     Ok(())
 }
 
