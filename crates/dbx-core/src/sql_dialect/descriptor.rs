@@ -351,14 +351,6 @@ impl DialectInfo {
     }
 }
 
-pub fn dialect_check(kind: DialectKind) -> DialectInfo {
-    DialectInfo::for_kind(kind)
-}
-
-pub fn dialect_check_all() -> Vec<DialectInfo> {
-    DialectInfo::all()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
