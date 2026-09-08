@@ -124,7 +124,7 @@ describe("Windows 7 fixed WebView2 runtime bundle", () => {
 
   it("audits the files produced by the silent Win7 installer", () => {
     expect(win7InstallerAuditScript).toContain('"webview2-fixed-runtime\\msedgewebview2.exe"');
-    expect(win7InstallerAuditScript).toContain('"dbx.exe"');
+    expect(win7InstallerAuditScript).toContain('"ogdeveloper.exe"');
     expect(ciWorkflow).toContain("./.github/scripts/assert-win7-installer-content.ps1");
   });
 
