@@ -2,18 +2,13 @@
 
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { posix } from "node:path";
 
 const LOCALES_DIR = "apps/desktop/src/i18n/locales";
 const SOURCE_LOCALE = "zh-CN";
-const TARGET_LOCALES = ["en", "es", "it", "ja", "pt-BR", "zh-TW"];
+const TARGET_LOCALES = ["en"];
 const TARGET_LABELS = {
   en: "English",
-  es: "Spanish",
-  it: "Italian",
-  ja: "Japanese",
-  "pt-BR": "Brazilian Portuguese",
-  "zh-TW": "Traditional Chinese used in Taiwan",
 };
 
 const args = new Set(process.argv.slice(2));
@@ -101,7 +96,7 @@ function valueArg(name) {
 }
 
 function localePath(locale) {
-  return join(LOCALES_DIR, `${locale}.ts`);
+  return posix.join(LOCALES_DIR, `${locale}.ts`);
 }
 
 function readBaseFile(path) {

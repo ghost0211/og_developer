@@ -3,6 +3,8 @@ mod data_dir;
 mod db;
 #[cfg(target_os = "macos")]
 mod macos_app_delegate;
+#[cfg(any(target_os = "macos", test))]
+mod native_menu_locale;
 #[cfg(any(target_os = "windows", test))]
 mod startup_recovery;
 #[cfg(all(not(target_os = "windows"), not(test)))]
@@ -14,6 +16,8 @@ use commands::connection::AppState;
 use dbx_core::sql_dialect::dialect_loader::{register_core_dialects, DialectPluginLoader, DialectRegistry};
 use dbx_core::sql_dialect::hot_reload::DialectHotReload;
 use dbx_core::storage::{maybe_import_user_data_db, DesktopIconTheme, DesktopSettings, Storage};
+#[cfg(target_os = "macos")]
+use native_menu_locale::{app_menu_copy_support_info_label, app_menu_quit_label};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -502,76 +506,6 @@ fn open_connection_deep_links(app: &tauri::AppHandle, links: Vec<String>) {
     }
     let _ = app.emit("dbx-open-connection-links", links);
     show_main_window(app);
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum LocaleFamily {
-    English,
-    SimplifiedChinese,
-    TraditionalChinese,
-    Japanese,
-    Korean,
-    Spanish,
-    Italian,
-    Portuguese,
-}
-
-// Mirrors the frontend language mapping in apps/desktop/src/i18n/index.ts
-// (localeFromLanguageTag) so native menus agree with the UI language.
-fn locale_family(locale: &str) -> LocaleFamily {
-    let normalized = locale.replace('_', "-").to_ascii_lowercase();
-    let is_language = |language: &str| normalized == language || normalized.starts_with(&format!("{language}-"));
-    if is_language("zh") {
-        if normalized.contains("hant")
-            || normalized.starts_with("zh-tw")
-            || normalized.starts_with("zh-hk")
-            || normalized.starts_with("zh-mo")
-        {
-            LocaleFamily::TraditionalChinese
-        } else {
-            LocaleFamily::SimplifiedChinese
-        }
-    } else if is_language("ja") {
-        LocaleFamily::Japanese
-    } else if is_language("ko") {
-        LocaleFamily::Korean
-    } else if is_language("es") {
-        LocaleFamily::Spanish
-    } else if is_language("it") {
-        LocaleFamily::Italian
-    } else if is_language("pt") {
-        LocaleFamily::Portuguese
-    } else {
-        LocaleFamily::English
-    }
-}
-
-// Matches the frontend supportInfoCopy translations in apps/desktop/src/i18n/locales/*.ts.
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
-fn app_menu_copy_support_info_label(locale: &str) -> &'static str {
-    match locale_family(locale) {
-        LocaleFamily::SimplifiedChinese => "复制支持信息",
-        LocaleFamily::TraditionalChinese => "複製支援資訊",
-        LocaleFamily::Japanese => "サポート情報をコピー",
-        LocaleFamily::Korean => "지원 정보 복사",
-        LocaleFamily::Spanish => "Copiar información",
-        LocaleFamily::Italian => "Copia informazioni",
-        LocaleFamily::Portuguese => "Copiar informações",
-        LocaleFamily::English => "Copy Support Info",
-    }
-}
-
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
-fn app_menu_quit_label(locale: &str, app_name: &str) -> String {
-    match locale_family(locale) {
-        LocaleFamily::SimplifiedChinese | LocaleFamily::TraditionalChinese => format!("退出 {app_name}"),
-        LocaleFamily::Japanese => format!("{app_name}を終了"),
-        LocaleFamily::Korean => format!("{app_name} 종료"),
-        LocaleFamily::Spanish => format!("Salir de {app_name}"),
-        LocaleFamily::Italian => format!("Esci da {app_name}"),
-        LocaleFamily::Portuguese => format!("Sair do {app_name}"),
-        LocaleFamily::English => format!("Quit {app_name}"),
-    }
 }
 
 #[allow(dead_code)]
