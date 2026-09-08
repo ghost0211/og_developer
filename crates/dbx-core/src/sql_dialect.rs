@@ -25,7 +25,7 @@ pub use ddl_profile::{
     TypeMapEntry,
 };
 pub use descriptor::{
-    DialectCapabilityDescriptor, DialectInfo, DialectKind, TypeConversionRule,
+    dialect_check, dialect_check_all, DialectCapabilityDescriptor, DialectInfo, DialectKind, TypeConversionRule,
     TypeMappingMatrix, CAP_ADD_COLUMN, CAP_ALTER_EXISTING_COLUMN, CAP_ALTER_OWNER, CAP_ALTER_PRIMARY_KEY,
     CAP_AUTO_INCREMENT, CAP_COMMENT, CAP_CREATE_FUNCTION, CAP_CREATE_INDEX, CAP_CREATE_OR_REPLACE, CAP_CREATE_SEQUENCE,
     CAP_CREATE_TABLE, CAP_CREATE_TRIGGER, CAP_DROP_COLUMN, CAP_DROP_FUNCTION, CAP_DROP_INDEX, CAP_DROP_SEQUENCE,

@@ -3,6 +3,7 @@ pub mod expression;
 // pub mod governance;
 pub mod layer;
 pub mod tag;
+pub mod trace;
 
 pub use expression::{parse_expression, resolve_all_expressions_in_value, resolve_expression, Expression};
 // pub use governance::{ ... };
@@ -10,6 +11,7 @@ pub use layer::{ConfigLayer, ConfigTree, LayerConfig, MergedConfig};
 pub use tag::{
     BlockStats, BusinessTag, TagGuard, TagInheritanceWhitelist, TagPolicy, TagValidationResult, TagValidator,
 };
+pub use trace::{TraceEntry, TraceRingBuffer, TraceStats};
 
 #[cfg(test)]
 mod integration_tests {
@@ -108,6 +110,12 @@ mod integration_tests {
         let result = validator.validate_tags(&tags, &HashMap::new());
         assert_eq!(result.allowed.len(), 1);
         assert_eq!(result.blocked.len(), 0);
+
+        let mut trace = TraceRingBuffer::new(100);
+        trace.record(ConfigLayer::Global, "target_schema", "read", "used for SchemaDiffPreparationOptions");
+        trace.record(ConfigLayer::Global, "db_type", "read", "used for DatabaseType");
+        trace.record(ConfigLayer::Task, "cascade_delete", "read", "overridden from task layer");
+        assert_eq!(trace.len(), 3);
     }
 
     #[test]
