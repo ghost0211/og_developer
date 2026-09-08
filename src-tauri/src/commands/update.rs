@@ -746,14 +746,14 @@ mod tests {
 
     #[test]
     fn builds_installer_asset_candidates_for_cnb_source() {
+        // OG Developer 暂无独立 CNB 镜像，CNB 与官方源共用 GitHub Releases 地址，去重后仅剩 1 个候选
         let candidates = UpdateDownloadSource::Cnb.installer_asset_candidates(
             "https://github.com/ghost0211/og_developer/releases/download/v0.5.64/OGDeveloper_0.5.64_aarch64.dmg",
             Some("0.5.64"),
         );
-        assert_eq!(candidates.len(), 2);
-        assert_eq!(candidates[0], format!("{GITHUB_RELEASE_DOWNLOAD_PREFIX}v0.5.64/OGDeveloper_0.5.64_aarch64.dmg"));
+        assert_eq!(candidates.len(), 1);
         assert_eq!(
-            candidates[1],
+            candidates[0],
             "https://github.com/ghost0211/og_developer/releases/download/v0.5.64/OGDeveloper_0.5.64_aarch64.dmg"
         );
     }
