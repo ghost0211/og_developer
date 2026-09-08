@@ -731,11 +731,6 @@ fn starts_with_soft_statement_keyword(sql: &str, options: SqlParsingOptions) -> 
     )
 }
 
-#[allow(dead_code)]
-fn split_sql_statement_ranges(sql: &str) -> Vec<SqlStatementRange> {
-    split_sql_statement_ranges_with_options(sql, SqlParsingOptions::default())
-}
-
 fn split_sql_statement_ranges_with_options(sql: &str, options: SqlParsingOptions) -> Vec<SqlStatementRange> {
     let mut ranges = Vec::new();
     let mut start = 0;

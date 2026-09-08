@@ -478,26 +478,6 @@ fn prepare_main_window_for_display<R: tauri::Runtime>(app: &tauri::AppHandle<R>)
     window_state_guard::enforce_main_window_bounds(app);
 }
 
-#[allow(dead_code)]
-fn clear_main_webview_focus<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
-    if let Some(window) = app.get_webview_window("main") {
-        let _ = window.eval(
-            r#"
-            (() => {
-              const active = document.activeElement;
-              if (active instanceof HTMLElement) active.blur();
-              if (document.body) {
-                if (!document.body.hasAttribute("tabindex")) {
-                  document.body.setAttribute("tabindex", "-1");
-                }
-                document.body.focus({ preventScroll: true });
-              }
-            })();
-            "#,
-        );
-    }
-}
-
 pub(crate) fn request_app_close<R: tauri::Runtime>(app: &tauri::AppHandle<R>, target: &str) {
     let frontend_ready = app.try_state::<CloseBehaviorState>().is_some_and(|state| state.is_frontend_ready());
     if should_fallback_to_native_quit(target, frontend_ready) {
