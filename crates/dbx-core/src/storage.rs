@@ -148,8 +148,10 @@ pub struct TabRuntimeCachePruneResult {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DesktopSettings {
+    // 前端不再管理托盘开关（系统托盘已移除），此处保留字段以兼容旧配置文件；
+    // 旧版/精简客户端保存设置时可能不携带该字段，必须提供默认值避免反序列化失败。
+    #[serde(default = "default_show_tray_icon")]
     pub show_tray_icon: bool,
-    pub icon_theme: DesktopIconTheme,
     #[serde(default)]
     pub quit_on_close: bool,
     #[serde(default)]
@@ -204,6 +206,10 @@ fn default_sidebar_table_page_size() -> usize {
     1000
 }
 
+fn default_show_tray_icon() -> bool {
+    true
+}
+
 pub const DUCKDB_WORKER_MAX_PROCESSES_MIN: usize = 1;
 pub const DUCKDB_WORKER_MAX_PROCESSES_MAX: usize = 16;
 pub const DUCKDB_WORKER_MAX_PROCESSES_DEFAULT: usize = 4;
@@ -220,7 +226,6 @@ impl Default for DesktopSettings {
     fn default() -> Self {
         Self {
             show_tray_icon: true,
-            icon_theme: DesktopIconTheme::Default,
             quit_on_close: false,
             close_action_prompted: false,
             debug_logging_enabled: false,
@@ -231,22 +236,6 @@ impl Default for DesktopSettings {
             plugin_store_dir: None,
             agent_store_dir: None,
             sidebar_table_page_size: default_sidebar_table_page_size(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum DesktopIconTheme {
-    Default,
-    Black,
-}
-
-impl DesktopIconTheme {
-    fn from_settings_value(value: Option<&serde_json::Value>) -> Self {
-        match value.and_then(|value| value.as_str()) {
-            Some("black") => Self::Black,
-            _ => Self::Default,
         }
     }
 }
@@ -1448,11 +1437,8 @@ impl Storage {
     pub async fn save_desktop_settings(&self, desktop_settings: &DesktopSettings) -> Result<(), String> {
         let mut settings = self.load_app_settings_json().await?;
         settings.remove("run_in_background");
+        settings.remove("icon_theme");
         settings.insert("show_tray_icon".to_string(), serde_json::Value::Bool(desktop_settings.show_tray_icon));
-        settings.insert(
-            "icon_theme".to_string(),
-            serde_json::to_value(desktop_settings.icon_theme).map_err(|e| e.to_string())?,
-        );
         settings.insert("quit_on_close".to_string(), serde_json::Value::Bool(desktop_settings.quit_on_close));
         settings.insert(
             "close_action_prompted".to_string(),
@@ -1519,7 +1505,6 @@ impl Storage {
                 .and_then(|value| value.as_bool())
                 .or_else(|| settings.get("run_in_background").and_then(|value| value.as_bool()))
                 .unwrap_or_else(|| DesktopSettings::default().show_tray_icon),
-            icon_theme: DesktopIconTheme::from_settings_value(settings.get("icon_theme")),
             quit_on_close: settings
                 .get("quit_on_close")
                 .and_then(|value| value.as_bool())
@@ -3230,8 +3215,8 @@ fn map_from_sql_err(err: serde_json::Error) -> rusqlite::Error {
 #[cfg(test)]
 mod tests {
     use super::{
-        maybe_import_user_data_db, DataDbImportResult, DesktopIconTheme, DesktopSettings, McpGlobalPolicy,
-        McpGlobalPolicyState, Storage, MCP_GLOBAL_POLICY_KEY,
+        maybe_import_user_data_db, DataDbImportResult, DesktopSettings, McpGlobalPolicy, McpGlobalPolicyState, Storage,
+        MCP_GLOBAL_POLICY_KEY,
     };
     use crate::ai::{AiActiveModelSelection, AiChatSelectionState, AiEffortSelection, AiModelEffortPreference};
     use crate::history::{HistoryConnectionFilter, HistoryDatabaseFilter, HistoryEntry, HistorySearchRequest};
@@ -3949,6 +3934,30 @@ mod tests {
         );
     }
 
+    #[test]
+    fn desktop_settings_deserialize_payload_without_legacy_tray_fields() {
+        // 回归测试：前端曾不发送 show_tray_icon / quit_on_close，
+        // 导致 save_desktop_settings 命令参数反序列化失败、设置保存被静默回滚。
+        let payload = serde_json::json!({
+            "icon_theme": "black",
+            "close_action_prompted": true,
+            "debug_logging_enabled": true,
+            "duckdb_worker_process_isolation": false,
+            "duckdb_worker_max_processes": 4,
+            "saved_sql_sync_dir": null,
+            "driver_store_dir": null,
+            "plugin_store_dir": null,
+            "agent_store_dir": null,
+            "sidebar_table_page_size": 1000
+        });
+
+        let settings: DesktopSettings = serde_json::from_value(payload).unwrap();
+
+        assert!(settings.show_tray_icon);
+        assert!(!settings.quit_on_close);
+        assert!(settings.debug_logging_enabled);
+    }
+
     #[tokio::test]
     async fn desktop_settings_preserve_existing_password_hash() {
         let path = temp_db_path("desktop-settings-preserve-password");
@@ -3958,7 +3967,6 @@ mod tests {
         storage
             .save_desktop_settings(&DesktopSettings {
                 show_tray_icon: false,
-                icon_theme: DesktopIconTheme::Black,
                 quit_on_close: true,
                 close_action_prompted: false,
                 debug_logging_enabled: true,
@@ -3978,7 +3986,6 @@ mod tests {
             storage.load_desktop_settings().await.unwrap(),
             DesktopSettings {
                 show_tray_icon: false,
-                icon_theme: DesktopIconTheme::Black,
                 quit_on_close: true,
                 close_action_prompted: false,
                 debug_logging_enabled: true,
@@ -4001,18 +4008,12 @@ mod tests {
         settings.insert("run_in_background".to_string(), serde_json::Value::Bool(false));
         storage.save_app_settings_json(&settings).await.unwrap();
 
-        storage
-            .save_desktop_settings(&DesktopSettings {
-                icon_theme: DesktopIconTheme::Black,
-                ..DesktopSettings::default()
-            })
-            .await
-            .unwrap();
+        storage.save_desktop_settings(&DesktopSettings::default()).await.unwrap();
 
         let settings = storage.load_app_settings_json().await.unwrap();
         assert_eq!(settings.get("run_in_background"), None);
+        assert_eq!(settings.get("icon_theme"), None);
         assert_eq!(settings.get("show_tray_icon").and_then(|value| value.as_bool()), Some(true));
-        assert_eq!(settings.get("icon_theme").and_then(|value| value.as_str()), Some("black"));
         assert_eq!(settings.get("debug_logging_enabled").and_then(|value| value.as_bool()), Some(false));
         assert_eq!(
             settings.get("sidebar_table_page_size").and_then(|value| value.as_u64()),
@@ -4099,11 +4100,7 @@ mod tests {
         let storage = Storage::open(&path).await.unwrap();
 
         storage
-            .save_desktop_settings(&DesktopSettings {
-                show_tray_icon: false,
-                icon_theme: DesktopIconTheme::Black,
-                ..DesktopSettings::default()
-            })
+            .save_desktop_settings(&DesktopSettings { show_tray_icon: false, ..DesktopSettings::default() })
             .await
             .unwrap();
         storage.save_password_hash("hash-2").await.unwrap();
@@ -4111,11 +4108,7 @@ mod tests {
         assert_eq!(storage.load_password_hash().await.unwrap(), Some("hash-2".to_string()));
         assert_eq!(
             storage.load_desktop_settings().await.unwrap(),
-            DesktopSettings {
-                show_tray_icon: false,
-                icon_theme: DesktopIconTheme::Black,
-                ..DesktopSettings::default()
-            }
+            DesktopSettings { show_tray_icon: false, ..DesktopSettings::default() }
         );
     }
 
@@ -4149,10 +4142,7 @@ mod tests {
 
         storage.save_password_hash("hash-4").await.unwrap();
         storage
-            .save_desktop_settings(&DesktopSettings {
-                icon_theme: DesktopIconTheme::Black,
-                ..DesktopSettings::default()
-            })
+            .save_desktop_settings(&DesktopSettings { debug_logging_enabled: true, ..DesktopSettings::default() })
             .await
             .unwrap();
 
@@ -4208,7 +4198,7 @@ mod tests {
         assert_eq!(storage.load_password_hash().await.unwrap(), Some("hash-4".to_string()));
         assert_eq!(
             storage.load_desktop_settings().await.unwrap(),
-            DesktopSettings { icon_theme: DesktopIconTheme::Black, ..DesktopSettings::default() }
+            DesktopSettings { debug_logging_enabled: true, ..DesktopSettings::default() }
         );
         assert_eq!(storage.load_app_settings_json().await.unwrap().get("open_tabs"), None);
     }

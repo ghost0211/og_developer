@@ -1,12 +1,3 @@
-<script setup lang="ts">
-import { computed } from "vue";
-import { useSettingsStore } from "@/stores/settingsStore";
-
-const settingsStore = useSettingsStore();
-const isBlackLogo = computed(() => settingsStore.desktopSettings.icon_theme === "black");
-const logoSrc = computed(() => (isBlackLogo.value ? "/logo-black.png" : "/logo.png"));
-</script>
-
 <template>
-  <img :src="logoSrc" alt="OG Developer" :class="isBlackLogo ? 'dark:invert' : ''" />
+  <img src="/logo.png" alt="OG Developer" />
 </template>

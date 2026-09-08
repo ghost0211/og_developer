@@ -2,8 +2,9 @@
 # Enable SQLite's built-in math functions for rusqlite's bundled libsqlite3.
 LIBSQLITE3_FLAGS = "SQLITE_ENABLE_MATH_FUNCTIONS"
 
-[target.x86_64-pc-windows-msvc]
-linker = "lld-link"
+# 注意：不要在这里配置 linker = "lld-link"。
+# rustc 会自动通过 vswhere 找到 VS Build Tools 的 link.exe；
+# 指定 lld-link 反而会因为本机没有 lld-link.exe 而报 "linker not found"。
 
 # dbx 体量的全量 debug 构建产物可超过 30G，曾导致磁盘耗尽。
 # 限制 dev 构建的调试信息体积；需要完整调试信息时用：

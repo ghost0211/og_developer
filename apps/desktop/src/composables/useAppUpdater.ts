@@ -14,10 +14,6 @@ interface UseAppUpdaterOptions {
   getActiveTaskCount?: () => number;
 }
 
-export function shouldOpenUpdateDialog(options: { silent?: boolean }) {
-  return options.silent !== true;
-}
-
 export function canDownloadAndInstallUpdate(info: api.UpdateInfo | null, isDesktop: boolean) {
   return isDesktop && info?.update_available === true && info.manual_update_only !== true;
 }
@@ -34,10 +30,9 @@ export function tagVersion(version: string): string {
 }
 
 export function resolveUpdateReleaseUrl(info: api.UpdateInfo | null, source: unknown, fallbackUrl: string): string {
-  const normalizedSource = normalizeUpdateDownloadSource(source);
-  if (normalizedSource === "cnb" && info?.latest_version) {
-    return `https://cnb.cool/dbxio.com/dbx/-/releases/tag/${tagVersion(info.latest_version)}`;
-  }
+  // OG Developer 暂无 CNB 镜像，应用更新一律跳转到 GitHub 发布页；
+  // source 参数保留以兼容已保存的设置（仍用于驱动/Agent 更新镜像选择）。
+  void normalizeUpdateDownloadSource(source);
   return info?.release_url || fallbackUrl;
 }
 
@@ -87,9 +82,9 @@ export function useAppUpdater(options: UseAppUpdaterOptions = {}) {
       const info = await api.checkForUpdates(currentLocale(), normalizeUpdateDownloadSource(settingsStore.editorSettings.updateDownloadSource));
       updateInfo.value = info;
       if (info.update_available) {
-        if (shouldOpenUpdateDialog({ silent: options.silent })) {
-          showUpdateDialog.value = true;
-        }
+        // 发现更新时始终弹出提醒（包括启动时的静默自动检查），
+        // 否则“启用更新提醒”设置就没有意义；静默仅抑制“已是最新”和错误弹窗。
+        showUpdateDialog.value = true;
       } else if (!options.silent) {
         updateCheckMessage.value = t("updates.upToDate", { version: info.current_version });
         showUpdateDialog.value = true;

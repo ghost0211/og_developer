@@ -33,6 +33,9 @@ import { useDataGridActions } from "@/composables/useDataGridActions";
 import { useTauriEvents } from "@/composables/useTauriEvents";
 import { useCloseActionPrompt, type AppCloseAction, type AppCloseRequestOptions } from "@/composables/useCloseActionPrompt";
 import { useVisibilityChange } from "@/composables/useVisibilityChange";
+import { useExportTracker } from "@/composables/useExportTracker";
+import { useAppUpdater } from "@/composables/useAppUpdater";
+import { countActiveUpdateBlockingTasks } from "@/lib/app/appUpdateTaskGuard";
 import { shouldDrawDesktopWindowFrame, useWindowControls } from "@/composables/useWindowControls";
 import { createOpenTabsRestorationBarrier, initializeDesktopOpenTabs, type OpenTabsRestorationBarrier } from "@/lib/app/openTabsStartup";
 import { useSaveSqlFolderSelection } from "@/composables/useSaveSqlFolderSelection";
@@ -60,16 +63,31 @@ import {
   isBrowserReloadShortcut,
   isCloseOtherTabsShortcut,
   isCloseTabShortcut,
+  isCloneFromGitShortcut,
+  isCommandWindowShortcut,
+  isCommitTransactionShortcut,
+  isCompressSqlShortcut,
+  isCreateProjectShortcut,
+  isExecuteCurrentStatementShortcut,
   isExecuteSqlInNewResultTabShortcut,
   isExecuteSqlShortcut,
+  isExplainSqlShortcut,
+  isExportConnectionsShortcut,
   isFocusSearchShortcut,
+  isImportConnectionsShortcut,
+  isImportResultShortcut,
   isModRShortcut,
+  isNewConnectionShortcut,
   isNewQueryShortcut,
   isObjectSourceSaveShortcutTarget,
+  isOpenProjectShortcut,
   isOpenSettingsShortcut,
+  isOpenSqlFileShortcut,
   isQuickOpenShortcut,
   isResetZoomShortcut,
   isRefreshDataShortcut,
+  isRollbackTransactionShortcut,
+  isSaveSqlAsShortcut,
   isSearchMetadataShortcut,
   isSearchObjectSourceShortcut,
   isSearchTableDataShortcut,
@@ -77,6 +95,7 @@ import {
   isSendSelectionToAiShortcut,
   isSwitchToNextTabShortcut,
   isSwitchToPreviousTabShortcut,
+  isToggleAutoCommitShortcut,
   isToggleSidebarShortcut,
   isZoomInShortcut,
   isZoomOutShortcut,
@@ -116,6 +135,7 @@ const GitPanel = defineAsyncComponent(() => import("@/components/layout/GitPanel
 const GitCloneDialog = defineAsyncComponent(() => import("@/components/git/GitCloneDialog.vue"));
 const GitDiffDialog = defineAsyncComponent(() => import("@/components/git/GitDiffDialog.vue"));
 const AboutDialog = defineAsyncComponent(() => import("@/components/common/AboutDialog.vue"));
+const UpdateDialog = defineAsyncComponent(() => import("@/components/layout/UpdateDialog.vue"));
 const LoginPage = defineAsyncComponent(() => import("@/components/auth/LoginPage.vue"));
 const QuickOpenDialog = defineAsyncComponent(() => import("@/components/quick-open/QuickOpenDialog.vue"));
 const ProjectDialog = defineAsyncComponent(() => import("@/components/projects/ProjectDialog.vue"));
@@ -139,6 +159,21 @@ const gitStore = useGitStore();
 const { message: toastMessage, visible: toastVisible, toast } = useToast();
 const { isDark, themeMode, applyTheme, setThemeMode } = useTheme();
 const { setupFileDrop } = useFileDrop();
+const exportTracker = useExportTracker();
+const appUpdater = useAppUpdater({
+  getActiveTaskCount: () => countActiveUpdateBlockingTasks(exportTracker.activeCount.value, queryStore.tabs),
+});
+const {
+  updateInfo: appUpdateInfo,
+  updateCheckMessage: appUpdateCheckMessage,
+  showUpdateDialog: showAppUpdateDialog,
+  isDownloadingUpdate: isDownloadingAppUpdate,
+  downloadProgress: appUpdateDownloadProgress,
+  updateDownloaded: appUpdateDownloaded,
+  isInstallingUpdate: isInstallingAppUpdate,
+  updateReady: appUpdateReady,
+  activeTaskCount: appUpdateActiveTaskCount,
+} = appUpdater;
 
 const isDesktop = isTauriRuntime();
 const { toggleFullscreen } = useWindowControls();
@@ -1873,6 +1908,13 @@ function dispatchBeforeTabSwitch(tabId: string) {
   window.dispatchEvent(new CustomEvent("dbx:before-tab-switch", { detail: { tabId, fromTabId: queryStore.activeTabId } }));
 }
 
+function openCommandWindowFromMenu() {
+  const targetId = activeTab.value?.connectionId || connectionStore.activeConnectionId || [...connectionStore.connectedIds][0] || connectionStore.connections[0]?.id;
+  if (targetId) {
+    queryStore.openCommandWindow(targetId, activeTab.value?.database, activeTab.value?.schema);
+  }
+}
+
 function closeActiveTab() {
   if (queryStore.activeTabId) queryStore.closeTab(queryStore.activeTabId);
 }
@@ -1999,6 +2041,102 @@ function handleKeydown(e: KeyboardEvent) {
     closeActiveTab();
     return;
   }
+  if (isNewConnectionShortcut(e, shortcuts)) {
+    e.preventDefault();
+    e.stopPropagation();
+    showConnectionDialog.value = true;
+    return;
+  }
+  if (isCommandWindowShortcut(e, shortcuts)) {
+    e.preventDefault();
+    e.stopPropagation();
+    openCommandWindowFromMenu();
+    return;
+  }
+  if (activeTab.value?.mode === "query" && isOpenSqlFileShortcut(e, shortcuts)) {
+    e.preventDefault();
+    e.stopPropagation();
+    void openSqlFile();
+    return;
+  }
+  if (activeTab.value?.mode === "query" && canSaveSqlTab(activeTab.value) && isSaveSqlAsShortcut(e, shortcuts)) {
+    e.preventDefault();
+    e.stopPropagation();
+    openSaveSqlAsDialog();
+    return;
+  }
+  if (isImportResultShortcut(e, shortcuts)) {
+    e.preventDefault();
+    e.stopPropagation();
+    void importResultArchive();
+    return;
+  }
+  if (isImportConnectionsShortcut(e, shortcuts)) {
+    e.preventDefault();
+    e.stopPropagation();
+    dialogs.onImportClick();
+    return;
+  }
+  if (isExportConnectionsShortcut(e, shortcuts)) {
+    e.preventDefault();
+    e.stopPropagation();
+    dialogs.onExportClick();
+    return;
+  }
+  if (isCreateProjectShortcut(e, shortcuts)) {
+    e.preventDefault();
+    e.stopPropagation();
+    onMenuCreateProject();
+    return;
+  }
+  if (isOpenProjectShortcut(e, shortcuts)) {
+    e.preventDefault();
+    e.stopPropagation();
+    onMenuOpenProject();
+    return;
+  }
+  if (isDesktop && isCloneFromGitShortcut(e, shortcuts)) {
+    e.preventDefault();
+    e.stopPropagation();
+    gitStore.openCloneDialog();
+    return;
+  }
+  if (activeTab.value?.mode === "query" && isCompressSqlShortcut(e, shortcuts)) {
+    e.preventDefault();
+    e.stopPropagation();
+    compressActiveSql();
+    return;
+  }
+  if (activeTab.value?.mode === "query" && isExecuteCurrentStatementShortcut(e, shortcuts)) {
+    e.preventDefault();
+    e.stopPropagation();
+    requestActiveEditorExecuteCurrent();
+    return;
+  }
+  if (activeTab.value?.mode === "query" && isExplainSqlShortcut(e, shortcuts)) {
+    e.preventDefault();
+    e.stopPropagation();
+    tryExplain();
+    return;
+  }
+  if (activeTab.value?.txnSessionId && isCommitTransactionShortcut(e, shortcuts)) {
+    e.preventDefault();
+    e.stopPropagation();
+    void queryStore.commitTransaction(activeTab.value.id);
+    return;
+  }
+  if (activeTab.value?.txnSessionId && isRollbackTransactionShortcut(e, shortcuts)) {
+    e.preventDefault();
+    e.stopPropagation();
+    void queryStore.rollbackTransaction(activeTab.value.id);
+    return;
+  }
+  if (activeTab.value && isToggleAutoCommitShortcut(e, shortcuts)) {
+    e.preventDefault();
+    e.stopPropagation();
+    queryStore.setAutoCommit(activeTab.value.id, !(activeTab.value.autoCommit ?? true));
+    return;
+  }
   if (isSaveShortcut(e, shortcuts) && e.target instanceof Element && isObjectSourceSaveShortcutTarget(e.target)) {
     return;
   }
@@ -2115,6 +2253,20 @@ async function initApp() {
   }
 }
 
+function scheduleStartupUpdateCheck() {
+  // 启用更新提醒时，启动完成后静默检查一次应用更新；发现更新时弹出提醒对话框，
+  // “已是最新”/检查失败不打扰用户。延迟几秒避免与启动初始化争抢网络。
+  if (!isDesktop || !settingsStore.editorSettings.updateNotificationsEnabled) return;
+  setTimeout(() => {
+    void appUpdater.checkUpdates({ silent: true });
+  }, 3000);
+}
+
+function onAboutCheckUpdates() {
+  aboutDialogOpen.value = false;
+  void appUpdater.checkUpdates();
+}
+
 function restoreActiveConnectionContext() {
   const activeConnectionId = activeTab.value?.connectionId || connectionStore.activeConnectionId;
   if (activeConnectionId && connectionStore.getConfig(activeConnectionId)) {
@@ -2202,7 +2354,7 @@ onMounted(async () => {
     return;
   }
   desktopOpenTabsRestorationBarrier = createOpenTabsRestorationBarrier();
-  void initApp();
+  void initApp().then(() => scheduleStartupUpdateCheck());
   void projectStore.ensureDefaultProject({ defaultProjectsRoot: api.defaultProjectsRoot, ensureDirectory: api.ensureDirectory });
   setupFileDrop().catch(() => {});
   api
@@ -2300,14 +2452,7 @@ onUnmounted(() => {
             }
           "
           @open-invalid-objects="dialogs.showInvalidObjectsDialog.value = true"
-          @open-command-window="
-            () => {
-              const targetId = activeTab?.connectionId || connectionStore.activeConnectionId || [...connectionStore.connectedIds][0] || connectionStore.connections[0]?.id;
-              if (targetId) {
-                queryStore.openCommandWindow(targetId, activeTab?.database, activeTab?.schema);
-              }
-            }
-          "
+          @open-command-window="openCommandWindowFromMenu"
           @open-table-import="void openTableImportFromMenu()"
           @open-database-export="dialogs.showDatabaseExportDialog.value = true"
           @open-transfer="dialogs.showTransferDialog.value = true"
@@ -2476,6 +2621,7 @@ onUnmounted(() => {
                       @structure-editor-close="activeTab && queryStore.closeTab(activeTab.id)"
                       @open-settings="openSettings"
                       @open-connection-settings="openConnectionSettings"
+                      @check-updates="void appUpdater.checkUpdates()"
                     />
                   </KeepAlive>
                 </div>
@@ -2707,5 +2853,21 @@ onUnmounted(() => {
     </TooltipProvider>
     <div id="dbx-query-editor-tooltip-root" class="fixed left-0 top-0 z-[70] h-0 w-0 overflow-visible" />
   </div>
-  <AboutDialog v-model:open="aboutDialogOpen" :app-version="appVersion" />
+  <AboutDialog v-model:open="aboutDialogOpen" :app-version="appVersion" @check-updates="onAboutCheckUpdates" />
+  <UpdateDialog
+    v-model:open="showAppUpdateDialog"
+    :update-info="appUpdateInfo"
+    :update-check-message="appUpdateCheckMessage"
+    :is-downloading-update="isDownloadingAppUpdate"
+    :download-progress="appUpdateDownloadProgress"
+    :update-downloaded="appUpdateDownloaded"
+    :is-installing-update="isInstallingAppUpdate"
+    :update-ready="appUpdateReady"
+    :active-task-count="appUpdateActiveTaskCount"
+    @open-latest-release="appUpdater.openLatestRelease"
+    @download-and-install="appUpdater.downloadAndInstallUpdate"
+    @cancel-download="appUpdater.cancelDownload"
+    @install-downloaded="appUpdater.installDownloadedUpdate"
+    @restart="appUpdater.restartApp"
+  />
 </template>

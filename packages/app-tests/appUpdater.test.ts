@@ -47,9 +47,10 @@ test("normalizes release tag versions", () => {
 });
 
 test("resolves release page URL from update download source", () => {
-  const fallbackUrl = "https://github.com/t8y2/dbx/releases/latest";
-  assert.equal(resolveUpdateReleaseUrl(updateInfo({ latest_version: "0.5.39" }), "cnb", fallbackUrl), "https://cnb.cool/dbxio.com/dbx/-/releases/tag/v0.5.39");
-  assert.equal(resolveUpdateReleaseUrl(updateInfo({ release_url: "https://github.com/t8y2/dbx/releases/tag/v0.5.39" }), "official", fallbackUrl), "https://github.com/t8y2/dbx/releases/tag/v0.5.39");
+  const fallbackUrl = "https://github.com/ghost0211/og_developer/releases/latest";
+  // OG Developer 暂无 CNB 镜像，应用更新发布页一律落到 GitHub
+  assert.equal(resolveUpdateReleaseUrl(updateInfo({ release_url: "https://github.com/ghost0211/og_developer/releases/tag/v0.5.39" }), "cnb", fallbackUrl), "https://github.com/ghost0211/og_developer/releases/tag/v0.5.39");
+  assert.equal(resolveUpdateReleaseUrl(updateInfo({ release_url: "https://github.com/ghost0211/og_developer/releases/tag/v0.5.39" }), "official", fallbackUrl), "https://github.com/ghost0211/og_developer/releases/tag/v0.5.39");
   assert.equal(resolveUpdateReleaseUrl(null, "cnb", fallbackUrl), fallbackUrl);
 });
 
@@ -94,12 +95,23 @@ test("retains a downloaded update when a task starts during download and install
   assert.equal(installCount, 1);
 });
 
-test("the app shell no longer wires update installation", () => {
+test("the app shell wires update installation", () => {
   const appSource = readFileSync("apps/desktop/src/App.vue", "utf8");
 
-  // 检查 dbx 更新功能已从应用外壳移除；库函数保留但不再接入。
-  assert.doesNotMatch(appSource, /useAppUpdater/);
-  assert.doesNotMatch(appSource, /countActiveUpdateBlockingTasks/);
-  assert.doesNotMatch(appSource, /UpdateDialog/);
-  assert.doesNotMatch(appSource, /checkUpdates/);
+  // og_developer 重新接回应用内更新：外壳挂载 UpdateDialog、接入任务守卫，
+  // 并在启用更新提醒时启动后静默检查。
+  assert.match(appSource, /useAppUpdater/);
+  assert.match(appSource, /countActiveUpdateBlockingTasks/);
+  assert.match(appSource, /UpdateDialog/);
+  assert.match(appSource, /checkUpdates/);
+});
+
+test("the settings about page and about dialog expose a manual update check", () => {
+  const settingsSource = readFileSync("apps/desktop/src/components/editor/EditorSettingsDialog.vue", "utf8");
+  const aboutSource = readFileSync("apps/desktop/src/components/common/AboutDialog.vue", "utf8");
+
+  assert.match(settingsSource, /check-updates/);
+  assert.match(settingsSource, /updates\.check/);
+  assert.match(aboutSource, /check-updates/);
+  assert.match(aboutSource, /updates\.check/);
 });

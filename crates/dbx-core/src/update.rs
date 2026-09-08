@@ -1,11 +1,8 @@
 use serde::{Deserialize, Serialize};
 
-const LATEST_JSON_GITHUB_PATH: &str = "https://github.com/t8y2/dbx/releases/latest/download/latest.json";
-const LATEST_JSON_R2_PATH: &str = "releases/latest/latest.json";
-const LATEST_JSON_CNB_PATH: &str = "https://cnb.cool/dbxio.com/dbx/-/releases/latest/download/latest.json";
-const LATEST_EN_NOTES_R2_PATH: &str = "changelog/latest-en.json";
-const GITHUB_RELEASE_API_PREFIX: &str = "https://api.github.com/repos/t8y2/dbx/releases/tags/v";
-const RELEASE_URL_PREFIX: &str = "https://github.com/t8y2/dbx/releases/tag/v";
+const LATEST_JSON_GITHUB_PATH: &str = "https://github.com/ghost0211/og_developer/releases/latest/download/latest.json";
+const GITHUB_RELEASE_API_PREFIX: &str = "https://api.github.com/repos/ghost0211/og_developer/releases/tags/v";
+const RELEASE_URL_PREFIX: &str = "https://github.com/ghost0211/og_developer/releases/tag/v";
 
 #[derive(Debug, Deserialize)]
 pub struct TauriRelease {
@@ -16,10 +13,6 @@ pub struct TauriRelease {
     pub jdbc_plugin: Option<JdbcPluginLatest>,
     #[serde(skip)]
     pub github: Option<GithubReleaseMetadata>,
-    // 英文 release notes，由 R2 latest-en.json 填充（latest.json 不含此字段）。
-    // 仅当用户界面非中文时拉取，build_update_info 优先用它作为 release_notes。
-    #[serde(skip)]
-    pub notes_en: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -48,7 +41,7 @@ pub struct UpdateInfo {
     pub release_notes: String,
 }
 
-pub async fn fetch_latest_release(locale: &str, source: crate::DownloadSource) -> Result<TauriRelease, String> {
+pub async fn fetch_latest_release(_locale: &str, source: crate::DownloadSource) -> Result<TauriRelease, String> {
     let client = build_update_http_client()?;
 
     let candidates = update_check_candidates(source);
@@ -58,12 +51,6 @@ pub async fn fetch_latest_release(locale: &str, source: crate::DownloadSource) -
     if let Ok(github) = fetch_github_release_metadata(&client, &release.version).await {
         release.github = Some(github);
     }
-    // 非中文界面用户额外拉取英文 release notes；失败/版本不匹配则保持 None，上层回退中文。
-    if !is_chinese_locale(locale) {
-        if let Ok(notes_en) = fetch_latest_release_notes_en(&client, &release.version).await {
-            release.notes_en = Some(notes_en);
-        }
-    }
     Ok(release)
 }
 
@@ -72,7 +59,7 @@ async fn fetch_first_available(client: &reqwest::Client, candidates: &[String]) 
     for url in candidates {
         match client
             .get(url)
-            .header(reqwest::header::USER_AGENT, "dbx-update-checker")
+            .header(reqwest::header::USER_AGENT, "ogdeveloper-update-checker")
             .header(reqwest::header::ACCEPT_ENCODING, "identity")
             .send()
             .await
@@ -86,51 +73,16 @@ async fn fetch_first_available(client: &reqwest::Client, candidates: &[String]) 
 }
 
 fn update_check_candidates(source: crate::DownloadSource) -> Vec<String> {
+    // OG Developer 暂无 CNB/R2 镜像，两个下载源的应用更新检查都直接从 GitHub Releases 读取；
+    // source 仍会影响驱动/Agent 更新的镜像选择（见 crates/dbx-core/src/lib.rs）。
     match source {
-        crate::DownloadSource::Official => {
-            vec![format!("{}{LATEST_JSON_R2_PATH}", crate::R2_CDN_BASE), LATEST_JSON_GITHUB_PATH.to_string()]
-        }
-        // CNB exposes a moving latest release, so checking CNB does not need an official-source version first.
-        crate::DownloadSource::Cnb => vec![
-            LATEST_JSON_CNB_PATH.to_string(),
-            format!("{}{LATEST_JSON_R2_PATH}", crate::R2_CDN_BASE),
-            LATEST_JSON_GITHUB_PATH.to_string(),
-        ],
+        crate::DownloadSource::Official | crate::DownloadSource::Cnb => vec![LATEST_JSON_GITHUB_PATH.to_string()],
     }
-}
-
-// 拉取 R2 上的英文 release notes（仅最新版本）。version 必须与 latest.json 的 version 一致才采用，
-// 防止 sync-changelog 尚未更新时拿到旧版本英文 notes。
-async fn fetch_latest_release_notes_en(client: &reqwest::Client, expected_version: &str) -> Result<String, String> {
-    let url = format!("{}{LATEST_EN_NOTES_R2_PATH}", crate::R2_CDN_BASE);
-    let resp = client
-        .get(&url)
-        .header(reqwest::header::USER_AGENT, "dbx-update-checker")
-        .send()
-        .await
-        .and_then(|r| r.error_for_status())
-        .map_err(|e| format!("Failed to fetch English release notes: {e}"))?;
-    let data: LatestEnNotes = resp.json().await.map_err(|e| format!("Failed to parse English release notes: {e}"))?;
-    if normalize_version(&data.version) == normalize_version(expected_version) {
-        Ok(data.notes)
-    } else {
-        Err(format!("English release notes version {} mismatch expected {}", data.version, expected_version))
-    }
-}
-
-fn is_chinese_locale(locale: &str) -> bool {
-    locale == "zh-CN" || locale == "zh-TW"
-}
-
-#[derive(Debug, Deserialize)]
-struct LatestEnNotes {
-    version: String,
-    notes: String,
 }
 
 fn build_update_http_client() -> Result<reqwest::Client, String> {
     let mut builder =
-        reqwest::Client::builder().timeout(std::time::Duration::from_secs(10)).user_agent("dbx-update-checker");
+        reqwest::Client::builder().timeout(std::time::Duration::from_secs(10)).user_agent("ogdeveloper-update-checker");
 
     if let Some(proxy_url) = system_proxy_url() {
         let proxy = reqwest::Proxy::all(&proxy_url).map_err(|e| format!("Invalid system proxy URL: {e}"))?;
@@ -263,7 +215,7 @@ async fn fetch_github_release_metadata(
     let url = format!("{GITHUB_RELEASE_API_PREFIX}{}", normalize_version(version));
     client
         .get(url)
-        .header(reqwest::header::USER_AGENT, "dbx-update-checker")
+        .header(reqwest::header::USER_AGENT, "ogdeveloper-update-checker")
         .send()
         .await
         .and_then(|r| r.error_for_status())
@@ -276,15 +228,13 @@ async fn fetch_github_release_metadata(
 pub fn build_update_info(release: TauriRelease, current_version: &str) -> UpdateInfo {
     let latest_version = normalize_version(&release.version);
     let github = release.github.as_ref();
-    let release_notes = non_empty(release.notes_en.as_deref())
-        .map(ToOwned::to_owned)
-        .or_else(|| canonical_release_notes(release.notes.as_deref()))
+    let release_notes = canonical_release_notes(release.notes.as_deref())
         .or_else(|| github.and_then(|metadata| non_empty(metadata.body.as_deref())).map(ToOwned::to_owned))
         .unwrap_or_default();
     let release_name = github
         .and_then(|metadata| non_empty(metadata.name.as_deref()))
         .map(ToOwned::to_owned)
-        .unwrap_or_else(|| format!("DBX v{latest_version}"));
+        .unwrap_or_else(|| format!("OG Developer v{latest_version}"));
     let release_url = github
         .and_then(|metadata| non_empty(metadata.html_url.as_deref()))
         .map(ToOwned::to_owned)
@@ -434,7 +384,7 @@ HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Internet Settings
               "jdbc_plugin": {
                 "version": "0.1.3",
                 "protocol_version": 1,
-                "url": "https://github.com/t8y2/dbx/releases/latest/download/dbx-jdbc-plugin-latest.zip"
+                "url": "https://github.com/ghost0211/og_developer/releases/latest/download/dbx-jdbc-plugin-latest.zip"
               },
               "platforms": {}
             }"#,
@@ -445,7 +395,10 @@ HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Internet Settings
 
         assert_eq!(jdbc.version, "0.1.3");
         assert_eq!(jdbc.protocol_version, 1);
-        assert_eq!(jdbc.url, "https://github.com/t8y2/dbx/releases/latest/download/dbx-jdbc-plugin-latest.zip");
+        assert_eq!(
+            jdbc.url,
+            "https://github.com/ghost0211/og_developer/releases/latest/download/dbx-jdbc-plugin-latest.zip"
+        );
     }
 
     #[test]
@@ -455,39 +408,18 @@ HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Internet Settings
             notes: Some("See the assets below to download and install.".to_string()),
             jdbc_plugin: None,
             github: Some(GithubReleaseMetadata {
-                name: Some("DBX v0.5.3".to_string()),
-                html_url: Some("https://github.com/t8y2/dbx/releases/tag/v0.5.3".to_string()),
+                name: Some("OG Developer v0.5.3".to_string()),
+                html_url: Some("https://github.com/ghost0211/og_developer/releases/tag/v0.5.3".to_string()),
                 body: Some("### 新功能\n\n真实发布说明".to_string()),
             }),
-            notes_en: None,
         };
 
         let info = build_update_info(release, "0.5.2");
 
-        assert_eq!(info.release_name, "DBX v0.5.3");
-        assert_eq!(info.release_url, "https://github.com/t8y2/dbx/releases/tag/v0.5.3");
+        assert_eq!(info.release_name, "OG Developer v0.5.3");
+        assert_eq!(info.release_url, "https://github.com/ghost0211/og_developer/releases/tag/v0.5.3");
         assert_eq!(info.release_notes, "### 新功能\n\n真实发布说明");
         assert!(!info.portable_mode);
-    }
-
-    #[test]
-    fn update_info_prefers_english_notes_when_present() {
-        // 非中文界面用户：notes_en 命中时优先于 GitHub 中文 body，应用内更新提示展示英文
-        let release = TauriRelease {
-            version: "0.5.3".to_string(),
-            notes: Some("See the assets below to download and install.".to_string()),
-            jdbc_plugin: None,
-            github: Some(GithubReleaseMetadata {
-                name: Some("DBX v0.5.3".to_string()),
-                html_url: Some("https://github.com/t8y2/dbx/releases/tag/v0.5.3".to_string()),
-                body: Some("### 新功能\n\n真实发布说明".to_string()),
-            }),
-            notes_en: Some("### New Features\n\nReal release notes".to_string()),
-        };
-
-        let info = build_update_info(release, "0.5.2");
-
-        assert_eq!(info.release_notes, "### New Features\n\nReal release notes");
     }
 
     #[test]
@@ -497,7 +429,6 @@ HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Internet Settings
             notes: Some("## What's Changed\n* generated item".to_string()),
             jdbc_plugin: None,
             github: None,
-            notes_en: None,
         };
 
         let info = build_update_info(release, "0.5.2");
@@ -507,20 +438,9 @@ HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Internet Settings
 
     #[test]
     fn update_check_candidates_follow_selected_source() {
-        assert_eq!(
-            super::update_check_candidates(crate::DownloadSource::Official),
-            vec![
-                "https://dl.dbxio.com/releases/latest/latest.json",
-                "https://github.com/t8y2/dbx/releases/latest/download/latest.json",
-            ]
-        );
-        assert_eq!(
-            super::update_check_candidates(crate::DownloadSource::Cnb),
-            vec![
-                "https://cnb.cool/dbxio.com/dbx/-/releases/latest/download/latest.json",
-                "https://dl.dbxio.com/releases/latest/latest.json",
-                "https://github.com/t8y2/dbx/releases/latest/download/latest.json",
-            ]
-        );
+        // OG Developer 暂无镜像站，官方/CNB 源都直接从 GitHub Releases 检查应用更新
+        let expected = vec!["https://github.com/ghost0211/og_developer/releases/latest/download/latest.json"];
+        assert_eq!(super::update_check_candidates(crate::DownloadSource::Official), expected);
+        assert_eq!(super::update_check_candidates(crate::DownloadSource::Cnb), expected);
     }
 }

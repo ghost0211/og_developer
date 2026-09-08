@@ -15,7 +15,7 @@ mod window_state_guard;
 use commands::connection::AppState;
 use dbx_core::sql_dialect::dialect_loader::{register_core_dialects, DialectPluginLoader, DialectRegistry};
 use dbx_core::sql_dialect::hot_reload::DialectHotReload;
-use dbx_core::storage::{maybe_import_user_data_db, DesktopIconTheme, DesktopSettings, Storage};
+use dbx_core::storage::{maybe_import_user_data_db, DesktopSettings, Storage};
 #[cfg(target_os = "macos")]
 use native_menu_locale::{app_menu_copy_support_info_label, app_menu_quit_label};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -94,12 +94,6 @@ impl AppLocaleState {
 }
 #[cfg(target_os = "macos")]
 const ABOUT_APP_ICON: tauri::image::Image<'_> = tauri::include_image!("icons/icon.png");
-#[cfg(not(target_os = "macos"))]
-const BLACK_APP_ICON: tauri::image::Image<'_> = tauri::include_image!("icons/icon-black.png");
-#[cfg(target_os = "macos")]
-const MACOS_DEFAULT_APP_ICON: &[u8] = include_bytes!("../icons/icon.icns");
-#[cfg(target_os = "macos")]
-const MACOS_DARK_APP_ICON: &[u8] = include_bytes!("../icons/icon-macos-dark.icns");
 
 pub(crate) fn apply_debug_log_level(debug_logging_enabled: bool) {
     log::set_max_level(if debug_logging_enabled { log::LevelFilter::Debug } else { log::LevelFilter::Off });
@@ -120,11 +114,6 @@ fn startup_data_dir_mode(mode: &data_dir::DataDirMode) -> &'static str {
 #[cfg(target_os = "macos")]
 fn development_dock_badge_label(debug_build: bool) -> Option<&'static str> {
     debug_build.then_some("DEV")
-}
-
-#[cfg(test)]
-fn uses_application_level_icon(target_os: &str) -> bool {
-    target_os == "macos"
 }
 
 fn should_show_main_window_after_setup() -> bool {
@@ -528,31 +517,6 @@ pub(crate) fn refresh_native_menus(app: &tauri::AppHandle) -> tauri::Result<()> 
     Ok(())
 }
 
-#[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
-#[cfg(target_os = "macos")]
-fn apply_macos_app_icon_theme(app: &tauri::AppHandle, icon_theme: DesktopIconTheme) -> tauri::Result<()> {
-    use objc2::{AllocAnyThread, MainThreadMarker};
-    use objc2_app_kit::{NSApplication, NSImage};
-    use objc2_foundation::NSData;
-
-    let icon_bytes = match icon_theme {
-        DesktopIconTheme::Default => MACOS_DEFAULT_APP_ICON,
-        DesktopIconTheme::Black => MACOS_DARK_APP_ICON,
-    };
-    app.run_on_main_thread(move || {
-        // macOS has no per-window icon. Update NSApplication so the Dock and
-        // app switcher reflect the selected theme immediately.
-        let marker = unsafe { MainThreadMarker::new_unchecked() };
-        let application = NSApplication::sharedApplication(marker);
-        let data = NSData::with_bytes(icon_bytes);
-        if let Some(icon) = NSImage::initWithData(NSImage::alloc(), &data) {
-            unsafe { application.setApplicationIconImage(Some(&icon)) };
-        } else {
-            log::warn!("Failed to decode the selected macOS application icon");
-        }
-    })
-}
-
 #[cfg(target_os = "macos")]
 fn apply_macos_development_dock_badge(app: &tauri::AppHandle) -> tauri::Result<()> {
     use objc2::MainThreadMarker;
@@ -568,30 +532,8 @@ fn apply_macos_development_dock_badge(app: &tauri::AppHandle) -> tauri::Result<(
     })
 }
 
-fn apply_desktop_icon_theme(app: &tauri::AppHandle, icon_theme: DesktopIconTheme) -> tauri::Result<()> {
-    #[cfg(target_os = "macos")]
-    {
-        apply_macos_app_icon_theme(app, icon_theme)
-    }
-
-    #[cfg(not(target_os = "macos"))]
-    if let Some(window) = app.get_webview_window("main") {
-        match icon_theme {
-            DesktopIconTheme::Default => {
-                if let Some(icon) = app.default_window_icon().cloned() {
-                    window.set_icon(icon)?;
-                }
-            }
-            DesktopIconTheme::Black => window.set_icon(BLACK_APP_ICON)?,
-        }
-    }
-    #[cfg(not(target_os = "macos"))]
-    Ok(())
-}
-
-pub(crate) fn apply_desktop_settings(app: &tauri::AppHandle, desktop_settings: &DesktopSettings) -> tauri::Result<()> {
+pub(crate) fn apply_desktop_settings(_app: &tauri::AppHandle, desktop_settings: &DesktopSettings) -> tauri::Result<()> {
     apply_debug_log_level(desktop_settings.debug_logging_enabled);
-    apply_desktop_icon_theme(app, desktop_settings.icon_theme)?;
     Ok(())
 }
 
@@ -603,8 +545,7 @@ mod tests {
         linux_drm_render_devices_from_paths, linux_nvidia_driver_from_state, linux_selected_drm_render_device,
         linux_webkit_rendering_workarounds, native_window_decorations_override, should_confirm_app_exit_request,
         should_enable_single_instance, should_fallback_to_native_quit, should_show_main_window_after_setup,
-        should_show_main_window_before_setup_tasks, startup_data_dir_mode, uses_application_level_icon,
-        LinuxDrmRenderDevice, LinuxNvidiaDriver,
+        should_show_main_window_before_setup_tasks, startup_data_dir_mode, LinuxDrmRenderDevice, LinuxNvidiaDriver,
     };
     use crate::data_dir::DataDirMode;
     use std::ffi::OsStr;
@@ -633,28 +574,6 @@ mod tests {
     fn labels_debug_builds_in_the_macos_dock() {
         assert_eq!(super::development_dock_badge_label(true), Some("DEV"));
         assert_eq!(super::development_dock_badge_label(false), None);
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn macos_icon_themes_use_packaged_dock_assets() {
-        use objc2::AllocAnyThread;
-        use objc2_app_kit::NSImage;
-        use objc2_foundation::NSData;
-
-        assert!(super::MACOS_DEFAULT_APP_ICON.starts_with(b"icns"));
-        assert!(super::MACOS_DARK_APP_ICON.starts_with(b"icns"));
-        for bytes in [super::MACOS_DEFAULT_APP_ICON, super::MACOS_DARK_APP_ICON] {
-            let data = NSData::with_bytes(bytes);
-            assert!(NSImage::initWithData(NSImage::alloc(), &data).is_some());
-        }
-    }
-
-    #[test]
-    fn macos_icon_theme_targets_the_application_instead_of_a_window() {
-        assert!(uses_application_level_icon("macos"));
-        assert!(!uses_application_level_icon("windows"));
-        assert!(!uses_application_level_icon("linux"));
     }
 
     #[test]
@@ -1140,7 +1059,6 @@ pub fn run() {
             ));
 
             prepare_main_window_for_display(app.handle());
-            apply_desktop_icon_theme(app.handle(), desktop_settings.icon_theme)?;
             #[cfg(target_os = "macos")]
             apply_macos_development_dock_badge(app.handle())?;
             if should_show_main_window_after_setup() {

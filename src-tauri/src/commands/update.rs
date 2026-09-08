@@ -12,13 +12,12 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_updater::{Update, UpdaterExt};
 
-const OFFICIAL_UPDATE_ENDPOINTS: [&str; 2] = [
-    "https://dl.dbxio.com/releases/latest/latest.json",
-    "https://github.com/t8y2/dbx/releases/latest/download/latest.json",
-];
-const R2_LATEST_RELEASE_DOWNLOAD_PREFIX: &str = "https://dl.dbxio.com/releases/latest/";
-const CNB_RELEASE_DOWNLOAD_PREFIX: &str = "https://cnb.cool/dbxio.com/dbx/-/releases/download/";
-const GITHUB_RELEASE_DOWNLOAD_PREFIX: &str = "https://github.com/t8y2/dbx/releases/download/";
+const OFFICIAL_UPDATE_ENDPOINTS: [&str; 1] =
+    ["https://github.com/ghost0211/og_developer/releases/latest/download/latest.json"];
+// OG Developer 暂无 CNB 镜像与 R2 CDN，CNB 源与官方源共用 GitHub Releases 下载地址；
+// 保留独立的 CNB 前缀常量，未来接入镜像后只需改这里。
+const CNB_RELEASE_DOWNLOAD_PREFIX: &str = "https://github.com/ghost0211/og_developer/releases/download/";
+const GITHUB_RELEASE_DOWNLOAD_PREFIX: &str = "https://github.com/ghost0211/og_developer/releases/download/";
 const UPDATE_DOWNLOAD_PROGRESS_EVENT: &str = "update-download-progress";
 const DOWNLOAD_CANCELED_ERROR: &str = "Download canceled by user.";
 const DOWNLOAD_STALL_TIMEOUT: Duration = Duration::from_secs(15);
@@ -221,14 +220,15 @@ impl UpdateDownloadSource {
         let filename = update_portable::portable_asset_name(normalized_version, arch)?;
         let tag = tag_version(normalized_version);
         let archive_urls = match self {
-            Self::Official => vec![
-                format!("{R2_LATEST_RELEASE_DOWNLOAD_PREFIX}{filename}"),
-                format!("{GITHUB_RELEASE_DOWNLOAD_PREFIX}{tag}/{filename}"),
-            ],
-            Self::Cnb => vec![
-                format!("{CNB_RELEASE_DOWNLOAD_PREFIX}{tag}/{filename}"),
-                format!("{R2_LATEST_RELEASE_DOWNLOAD_PREFIX}{filename}"),
-            ],
+            Self::Official => vec![format!("{GITHUB_RELEASE_DOWNLOAD_PREFIX}{tag}/{filename}")],
+            Self::Cnb => {
+                let mut urls = vec![format!("{CNB_RELEASE_DOWNLOAD_PREFIX}{tag}/{filename}")];
+                let github_url = format!("{GITHUB_RELEASE_DOWNLOAD_PREFIX}{tag}/{filename}");
+                if !urls.contains(&github_url) {
+                    urls.push(github_url);
+                }
+                urls
+            }
         };
         Ok(archive_urls
             .into_iter()
@@ -251,11 +251,7 @@ impl UpdateDownloadSource {
 
         let raw_candidates = match self {
             Self::Official => {
-                let mut urls = Vec::new();
-                if !filename.is_empty() {
-                    urls.push(format!("{R2_LATEST_RELEASE_DOWNLOAD_PREFIX}{filename}"));
-                }
-                urls.push(download_url.to_string());
+                let mut urls = vec![download_url.to_string()];
                 if !tag.is_empty() && !filename.is_empty() {
                     urls.push(format!("{GITHUB_RELEASE_DOWNLOAD_PREFIX}{tag}/{filename}"));
                 }
@@ -267,9 +263,6 @@ impl UpdateDownloadSource {
                     urls.push(rewritten);
                 } else if !tag.is_empty() && !filename.is_empty() {
                     urls.push(format!("{CNB_RELEASE_DOWNLOAD_PREFIX}{tag}/{filename}"));
-                }
-                if !filename.is_empty() {
-                    urls.push(format!("{R2_LATEST_RELEASE_DOWNLOAD_PREFIX}{filename}"));
                 }
                 urls.push(download_url.to_string());
                 urls
@@ -681,7 +674,6 @@ mod tests {
         requires_manual_update, tag_version, wait_for_download_step, wait_for_progressing_download,
         DownloadCancellation, PendingUpdateState, UpdateDownloadSource, CNB_RELEASE_DOWNLOAD_PREFIX,
         DOWNLOAD_CANCELED_ERROR, GITHUB_RELEASE_DOWNLOAD_PREFIX, OFFICIAL_UPDATE_ENDPOINTS,
-        R2_LATEST_RELEASE_DOWNLOAD_PREFIX,
     };
     use std::{future::pending, sync::Arc, time::Duration};
 
@@ -713,71 +705,70 @@ mod tests {
     }
 
     #[test]
-    fn rewrites_github_asset_url_to_cnb() {
+    fn rewrite_download_url_is_identity_when_no_mirror_exists() {
+        // OG Developer 暂无镜像站，CNB 前缀与 GitHub 前缀一致，官方 GitHub 资产地址无需改写
         let download_url = UpdateDownloadSource::Cnb
-            .rewrite_download_url("https://github.com/t8y2/dbx/releases/download/v0.5.39/DBX_0.5.39_aarch64.dmg")
-            .unwrap()
-            .unwrap();
-        assert_eq!(download_url, "https://cnb.cool/dbxio.com/dbx/-/releases/download/v0.5.39/DBX_0.5.39_aarch64.dmg");
-    }
-
-    #[test]
-    fn accepts_existing_cnb_asset_url() {
-        let download_url = UpdateDownloadSource::Cnb
-            .rewrite_download_url("https://cnb.cool/dbxio.com/dbx/-/releases/download/v0.5.39/DBX_0.5.39_aarch64.dmg")
+            .rewrite_download_url(
+                "https://github.com/ghost0211/og_developer/releases/download/v0.5.39/OGDeveloper_0.5.39_aarch64.dmg",
+            )
             .unwrap();
         assert_eq!(download_url, None);
     }
 
     #[test]
+    fn rewrite_download_url_rejects_foreign_release_prefixes() {
+        // 非本仓库的发布地址（如旧 DBX 项目）不能改写，直接报错以免下载错误产物
+        let result = UpdateDownloadSource::Cnb
+            .rewrite_download_url("https://github.com/t8y2/dbx/releases/download/v0.5.39/DBX_0.5.39_aarch64.dmg");
+        assert!(result.is_err());
+    }
+
+    #[test]
     fn builds_signed_official_portable_asset_candidates() {
         let candidates = UpdateDownloadSource::Official.portable_asset_candidates("0.5.64", "x86_64").unwrap();
-        assert_eq!(candidates.len(), 2);
+        assert_eq!(candidates.len(), 1);
         assert_eq!(
             candidates[0].archive_url,
-            format!("{R2_LATEST_RELEASE_DOWNLOAD_PREFIX}DBX_0.5.64_x64-portable.zip")
-        );
-        assert_eq!(
-            candidates[1].archive_url,
-            format!("{GITHUB_RELEASE_DOWNLOAD_PREFIX}v0.5.64/DBX_0.5.64_x64-portable.zip")
+            format!("{GITHUB_RELEASE_DOWNLOAD_PREFIX}v0.5.64/ogdeveloper_0.5.64_x64-portable.zip")
         );
         assert!(candidates.iter().all(|candidate| candidate.signature_url == format!("{}.sig", candidate.archive_url)));
     }
 
     #[test]
-    fn builds_cnb_portable_asset_candidate_with_r2_fallback() {
+    fn builds_cnb_portable_asset_candidate_with_github_fallback() {
         let candidates = UpdateDownloadSource::Cnb.portable_asset_candidates("v0.5.64", "aarch64").unwrap();
+        assert_eq!(candidates.len(), 1);
         assert_eq!(
             candidates[0].archive_url,
-            format!("{CNB_RELEASE_DOWNLOAD_PREFIX}v0.5.64/DBX_0.5.64_arm64-portable.zip")
-        );
-        assert_eq!(
-            candidates[1].archive_url,
-            format!("{R2_LATEST_RELEASE_DOWNLOAD_PREFIX}DBX_0.5.64_arm64-portable.zip")
+            format!("{GITHUB_RELEASE_DOWNLOAD_PREFIX}v0.5.64/ogdeveloper_0.5.64_arm64-portable.zip")
         );
     }
 
     #[test]
     fn builds_installer_asset_candidates_for_cnb_source() {
         let candidates = UpdateDownloadSource::Cnb.installer_asset_candidates(
-            "https://github.com/t8y2/dbx/releases/download/v0.5.64/DBX_0.5.64_aarch64.dmg",
+            "https://github.com/ghost0211/og_developer/releases/download/v0.5.64/OGDeveloper_0.5.64_aarch64.dmg",
             Some("0.5.64"),
         );
-        assert_eq!(candidates.len(), 3);
-        assert_eq!(candidates[0], "https://cnb.cool/dbxio.com/dbx/-/releases/download/v0.5.64/DBX_0.5.64_aarch64.dmg");
-        assert_eq!(candidates[1], format!("{R2_LATEST_RELEASE_DOWNLOAD_PREFIX}DBX_0.5.64_aarch64.dmg"));
-        assert_eq!(candidates[2], "https://github.com/t8y2/dbx/releases/download/v0.5.64/DBX_0.5.64_aarch64.dmg");
+        assert_eq!(candidates.len(), 2);
+        assert_eq!(candidates[0], format!("{GITHUB_RELEASE_DOWNLOAD_PREFIX}v0.5.64/OGDeveloper_0.5.64_aarch64.dmg"));
+        assert_eq!(
+            candidates[1],
+            "https://github.com/ghost0211/og_developer/releases/download/v0.5.64/OGDeveloper_0.5.64_aarch64.dmg"
+        );
     }
 
     #[test]
     fn builds_installer_asset_candidates_for_official_source() {
         let candidates = UpdateDownloadSource::Official.installer_asset_candidates(
-            "https://github.com/t8y2/dbx/releases/download/v0.5.64/DBX_0.5.64_aarch64.dmg",
+            "https://github.com/ghost0211/og_developer/releases/download/v0.5.64/OGDeveloper_0.5.64_aarch64.dmg",
             Some("0.5.64"),
         );
-        assert_eq!(candidates.len(), 2);
-        assert_eq!(candidates[0], format!("{R2_LATEST_RELEASE_DOWNLOAD_PREFIX}DBX_0.5.64_aarch64.dmg"));
-        assert_eq!(candidates[1], "https://github.com/t8y2/dbx/releases/download/v0.5.64/DBX_0.5.64_aarch64.dmg");
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(
+            candidates[0],
+            "https://github.com/ghost0211/og_developer/releases/download/v0.5.64/OGDeveloper_0.5.64_aarch64.dmg"
+        );
         assert!(!candidates.iter().any(|url| url.contains("cnb.cool")));
     }
 

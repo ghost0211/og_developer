@@ -163,6 +163,7 @@ const shortcutClass = "ml-auto pl-5 text-[10px] font-mono text-muted-foreground/
         <DropdownMenuItem :class="menuItemClass" @select="emit('new-connection')">
           <DatabaseZap :class="menuIconClass" />
           <span>{{ t("toolbar.newConnection") }}</span>
+          <span :class="shortcutClass">{{ shortcutLabel("newConnection") }}</span>
         </DropdownMenuItem>
         <DropdownMenuItem :disabled="!hasConnections" :class="menuItemClass" @select="emit('new-query')">
           <FilePlus2 :class="menuIconClass" />
@@ -172,10 +173,12 @@ const shortcutClass = "ml-auto pl-5 text-[10px] font-mono text-muted-foreground/
         <DropdownMenuItem :disabled="!hasConnections" :class="menuItemClass" @select="emit('open-command-window')">
           <Terminal :class="menuIconClass" class="text-emerald-500" />
           <span>{{ t("commandWindow.title") }}</span>
+          <span :class="shortcutClass">{{ shortcutLabel("commandWindow") }}</span>
         </DropdownMenuItem>
         <DropdownMenuItem :disabled="!hasActiveQuery" :class="menuItemClass" @select="emit('open-editor-sql-file')">
           <FolderOpen :class="menuIconClass" />
           <span>{{ t("menus.openSqlFile") }}</span>
+          <span :class="shortcutClass">{{ shortcutLabel("openSqlFile") }}</span>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem :disabled="!canSaveSql" :class="menuItemClass" @select="emit('save-sql')">
@@ -186,19 +189,23 @@ const shortcutClass = "ml-auto pl-5 text-[10px] font-mono text-muted-foreground/
         <DropdownMenuItem :disabled="!canSaveSql" :class="menuItemClass" @select="emit('save-sql-as')">
           <FileOutput :class="menuIconClass" />
           <span>{{ t("menus.saveSqlAs") }}</span>
+          <span :class="shortcutClass">{{ shortcutLabel("saveSqlAs") }}</span>
         </DropdownMenuItem>
         <DropdownMenuItem :class="menuItemClass" @select="emit('import-result-archive')">
           <FileInput :class="menuIconClass" />
           <span>{{ t("menus.importResult") }}</span>
+          <span :class="shortcutClass">{{ shortcutLabel("importResult") }}</span>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem :class="menuItemClass" @select="emit('import-config')">
           <FileInput :class="menuIconClass" />
           <span>{{ t("menus.importConnections") }}</span>
+          <span :class="shortcutClass">{{ shortcutLabel("importConnections") }}</span>
         </DropdownMenuItem>
         <DropdownMenuItem :class="menuItemClass" @select="emit('export-config')">
           <FileOutput :class="menuIconClass" />
           <span>{{ t("menus.exportConnections") }}</span>
+          <span :class="shortcutClass">{{ shortcutLabel("exportConnections") }}</span>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem :disabled="!hasActiveTab" :class="menuItemClass" @select="emit('close-active-tab')">
@@ -209,6 +216,7 @@ const shortcutClass = "ml-auto pl-5 text-[10px] font-mono text-muted-foreground/
         <DropdownMenuItem :disabled="!hasActiveTab" :class="menuItemClass" @select="emit('close-other-tabs')">
           <Layers :class="menuIconClass" />
           <span>{{ t("menus.closeOtherTabs") }}</span>
+          <span :class="shortcutClass">{{ shortcutLabel("closeOtherTabs") }}</span>
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -222,14 +230,17 @@ const shortcutClass = "ml-auto pl-5 text-[10px] font-mono text-muted-foreground/
         <DropdownMenuItem :class="menuItemClass" @select="emit('create-project')">
           <FolderOpen :class="menuIconClass" />
           <span>{{ t("menus.createProject") }}</span>
+          <span :class="shortcutClass">{{ shortcutLabel("createProject") }}</span>
         </DropdownMenuItem>
         <DropdownMenuItem :class="menuItemClass" @select="emit('open-project')">
           <FolderSearch :class="menuIconClass" />
           <span>{{ t("menus.openProject") }}</span>
+          <span :class="shortcutClass">{{ shortcutLabel("openProject") }}</span>
         </DropdownMenuItem>
         <DropdownMenuItem v-if="isDesktop" :class="menuItemClass" @select="emit('clone-from-git')">
           <GitBranch :class="menuIconClass" />
           <span>{{ t("menus.cloneFromGit") }}</span>
+          <span :class="shortcutClass">{{ shortcutLabel("cloneFromGit") }}</span>
         </DropdownMenuItem>
         <template v-if="projects.length">
           <DropdownMenuSeparator />
@@ -295,6 +306,7 @@ const shortcutClass = "ml-auto pl-5 text-[10px] font-mono text-muted-foreground/
         <DropdownMenuItem :disabled="!hasActiveQuery" :class="menuItemClass" @select="emit('compress-sql')">
           <Minimize2 :class="menuIconClass" />
           <span>{{ t("toolbar.compressSql") }}</span>
+          <span :class="shortcutClass">{{ shortcutLabel("compressSql") }}</span>
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -313,23 +325,28 @@ const shortcutClass = "ml-auto pl-5 text-[10px] font-mono text-muted-foreground/
         <DropdownMenuItem :disabled="!hasActiveQuery" :class="menuItemClass" @select="emit('execute-current-statement')">
           <PlayCircle :class="menuIconClass" class="text-sky-500" />
           <span>{{ t("menus.executeCurrentStatement") }}</span>
+          <span :class="shortcutClass">{{ shortcutLabel("executeCurrentStatement") }}</span>
         </DropdownMenuItem>
         <DropdownMenuItem :disabled="!hasActiveQuery" :class="menuItemClass" @select="emit('explain-sql')">
           <Activity :class="menuIconClass" class="text-amber-500" />
           <span>{{ t("toolbar.explainPlan") }}</span>
+          <span :class="shortcutClass">{{ shortcutLabel("explainSql") }}</span>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem :disabled="!hasActiveTransaction" :class="menuItemClass" @select="emit('commit-transaction')">
           <Check :class="menuIconClass" class="text-emerald-600" />
           <span>{{ t("toolbar.commit") }}</span>
+          <span :class="shortcutClass">{{ shortcutLabel("commitTransaction") }}</span>
         </DropdownMenuItem>
         <DropdownMenuItem :disabled="!hasActiveTransaction" :class="menuItemClass" @select="emit('rollback-transaction')">
           <RotateCcw :class="menuIconClass" class="text-destructive" />
           <span>{{ t("toolbar.rollback") }}</span>
+          <span :class="shortcutClass">{{ shortcutLabel("rollbackTransaction") }}</span>
         </DropdownMenuItem>
         <DropdownMenuItem :disabled="!hasConnections" :class="menuItemClass" @select="emit('toggle-auto-commit')">
           <ShieldCheck :class="menuIconClass" />
           <span class="flex-1">{{ t("toolbar.autoCommit") }}</span>
+          <span :class="shortcutClass">{{ shortcutLabel("toggleAutoCommit") }}</span>
           <span v-if="autoCommit !== false" class="text-primary font-bold text-xs">✓</span>
         </DropdownMenuItem>
         <DropdownMenuSeparator />

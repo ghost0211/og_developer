@@ -26,6 +26,22 @@ export type ShortcutActionId =
   | "toggleFold"
   | "copyCurrentRow"
   | "deleteCurrentRow"
+  | "newConnection"
+  | "openSqlFile"
+  | "saveSqlAs"
+  | "commandWindow"
+  | "importResult"
+  | "importConnections"
+  | "exportConnections"
+  | "createProject"
+  | "openProject"
+  | "cloneFromGit"
+  | "compressSql"
+  | "executeCurrentStatement"
+  | "explainSql"
+  | "commitTransaction"
+  | "rollbackTransaction"
+  | "toggleAutoCommit"
   | "newQuery"
   | "openSettings"
   | "closeTab"
@@ -262,6 +278,107 @@ export const SHORTCUT_DEFINITIONS: ShortcutDefinition[] = [
     labelKey: "contextMenu.closeOtherTabs",
     scope: "global",
     defaultShortcut: closeOtherTabsDefaultShortcut(),
+  },
+  // 菜单栏 文件/项目/编辑/执行与事务 动作。默认键选择原则：
+  // 1. 遵循主流工具惯例（Mod+O 打开文件、Shift+Mod+S 另存为等）；
+  // 2. 避开 Windows/macOS 系统组合键与 AltGr 冲突的 Ctrl+Alt(Alt+Mod) 组合；
+  // 3. 与注册表现有默认值不冲突（由 shortcutRegistry.spec 测试保证）；
+  // 4. 无公认惯例的冷门操作默认留空，用户可在设置-快捷键中自行绑定。
+  {
+    id: "newConnection",
+    labelKey: "toolbar.newConnection",
+    scope: "global",
+    defaultShortcut: "Shift+Mod+N",
+  },
+  {
+    id: "openSqlFile",
+    labelKey: "menus.openSqlFile",
+    scope: "global",
+    defaultShortcut: "Mod+O",
+  },
+  {
+    id: "saveSqlAs",
+    labelKey: "menus.saveSqlAs",
+    scope: "global",
+    defaultShortcut: "Shift+Mod+S",
+  },
+  {
+    id: "commandWindow",
+    labelKey: "commandWindow.title",
+    scope: "global",
+    defaultShortcut: "Shift+Mod+C",
+  },
+  {
+    id: "importResult",
+    labelKey: "menus.importResult",
+    scope: "global",
+    defaultShortcut: "",
+  },
+  {
+    id: "importConnections",
+    labelKey: "menus.importConnections",
+    scope: "global",
+    defaultShortcut: "",
+  },
+  {
+    id: "exportConnections",
+    labelKey: "menus.exportConnections",
+    scope: "global",
+    defaultShortcut: "",
+  },
+  {
+    id: "createProject",
+    labelKey: "menus.createProject",
+    scope: "global",
+    defaultShortcut: "",
+  },
+  {
+    id: "openProject",
+    labelKey: "menus.openProject",
+    scope: "global",
+    defaultShortcut: "Shift+Mod+P",
+  },
+  {
+    id: "cloneFromGit",
+    labelKey: "menus.cloneFromGit",
+    scope: "global",
+    defaultShortcut: "",
+  },
+  {
+    id: "compressSql",
+    labelKey: "toolbar.compressSql",
+    scope: "global",
+    defaultShortcut: "Shift+Mod+M",
+  },
+  {
+    id: "executeCurrentStatement",
+    labelKey: "menus.executeCurrentStatement",
+    scope: "global",
+    defaultShortcut: "Shift+Mod+Enter",
+  },
+  {
+    id: "explainSql",
+    labelKey: "toolbar.explainPlan",
+    scope: "global",
+    defaultShortcut: "Shift+Mod+E",
+  },
+  {
+    id: "commitTransaction",
+    labelKey: "toolbar.commit",
+    scope: "global",
+    defaultShortcut: "Shift+Mod+T",
+  },
+  {
+    id: "rollbackTransaction",
+    labelKey: "toolbar.rollback",
+    scope: "global",
+    defaultShortcut: "Shift+Mod+R",
+  },
+  {
+    id: "toggleAutoCommit",
+    labelKey: "toolbar.autoCommit",
+    scope: "global",
+    defaultShortcut: "",
   },
   {
     id: "focusSearch",

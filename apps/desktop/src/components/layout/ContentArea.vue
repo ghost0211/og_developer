@@ -187,6 +187,7 @@ const emit = defineEmits<{
   debugProcedure: [sql: string];
   openSettings: [initialTab?: string, initialSection?: string];
   openConnectionSettings: [connectionId: string, initialTab: "advanced"];
+  checkUpdates: [];
 }>();
 
 const { t, locale } = useI18n();
@@ -1899,7 +1900,15 @@ defineExpose({ focusSearch, refreshData, refreshQueryEditorCompletionCache, hand
 
     <template v-else-if="activeTab.mode === 'settings'">
       <div class="min-h-0 flex-1">
-        <EditorSettingsPage variant="page" :initial-tab="settingsInitialTab" :initial-section="settingsInitialSection" :navigation-request-id="settingsNavigationRequestId" :app-version="appVersion" @update:open="(open: boolean) => !open && queryStore.closeTab(activeTab.id)" />
+        <EditorSettingsPage
+          variant="page"
+          :initial-tab="settingsInitialTab"
+          :initial-section="settingsInitialSection"
+          :navigation-request-id="settingsNavigationRequestId"
+          :app-version="appVersion"
+          @update:open="(open: boolean) => !open && queryStore.closeTab(activeTab.id)"
+          @check-updates="emit('checkUpdates')"
+        />
       </div>
     </template>
 

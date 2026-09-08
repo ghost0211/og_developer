@@ -129,7 +129,8 @@ import { normalizeConnectionTestResult } from "@/lib/connection/connectionDataba
 
 const DESKTOP_SETTINGS_STORAGE_KEY = "dbx-desktop-settings";
 const DEFAULT_DESKTOP_SETTINGS: DesktopSettings = {
-  icon_theme: "default",
+  show_tray_icon: true,
+  quit_on_close: false,
   close_action_prompted: false,
   debug_logging_enabled: false,
   duckdb_worker_process_isolation: false,

@@ -152,6 +152,35 @@ describe("shortcutRegistry editor actions", () => {
     expect(formatShortcut("Shift+Mod+F", "Win32")).toBe("Ctrl+Shift+F");
   });
 
+  it("registers conflict-free conventional defaults for menu bar actions", () => {
+    const expectedDefaults: Partial<Record<ShortcutActionId, string>> = {
+      newConnection: "Shift+Mod+N",
+      openSqlFile: "Mod+O",
+      saveSqlAs: "Shift+Mod+S",
+      commandWindow: "Shift+Mod+C",
+      openProject: "Shift+Mod+P",
+      compressSql: "Shift+Mod+M",
+      executeCurrentStatement: "Shift+Mod+Enter",
+      explainSql: "Shift+Mod+E",
+      commitTransaction: "Shift+Mod+T",
+      rollbackTransaction: "Shift+Mod+R",
+    };
+    for (const [actionId, shortcut] of Object.entries(expectedDefaults)) {
+      const definition = SHORTCUT_DEFINITIONS.find((item) => item.id === actionId);
+      expect(definition?.scope, actionId).toBe("global");
+      expect(definition?.defaultShortcut, actionId).toBe(shortcut);
+      expect(findShortcutConflict(actionId as ShortcutActionId, shortcut!, DEFAULT_SHORTCUT_SETTINGS), actionId).toBeNull();
+    }
+  });
+
+  it("keeps unconventional menu actions unbound by default but user-configurable", () => {
+    for (const actionId of ["importResult", "importConnections", "exportConnections", "createProject", "cloneFromGit", "toggleAutoCommit"] as const) {
+      const definition = SHORTCUT_DEFINITIONS.find((item) => item.id === actionId);
+      expect(definition?.scope, actionId).toBe("global");
+      expect(definition?.defaultShortcut, actionId).toBe("");
+    }
+  });
+
   it("converts plus-key shortcuts for CodeMirror keymaps", () => {
     expect(shortcutToCodeMirrorKey("Mod+Plus")).toBe("Mod-+");
     expect(shortcutToCodeMirrorKey("Shift+Mod++")).toBe("Shift-Mod-+");

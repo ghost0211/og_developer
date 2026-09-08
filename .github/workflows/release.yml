@@ -35,10 +35,23 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Build installers (npm + tauri build)
+        env:
+          # 在线更新签名：在仓库 Settings → Secrets 中配置 TAURI_SIGNING_PRIVATE_KEY（及可选密码），
+          # 并在 Settings → Variables 中配置 TAURI_UPDATER_PUBKEY（与私钥配对的公钥，非机密）。
+          # 二者都配置后才会生成并发布 latest.json/.sig 更新产物；未配置时仅发布安装包。
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          TAURI_UPDATER_PUBKEY: ${{ vars.TAURI_UPDATER_PUBKEY }}
+        shell: pwsh
         run: |
           # beforeBuildCommand (pnpm build) runs first; then tauri bundles
           # nsis + msi per src-tauri/tauri.conf.json (targets: all)
-          pnpm tauri build
+          if ($env:TAURI_SIGNING_PRIVATE_KEY -and $env:TAURI_UPDATER_PUBKEY) {
+            $override = @{ bundle = @{ createUpdaterArtifacts = $true }; plugins = @{ updater = @{ pubkey = $env:TAURI_UPDATER_PUBKEY } } } | ConvertTo-Json -Compress -Depth 5
+            pnpm tauri build --config $override
+          } else {
+            pnpm tauri build
+          }
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
@@ -48,3 +61,15 @@ jobs:
           files: |
             target/release/bundle/nsis/*.exe
             target/release/bundle/msi/*.msi
+
+      # 上传 Tauri updater 产物（latest.json + .sig 签名），仅在配置签名密钥后存在。
+      # latest.json 必须可从 https://github.com/ghost0211/og_developer/releases/latest/download/latest.json 访问，
+      # 应用内的“检查更新/下载并安装”依赖该文件。
+      - name: Publish updater artifacts
+        uses: softprops/action-gh-release@v2
+        with:
+          fail_on_unmatched_files: false
+          files: |
+            target/release/bundle/**/latest.json
+            target/release/bundle/nsis/*.sig
+            target/release/bundle/msi/*.sig

@@ -219,6 +219,16 @@ describe("normalizeDesktopSettings", () => {
     expect(normalizeDesktopSettings({}).duckdb_worker_process_isolation).toBe(false);
   });
 
+  it("round-trips legacy tray fields so saving does not clobber or fail backend deserialization", () => {
+    const defaults = normalizeDesktopSettings({});
+    expect(defaults.show_tray_icon).toBe(true);
+    expect(defaults.quit_on_close).toBe(false);
+
+    const preserved = normalizeDesktopSettings({ show_tray_icon: false, quit_on_close: true });
+    expect(preserved.show_tray_icon).toBe(false);
+    expect(preserved.quit_on_close).toBe(true);
+  });
+
   it("defaults DuckDB worker max processes to 4 and clamps saved values", () => {
     expect(normalizeDesktopSettings({}).duckdb_worker_max_processes).toBe(4);
     expect(normalizeDesktopSettings({ duckdb_worker_max_processes: 1 }).duckdb_worker_max_processes).toBe(1);

@@ -1,11 +1,16 @@
 <script setup lang="ts">
 import { useI18n } from "vue-i18n";
-import { FolderGit2 } from "@lucide/vue";
+import { FolderGit2, RefreshCw } from "@lucide/vue";
+import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 const { t } = useI18n();
 
 const open = defineModel<boolean>("open", { default: false });
+
+const emit = defineEmits<{
+  "check-updates": [];
+}>();
 
 defineProps<{
   appVersion: string;
@@ -31,6 +36,10 @@ defineProps<{
           <FolderGit2 class="h-4 w-4" />
           {{ t("about.repository") }}
         </a>
+        <Button variant="outline" size="sm" @click="emit('check-updates')">
+          <RefreshCw class="h-3.5 w-3.5" />
+          {{ t("updates.check") }}
+        </Button>
       </div>
     </DialogContent>
   </Dialog>

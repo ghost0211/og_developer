@@ -26,7 +26,11 @@ export type { SavedSqlOpenTargetMode };
 export type { DataTabReuseMode };
 
 export interface DesktopSettings {
-  icon_theme: DesktopIconTheme;
+  // 与 Rust 端 dbx_core::storage::DesktopSettings 保持一致的完整契约；
+  // show_tray_icon / quit_on_close 为遗留字段（托盘已移除），需随设置加载并原样回传，
+  // 否则 Tauri 保存命令会因缺少必填字段反序列化失败，导致修改被静默回滚。
+  show_tray_icon: boolean;
+  quit_on_close: boolean;
   close_action_prompted: boolean;
   debug_logging_enabled: boolean;
   duckdb_worker_process_isolation: boolean;
@@ -37,8 +41,6 @@ export interface DesktopSettings {
   agent_store_dir?: string | null;
   sidebar_table_page_size?: number | null;
 }
-
-export type DesktopIconTheme = "default" | "black";
 
 export type InterfaceLayout = "separated" | "classic";
 
@@ -53,7 +55,8 @@ export const DUCKDB_WORKER_MAX_PROCESSES_DEFAULT = 4;
 const SQL_SEMANTIC_DIAGNOSTICS_AUTO_ENABLED = false;
 
 export const DEFAULT_DESKTOP_SETTINGS: DesktopSettings = {
-  icon_theme: "default",
+  show_tray_icon: true,
+  quit_on_close: false,
   close_action_prompted: false,
   debug_logging_enabled: false,
   duckdb_worker_process_isolation: false,
@@ -66,10 +69,10 @@ export const DEFAULT_DESKTOP_SETTINGS: DesktopSettings = {
 };
 
 export function normalizeDesktopSettings(settings: Partial<DesktopSettings> | null | undefined): DesktopSettings {
-  const iconTheme = settings?.icon_theme === "black" ? "black" : DEFAULT_DESKTOP_SETTINGS.icon_theme;
   const sidebarTablePageSize = typeof settings?.sidebar_table_page_size === "number" && settings.sidebar_table_page_size > 0 ? settings.sidebar_table_page_size : DEFAULT_DESKTOP_SETTINGS.sidebar_table_page_size;
   return {
-    icon_theme: iconTheme,
+    show_tray_icon: settings?.show_tray_icon ?? DEFAULT_DESKTOP_SETTINGS.show_tray_icon,
+    quit_on_close: settings?.quit_on_close ?? DEFAULT_DESKTOP_SETTINGS.quit_on_close,
     close_action_prompted: settings?.close_action_prompted ?? DEFAULT_DESKTOP_SETTINGS.close_action_prompted,
     debug_logging_enabled: settings?.debug_logging_enabled ?? DEFAULT_DESKTOP_SETTINGS.debug_logging_enabled,
     duckdb_worker_process_isolation: settings?.duckdb_worker_process_isolation ?? DEFAULT_DESKTOP_SETTINGS.duckdb_worker_process_isolation,
