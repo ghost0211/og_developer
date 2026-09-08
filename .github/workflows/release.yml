@@ -14,6 +14,12 @@ jobs:
     timeout-minutes: 90
     env:
       CARGO_INCREMENTAL: "0"
+      # 在线更新签名：在仓库 Settings → Secrets 中配置 TAURI_SIGNING_PRIVATE_KEY（及可选密码），
+      # 并在 Settings → Variables 中配置 TAURI_UPDATER_PUBKEY（与私钥配对的公钥，非机密）。
+      # 二者都配置后才会生成并发布 latest.json/.sig 更新产物；未配置时仅发布安装包。
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      TAURI_UPDATER_PUBKEY: ${{ vars.TAURI_UPDATER_PUBKEY }}
     steps:
       - uses: actions/checkout@v5
 
@@ -35,13 +41,6 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Build installers (npm + tauri build)
-        env:
-          # 在线更新签名：在仓库 Settings → Secrets 中配置 TAURI_SIGNING_PRIVATE_KEY（及可选密码），
-          # 并在 Settings → Variables 中配置 TAURI_UPDATER_PUBKEY（与私钥配对的公钥，非机密）。
-          # 二者都配置后才会生成并发布 latest.json/.sig 更新产物；未配置时仅发布安装包。
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          TAURI_UPDATER_PUBKEY: ${{ vars.TAURI_UPDATER_PUBKEY }}
         shell: pwsh
         run: |
           # beforeBuildCommand (pnpm build) runs first; then tauri bundles
@@ -58,6 +57,30 @@ jobs:
           } else {
             pnpm tauri build
           }
+
+      # tauri build 只生成 .sig 签名，不生成 latest.json 清单（该清单通常由 tauri-action 生成）。
+      # 这里手动汇总 .sig 生成 latest.json，供应用内“检查更新/下载并安装”使用。
+      - name: Generate updater manifest (latest.json)
+        if: env.TAURI_SIGNING_PRIVATE_KEY != '' && env.TAURI_UPDATER_PUBKEY != ''
+        shell: pwsh
+        run: |
+          $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          $tag = "v$version"
+          $installer = "ogdeveloper_${version}_x64-setup.exe"
+          $sigPath = "target/release/bundle/nsis/$installer.sig"
+          if (!(Test-Path $sigPath)) { Write-Error "Missing updater signature: $sigPath"; exit 1 }
+          $manifest = [ordered]@{
+            version   = $version
+            notes     = ""
+            pub_date  = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+            platforms = [ordered]@{
+              "windows-x86_64" = [ordered]@{
+                signature = (Get-Content $sigPath -Raw).Trim()
+                url       = "https://github.com/ghost0211/og_developer/releases/download/$tag/$installer"
+              }
+            }
+          }
+          $manifest | ConvertTo-Json -Depth 6 | Set-Content -Path "target/release/bundle/latest.json" -Encoding utf8
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
@@ -76,6 +99,6 @@ jobs:
         with:
           fail_on_unmatched_files: false
           files: |
-            target/release/bundle/**/latest.json
+            target/release/bundle/latest.json
             target/release/bundle/nsis/*.sig
             target/release/bundle/msi/*.sig
