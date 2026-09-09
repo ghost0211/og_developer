@@ -246,7 +246,7 @@ const DataGridBulkEditDialog = defineAsyncComponent(() => import("@/components/g
 const DataGridCopyColumnNamesDialog = defineAsyncComponent(() => import("@/components/grid/DataGridCopyColumnNamesDialog.vue"));
 const DataGridInsertRowsDialog = defineAsyncComponent(() => import("@/components/grid/DataGridInsertRowsDialog.vue"));
 const ExportProgressDialog = defineAsyncComponent(() => import("@/components/export/ExportProgressDialog.vue"));
-const FORMATTED_JSON_EDIT_WARNING_COUNT_STORAGE_KEY = "dbx-cell-detail-formatted-json-edit-warning-count";
+const FORMATTED_JSON_EDIT_WARNING_COUNT_STORAGE_KEY = "ogdeveloper-cell-detail-formatted-json-edit-warning-count";
 const FORMATTED_JSON_EDIT_WARNING_MAX_COUNT = 3;
 
 const { t } = useI18n();
@@ -380,7 +380,7 @@ const autoRefreshEnabled = autoRefresh.enabled;
 const autoRefreshLabel = computed(() => (autoRefreshEnabled.value ? t("tabs.autoRefreshEvery", { seconds: autoRefreshIntervalSeconds.value }) : t("tabs.autoRefresh")));
 
 if (isDebugLoggingEnabled()) {
-  logDataGridTiming("[DBX][DataGrid:setup]", {
+  logDataGridTiming("[ogdeveloper][DataGrid:setup]", {
     traceId: dataGridTraceId,
     cacheKey: props.cacheKey,
     rowCount: props.result.rows.length,
@@ -399,7 +399,7 @@ watch(
   (result) => {
     if (!isDebugLoggingEnabled()) return;
     const startedAt = performance.now();
-    logDataGridTiming("[DBX][DataGrid:result:prop]", {
+    logDataGridTiming("[ogdeveloper][DataGrid:result:prop]", {
       traceId: dataGridTraceId,
       cacheKey: props.cacheKey,
       rowCount: result.rows.length,
@@ -410,14 +410,14 @@ watch(
     });
 
     nextTick(() => {
-      logDataGridTiming("[DBX][DataGrid:result:nextTick]", {
+      logDataGridTiming("[ogdeveloper][DataGrid:result:nextTick]", {
         traceId: dataGridTraceId,
         cacheKey: props.cacheKey,
         elapsed: `${Math.round(performance.now() - startedAt)}ms`,
         loading: props.loading,
       });
       requestAnimationFrame(() => {
-        logDataGridTiming("[DBX][DataGrid:result:first-frame]", {
+        logDataGridTiming("[ogdeveloper][DataGrid:result:first-frame]", {
           traceId: dataGridTraceId,
           cacheKey: props.cacheKey,
           elapsed: `${Math.round(performance.now() - startedAt)}ms`,
@@ -1931,8 +1931,8 @@ const gridStyle = computed(() => ({
   "--header-total-w": dataGridHeaderContentWidth("var(--total-w)", gridScrollbarGutter.value),
   "--grid-scrollbar-gutter": `${gridScrollbarGutter.value}px`,
   [EDITOR_FONT_FAMILY_CSS_VAR]: settingsStore.editorSettings.fontFamily,
-  "--dbx-data-grid-font-family": tableFontFamily.value,
-  "--dbx-table-font-size": `${tableFontSize.value}px`,
+  "--ogdeveloper-data-grid-font-family": tableFontFamily.value,
+  "--ogdeveloper-table-font-size": `${tableFontSize.value}px`,
 }));
 const gridHorizontalScrollLeft = ref(0);
 const gridViewportWidth = ref(0);
@@ -3556,7 +3556,7 @@ watch(
     const shouldLogTiming = isDebugLoggingEnabled();
     const startedAt = shouldLogTiming ? performance.now() : 0;
     if (shouldLogTiming) {
-      logDataGridTiming("[DBX][DataGrid:display-items:ready]", {
+      logDataGridTiming("[ogdeveloper][DataGrid:display-items:ready]", {
         traceId: dataGridTraceId,
         cacheKey: props.cacheKey,
         displayItemCount: length,
@@ -3573,7 +3573,7 @@ watch(
       if (!shouldLogTiming) return;
       requestAnimationFrame(() => {
         const renderedRows = gridRef.value?.querySelectorAll(".vue-recycle-scroller__item-view").length;
-        logDataGridTiming("[DBX][DataGrid:display-items:first-frame]", {
+        logDataGridTiming("[ogdeveloper][DataGrid:display-items:first-frame]", {
           traceId: dataGridTraceId,
           cacheKey: props.cacheKey,
           displayItemCount: length,
@@ -5371,7 +5371,7 @@ onMounted(() => {
   if (typeof window === "undefined") return;
   window.addEventListener("resize", refreshDataGridViewportMetrics);
   window.visualViewport?.addEventListener("resize", refreshDataGridViewportMetrics);
-  window.addEventListener("dbx:ui-scale-applied", refreshDataGridViewportMetrics);
+  window.addEventListener("ogdeveloper:ui-scale-applied", refreshDataGridViewportMetrics);
   window.addEventListener(TABLE_DATA_GRID_COLUMN_ORDER_CHANGED_EVENT, onTableDataGridColumnOrderChanged);
   window.addEventListener("blur", clearInternalClipboardCopy);
   document.addEventListener("visibilitychange", clearInternalClipboardCopy);
@@ -5391,7 +5391,7 @@ onUnmounted(() => {
   if (typeof window === "undefined") return;
   window.removeEventListener("resize", refreshDataGridViewportMetrics);
   window.visualViewport?.removeEventListener("resize", refreshDataGridViewportMetrics);
-  window.removeEventListener("dbx:ui-scale-applied", refreshDataGridViewportMetrics);
+  window.removeEventListener("ogdeveloper:ui-scale-applied", refreshDataGridViewportMetrics);
   window.removeEventListener(TABLE_DATA_GRID_COLUMN_ORDER_CHANGED_EVENT, onTableDataGridColumnOrderChanged);
   window.removeEventListener("blur", clearInternalClipboardCopy);
   document.removeEventListener("visibilitychange", clearInternalClipboardCopy);
@@ -7878,7 +7878,7 @@ function startLoadingElapsedTimer(reset = false) {
 watch(gridSurfaceBusy, (isLoading) => {
   stopLoadingElapsedTimer();
   if (isDebugLoggingEnabled()) {
-    logDataGridTiming(isLoading ? "[DBX][DataGrid:loading:start]" : "[DBX][DataGrid:loading:stop]", {
+    logDataGridTiming(isLoading ? "[ogdeveloper][DataGrid:loading:start]" : "[ogdeveloper][DataGrid:loading:stop]", {
       traceId: dataGridTraceId,
       cacheKey: props.cacheKey,
       elapsedSinceSetup: dataGridElapsed(),
@@ -7889,7 +7889,7 @@ watch(gridSurfaceBusy, (isLoading) => {
   } else if (isDebugLoggingEnabled()) {
     nextTick(() => {
       requestAnimationFrame(() => {
-        logDataGridTiming("[DBX][DataGrid:loading:stop:first-frame]", {
+        logDataGridTiming("[ogdeveloper][DataGrid:loading:stop:first-frame]", {
           traceId: dataGridTraceId,
           cacheKey: props.cacheKey,
           elapsedSinceSetup: dataGridElapsed(),
@@ -9102,7 +9102,7 @@ const gridContextMenuItems = computed<ContextMenuItem[]>(() => {
                 <div class="relative" :style="{ width: `${totalWidth}px`, height: `${canvasContentHeight}px` }">
                   <canvas
                     ref="canvasRef"
-                    class="canvas-grid-surface dbx-data-grid-font-family sticky left-0 top-0 z-0 block font-normal"
+                    class="canvas-grid-surface ogdeveloper-data-grid-font-family sticky left-0 top-0 z-0 block font-normal"
                     :style="{ width: `${canvasSurfaceWidth}px`, height: `${canvasViewportHeight}px` }"
                     @mousemove="onCanvasMouseMove"
                     @mouseleave="onCanvasMouseLeave"
@@ -9110,7 +9110,7 @@ const gridContextMenuItems = computed<ContextMenuItem[]>(() => {
                     @contextmenu="onCanvasContext"
                     @dblclick="onCanvasDblClick"
                   />
-                  <div ref="canvasOverlayRef" class="canvas-grid-overlay dbx-data-grid-font-family sticky left-0 top-0 z-10 overflow-visible" :style="canvasOverlayStyle">
+                  <div ref="canvasOverlayRef" class="canvas-grid-overlay ogdeveloper-data-grid-font-family sticky left-0 top-0 z-10 overflow-visible" :style="canvasOverlayStyle">
                     <div v-if="canvasEditingCell" class="absolute pointer-events-auto z-20 tabular-nums" :style="canvasEditingCellStyle" @mousedown.stop @click.stop>
                       <TemporalCellEditor
                         v-if="temporalEditorConfigForColumn(canvasEditingCell.actualColIdx)"
@@ -9218,7 +9218,7 @@ const gridContextMenuItems = computed<ContextMenuItem[]>(() => {
               <RecycleScroller
                 v-else-if="hasVisibleRows"
                 ref="scrollerRef"
-                class="data-grid-scroller dbx-data-grid-font-family flex-1 overflow-x-auto overscroll-none"
+                class="data-grid-scroller ogdeveloper-data-grid-font-family flex-1 overflow-x-auto overscroll-none"
                 :class="{ 'is-scrolling': isScrolling, 'has-horizontal-scrollbar': hasGridHorizontalOverflow }"
                 :items="displayItems"
                 :item-size="26"
@@ -10333,8 +10333,8 @@ const gridContextMenuItems = computed<ContextMenuItem[]>(() => {
 .data-grid-header-row,
 .data-grid-transpose-header,
 .data-grid-transpose-row {
-  font-family: var(--dbx-data-grid-font-family);
-  font-size: var(--dbx-table-font-size, 13px);
+  font-family: var(--ogdeveloper-data-grid-font-family);
+  font-size: var(--ogdeveloper-table-font-size, 13px);
 }
 
 .data-grid-topbar-scroll {
@@ -10541,8 +10541,8 @@ const gridContextMenuItems = computed<ContextMenuItem[]>(() => {
 
 .canvas-grid-surface {
   cursor: cell;
-  font-family: var(--dbx-data-grid-font-family);
-  font-size: var(--dbx-table-font-size, 13px);
+  font-family: var(--ogdeveloper-data-grid-font-family);
+  font-size: var(--ogdeveloper-table-font-size, 13px);
   font-weight: 400;
   line-height: 1rem;
   outline: none;
@@ -10550,7 +10550,7 @@ const gridContextMenuItems = computed<ContextMenuItem[]>(() => {
 
 .cell-edit-input {
   font-family: inherit;
-  font-size: var(--dbx-table-font-size, 13px);
+  font-size: var(--ogdeveloper-table-font-size, 13px);
 }
 
 .cell-edit-input--expanded {
@@ -10567,7 +10567,7 @@ const gridContextMenuItems = computed<ContextMenuItem[]>(() => {
   background-color: var(--background);
   background-color: color-mix(in oklab, var(--background) 96%, var(--primary) 4%);
   border: 1px solid color-mix(in oklab, var(--primary) 62%, var(--border));
-  border-radius: var(--dbx-radius-fixed-6);
+  border-radius: var(--ogdeveloper-radius-fixed-6);
   z-index: 90;
   box-shadow:
     0 28px 72px rgb(0 0 0 / 34%),

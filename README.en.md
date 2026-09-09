@@ -142,7 +142,7 @@ pnpm tauri build      # desktop installer (.deb/.rpm/.msi/...)
 
 ```bash
 npx vitest run        # frontend tests
-cargo test -p dbx-core --no-default-features \
+cargo test -p ogdeveloper-core --no-default-features \
   --features duckdb-sidecar,mq-admin,sqlite-sqlcipher --lib   # Rust tests
 ```
 

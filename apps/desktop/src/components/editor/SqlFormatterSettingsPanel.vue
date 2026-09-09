@@ -325,7 +325,7 @@ function exportConfig() {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = "dbx-sql-formatter.json";
+  link.download = "ogdeveloper-sql-formatter.json";
   document.body.appendChild(link);
   link.click();
   link.remove();
@@ -607,10 +607,10 @@ onBeforeUnmount(() => {
           <div class="space-y-2">
             <Label>{{ t("settings.sqlFormatterIndent") }}</Label>
             <div class="grid grid-cols-2 gap-2">
-              <Button type="button" variant="outline" class="justify-center" :class="!settings.useTabs ? 'dbx-choice-selected' : ''" @click="updateOption('useTabs', false)">
+              <Button type="button" variant="outline" class="justify-center" :class="!settings.useTabs ? 'ogdeveloper-choice-selected' : ''" @click="updateOption('useTabs', false)">
                 {{ t("settings.sqlFormatterIndentSpaces") }}
               </Button>
-              <Button type="button" variant="outline" class="justify-center" :class="settings.useTabs ? 'dbx-choice-selected' : ''" @click="updateOption('useTabs', true)">
+              <Button type="button" variant="outline" class="justify-center" :class="settings.useTabs ? 'ogdeveloper-choice-selected' : ''" @click="updateOption('useTabs', true)">
                 {{ t("settings.sqlFormatterIndentTabs") }}
               </Button>
             </div>

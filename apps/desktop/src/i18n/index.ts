@@ -53,7 +53,7 @@ function detectUserLocale(): Locale {
   }
 }
 
-const savedLocale = normalizeLocale(safeLocalStorageGet("dbx-locale"));
+const savedLocale = normalizeLocale(safeLocalStorageGet("ogdeveloper-locale"));
 const initialLocale = savedLocale ?? detectUserLocale();
 
 const i18n = createI18n({
@@ -81,7 +81,7 @@ async function syncLocaleToBackend(locale: Locale) {
     const { invoke } = await import("@tauri-apps/api/core");
     await invoke("set_app_locale", { locale });
   } catch (error) {
-    console.warn("[DBX][i18n] failed to sync locale to backend", error);
+    console.warn("[ogdeveloper][i18n] failed to sync locale to backend", error);
   }
 }
 
@@ -93,7 +93,7 @@ export async function loadSavedLocale() {
 export async function setLocale(locale: Locale) {
   await loadLocaleMessages(locale);
   i18nGlobal.locale.value = locale;
-  safeLocalStorageSet("dbx-locale", locale);
+  safeLocalStorageSet("ogdeveloper-locale", locale);
   void syncLocaleToBackend(locale);
 }
 

@@ -9,11 +9,11 @@ describe("QueryEditor tooltip container", () => {
   it("portals CodeMirror tooltips to a zero-sized app host", () => {
     expect(queryEditorSource).toContain("const editorElement = editorRef.value;");
     expect(queryEditorSource).toContain("if (!editorElement) return;");
-    expect(queryEditorSource).toContain('querySelector<HTMLElement>("#dbx-query-editor-tooltip-root") ?? editorElement');
+    expect(queryEditorSource).toContain('querySelector<HTMLElement>("#ogdeveloper-query-editor-tooltip-root") ?? editorElement');
     expect(queryEditorSource).toContain("tooltips({ parent: tooltipParent })");
     expect(queryEditorSource).toContain("new EditorView({ state, parent: editorElement })");
     expect(queryEditorSource).not.toContain("tooltips({ parent: document.body })");
-    expect(appSource).toContain('id="dbx-query-editor-tooltip-root"');
+    expect(appSource).toContain('id="ogdeveloper-query-editor-tooltip-root"');
     expect(appSource).toContain('class="fixed left-0 top-0 z-[70] h-0 w-0 overflow-visible"');
   });
 

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use tauri::{AppHandle, Emitter, State};
 
 use super::connection::AppState;
-pub use dbx_core::ai::*;
+pub use ogdeveloper_core::ai::*;
 
 #[tauri::command]
 pub async fn ai_test_connection(
@@ -13,9 +13,9 @@ pub async fn ai_test_connection(
     let mut config = resolve_cli_provider_config(config);
     merge_global_max_retries(
         &mut config,
-        state.storage.load_max_retries().await.unwrap_or(dbx_core::ai::DEFAULT_MAX_RETRIES),
+        state.storage.load_max_retries().await.unwrap_or(ogdeveloper_core::ai::DEFAULT_MAX_RETRIES),
     );
-    dbx_core::ai::test_connection_core(&config).await
+    ogdeveloper_core::ai::test_connection_core(&config).await
 }
 
 #[tauri::command]
@@ -23,9 +23,9 @@ pub async fn ai_list_models(state: State<'_, Arc<AppState>>, config: AiConfig) -
     let mut config = resolve_cli_provider_config(config);
     merge_global_max_retries(
         &mut config,
-        state.storage.load_max_retries().await.unwrap_or(dbx_core::ai::DEFAULT_MAX_RETRIES),
+        state.storage.load_max_retries().await.unwrap_or(ogdeveloper_core::ai::DEFAULT_MAX_RETRIES),
     );
-    dbx_core::ai::list_models_core(&config).await
+    ogdeveloper_core::ai::list_models_core(&config).await
 }
 
 #[tauri::command]
@@ -37,9 +37,9 @@ pub async fn ai_resolve_model_effort(
     let mut config = resolve_cli_provider_config(config);
     merge_global_max_retries(
         &mut config,
-        state.storage.load_max_retries().await.unwrap_or(dbx_core::ai::DEFAULT_MAX_RETRIES),
+        state.storage.load_max_retries().await.unwrap_or(ogdeveloper_core::ai::DEFAULT_MAX_RETRIES),
     );
-    dbx_core::ai::resolve_model_effort_core(&config, &model_id).await
+    ogdeveloper_core::ai::resolve_model_effort_core(&config, &model_id).await
 }
 
 #[tauri::command]
@@ -90,9 +90,9 @@ pub async fn ai_complete(state: State<'_, Arc<AppState>>, request: AiCompletionR
     let mut request = request;
     merge_global_max_retries(
         &mut request.config,
-        state.storage.load_max_retries().await.unwrap_or(dbx_core::ai::DEFAULT_MAX_RETRIES),
+        state.storage.load_max_retries().await.unwrap_or(ogdeveloper_core::ai::DEFAULT_MAX_RETRIES),
     );
-    dbx_core::ai::complete(&request).await
+    ogdeveloper_core::ai::complete(&request).await
 }
 
 #[tauri::command]
@@ -105,26 +105,26 @@ pub async fn ai_stream(
     let mut request = request;
     merge_global_max_retries(
         &mut request.config,
-        state.storage.load_max_retries().await.unwrap_or(dbx_core::ai::DEFAULT_MAX_RETRIES),
+        state.storage.load_max_retries().await.unwrap_or(ogdeveloper_core::ai::DEFAULT_MAX_RETRIES),
     );
-    let cancelled = dbx_core::ai::register_stream(&session_id).await;
+    let cancelled = ogdeveloper_core::ai::register_stream(&session_id).await;
 
-    let result = dbx_core::ai::stream(&session_id, &request, &cancelled, |chunk| {
+    let result = ogdeveloper_core::ai::stream(&session_id, &request, &cancelled, |chunk| {
         let _ = app.emit("ai-stream-chunk", &chunk);
     })
     .await;
 
-    dbx_core::ai::unregister_stream(&session_id).await;
+    ogdeveloper_core::ai::unregister_stream(&session_id).await;
     result
 }
 
-use dbx_core::agent_events::AgentEvent;
-use dbx_core::agent_loop::{run_agent_loop, AgentLoopContext};
-use dbx_core::models::connection::DatabaseType;
+use ogdeveloper_core::agent_events::AgentEvent;
+use ogdeveloper_core::agent_loop::{run_agent_loop, AgentLoopContext};
+use ogdeveloper_core::models::connection::DatabaseType;
 
 #[tauri::command]
 pub async fn ai_cancel_stream(session_id: String) -> Result<bool, String> {
-    Ok(dbx_core::ai::cancel_stream(&session_id).await)
+    Ok(ogdeveloper_core::ai::cancel_stream(&session_id).await)
 }
 
 #[tauri::command]
@@ -148,29 +148,29 @@ pub async fn ai_agent_stream(
     let mut request = resolve_cli_provider_request(request);
     merge_global_max_retries(
         &mut request.config,
-        state.storage.load_max_retries().await.unwrap_or(dbx_core::ai::DEFAULT_MAX_RETRIES),
+        state.storage.load_max_retries().await.unwrap_or(ogdeveloper_core::ai::DEFAULT_MAX_RETRIES),
     );
 
     let parsed_db_type: DatabaseType =
         serde_json::from_str(&format!("\"{}\"", db_type)).map_err(|_| format!("Unknown database type: {db_type}"))?;
 
     let cli_mcp_server_command = None;
-    let cancelled = dbx_core::ai::register_stream(&session_id).await;
+    let cancelled = ogdeveloper_core::ai::register_stream(&session_id).await;
     let production_database = state
         .configs
         .read()
         .await
         .get(&connection_id)
-        .is_some_and(|config| dbx_core::production_safety::is_production_database(config, &database));
+        .is_some_and(|config| ogdeveloper_core::production_safety::is_production_database(config, &database));
     let max_agent_turns = state.storage.load_max_agent_turns().await.unwrap_or_else(|err| {
         log::warn!("Failed to load max_agent_turns setting, using default: {err}");
-        dbx_core::agent_loop::DEFAULT_MAX_AGENT_TURNS
+        ogdeveloper_core::agent_loop::DEFAULT_MAX_AGENT_TURNS
     });
     // Reject the confirmed-write grant when the connection or database changed
     // between the user's confirmation and this backend request.  The frontend
     // also verifies this synchronously, but this backend check provides
     // defense-in-depth for CLI-provider and API-driven paths.
-    let (_, confirmed_write_sql) = dbx_core::agent_tools::verify_confirmed_target(
+    let (_, confirmed_write_sql) = ogdeveloper_core::agent_tools::verify_confirmed_target(
         allow_write_sql,
         confirmed_write_sql,
         confirmed_connection_id,
@@ -188,7 +188,7 @@ pub async fn ai_agent_stream(
     // access (readonly/data/full); production databases always degrade to
     // read-only. A per-run confirmed SQL (frontend confirmation flow) pins the
     // run to that exact statement; the level still decides the ceiling.
-    let sql_permissions = dbx_core::agent_tools::agent_permissions_for_request(
+    let sql_permissions = ogdeveloper_core::agent_tools::agent_permissions_for_request(
         production_database,
         confirmed_write_sql,
         request.config.agent_permission_level,
@@ -223,7 +223,7 @@ pub async fn ai_agent_stream(
     )
     .await;
 
-    dbx_core::ai::unregister_stream(&session_id).await;
+    ogdeveloper_core::ai::unregister_stream(&session_id).await;
     result
 }
 
@@ -298,7 +298,7 @@ mod tests {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     use super::super::connection::AppState;
-    use dbx_core::ai::{AiApiStyle, AiAuthMethod, AiConfig, AiProvider, AiReasoningLevel};
+    use ogdeveloper_core::ai::{AiApiStyle, AiAuthMethod, AiConfig, AiProvider, AiReasoningLevel};
 
     /// Spawn a TCP server that returns 429 and counts connections.
     async fn counting_429_server() -> (String, Arc<AtomicU32>, tokio::task::JoinHandle<()>) {
@@ -341,13 +341,13 @@ mod tests {
             claude_code_cli_env: Default::default(),
             pi_agent_cli_path: None,
             pi_agent_cli_env: Default::default(),
-            agent_permission_level: dbx_core::agent_tools::AgentPermissionLevel::default(),
+            agent_permission_level: ogdeveloper_core::agent_tools::AgentPermissionLevel::default(),
         }
     }
 
     #[test]
     fn verify_confirmed_target_allows_matching_connection_and_database() {
-        let (allow, confirmed) = dbx_core::agent_tools::verify_confirmed_target(
+        let (allow, confirmed) = ogdeveloper_core::agent_tools::verify_confirmed_target(
             Some(true),
             Some("DELETE FROM users WHERE id = 1".to_string()),
             Some("conn-1".to_string()),
@@ -363,7 +363,7 @@ mod tests {
 
     #[test]
     fn verify_confirmed_target_rejects_mismatched_connection() {
-        let (allow, confirmed) = dbx_core::agent_tools::verify_confirmed_target(
+        let (allow, confirmed) = ogdeveloper_core::agent_tools::verify_confirmed_target(
             Some(true),
             Some("DELETE FROM users WHERE id = 1".to_string()),
             Some("conn-staging".to_string()),
@@ -379,7 +379,7 @@ mod tests {
 
     #[test]
     fn verify_confirmed_target_rejects_mismatched_database() {
-        let (allow, confirmed) = dbx_core::agent_tools::verify_confirmed_target(
+        let (allow, confirmed) = ogdeveloper_core::agent_tools::verify_confirmed_target(
             Some(true),
             Some("DELETE FROM users WHERE id = 1".to_string()),
             Some("conn-1".to_string()),
@@ -397,7 +397,7 @@ mod tests {
     fn verify_confirmed_target_passes_through_when_no_sql_confirmed() {
         // Without a confirmed SQL, no target verification is needed — the
         // grant has no write permission to protect.
-        let (allow, confirmed) = dbx_core::agent_tools::verify_confirmed_target(
+        let (allow, confirmed) = ogdeveloper_core::agent_tools::verify_confirmed_target(
             Some(false),
             None,
             Some("conn-staging".to_string()),
@@ -416,7 +416,7 @@ mod tests {
         // When confirmed_connection_id is None (e.g. older frontend that
         // doesn't send snapshots), the target cannot be verified, so the
         // grant must be rejected — fail-closed.
-        let (allow, confirmed) = dbx_core::agent_tools::verify_confirmed_target(
+        let (allow, confirmed) = ogdeveloper_core::agent_tools::verify_confirmed_target(
             Some(true),
             Some("DELETE FROM users WHERE id = 1".to_string()),
             None,
@@ -432,7 +432,7 @@ mod tests {
 
     #[test]
     fn verify_confirmed_target_rejects_mismatched_schema() {
-        let (allow, confirmed) = dbx_core::agent_tools::verify_confirmed_target(
+        let (allow, confirmed) = ogdeveloper_core::agent_tools::verify_confirmed_target(
             Some(true),
             Some("DELETE FROM users WHERE id = 1".to_string()),
             Some("conn-1".to_string()),
@@ -450,7 +450,7 @@ mod tests {
     async fn tauri_entry_respects_global_max_retries_zero() {
         let dir = std::env::temp_dir().join(format!("dbx-tauri-mr-{}", uuid::Uuid::new_v4()));
         let _ = std::fs::create_dir_all(&dir);
-        let storage = dbx_core::storage::Storage::open(&dir.join("storage.db")).await.unwrap();
+        let storage = ogdeveloper_core::storage::Storage::open(&dir.join("storage.db")).await.unwrap();
         storage.save_max_retries(0).await.unwrap();
         assert_eq!(storage.load_max_retries().await.unwrap(), 0);
 

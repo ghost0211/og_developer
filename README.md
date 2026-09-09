@@ -147,7 +147,7 @@ pnpm tauri build      # 构建各平台桌面安装包（.deb / .rpm / .msi / .d
 npx vitest run
 
 # Rust 后端核心库测试
-cargo test -p dbx-core --no-default-features \
+cargo test -p ogdeveloper-core --no-default-features \
   --features duckdb-sidecar,mq-admin,sqlite-sqlcipher --lib
 ```
 

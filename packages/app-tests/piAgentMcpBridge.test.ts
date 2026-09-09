@@ -4,7 +4,7 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 
-const bridgePath = resolve("crates/dbx-core/assets/pi-mcp-bridge.mjs");
+const bridgePath = resolve("crates/ogdeveloper-core/assets/pi-mcp-bridge.mjs");
 const envNames = ["DBX_PI_MCP_PROGRAM", "DBX_PI_MCP_ARGS", "DBX_PI_ENABLED_TOOLS", "DBX_PI_BRIDGE_READY_FILE"] as const;
 const originalEnv = Object.fromEntries(envNames.map((name) => [name, process.env[name]]));
 
@@ -21,7 +21,7 @@ afterEach(() => {
 
 describe("Pi Coding Agent MCP bridge", () => {
   it("registers an allowed DBX MCP tool and forwards its result", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "dbx-pi-bridge-test-"));
+    const directory = await mkdtemp(join(tmpdir(), "ogdeveloper-pi-bridge-test-"));
     const readyPath = join(directory, "ready");
     const fakeMcp = String.raw`
       const readline = require("node:readline");

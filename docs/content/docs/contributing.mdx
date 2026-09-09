@@ -205,8 +205,8 @@ The service ports listen on `127.0.0.1` by default. Set `DB_BIND_ADDRESS=0.0.0.0
 | --- | --- |
 | `apps/desktop/src/` | Vue pages, components, state, interactions, and translations |
 | `src-tauri/` | Tauri desktop commands, system integration, and packaging |
-| `crates/dbx-core/` | Connections, queries, metadata, and shared Rust database logic |
-| `crates/dbx-web/` | Docker/Web backend |
+| `crates/ogdeveloper-core/` | Connections, queries, metadata, and shared Rust database logic |
+| `crates/ogdeveloper-web/` | Docker/Web backend |
 | `packages/app-tests/` | Tests for shared frontend logic |
 | `packages/cli/` | CLI packages (inherited from dbx, not the product focus) |
 | `docs/content/docs/` | Bilingual website documentation |
@@ -279,7 +279,7 @@ For UI changes, check light and dark themes, narrow windows, empty data, loading
 
 ### Path C: Change the Rust Backend
 
-Shared Rust logic is mainly in `crates/dbx-core/`; desktop commands are in `src-tauri/`. When DuckDB is unrelated, start with the fast checks:
+Shared Rust logic is mainly in `crates/ogdeveloper-core/`; desktop commands are in `src-tauri/`. When DuckDB is unrelated, start with the fast checks:
 
 ```bash
 make cargo-check-fast

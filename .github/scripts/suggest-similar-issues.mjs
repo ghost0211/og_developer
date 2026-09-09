@@ -90,7 +90,7 @@ const supplementalDrivers = [
   { dbType: "mqtt", label: "MQTT", aliases: ["emqx", "hivemq", "mosquitto"] },
 ];
 
-const manifestUrl = new URL("../../crates/dbx-core/assets/database-drivers.manifest.json", import.meta.url);
+const manifestUrl = new URL("../../crates/ogdeveloper-core/assets/database-drivers.manifest.json", import.meta.url);
 const manifest = JSON.parse(fs.readFileSync(manifestUrl, "utf8"));
 const catalogEntries = [...manifest.drivers, ...supplementalDrivers];
 const duplicateDbTypes = catalogEntries

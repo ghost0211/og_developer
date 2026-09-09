@@ -1,3 +1,4 @@
+import { safeLocalStorageGet, safeLocalStorageRemove } from "@/lib/backend/safeStorage";
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 import { uuid } from "@/lib/common/utils";
@@ -8,7 +9,7 @@ import { isTauriRuntime } from "@/lib/backend/tauriRuntime";
 import { useSettingsStore } from "@/stores/settingsStore";
 import type { SavedSqlFile, SavedSqlFolder, SavedSqlLibrary } from "@/types/database";
 
-const LEGACY_STORAGE_KEY = "dbx-saved-sql-library";
+const LEGACY_STORAGE_KEY = "ogdeveloper-saved-sql-library";
 
 interface SavedSqlState {
   folders: SavedSqlFolder[];
@@ -82,7 +83,7 @@ function folderDepth(items: SavedSqlFolder[], folderId: string) {
 
 function loadLegacyState(): SavedSqlState {
   try {
-    const raw = localStorage.getItem(LEGACY_STORAGE_KEY);
+    const raw = safeLocalStorageGet(LEGACY_STORAGE_KEY);
     if (!raw) return { folders: [], files: [] };
     const parsed = JSON.parse(raw) as Partial<SavedSqlState>;
     return {
@@ -126,7 +127,7 @@ export const useSavedSqlStore = defineStore("savedSql", () => {
     for (const file of legacy.files) {
       await api.saveSavedSqlFile(file);
     }
-    localStorage.removeItem(LEGACY_STORAGE_KEY);
+    safeLocalStorageRemove(LEGACY_STORAGE_KEY);
   }
 
   async function initFromStorage() {
@@ -371,7 +372,7 @@ export const useSavedSqlStore = defineStore("savedSql", () => {
       bumpVersion();
       return saved;
     } catch (error) {
-      console.warn("[DBX][saved-sql:usage:error]", error);
+      console.warn("[ogdeveloper][saved-sql:usage:error]", error);
       return existing;
     }
   }
@@ -446,7 +447,7 @@ export const useSavedSqlStore = defineStore("savedSql", () => {
     try {
       await syncPromise;
     } catch (error) {
-      console.warn("[DBX][saved-sql:sync:error]", error);
+      console.warn("[ogdeveloper][saved-sql:sync:error]", error);
     } finally {
       if (pendingSync === syncPromise) {
         pendingSync = null;

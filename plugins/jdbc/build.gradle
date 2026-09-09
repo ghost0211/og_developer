@@ -3,7 +3,7 @@ plugins {
     id 'com.gradleup.shadow' version '9.0.0-beta12'
 }
 
-group = 'app.dbx'
+group = 'app.ogdeveloper'
 version = '0.1.28'
 
 java {
@@ -51,15 +51,33 @@ tasks.named('test') {
 }
 
 tasks.named('shadowJar') {
-    archiveBaseName = 'dbx-jdbc-plugin'
+    archiveBaseName = 'ogdeveloper-jdbc-plugin'
     archiveVersion = ''
     archiveClassifier = 'all'
     mergeServiceFiles()
     manifest {
-        attributes 'Main-Class': 'app.dbx.jdbc.DbxJdbcPlugin'
+        attributes 'Main-Class': 'app.ogdeveloper.jdbc.OgdeveloperJdbcPlugin'
     }
 }
 
 tasks.named('build') {
     dependsOn tasks.named('shadowJar')
+}
+
+// Portable packaging, including Windows hosts without a Unix zip executable.
+tasks.register('bundleZip', Zip) {
+    dependsOn tasks.named('shadowJar')
+    archiveFileName = "ogdeveloper-jdbc-plugin-${project.version}.zip"
+    destinationDirectory = layout.buildDirectory.dir('distributions')
+    into("ogdeveloper-jdbc-plugin-${project.version}") {
+        from('manifest.json')
+        into('bin') {
+            from('bin')
+            filePermissions { unix('rwxr-xr-x') }
+        }
+        into('lib') {
+            from(tasks.named('shadowJar'))
+            rename { 'ogdeveloper-jdbc-plugin.jar' }
+        }
+    }
 }

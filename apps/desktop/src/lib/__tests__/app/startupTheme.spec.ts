@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 
 const indexHtml = readFileSync(fileURLToPath(new URL("../../../../index.html", import.meta.url)), "utf8");
-const startupScript = indexHtml.match(/<script data-dbx-startup-theme>([\s\S]*?)<\/script>/)?.[1];
+const startupScript = indexHtml.match(/<script data-ogdeveloper-startup-theme>([\s\S]*?)<\/script>/)?.[1];
 
 if (!startupScript) throw new Error("Startup theme script not found");
 
@@ -20,7 +20,7 @@ function runStartupTheme({ mode = null, cornerStyle = null, prefersDark = false,
   const localStorage = {
     getItem: vi.fn((key: string) => {
       if (storageError) throw new DOMException("Storage unavailable", "SecurityError");
-      return key === "dbx-corner-style" ? cornerStyle : mode;
+      return key === "ogdeveloper-corner-style" ? cornerStyle : mode;
     }),
   };
   const matchMedia = vi.fn(() => ({ matches: prefersDark }));

@@ -18,10 +18,10 @@ function staticTooltip(label: string): Tooltip {
 
 describe("CodeMirror tooltip host", () => {
   it("keeps containers independent and removes them with each editor", () => {
-    document.body.innerHTML = '<div id="root"><div data-app><div data-split-pane><div data-editor="first"></div><div data-editor="second"></div></div><div id="dbx-query-editor-tooltip-root" style="position: fixed; width: 0; height: 0; overflow: visible"></div></div></div>';
+    document.body.innerHTML = '<div id="root"><div data-app><div data-split-pane><div data-editor="first"></div><div data-editor="second"></div></div><div id="ogdeveloper-query-editor-tooltip-root" style="position: fixed; width: 0; height: 0; overflow: visible"></div></div></div>';
     const root = document.querySelector<HTMLElement>("#root")!;
     const splitPane = document.querySelector<HTMLElement>("[data-split-pane]")!;
-    const tooltipHost = document.querySelector<HTMLElement>("#dbx-query-editor-tooltip-root")!;
+    const tooltipHost = document.querySelector<HTMLElement>("#ogdeveloper-query-editor-tooltip-root")!;
     const firstEditor = document.querySelector<HTMLElement>('[data-editor="first"]')!;
     const secondEditor = document.querySelector<HTMLElement>('[data-editor="second"]')!;
     root.style.overflow = "hidden";

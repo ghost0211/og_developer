@@ -13,11 +13,11 @@ mod startup_recovery;
 mod window_state_guard;
 
 use commands::connection::AppState;
-use dbx_core::sql_dialect::dialect_loader::{register_core_dialects, DialectPluginLoader, DialectRegistry};
-use dbx_core::sql_dialect::hot_reload::DialectHotReload;
-use dbx_core::storage::{maybe_import_user_data_db, DesktopSettings, Storage};
 #[cfg(target_os = "macos")]
 use native_menu_locale::{app_menu_copy_support_info_label, app_menu_quit_label};
+use ogdeveloper_core::sql_dialect::dialect_loader::{register_core_dialects, DialectPluginLoader, DialectRegistry};
+use ogdeveloper_core::sql_dialect::hot_reload::DialectHotReload;
+use ogdeveloper_core::storage::{maybe_import_user_data_db, DesktopSettings, Storage};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -35,7 +35,7 @@ use tauri_plugin_clipboard_manager::ClipboardExt;
 #[cfg(any(windows, target_os = "linux"))]
 use tauri_plugin_deep_link::DeepLinkExt;
 
-const APP_CLOSE_REQUESTED_EVENT: &str = "dbx-app-close-requested";
+const APP_CLOSE_REQUESTED_EVENT: &str = "ogdeveloper-app-close-requested";
 #[cfg(target_os = "macos")]
 const APP_MENU_QUIT_ID: &str = "app-menu-quit";
 #[cfg(target_os = "macos")]
@@ -493,7 +493,7 @@ fn open_connection_deep_links(app: &tauri::AppHandle, links: Vec<String>) {
     if let Some(state) = app.try_state::<commands::deep_link::DeepLinkOpenState>() {
         state.push(links.clone());
     }
-    let _ = app.emit("dbx-open-connection-links", links);
+    let _ = app.emit("ogdeveloper-open-connection-links", links);
     show_main_window(app);
 }
 
@@ -833,7 +833,7 @@ pub fn run() {
                 if let Some(state) = app.try_state::<commands::external_sql::ExternalSqlOpenState>() {
                     state.push(paths.clone());
                 }
-                let _ = app.emit("dbx-open-sql-files", paths);
+                let _ = app.emit("ogdeveloper-open-sql-files", paths);
             }
 
             let db_paths = commands::external_db::db_file_paths_from_args(args, std::path::Path::new(&cwd));
@@ -841,7 +841,7 @@ pub fn run() {
                 if let Some(state) = app.try_state::<commands::external_db::ExternalDbOpenState>() {
                     state.push(db_paths.clone());
                 }
-                let _ = app.emit("dbx-open-db-files", db_paths);
+                let _ = app.emit("ogdeveloper-open-db-files", db_paths);
             }
             show_main_window(app);
         }))
@@ -909,10 +909,10 @@ pub fn run() {
                 Ok(result) => eprintln!("[STARTUP] data db fallback import: {result:?}"),
                 Err(err) => eprintln!("[STARTUP] data db fallback import failed: {err}"),
             }
-            let db_path = data_dir.join("dbx.db");
+            let db_path = ogdeveloper_core::storage::storage_db_path(&data_dir);
 
             let t = Instant::now();
-            append_startup_probe(format!("opening storage file=dbx.db data_dir_mode={data_dir_mode}"));
+            append_startup_probe(format!("opening storage file={} data_dir_mode={data_dir_mode}", db_path.display()));
             let storage = tauri::async_runtime::block_on(async {
                 let s = Storage::open(&db_path).await.expect("Failed to open storage");
                 eprintln!("[STARTUP]   Storage::open in {:?}", t.elapsed());
@@ -1008,7 +1008,7 @@ pub fn run() {
                         if zip.exists() {
                             let sync_root = plugins_root.clone();
                             match tauri::async_runtime::spawn_blocking(move || {
-                                dbx_core::jdbc::sync_bundled_jdbc_plugin(&sync_root, &zip)
+                                ogdeveloper_core::jdbc::sync_bundled_jdbc_plugin(&sync_root, &zip)
                             })
                             .await
                             {
@@ -1023,12 +1023,13 @@ pub fn run() {
                     }
                     if let Some(jar) = resource_jar {
                         if jar.exists() {
-                            if let Err(err) = dbx_core::jdbc::seed_bundled_opengauss_driver(&plugins_root, &jar) {
+                            if let Err(err) = ogdeveloper_core::jdbc::seed_bundled_opengauss_driver(&plugins_root, &jar)
+                            {
                                 log::warn!("[jdbc] bundled driver seed failed: {err}");
                             }
                         }
                     }
-                    match dbx_core::jdbc::sync_opengauss_driver_from_maven(&plugins_root).await {
+                    match ogdeveloper_core::jdbc::sync_opengauss_driver_from_maven(&plugins_root).await {
                         Ok(Some(version)) => log::info!("[jdbc] openGauss driver updated to {version}"),
                         Ok(None) => {}
                         Err(err) => log::debug!("[jdbc] openGauss driver sync skipped: {err}"),
@@ -1534,7 +1535,7 @@ pub fn run() {
                     if let Some(state) = app_handle.try_state::<commands::external_sql::ExternalSqlOpenState>() {
                         state.push(paths.clone());
                     }
-                    let _ = app_handle.emit("dbx-open-sql-files", paths);
+                    let _ = app_handle.emit("ogdeveloper-open-sql-files", paths);
                     if let Some(window) = app_handle.get_webview_window("main") {
                         let _ = window.show();
                         let _ = window.set_focus();
@@ -1551,7 +1552,7 @@ pub fn run() {
                     if let Some(state) = app_handle.try_state::<commands::external_db::ExternalDbOpenState>() {
                         state.push(db_paths.clone());
                     }
-                    let _ = app_handle.emit("dbx-open-db-files", db_paths);
+                    let _ = app_handle.emit("ogdeveloper-open-db-files", db_paths);
                     if let Some(window) = app_handle.get_webview_window("main") {
                         let _ = window.show();
                         let _ = window.set_focus();

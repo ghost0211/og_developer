@@ -142,7 +142,7 @@ fn platform_product_version() -> Option<String> {
 
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 fn command_first_line(command: &str, args: &[&str]) -> Option<String> {
-    let mut process = dbx_core::process::new_std_command(command);
+    let mut process = ogdeveloper_core::process::new_std_command(command);
     process.args(args);
     let output = process.output().ok()?;
     if !output.status.success() {

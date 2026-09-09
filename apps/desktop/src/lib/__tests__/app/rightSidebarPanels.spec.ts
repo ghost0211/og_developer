@@ -30,12 +30,12 @@ describe("right sidebar panel entry points", () => {
   });
 
   it("persists the single active right-side tool", () => {
-    expect(appSource).toContain('ai: "dbx-ai-panel-open"');
-    expect(appSource).toContain('history: "dbx-history-panel-open"');
-    expect(appSource).toContain('sqlLibrary: "dbx-sql-library-open"');
-    expect(appSource).toContain('sqlFile: "dbx-sql-file-panel-open"');
-    expect(appSource).toContain('safeLocalStorageSet("dbx-active-tool-panel"');
-    expect(appSource).not.toContain('safeLocalStorageSet("dbx-tool-panel-order"');
+    expect(appSource).toContain('ai: "ogdeveloper-ai-panel-open"');
+    expect(appSource).toContain('history: "ogdeveloper-history-panel-open"');
+    expect(appSource).toContain('sqlLibrary: "ogdeveloper-sql-library-open"');
+    expect(appSource).toContain('sqlFile: "ogdeveloper-sql-file-panel-open"');
+    expect(appSource).toContain('safeLocalStorageSet("ogdeveloper-active-tool-panel"');
+    expect(appSource).not.toContain('safeLocalStorageSet("ogdeveloper-tool-panel-order"');
   });
 
   it("routes history and AI panel actions through the menu and activity bar without duplicating toolbar buttons", () => {

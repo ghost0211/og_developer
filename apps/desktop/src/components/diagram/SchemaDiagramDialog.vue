@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { safeLocalStorageGet, safeLocalStorageSet } from "@/lib/backend/safeStorage";
+
 import { computed, markRaw, nextTick, onMounted, onUnmounted, provide, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -812,7 +814,7 @@ function syncVueFlowNodes() {
 
 function relationshipStorageKey(): string {
   if (!connectionId.value || !database.value) return "";
-  return ["dbx", "diagram", "relationships", "v1", connectionId.value, database.value, schema.value || ""].join(":");
+  return ["ogdeveloper", "diagram", "relationships", "v1", connectionId.value, database.value, schema.value || ""].join(":");
 }
 
 function isStoredRelationship(value: unknown): value is CustomDiagramRelationship {
@@ -836,7 +838,7 @@ function loadCustomRelationships() {
     return;
   }
   try {
-    const parsed = JSON.parse(localStorage.getItem(key) || "[]");
+    const parsed = JSON.parse(safeLocalStorageGet(key) || "[]");
     customRelationships.value = Array.isArray(parsed) ? parsed.filter(isStoredRelationship) : [];
   } catch {
     customRelationships.value = [];
@@ -846,7 +848,7 @@ function loadCustomRelationships() {
 function saveCustomRelationships() {
   const key = relationshipStorageKey();
   if (!key || typeof localStorage === "undefined") return;
-  localStorage.setItem(key, JSON.stringify(customRelationships.value));
+  safeLocalStorageSet(key, JSON.stringify(customRelationships.value));
 }
 
 function loadMatchData() {

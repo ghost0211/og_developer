@@ -198,7 +198,7 @@ function onClose() {
 
 <template>
   <Dialog :open="props.open" @update:open="onClose">
-    <DialogContent class="h-[min(760px,calc(var(--dbx-viewport-height)-2rem))] grid-rows-[auto_minmax(0,1fr)_auto] sm:max-w-190">
+    <DialogContent class="h-[min(760px,calc(var(--ogdeveloper-viewport-height)-2rem))] grid-rows-[auto_minmax(0,1fr)_auto] sm:max-w-190">
       <DialogHeader>
         <DialogTitle>DDL - {{ props.tableName }}</DialogTitle>
       </DialogHeader>
@@ -250,10 +250,10 @@ function onClose() {
 
 .ddl-view-editor :deep(.cm-selectionBackground),
 .ddl-view-editor :deep(.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground) {
-  background: var(--dbx-editor-selection-background, rgba(59, 130, 246, 0.35)) !important;
+  background: var(--ogdeveloper-editor-selection-background, rgba(59, 130, 246, 0.35)) !important;
 }
 
 .ddl-view-editor :deep(.cm-content ::selection) {
-  background: var(--dbx-editor-selection-background, rgba(59, 130, 246, 0.35)) !important;
+  background: var(--ogdeveloper-editor-selection-background, rgba(59, 130, 246, 0.35)) !important;
 }
 </style>

@@ -421,7 +421,7 @@ function handleExport() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `dbx-theme-${theme.name}.json`;
+  a.download = `ogdeveloper-theme-${theme.name}.json`;
   a.click();
   URL.revokeObjectURL(url);
 }

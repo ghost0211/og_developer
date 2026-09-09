@@ -205,8 +205,8 @@ make db-down DB=mysql@8.4
 | --- | --- |
 | `apps/desktop/src/` | Vue 页面、组件、状态管理、交互和多语言文本 |
 | `src-tauri/` | Tauri 桌面命令、系统集成和应用打包 |
-| `crates/dbx-core/` | 数据库连接、查询、元数据和共享 Rust 逻辑 |
-| `crates/dbx-web/` | Docker/Web 后端 |
+| `crates/ogdeveloper-core/` | 数据库连接、查询、元数据和共享 Rust 逻辑 |
+| `crates/ogdeveloper-web/` | Docker/Web 后端 |
 | `packages/app-tests/` | 前端共享逻辑测试 |
 | `packages/cli/` | CLI 包（继承自 dbx，非产品重点） |
 | `docs/content/docs/` | 官网中英文文档 |
@@ -279,7 +279,7 @@ pnpm test
 
 ### 路线 C：修改 Rust 后端
 
-Rust 共享逻辑主要位于 `crates/dbx-core/`，桌面命令位于 `src-tauri/`。不涉及 DuckDB 时先运行快速检查：
+Rust 共享逻辑主要位于 `crates/ogdeveloper-core/`，桌面命令位于 `src-tauri/`。不涉及 DuckDB 时先运行快速检查：
 
 ```bash
 make cargo-check-fast

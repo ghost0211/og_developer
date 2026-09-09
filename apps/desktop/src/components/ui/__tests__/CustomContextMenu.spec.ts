@@ -292,7 +292,7 @@ describe("CustomContextMenu lifecycle", () => {
     copyTrigger?.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true, clientX: 20, clientY: 30 }));
     await nextTick();
 
-    const submenu = Array.from(document.body.querySelectorAll("[data-dbx-context-menu]")).find((el) => el.textContent?.includes("Copy option 0"));
+    const submenu = Array.from(document.body.querySelectorAll("[data-ogdeveloper-context-menu]")).find((el) => el.textContent?.includes("Copy option 0"));
     expect(submenu).toBeTruthy();
     submenu?.dispatchEvent(new Event("scroll", { bubbles: true }));
     await nextTick();

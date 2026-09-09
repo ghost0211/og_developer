@@ -159,14 +159,14 @@ Inside the shell:
 
 ## Building from Source
 
-Build the `dbx-desktop` package directly from the flake:
+For this repository, build the `ogdeveloper-desktop` package from a local clone. The remote examples above refer to the upstream DBX repository and retain its package names.
 
 ```bash
 nix build github:t8y2/dbx#dbx-desktop
-# or, from a local clone:
-nix build .#dbx-desktop
+# for this ogdeveloper repository:
+nix build .#ogdeveloper-desktop
 ```
 
-The resulting binary is available at `./result/bin/dbx`.
+The local ogdeveloper binary is available at `./result/bin/ogdeveloper`.
 
 ---

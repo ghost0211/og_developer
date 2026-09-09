@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::commands::connection::AppState;
-use dbx_core::csv_export::{export_table_data_csv_core, format_query_result_csv, TableCsvExportOptions};
+use ogdeveloper_core::csv_export::{export_table_data_csv_core, format_query_result_csv, TableCsvExportOptions};
 use serde::Deserialize;
 use serde_json::Value;
 use tauri::State;

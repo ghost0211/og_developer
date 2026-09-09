@@ -36,9 +36,9 @@ describe("startup preload recovery", () => {
 
   it("clears the retry marker after startup succeeds", () => {
     const { env, values } = environment();
-    values.set("dbx-startup-preload-retry", "1");
+    values.set("ogdeveloper-startup-preload-retry", "1");
 
     clearStartupPreloadRetry(env);
-    expect(values.has("dbx-startup-preload-retry")).toBe(false);
+    expect(values.has("ogdeveloper-startup-preload-retry")).toBe(false);
   });
 });

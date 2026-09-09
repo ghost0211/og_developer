@@ -665,7 +665,7 @@ onBeforeUnmount(() => cleanupMap());
   background: #1a1a2e;
 }
 .layer-preview-dialog .leaflet-popup-content-wrapper {
-  border-radius: var(--dbx-radius-fixed-6);
+  border-radius: var(--ogdeveloper-radius-fixed-6);
   font-size: 12px;
 }
 .layer-preview-dialog .leaflet-popup-content {

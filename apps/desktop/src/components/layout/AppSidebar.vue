@@ -114,7 +114,7 @@ async function confirmDeleteSelectedConnections() {
     await connectionStore.removeConnections(ids);
     for (const connectionId of ids) {
       connectionStore.disconnect(connectionId).catch((error) => {
-        console.warn("[DBX][connection:delete:disconnect-failed]", { connectionId, error });
+        console.warn("[ogdeveloper][connection:delete:disconnect-failed]", { connectionId, error });
       });
     }
     clearConnectionMultiSelection();

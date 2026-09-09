@@ -46,7 +46,7 @@ describe("data grid column frozen count storage", () => {
   });
 
   it("returns 0 for corrupted stored data", () => {
-    localStorage.setItem("dbx-data-grid-frozen-columns:scope-bad", "not-json");
+    localStorage.setItem("ogdeveloper-data-grid-frozen-columns:scope-bad", "not-json");
     expect(loadDataGridColumnFrozenCount("scope-bad")).toBe(0);
   });
 
@@ -58,7 +58,7 @@ describe("data grid column frozen count storage", () => {
 
   it("stores frozen count as a structured object with version", () => {
     saveDataGridColumnFrozenCount("scope-1", 3);
-    const raw = localStorage.getItem("dbx-data-grid-frozen-columns:scope-1");
+    const raw = localStorage.getItem("ogdeveloper-data-grid-frozen-columns:scope-1");
     expect(raw).not.toBeNull();
     const parsed = JSON.parse(raw!);
     expect(parsed).toEqual({ version: 1, frozenCount: 3 });

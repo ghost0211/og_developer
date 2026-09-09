@@ -151,7 +151,7 @@ async function syncTrafficLightsToToolbar() {
     });
     measuredTrafficLightInset.value = Math.ceil(layout.reserved_inset / settingsStore.editorSettings.uiScale);
   } catch (error) {
-    console.warn("[DBX] Failed to sync macOS traffic light position", { targetCenterY, error });
+    console.warn("[ogdeveloper] Failed to sync macOS traffic light position", { targetCenterY, error });
   }
 }
 

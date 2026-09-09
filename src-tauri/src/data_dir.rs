@@ -36,7 +36,8 @@ impl DataDirResolution {
 }
 
 pub fn resolve_data_dir_with_mode(default_app_data_dir: PathBuf) -> DataDirResolution {
-    let env_data_dir = std::env::var_os("DBX_DATA_DIR").filter(|value| !value.is_empty()).map(PathBuf::from);
+    let env_data_dir =
+        preferred_data_dir_override(std::env::var_os("OGDEVELOPER_DATA_DIR"), std::env::var_os("DBX_DATA_DIR"));
 
     #[cfg(target_os = "windows")]
     let exe_dir = current_exe_dir();
@@ -53,6 +54,13 @@ pub fn resolve_data_dir_with_mode(default_app_data_dir: PathBuf) -> DataDirResol
         installer_marker_exists,
         env_data_dir,
     )
+}
+
+fn preferred_data_dir_override(
+    current: Option<std::ffi::OsString>,
+    legacy: Option<std::ffi::OsString>,
+) -> Option<PathBuf> {
+    current.filter(|value| !value.is_empty()).or_else(|| legacy.filter(|value| !value.is_empty())).map(PathBuf::from)
 }
 
 pub fn alternative_data_dir(resolution: &DataDirResolution) -> Option<PathBuf> {
@@ -133,7 +141,18 @@ fn resolve_data_dir_from_inputs(
 mod tests {
     use std::path::PathBuf;
 
-    use super::{alternative_data_dir, resolve_data_dir_from_inputs, DataDirMode};
+    use super::{alternative_data_dir, preferred_data_dir_override, resolve_data_dir_from_inputs, DataDirMode};
+
+    #[test]
+    fn current_data_dir_override_wins_and_empty_values_fall_back() {
+        use std::ffi::OsString;
+        let current = Some(OsString::from("current"));
+        let legacy = Some(OsString::from("legacy"));
+        assert_eq!(preferred_data_dir_override(current, legacy.clone()), Some(PathBuf::from("current")));
+        assert_eq!(preferred_data_dir_override(None, legacy.clone()), Some(PathBuf::from("legacy")));
+        assert_eq!(preferred_data_dir_override(Some(OsString::new()), legacy), Some(PathBuf::from("legacy")));
+        assert_eq!(preferred_data_dir_override(None, Some(OsString::new())), None);
+    }
 
     #[test]
     fn uses_portable_data_dir_when_marker_exists_without_installer_marker() {

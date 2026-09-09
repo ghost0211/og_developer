@@ -4,7 +4,7 @@
   "version": "0.1.28",
   "protocol_version": 1,
   "description": "Adds JDBC driver support to OG Developer.",
-  "executable": "bin/dbx-jdbc-plugin",
+  "executable": "bin/ogdeveloper-jdbc-plugin",
   "drivers": [
     {
       "id": "jdbc",

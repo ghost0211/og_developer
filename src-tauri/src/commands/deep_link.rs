@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::sync::Mutex;
 
-const CONNECTION_DEEP_LINK_PREFIX: &str = "dbx://connection/new";
+const CONNECTION_DEEP_LINK_PREFIXES: [&str; 2] = ["ogdeveloper://connection/new", "dbx://connection/new"];
 
 #[tauri::command]
 pub fn pending_open_connection_links(state: tauri::State<'_, DeepLinkOpenState>) -> Vec<String> {
@@ -38,7 +38,7 @@ where
 
 pub fn connection_deep_link_from_arg(arg: &str) -> Option<String> {
     let trimmed = arg.trim();
-    let suffix = trimmed.strip_prefix(CONNECTION_DEEP_LINK_PREFIX)?;
+    let suffix = CONNECTION_DEEP_LINK_PREFIXES.iter().find_map(|prefix| trimmed.strip_prefix(*prefix))?;
     if !(suffix.is_empty()
         || suffix.starts_with('?')
         || suffix.starts_with('#')
@@ -65,6 +65,16 @@ fn dedupe_links(links: Vec<String>) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn supports_current_and_legacy_connection_links() {
+        for scheme in ["ogdeveloper", "dbx"] {
+            let link = format!("{scheme}://connection/new?type=opengauss&host=localhost");
+            assert_eq!(connection_deep_link_from_arg(&link), Some(link));
+            assert!(connection_deep_link_from_arg(&format!("{scheme}://connection/newer")).is_none());
+        }
+        assert!(connection_deep_link_from_arg("https://connection/new").is_none());
+    }
 
     #[test]
     fn filters_connection_deep_links() {

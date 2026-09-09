@@ -42,7 +42,7 @@ export function formatColumnNamesForCopy(names: readonly string[], options: { se
   return parts.join(COLUMN_NAME_COPY_SEPARATOR_VALUES[options.separator]);
 }
 
-const SEPARATOR_STORAGE_KEY = "dbx-copy-column-names-separator";
+const SEPARATOR_STORAGE_KEY = "ogdeveloper-copy-column-names-separator";
 
 export function loadColumnNameCopySeparator(): ColumnNameCopySeparator {
   const stored = safeLocalStorageGet(SEPARATOR_STORAGE_KEY);

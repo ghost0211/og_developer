@@ -6,14 +6,14 @@ set -euo pipefail
 # runs natively. Confirms the ELF is fully static and the HTTP server serves
 # the bundled frontend.
 
-package_tarball="${1:-${DBX_STATIC_TARBALL:-}}"
+package_tarball="${1:-${OGDEVELOPER_STATIC_TARBALL:-${DBX_STATIC_TARBALL:-}}}"
 if [ -z "$package_tarball" ]; then
   echo "usage: $0 <package-tarball>" >&2
   exit 2
 fi
 
-verify_seconds="${DBX_STATIC_VERIFY_SECONDS:-30}"
-runtime_dir="${DBX_STATIC_VERIFY_DIR:-/tmp/dbx-web-static-verify}"
+verify_seconds="${OGDEVELOPER_STATIC_VERIFY_SECONDS:-${DBX_STATIC_VERIFY_SECONDS:-30}}"
+runtime_dir="${OGDEVELOPER_STATIC_VERIFY_DIR:-${DBX_STATIC_VERIFY_DIR:-/tmp/ogdeveloper-web-static-verify}}"
 
 if [ ! -f "$package_tarball" ]; then
   echo "missing package tarball: $package_tarball" >&2
@@ -37,8 +37,8 @@ mkdir -p "$runtime_dir"
 tar -xzf "$package_tarball" -C "$runtime_dir" --strip-components=1
 
 for required_runtime_path in \
-  dbx \
-  bin/dbx-web-bin \
+  ogdeveloper \
+  bin/ogdeveloper-web-bin \
   dist/index.html; do
   if [ ! -e "$runtime_dir/$required_runtime_path" ]; then
     echo "missing packaged static web runtime path: $required_runtime_path" >&2
@@ -46,25 +46,25 @@ for required_runtime_path in \
   fi
 done
 
-if readelf -l "$runtime_dir/bin/dbx-web-bin" | grep -q 'Requesting program interpreter'; then
-  readelf -l "$runtime_dir/bin/dbx-web-bin" | grep 'Requesting program interpreter' >&2 || true
-  echo "packaged dbx-web is not static: ELF has a program interpreter" >&2
+if readelf -l "$runtime_dir/bin/ogdeveloper-web-bin" | grep -q 'Requesting program interpreter'; then
+  readelf -l "$runtime_dir/bin/ogdeveloper-web-bin" | grep 'Requesting program interpreter' >&2 || true
+  echo "packaged ogdeveloper-web is not static: ELF has a program interpreter" >&2
   exit 1
 fi
 
-if readelf -d "$runtime_dir/bin/dbx-web-bin" 2>/dev/null | grep -q 'Shared library:'; then
-  readelf -d "$runtime_dir/bin/dbx-web-bin" | grep 'Shared library:' >&2 || true
-  echo "packaged dbx-web is not static: ELF has dynamic shared library dependencies" >&2
+if readelf -d "$runtime_dir/bin/ogdeveloper-web-bin" 2>/dev/null | grep -q 'Shared library:'; then
+  readelf -d "$runtime_dir/bin/ogdeveloper-web-bin" | grep 'Shared library:' >&2 || true
+  echo "packaged ogdeveloper-web is not static: ELF has dynamic shared library dependencies" >&2
   exit 1
 fi
 
 cd "$runtime_dir"
 export RUST_BACKTRACE="${RUST_BACKTRACE:-full}"
-export DBX_DISABLE_PASSWORD="${DBX_DISABLE_PASSWORD:-1}"
-export DBX_PORT="${DBX_PORT:-4224}"
+export OGDEVELOPER_DISABLE_PASSWORD="${OGDEVELOPER_DISABLE_PASSWORD:-${DBX_DISABLE_PASSWORD:-1}}"
+export OGDEVELOPER_PORT="${OGDEVELOPER_PORT:-${DBX_PORT:-4224}}"
 
 echo "static web verification page size: $(getconf PAGE_SIZE 2>/dev/null || echo unknown)"
-./dbx >/tmp/dbx-web-static.log 2>&1 &
+./ogdeveloper >/tmp/ogdeveloper-web-static.log 2>&1 &
 pid=$!
 cleanup() {
   kill "$pid" >/dev/null 2>&1 || true
@@ -74,22 +74,22 @@ trap cleanup EXIT
 
 for _ in $(seq 1 "$verify_seconds"); do
   if ! kill -0 "$pid" 2>/dev/null; then
-    cat /tmp/dbx-web-static.log || true
+    cat /tmp/ogdeveloper-web-static.log || true
     wait "$pid"
     exit 1
   fi
 
-  if curl -fsS "http://127.0.0.1:${DBX_PORT}/" >/tmp/dbx-web-static-index.html 2>/dev/null; then
-    curl -fsS "http://127.0.0.1:${DBX_PORT}/api/auth/check" >/tmp/dbx-web-static-auth.json
-    grep -q '"authenticated":true' /tmp/dbx-web-static-auth.json
+  if curl -fsS "http://127.0.0.1:${OGDEVELOPER_PORT}/" >/tmp/ogdeveloper-web-static-index.html 2>/dev/null; then
+    curl -fsS "http://127.0.0.1:${OGDEVELOPER_PORT}/api/auth/check" >/tmp/ogdeveloper-web-static-auth.json
+    grep -q '"authenticated":true' /tmp/ogdeveloper-web-static-auth.json
     echo "static web verification HTTP check passed"
-    tail -40 /tmp/dbx-web-static.log || true
+    tail -40 /tmp/ogdeveloper-web-static.log || true
     exit 0
   fi
 
   sleep 1
 done
 
-cat /tmp/dbx-web-static.log || true
-echo "static dbx-web did not become ready within ${verify_seconds}s" >&2
+cat /tmp/ogdeveloper-web-static.log || true
+echo "static ogdeveloper-web did not become ready within ${verify_seconds}s" >&2
 exit 1

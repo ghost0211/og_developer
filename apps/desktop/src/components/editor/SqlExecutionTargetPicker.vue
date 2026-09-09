@@ -35,7 +35,7 @@ function displayLabel(candidate: SqlExecutionCandidate) {
 }
 
 function optionId(index: number) {
-  return `dbx-exec-target-${index}`;
+  return `ogdeveloper-exec-target-${index}`;
 }
 
 watch(

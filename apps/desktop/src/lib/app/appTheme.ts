@@ -1,8 +1,8 @@
 import type { Theme } from "@tauri-apps/api/window";
 
-export const APP_THEME_STORAGE_KEY = "dbx-theme";
-export const APP_THEME_PALETTE_STORAGE_KEY = "dbx-theme-palette";
-export const APP_CORNER_STYLE_STORAGE_KEY = "dbx-corner-style";
+export const APP_THEME_STORAGE_KEY = "ogdeveloper-theme";
+export const APP_THEME_PALETTE_STORAGE_KEY = "ogdeveloper-theme-palette";
+export const APP_CORNER_STYLE_STORAGE_KEY = "ogdeveloper-corner-style";
 
 export type AppThemeMode = "light" | "dark" | "system";
 export type AppThemeAppearance = "light" | "dark";

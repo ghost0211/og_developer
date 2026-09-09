@@ -18,9 +18,9 @@ Write-Host "[dbx-backend] RUST_LOG=$env:RUST_LOG DBX_PASSWORD=$env:DBX_PASSWORD"
 
 if ($DryRun) {
   if ($NoWatch) {
-    Write-Host "[dbx-backend] dry run: cargo run -p dbx-web" -ForegroundColor Yellow
+    Write-Host "[dbx-backend] dry run: cargo run -p ogdeveloper-web" -ForegroundColor Yellow
   } else {
-    Write-Host "[dbx-backend] dry run: cargo watch -x 'run -p dbx-web' (fallback: cargo run -p dbx-web)" -ForegroundColor Yellow
+    Write-Host "[dbx-backend] dry run: cargo watch -x 'run -p ogdeveloper-web' (fallback: cargo run -p ogdeveloper-web)" -ForegroundColor Yellow
   }
   exit 0
 }
@@ -36,15 +36,15 @@ if (-not $NoWatch) {
 }
 
 if ($watchAvailable) {
-  Write-Host "[dbx-backend] starting: cargo watch -x 'run -p dbx-web'" -ForegroundColor Green
-  & cargo watch -x "run -p dbx-web"
+  Write-Host "[dbx-backend] starting: cargo watch -x 'run -p ogdeveloper-web'" -ForegroundColor Green
+  & cargo watch -x "run -p ogdeveloper-web"
   exit $LASTEXITCODE
 }
 
 if (-not $NoWatch) {
-  Write-Warning "cargo-watch is unavailable; falling back to cargo run -p dbx-web. Install with: cargo install cargo-watch"
+  Write-Warning "cargo-watch is unavailable; falling back to cargo run -p ogdeveloper-web. Install with: cargo install cargo-watch"
 }
 
-Write-Host "[dbx-backend] starting: cargo run -p dbx-web" -ForegroundColor Green
-& cargo run -p dbx-web
+Write-Host "[dbx-backend] starting: cargo run -p ogdeveloper-web" -ForegroundColor Green
+& cargo run -p ogdeveloper-web
 exit $LASTEXITCODE

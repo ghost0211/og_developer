@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
-use dbx_core::db::sqlite::path_has_sqlite_header;
-use dbx_core::path_utils::expand_tilde;
+use ogdeveloper_core::db::sqlite::path_has_sqlite_header;
+use ogdeveloper_core::path_utils::expand_tilde;
 
 /// Reveal a file in the platform's file manager.
 ///
@@ -16,7 +16,7 @@ use dbx_core::path_utils::expand_tilde;
 pub fn reveal_in_file_manager(path: &Path) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
-        dbx_core::process::new_std_command("open")
+        ogdeveloper_core::process::new_std_command("open")
             .arg("-R")
             .arg(path)
             .spawn()
@@ -30,7 +30,7 @@ pub fn reveal_in_file_manager(path: &Path) -> Result<(), String> {
         // after the comma. `Command::arg` does not invoke a shell, so the path
         // is forwarded as-is — spaces and non-ASCII characters survive.
         let arg = format!("/select,{}", path.display());
-        dbx_core::process::new_std_command("explorer")
+        ogdeveloper_core::process::new_std_command("explorer")
             .arg(arg)
             .spawn()
             .map(|_| ())
@@ -40,7 +40,7 @@ pub fn reveal_in_file_manager(path: &Path) -> Result<(), String> {
     #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
     {
         let target: PathBuf = path.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| path.to_path_buf());
-        dbx_core::process::new_std_command("xdg-open")
+        ogdeveloper_core::process::new_std_command("xdg-open")
             .arg(&target)
             .spawn()
             .map(|_| ())
@@ -69,7 +69,7 @@ fn validate_path(raw: &str) -> Result<PathBuf, String> {
 }
 
 /// Reveal an absolute file path in the OS file manager. The path may use a
-/// leading `~` which is expanded via `dbx_core::path_utils::expand_tilde`.
+/// leading `~` which is expanded via `ogdeveloper_core::path_utils::expand_tilde`.
 #[tauri::command]
 pub async fn reveal_path_in_file_manager(path: String) -> Result<(), String> {
     let resolved = validate_path(&path)?;

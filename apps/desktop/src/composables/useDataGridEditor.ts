@@ -142,7 +142,7 @@ type PendingChangesHistorySnapshot = Pick<PendingChangesSnapshot, "newRows" | "n
 
 const pendingChangesCache = new Map<string, PendingChangesSnapshot>();
 const closingPendingSnapshotTabs = new Set<string>();
-const BEFORE_TAB_SWITCH_EVENT = "dbx:before-tab-switch";
+const BEFORE_TAB_SWITCH_EVENT = "ogdeveloper:before-tab-switch";
 const MAX_PENDING_CHANGES_HISTORY = 100;
 
 function dataGridRowsIdentityChanged(previousRows: CellValue[][] | undefined, nextRows: CellValue[][], appendedFromRowCount?: number): boolean {
@@ -1390,7 +1390,7 @@ export function useDataGridEditor(options: UseDataGridEditorOptions) {
         error: message,
       });
     } catch (historyError) {
-      console.warn("[DBX] failed to record data grid history", historyError);
+      console.warn("[ogdeveloper] failed to record data grid history", historyError);
     }
     return message;
   }
@@ -1506,7 +1506,7 @@ export function useDataGridEditor(options: UseDataGridEditorOptions) {
     }
     const start = Date.now();
     let apiResult: { affected_rows?: number } | undefined;
-    console.info("[DBX][dataGrid:save-statements]", {
+    console.info("[ogdeveloper][dataGrid:save-statements]", {
       databaseType: databaseType.value,
       table: tableMeta.value ? [tableMeta.value.schema, tableMeta.value.tableName].filter(Boolean).join(".") : undefined,
       statements: stmts,
@@ -1543,7 +1543,7 @@ export function useDataGridEditor(options: UseDataGridEditorOptions) {
     try {
       await recordDataGridHistory(stmts, rollbackStmts, Date.now() - start, snapshot, apiResult);
     } catch (e) {
-      console.warn("[DBX] failed to record data grid history", e);
+      console.warn("[ogdeveloper] failed to record data grid history", e);
     }
     applyDirtyRowsToResult(snapshot);
     options.onResultPayloadMutated?.();

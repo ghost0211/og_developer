@@ -89,13 +89,13 @@ function onExport() {
   const config = props.configs.find((c) => c.id === props.activeConfigId);
   if (config) {
     emit("export", config);
-    downloadJson(JSON.stringify(config, null, 2), `dbx-schema-diff-${config.name}.json`);
+    downloadJson(JSON.stringify(config, null, 2), `ogdeveloper-schema-diff-${config.name}.json`);
   }
 }
 
 function onExportAll() {
   emit("exportAll", props.configs);
-  downloadJson(JSON.stringify(props.configs, null, 2), "dbx-schema-diff-configs.json");
+  downloadJson(JSON.stringify(props.configs, null, 2), "ogdeveloper-schema-diff-configs.json");
 }
 
 async function onImportFile(event: Event) {

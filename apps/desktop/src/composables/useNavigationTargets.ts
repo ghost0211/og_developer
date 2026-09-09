@@ -147,7 +147,7 @@ async function openTableTarget(target: NavigationTarget, options: { tableInfoTab
         primaryKeys,
       });
     } catch (reason) {
-      console.error("[DBX] ERROR fetching table metadata:", reason);
+      console.error("[ogdeveloper] ERROR fetching table metadata:", reason);
     }
   } catch (e: any) {
     if (firstExecuteStarted ? !isCurrentTarget() : !isPreparationCurrent()) return;

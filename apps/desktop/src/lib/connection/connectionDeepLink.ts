@@ -75,7 +75,7 @@ export function parseConnectionDeepLink(value: string): ConnectionDeepLinkDraft 
     return null;
   }
 
-  if (url.protocol !== "dbx:") return null;
+  if (url.protocol !== "ogdeveloper:" && url.protocol !== "dbx:") return null;
   if (normalizePath(url) !== CONNECTION_DEEP_LINK_TARGET) return null;
 
   const params = url.searchParams;

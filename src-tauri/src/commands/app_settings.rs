@@ -3,7 +3,7 @@ use std::{
     sync::Arc,
 };
 
-use dbx_core::storage::DesktopSettings;
+use ogdeveloper_core::storage::DesktopSettings;
 use tauri::{AppHandle, Manager, State, Window};
 
 use super::connection::AppState;
@@ -282,7 +282,7 @@ fn default_agent_store_dir(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(if data_dir_resolution.uses_custom_data_dir() {
         data_dir_resolution.data_dir.join("agents")
     } else {
-        dbx_core::connection::default_agent_dir()
+        ogdeveloper_core::connection::default_agent_dir()
     })
 }
 

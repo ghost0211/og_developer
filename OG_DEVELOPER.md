@@ -22,7 +22,7 @@ PL/SQL 开发体验。
    上游完整代码原样保留，放宽白名单即可恢复）。
 3. **openGauss 修复集**：见 [OPENGAUSS_FIXES.md](OPENGAUSS_FIXES.md)
    （切分器/对象树/源码/类型，已真机验证）。
-4. Rust crate 名（dbx-core 等）与二进制名暂保持不变，降低追上游成本；
+4. Rust crate 名（ogdeveloper-core 等）与二进制名暂保持不变，降低追上游成本；
    安装包产物名由 Tauri `productName` 决定。
 
 ## 路线图
@@ -38,7 +38,7 @@ pnpm dev              # 前端开发服务器
 pnpm build            # 前端构建
 pnpm tauri dev        # 桌面端（需 webkit2gtk/fontconfig 等系统库）
 npx vitest run        # 前端测试
-cargo test -p dbx-core --no-default-features \
+cargo test -p ogdeveloper-core --no-default-features \
   --features duckdb-sidecar,mq-admin,sqlite-sqlcipher --lib   # Rust 测试
 ```
 

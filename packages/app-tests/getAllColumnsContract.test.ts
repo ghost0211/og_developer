@@ -28,7 +28,7 @@ test("getAllColumns is exported from both backends with table_name", () => {
 test("get_all_columns is registered in Tauri and mounted on the web API", () => {
   const schemaCommands = source("src-tauri/src/commands/schema.rs");
   const lib = source("src-tauri/src/lib.rs");
-  const webMain = source("crates/dbx-web/src/main.rs");
+  const webMain = source("crates/ogdeveloper-web/src/main.rs");
 
   assert.match(schemaCommands, /pub async fn get_all_columns/);
   assert.match(lib, /commands::schema::get_all_columns/);

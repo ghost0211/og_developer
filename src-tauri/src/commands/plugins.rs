@@ -1,20 +1,22 @@
 use std::sync::Arc;
 use tauri::{Emitter, Manager, State};
 
-use dbx_core::jdbc::{
+use ogdeveloper_core::jdbc::{
     self, AgentProgressEvent, JdbcDriverInfo, JdbcLocalBundleInfo, JdbcMavenBundleInfo, JdbcMavenInstallRequest,
     JdbcPluginStatus,
 };
-use dbx_core::plugins::InstalledPlugin;
+use ogdeveloper_core::plugins::InstalledPlugin;
 
 use super::connection::AppState;
 
 #[tauri::command]
 pub async fn list_plugins(state: State<'_, Arc<AppState>>) -> Result<Vec<InstalledPlugin>, String> {
     let root_dir = state.plugins.root_dir().to_path_buf();
-    tauri::async_runtime::spawn_blocking(move || dbx_core::plugins::PluginRegistry::new(root_dir).list_installed())
-        .await
-        .map_err(|err| err.to_string())?
+    tauri::async_runtime::spawn_blocking(move || {
+        ogdeveloper_core::plugins::PluginRegistry::new(root_dir).list_installed()
+    })
+    .await
+    .map_err(|err| err.to_string())?
 }
 
 #[tauri::command]

@@ -35,7 +35,7 @@ export function useSidebarDataOpenRuntime() {
     let lastPhaseAt = startedAt;
     const elapsed = () => `${Math.round(performance.now() - startedAt)}ms`;
     const openDataLog = (level: "info" | "warn" | "error" | "debug", event: string, details: Record<string, unknown>) => {
-      appendDebugLog(level, `[DBX][openData:${event}]`, details);
+      appendDebugLog(level, `[ogdeveloper][openData:${event}]`, details);
     };
     const logPhase = (phase: string, extra: Record<string, unknown> = {}) => {
       const now = performance.now();

@@ -6,7 +6,7 @@ use std::sync::{
 use std::time::Duration;
 
 use super::update_portable;
-pub use dbx_core::update::UpdateInfo;
+pub use ogdeveloper_core::update::UpdateInfo;
 use semver::Version;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
@@ -291,12 +291,12 @@ fn tag_version(version: &str) -> String {
 #[tauri::command]
 pub async fn check_for_updates(
     locale: Option<String>,
-    source: Option<dbx_core::DownloadSource>,
+    source: Option<ogdeveloper_core::DownloadSource>,
 ) -> Result<UpdateInfo, String> {
     let locale = locale.unwrap_or_else(|| "zh-CN".to_string());
-    let release = dbx_core::update::fetch_latest_release(&locale, source.unwrap_or_default()).await?;
+    let release = ogdeveloper_core::update::fetch_latest_release(&locale, source.unwrap_or_default()).await?;
     let current_version = env!("CARGO_PKG_VERSION");
-    let mut info = dbx_core::update::build_update_info(release, current_version);
+    let mut info = ogdeveloper_core::update::build_update_info(release, current_version);
     info.portable_mode = crate::data_dir::is_portable_mode();
     info.manual_update_only = requires_manual_update(IS_WINDOWS_7_TARGET);
     Ok(info)
@@ -307,14 +307,14 @@ fn requires_manual_update(is_windows_7_target: bool) -> bool {
 }
 
 #[tauri::command]
-pub async fn fetch_changelog(lang: Option<String>) -> Result<dbx_core::changelog::ChangelogData, String> {
+pub async fn fetch_changelog(lang: Option<String>) -> Result<ogdeveloper_core::changelog::ChangelogData, String> {
     let lang = lang.unwrap_or_else(|| "en".to_string());
-    dbx_core::changelog::fetch_changelog(&lang).await
+    ogdeveloper_core::changelog::fetch_changelog(&lang).await
 }
 
 #[tauri::command]
 pub async fn get_system_proxy_url() -> Option<String> {
-    tauri::async_runtime::spawn_blocking(dbx_core::update::system_proxy_url).await.ok().flatten()
+    tauri::async_runtime::spawn_blocking(ogdeveloper_core::update::system_proxy_url).await.ok().flatten()
 }
 
 #[tauri::command]
@@ -374,7 +374,7 @@ async fn download_update_inner(
     let mut builder =
         app.updater_builder().endpoints(endpoints).map_err(|e| format!("Failed to configure updater endpoint: {e}"))?;
 
-    if let Some(proxy_url) = dbx_core::update::system_proxy_url() {
+    if let Some(proxy_url) = ogdeveloper_core::update::system_proxy_url() {
         let proxy = proxy_url.parse().map_err(|e| format!("Invalid system proxy URL: {e}"))?;
         builder = builder.proxy(proxy);
     }
@@ -519,7 +519,7 @@ fn portable_update_http_client() -> Result<reqwest::Client, String> {
         .connect_timeout(Duration::from_secs(15))
         .read_timeout(Duration::from_secs(15))
         .timeout(Duration::from_secs(15 * 60));
-    if let Some(proxy_url) = dbx_core::update::system_proxy_url() {
+    if let Some(proxy_url) = ogdeveloper_core::update::system_proxy_url() {
         let proxy = reqwest::Proxy::all(&proxy_url).map_err(|error| format!("Invalid system proxy URL: {error}"))?;
         builder = builder.proxy(proxy);
     }

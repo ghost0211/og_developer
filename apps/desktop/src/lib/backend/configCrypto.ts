@@ -1,5 +1,5 @@
 export interface EncryptedPayload {
-  format: "dbx-encrypted";
+  format: "ogdeveloper-encrypted" | "dbx-encrypted";
   version: 1;
   salt: string;
   iv: string;
@@ -7,7 +7,7 @@ export interface EncryptedPayload {
 }
 
 export interface PlainConfigPayload {
-  format: "dbx-config";
+  format: "ogdeveloper-config" | "dbx-config";
   version: 1;
   connections: unknown[];
 }
@@ -62,7 +62,7 @@ export async function encryptConfig(json: string, passphrase: string): Promise<E
   const encoded = new TextEncoder().encode(json);
   const ciphertext = await runtimeCrypto.subtle.encrypt({ name: "AES-GCM", iv }, key, encoded);
   return {
-    format: "dbx-encrypted",
+    format: "ogdeveloper-encrypted",
     version: 1,
     salt: toBase64(salt),
     iv: toBase64(iv),
@@ -98,5 +98,5 @@ export async function decryptConfig(payload: EncryptedPayload, passphrase: strin
 export function isEncryptedConfig(data: unknown): data is EncryptedPayload {
   if (typeof data !== "object" || data === null) return false;
   const obj = data as Record<string, unknown>;
-  return obj.format === "dbx-encrypted" && obj.version === 1 && typeof obj.salt === "string" && typeof obj.iv === "string" && typeof obj.data === "string";
+  return (obj.format === "ogdeveloper-encrypted" || obj.format === "dbx-encrypted") && obj.version === 1 && typeof obj.salt === "string" && typeof obj.iv === "string" && typeof obj.data === "string";
 }

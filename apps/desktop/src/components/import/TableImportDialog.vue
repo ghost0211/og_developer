@@ -759,7 +759,7 @@ async function startImport() {
     store.invalidateMetadataCache(props.prefillConnectionId, props.prefillDatabase || "", props.prefillSchema || undefined, tableName);
     if (targetMode.value === "create") {
       store.refreshObjectListTreeNode(props.prefillConnectionId, props.prefillDatabase || "", props.prefillSchema || undefined).catch((error) => {
-        console.warn("[DBX][table-import:refresh-created-table-failed]", error);
+        console.warn("[ogdeveloper][table-import:refresh-created-table-failed]", error);
       });
     }
   } catch (e: any) {
@@ -864,7 +864,7 @@ async function startBatchImport() {
     progress.value = { importId: importId.value, status: "done", phase: "done", rowsImported: completedRows, totalRows: completedRows, totalRowsExact: true, bytesRead: totalBytes, totalBytes, elapsedMs: liveElapsedMs.value };
     toast(t("tableImport.success", { count: completedRows }), 2500);
     store.refreshObjectListTreeNode(props.prefillConnectionId, props.prefillDatabase || "", props.prefillSchema || undefined).catch((error) => {
-      console.warn("[DBX][table-import:refresh-created-table-failed]", error);
+      console.warn("[ogdeveloper][table-import:refresh-created-table-failed]", error);
     });
   } catch (e: any) {
     const task = batchTasks.value[activeTaskIndex.value];
@@ -1004,7 +1004,7 @@ watch(rawProgressPercent, (percent) => {
 
 <template>
   <Dialog v-model:open="open">
-    <DialogScrollContent class="flex max-h-[calc(var(--dbx-viewport-height)-6rem)] min-h-0 flex-col overflow-hidden sm:max-w-[980px]" :trap-focus="false" @interact-outside.prevent>
+    <DialogScrollContent class="flex max-h-[calc(var(--ogdeveloper-viewport-height)-6rem)] min-h-0 flex-col overflow-hidden sm:max-w-[980px]" :trap-focus="false" @interact-outside.prevent>
       <DialogHeader class="shrink-0 pr-8">
         <DialogTitle class="flex items-center gap-2 text-base">
           <FileUp class="h-4 w-4" />

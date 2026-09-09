@@ -11,7 +11,7 @@ import type { DataGridContextFilterMode } from "@/lib/dataGrid/dataGridSql";
 import type { DataGridStructuredFilterRule } from "@/composables/useDataGridFilterBuilder";
 
 const { t } = useI18n();
-const VALUE_SHORTCUT_HINT_STORAGE_KEY = "dbx-filter-builder-value-shortcut-hint-days";
+const VALUE_SHORTCUT_HINT_STORAGE_KEY = "ogdeveloper-filter-builder-value-shortcut-hint-days";
 const VALUE_SHORTCUT_HINT_MAX_DAYS = 3;
 const VALUE_SHORTCUT_HINT_MAX_PER_DAY = 2;
 type ValueShortcutHintDay = { date: string; count: number };

@@ -5182,7 +5182,7 @@ function openExternalUrl(url: string) {
                     type="button"
                     :title="opt.label"
                     class="connection-db-picker-option group flex min-h-24 flex-col items-center justify-center gap-2 rounded-[4px] border bg-background/70 p-3 text-center transition hover:border-primary/40 hover:bg-muted/40 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    :class="selectedType === opt.value ? 'dbx-tile-selected shadow-sm' : 'border-border'"
+                    :class="selectedType === opt.value ? 'ogdeveloper-tile-selected shadow-sm' : 'border-border'"
                     :aria-pressed="selectedType === opt.value"
                     @click="onDbTypeChange(opt.value)"
                     @dblclick="goToConnectionStep(opt.value)"
@@ -5202,7 +5202,7 @@ function openExternalUrl(url: string) {
                     :key="opt.value"
                     type="button"
                     class="connection-db-picker-option flex items-center gap-3 rounded-[4px] border bg-background px-3 py-2 text-left transition hover:border-primary/40 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    :class="selectedType === opt.value ? 'dbx-tile-selected' : 'border-border'"
+                    :class="selectedType === opt.value ? 'ogdeveloper-tile-selected' : 'border-border'"
                     :aria-pressed="selectedType === opt.value"
                     @click="onDbTypeChange(opt.value)"
                     @dblclick="goToConnectionStep(opt.value)"
@@ -7853,7 +7853,7 @@ function openExternalUrl(url: string) {
 .connection-dialog-content {
   display: flex;
   flex-direction: column;
-  max-height: calc(var(--dbx-viewport-height) - 2rem);
+  max-height: calc(var(--ogdeveloper-viewport-height) - 2rem);
 }
 
 .connection-dialog-content--config {
@@ -7863,7 +7863,7 @@ function openExternalUrl(url: string) {
 @media (max-height: 720px) {
   .connection-dialog-content--config {
     /* A definite flex height lets tab bodies shrink and scroll above the fixed footer. */
-    height: calc(var(--dbx-viewport-height) - 2rem);
+    height: calc(var(--ogdeveloper-viewport-height) - 2rem);
   }
 
   .connection-dialog-content--config .connection-form-body {
@@ -7901,7 +7901,7 @@ function openExternalUrl(url: string) {
 }
 
 .connection-config-step :is([data-slot="input"], [data-slot="select-trigger"], [data-slot="tabs-list"], [data-slot="tabs-trigger"], textarea) {
-  border-radius: var(--dbx-radius-fixed-4, 4px);
+  border-radius: var(--ogdeveloper-radius-fixed-4, 4px);
 }
 
 .connection-dialog-content[data-wide="true"] .grid.grid-cols-4 {

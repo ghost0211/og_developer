@@ -7,12 +7,12 @@ type ToastState = {
 };
 
 declare global {
-  var __DBX_TOAST_STATE__: ToastState | undefined;
+  var __OGDEVELOPER_TOAST_STATE__: ToastState | undefined;
 }
 
 const toastState =
-  globalThis.__DBX_TOAST_STATE__ ??
-  (globalThis.__DBX_TOAST_STATE__ = {
+  globalThis.__OGDEVELOPER_TOAST_STATE__ ??
+  (globalThis.__OGDEVELOPER_TOAST_STATE__ = {
     message: ref(""),
     visible: ref(false),
     timer: 0,

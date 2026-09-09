@@ -40,7 +40,7 @@ test("savePersistedPositions / loadPersistedPositions round-trip", () => {
 
 test("loadPersistedPositions drops invalid entries", () => {
   store.set(
-    ["dbx", "diagram", "positions", "v1", "c", "d", "s"].join(":"),
+    ["ogdeveloper", "diagram", "positions", "v1", "c", "d", "s"].join(":"),
     JSON.stringify({
       ok: { x: 1, y: 2 },
       bad: { x: "no", y: 2 },
@@ -76,7 +76,7 @@ test("saveDraftTables / loadDraftTables round-trip and only persists drafts", ()
 
 test("loadDraftTables drops invalid entries and normalizes origin/syncStatus", () => {
   store.set(
-    ["dbx", "diagram", "draft-tables", "v1", "c", "d", "s"].join(":"),
+    ["ogdeveloper", "diagram", "draft-tables", "v1", "c", "d", "s"].join(":"),
     JSON.stringify([
       { name: "ok", columns: [], foreignKeys: [], syncStatus: "error" },
       { name: 123, columns: [] },

@@ -532,7 +532,7 @@ const tabOverflowControlClass = computed(() =>
 
 function dispatchBeforeTabSwitch(tabId: string) {
   if (tabId === queryStore.activeTabId) return;
-  window.dispatchEvent(new CustomEvent("dbx:before-tab-switch", { detail: { tabId, fromTabId: queryStore.activeTabId } }));
+  window.dispatchEvent(new CustomEvent("ogdeveloper:before-tab-switch", { detail: { tabId, fromTabId: queryStore.activeTabId } }));
 }
 
 function activateTab(tabId: string) {

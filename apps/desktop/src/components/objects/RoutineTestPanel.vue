@@ -293,7 +293,7 @@ function canEditParameter(parameter: RoutineParameterValue): boolean {
 async function runTestExecution() {
   const sql = (getEditorText() || generatedSql.value).trim();
   if (!sql) {
-    console.warn("[DBX][RoutineTest] empty SQL script");
+    console.warn("[ogdeveloper][RoutineTest] empty SQL script");
     toast("No SQL statements to execute", 3000);
     return;
   }

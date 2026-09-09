@@ -1,5 +1,6 @@
-const DEBUG_LOG_ENABLED_KEY = "dbx-debug-logging-enabled";
-const DEBUG_LOG_ENTRIES_KEY = "dbx-debug-log-entries";
+import { safeLocalStorageGet, safeLocalStorageSet, safeLocalStorageRemove } from "./safeStorage";
+const DEBUG_LOG_ENABLED_KEY = "ogdeveloper-debug-logging-enabled";
+const DEBUG_LOG_ENTRIES_KEY = "ogdeveloper-debug-log-entries";
 const MAX_DEBUG_LOG_ENTRIES = 1500;
 const MAX_TEXT_LENGTH = 4000;
 const MAX_LABEL_LENGTH = 120;
@@ -14,28 +15,6 @@ interface DebugLogEntry {
 
 let installed = false;
 let originalConsole: Partial<Record<DebugLogLevel, (...args: unknown[]) => void>> = {};
-
-function safeLocalStorageGet(key: string): string | null {
-  try {
-    return localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-}
-
-function safeLocalStorageSet(key: string, value: string) {
-  try {
-    localStorage.setItem(key, value);
-  } catch {
-    // Ignore quota or unavailable storage errors. The app should keep running.
-  }
-}
-
-function safeLocalStorageRemove(key: string) {
-  try {
-    localStorage.removeItem(key);
-  } catch {}
-}
 
 export function isDebugLoggingEnabled(): boolean {
   return safeLocalStorageGet(DEBUG_LOG_ENABLED_KEY) === "1";
@@ -118,7 +97,7 @@ export function appendDebugLog(level: DebugLogLevel, ...args: unknown[]) {
 export function setDebugLoggingEnabled(enabled: boolean) {
   safeLocalStorageSet(DEBUG_LOG_ENABLED_KEY, enabled ? "1" : "0");
   if (enabled) {
-    appendDebugLog("info", "[DBX][debug-log] enabled", {
+    appendDebugLog("info", "[ogdeveloper][debug-log] enabled", {
       url: location.href,
       viewport: `${window.innerWidth}x${window.innerHeight}`,
       devicePixelRatio: window.devicePixelRatio,
@@ -141,7 +120,7 @@ export function getDebugLogText(): string {
 
 export async function downloadDebugLogs() {
   const text = await getDebugLogBundleText();
-  const filename = `dbx-debug-log-${formatLocalTimestampForFilename()}.txt`;
+  const filename = `ogdeveloper-debug-log-${formatLocalTimestampForFilename()}.txt`;
   if (typeof window !== "undefined" && isTauriRuntimeLike()) {
     const [{ save }, { writeTextFile }] = await Promise.all([import("@tauri-apps/plugin-dialog"), import("@tauri-apps/plugin-fs")]);
     const path = await save({

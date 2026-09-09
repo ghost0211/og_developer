@@ -30,7 +30,7 @@ export function useTauriEvents(deps: { openTableTarget: (target: NavigationTarge
             deps.openTableTarget({ connectionId: connection_id, database, schema, tableName: table });
             focusCurrentWindow();
           } catch (e) {
-            console.error("[DBX] mcp-open-table error:", e);
+            console.error("[ogdeveloper] mcp-open-table error:", e);
           }
         }).then((unlisten) => unlistenHandles.push(unlisten));
 
@@ -38,7 +38,7 @@ export function useTauriEvents(deps: { openTableTarget: (target: NavigationTarge
           try {
             await connectionStore.initFromDisk();
           } catch (e) {
-            console.error("[DBX] mcp-reload-connections error:", e);
+            console.error("[ogdeveloper] mcp-reload-connections error:", e);
           }
         }).then((unlisten) => unlistenHandles.push(unlisten));
 
@@ -57,40 +57,40 @@ export function useTauriEvents(deps: { openTableTarget: (target: NavigationTarge
             queryStore.showExecutedQueryResults(connection_id, database, sql, results);
             focusCurrentWindow();
           } catch (e) {
-            console.error("[DBX] mcp-execute-query error:", e);
+            console.error("[ogdeveloper] mcp-execute-query error:", e);
           }
         }).then((unlisten) => unlistenHandles.push(unlisten));
 
-        listen<string[]>("dbx-open-sql-files", async (event) => {
+        listen<string[]>("ogdeveloper-open-sql-files", async (event) => {
           try {
             for (const path of event.payload) {
               await deps.openSqlFilePath(path);
             }
             focusCurrentWindow();
           } catch (e) {
-            console.error("[DBX] dbx-open-sql-files error:", e);
+            console.error("[ogdeveloper] dbx-open-sql-files error:", e);
           }
         }).then((unlisten) => unlistenHandles.push(unlisten));
 
-        listen<string[]>("dbx-open-db-files", async (event) => {
+        listen<string[]>("ogdeveloper-open-db-files", async (event) => {
           try {
             for (const path of event.payload) {
               await deps.openDbFilePath(path);
             }
             focusCurrentWindow();
           } catch (e) {
-            console.error("[DBX] dbx-open-db-files error:", e);
+            console.error("[ogdeveloper] dbx-open-db-files error:", e);
           }
         }).then((unlisten) => unlistenHandles.push(unlisten));
 
-        listen<string[]>("dbx-open-connection-links", async (event) => {
+        listen<string[]>("ogdeveloper-open-connection-links", async (event) => {
           try {
             for (const url of event.payload) {
               await deps.openConnectionDeepLink(url);
             }
             focusCurrentWindow();
           } catch (e) {
-            console.error("[DBX] dbx-open-connection-links error:", e);
+            console.error("[ogdeveloper] dbx-open-connection-links error:", e);
           }
         }).then((unlisten) => unlistenHandles.push(unlisten));
       })

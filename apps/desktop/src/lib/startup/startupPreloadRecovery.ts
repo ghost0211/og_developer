@@ -1,4 +1,4 @@
-const STARTUP_PRELOAD_RETRY_KEY = "dbx-startup-preload-retry";
+const STARTUP_PRELOAD_RETRY_KEY = "ogdeveloper-startup-preload-retry";
 
 interface StartupPreloadRecoveryEnvironment {
   sessionStorage: Pick<Storage, "getItem" | "setItem" | "removeItem">;

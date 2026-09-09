@@ -21,7 +21,7 @@ export async function createShikiSqlHighlighter(options: ShikiSqlHighlighterOpti
     const highlighter = await getShikiSqlHighlighter();
     return createSafeSqlHighlighter(highlighter, options);
   } catch (error) {
-    console.warn("[DBX][sqlHighlighter] Failed to initialize SQL highlighter:", error);
+    console.warn("[ogdeveloper][sqlHighlighter] Failed to initialize SQL highlighter:", error);
     return escapeHtml;
   }
 }
@@ -35,7 +35,7 @@ export function createSafeSqlHighlighter(highlighter: ShikiCodeHighlighter, opti
         theme: SHIKI_THEMES[appearance],
       });
     } catch (error) {
-      console.warn("[DBX][sqlHighlighter] Failed to highlight SQL:", error);
+      console.warn("[ogdeveloper][sqlHighlighter] Failed to highlight SQL:", error);
       return escapeHtml(content);
     }
   };

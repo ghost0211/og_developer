@@ -202,12 +202,12 @@ watch(
 const projectDialog = ref<{ open: boolean; mode: "create" | "open" }>({ open: false, mode: "create" });
 const menuSearchDialog = ref<{ open: boolean; mode: MenuSearchMode }>({ open: false, mode: "files" });
 const sessionsDialogOpen = ref(false);
-const showHistory = ref(safeLocalStorageGet("dbx-history-panel-open") === "true");
-const showAiPanel = ref(safeLocalStorageGet("dbx-ai-panel-open") === "true");
-const showSqlLibraryPanel = ref(safeLocalStorageGet("dbx-sql-library-open") === "true");
-const showSqlFilePanel = ref(safeLocalStorageGet("dbx-sql-file-panel-open") === "true");
-const showProjectFilePanel = ref(safeLocalStorageGet("dbx-project-file-panel-open") === "true");
-const showGitPanel = ref(safeLocalStorageGet("dbx-git-panel-open") === "true");
+const showHistory = ref(safeLocalStorageGet("ogdeveloper-history-panel-open") === "true");
+const showAiPanel = ref(safeLocalStorageGet("ogdeveloper-ai-panel-open") === "true");
+const showSqlLibraryPanel = ref(safeLocalStorageGet("ogdeveloper-sql-library-open") === "true");
+const showSqlFilePanel = ref(safeLocalStorageGet("ogdeveloper-sql-file-panel-open") === "true");
+const showProjectFilePanel = ref(safeLocalStorageGet("ogdeveloper-project-file-panel-open") === "true");
+const showGitPanel = ref(safeLocalStorageGet("ogdeveloper-git-panel-open") === "true");
 const toolPanelRefs: Record<ToolPanelId, typeof showAiPanel> = {
   ai: showAiPanel,
   history: showHistory,
@@ -217,21 +217,21 @@ const toolPanelRefs: Record<ToolPanelId, typeof showAiPanel> = {
   git: showGitPanel,
 };
 const toolPanelStorageKeys: Record<ToolPanelId, string> = {
-  ai: "dbx-ai-panel-open",
-  history: "dbx-history-panel-open",
-  sqlLibrary: "dbx-sql-library-open",
-  sqlFile: "dbx-sql-file-panel-open",
-  projectFile: "dbx-project-file-panel-open",
-  git: "dbx-git-panel-open",
+  ai: "ogdeveloper-ai-panel-open",
+  history: "ogdeveloper-history-panel-open",
+  sqlLibrary: "ogdeveloper-sql-library-open",
+  sqlFile: "ogdeveloper-sql-file-panel-open",
+  projectFile: "ogdeveloper-project-file-panel-open",
+  git: "ogdeveloper-git-panel-open",
 };
-const sidebarOpen = ref(safeLocalStorageGet("dbx-sidebar-open") !== "false");
-const storedActiveToolPanel = safeLocalStorageGet("dbx-active-tool-panel");
+const sidebarOpen = ref(safeLocalStorageGet("ogdeveloper-sidebar-open") !== "false");
+const storedActiveToolPanel = safeLocalStorageGet("ogdeveloper-active-tool-panel");
 const initialToolPanelSession = createToolPanelSession(Object.fromEntries(TOOL_PANEL_IDS.map((panelId) => [panelId, toolPanelRefs[panelId].value])) as ToolPanelState, storedActiveToolPanel);
 for (const panelId of TOOL_PANEL_IDS) {
   toolPanelRefs[panelId].value = initialToolPanelSession.open[panelId];
   safeLocalStorageSet(toolPanelStorageKeys[panelId], String(initialToolPanelSession.open[panelId]));
 }
-safeLocalStorageSet("dbx-active-tool-panel", initialToolPanelSession.active ?? "");
+safeLocalStorageSet("ogdeveloper-active-tool-panel", initialToolPanelSession.active ?? "");
 const activeToolPanel = ref<ToolPanelId | null>(initialToolPanelSession.active);
 const aiPanelReady = ref(false);
 const { sidebarWidth, aiPanelWidth, historyWidth, sqlLibraryWidth, sqlFilePanelWidth, projectFilePanelWidth, gitPanelWidth, startSidebarResize, startAiPanelResize, startHistoryResize, startSqlLibraryResize, startSqlFilePanelResize, startProjectFilePanelResize, startGitPanelResize } =
@@ -504,9 +504,9 @@ async function applyUiScale(scale: number) {
   try {
     const { getCurrentWebview } = await import("@tauri-apps/api/webview");
     await getCurrentWebview().setZoom(scale);
-    window.dispatchEvent(new CustomEvent("dbx:ui-scale-applied", { detail: { scale } }));
+    window.dispatchEvent(new CustomEvent("ogdeveloper:ui-scale-applied", { detail: { scale } }));
   } catch (error) {
-    console.warn("[DBX] Failed to apply UI scale", { scale, error });
+    console.warn("[ogdeveloper] Failed to apply UI scale", { scale, error });
   }
 }
 
@@ -563,7 +563,7 @@ watch(
   (id, previousId) => {
     if (previousId && previousId !== id && typeof window !== "undefined") {
       window.dispatchEvent(
-        new CustomEvent("dbx:before-tab-switch", {
+        new CustomEvent("ogdeveloper:before-tab-switch", {
           detail: { tabId: id, fromTabId: previousId },
         }),
       );
@@ -623,7 +623,7 @@ function applyToolPanelSession(session: ReturnType<typeof createToolPanelSession
     safeLocalStorageSet(toolPanelStorageKeys[panelId], String(session.open[panelId]));
   }
   activeToolPanel.value = session.active;
-  safeLocalStorageSet("dbx-active-tool-panel", session.active ?? "");
+  safeLocalStorageSet("ogdeveloper-active-tool-panel", session.active ?? "");
 }
 
 function setToolPanelOpen(panelId: ToolPanelId, open: boolean) {
@@ -1653,7 +1653,7 @@ type EditorMenuAction = "undo" | "redo" | "cut" | "copy" | "paste" | "find" | "r
 
 function dispatchEditorMenuAction(action: EditorMenuAction) {
   if (activeTab.value?.mode !== "query") return;
-  window.dispatchEvent(new CustomEvent("dbx-editor-command", { detail: { action } }));
+  window.dispatchEvent(new CustomEvent("ogdeveloper-editor-command", { detail: { action } }));
 }
 
 function openFileFromMenuSearch(path: string) {
@@ -1697,7 +1697,7 @@ function openObjectFromMenuSearch(hit: { connectionId: string; database: string;
 
 function setSidebarOpen(open: boolean) {
   sidebarOpen.value = open;
-  safeLocalStorageSet("dbx-sidebar-open", open ? "true" : "false");
+  safeLocalStorageSet("ogdeveloper-sidebar-open", open ? "true" : "false");
 }
 
 function ensureQueryTab(): string {
@@ -1905,7 +1905,7 @@ async function handleQuickOpenSelect(item: any) {
 
 function dispatchBeforeTabSwitch(tabId: string) {
   if (tabId === queryStore.activeTabId) return;
-  window.dispatchEvent(new CustomEvent("dbx:before-tab-switch", { detail: { tabId, fromTabId: queryStore.activeTabId } }));
+  window.dispatchEvent(new CustomEvent("ogdeveloper:before-tab-switch", { detail: { tabId, fromTabId: queryStore.activeTabId } }));
 }
 
 function openCommandWindowFromMenu() {
@@ -2384,7 +2384,7 @@ onUnmounted(() => {
   <LoginPage v-if="setupRequired || (needsAuth && !authenticated)" :setup-mode="setupRequired" @authenticated="onLoginSuccess" />
   <div v-show="!setupRequired && (!needsAuth || authenticated)" class="fixed inset-0 h-screen w-screen overflow-hidden">
     <TooltipProvider :delay-duration="300">
-      <div class="h-screen w-screen max-w-full min-w-[760px] min-h-[600px] flex flex-col bg-background text-foreground overflow-hidden" :class="{ 'dbx-desktop-window-frame': drawDesktopWindowFrame }" :style="appUiFontFamilyStyle">
+      <div class="h-screen w-screen max-w-full min-w-[760px] min-h-[600px] flex flex-col bg-background text-foreground overflow-hidden" :class="{ 'ogdeveloper-desktop-window-frame': drawDesktopWindowFrame }" :style="appUiFontFamilyStyle">
         <AppToolbar
           :theme-mode="themeMode"
           :has-connections="connectionStore.connections.length > 0"
@@ -2851,7 +2851,7 @@ onUnmounted(() => {
         @saved="onQueryEditorObjectSourceSaved"
       />
     </TooltipProvider>
-    <div id="dbx-query-editor-tooltip-root" class="fixed left-0 top-0 z-[70] h-0 w-0 overflow-visible" />
+    <div id="ogdeveloper-query-editor-tooltip-root" class="fixed left-0 top-0 z-[70] h-0 w-0 overflow-visible" />
   </div>
   <AboutDialog v-model:open="aboutDialogOpen" :app-version="appVersion" @check-updates="onAboutCheckUpdates" />
   <UpdateDialog

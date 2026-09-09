@@ -48,8 +48,8 @@ make cargo-check-fast  # fast Rust checks
 | --- | --- |
 | `apps/desktop/src/` | Vue frontend |
 | `src-tauri/` | Tauri desktop shell and command layer |
-| `crates/dbx-core/` | Shared Rust database logic |
-| `crates/dbx-web/` | Docker / Web HTTP backend |
+| `crates/ogdeveloper-core/` | Shared Rust database logic |
+| `crates/ogdeveloper-web/` | Docker / Web HTTP backend |
 | `packages/cli/` | `@dbx-app/cli` |
 | `packages/mcp-server/` | `@dbx-app/mcp-server` |
 | `docs/` | Official documentation site |

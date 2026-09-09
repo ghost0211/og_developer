@@ -9,11 +9,11 @@ const hasCargoWatch = await commandSucceeds("cargo", ["watch", "--version"]);
 
 if (!hasCargoWatch) {
   console.warn(
-    "cargo-watch is not installed; running dbx-web without hot reload. Install with: cargo install cargo-watch",
+    "cargo-watch is not installed; running ogdeveloper-web without hot reload. Install with: cargo install cargo-watch",
   );
 }
 
-const args = hasCargoWatch ? ["watch", "-x", "run -p dbx-web"] : ["run", "-p", "dbx-web"];
+const args = hasCargoWatch ? ["watch", "-x", "run -p ogdeveloper-web"] : ["run", "-p", "ogdeveloper-web"];
 const child = spawn("cargo", args, {
   cwd: process.cwd(),
   env,

@@ -1,6 +1,6 @@
 {
   "name": "ogdeveloper",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "private": true,
   "license": "Apache-2.0",
   "type": "module",
@@ -14,7 +14,7 @@
     "build": "vite build --config apps/desktop/vite.config.ts",
     "build:checked": "pnpm typecheck && pnpm build",
     "check": "node scripts/run-check.mjs",
-    "bench:table-import": "cargo run -p dbx-core --no-default-features --example table_import_bench --release --",
+    "bench:table-import": "cargo run -p ogdeveloper-core --no-default-features --example table_import_bench --release --",
     "lint": "oxlint --vue-plugin apps/desktop/src",
     "fmt": "oxfmt \"apps/desktop/src/**/*.{ts,vue}\"",
     "test": "vitest run",

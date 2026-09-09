@@ -1,6 +1,6 @@
 [package]
-name = "dbx"
-version = "0.2.6"
+name = "ogdeveloper"
+version = "0.2.7"
 description = "Open-source database management tool"
 authors = ["skyler"]
 license = "Apache-2.0"
@@ -9,13 +9,13 @@ edition = "2021"
 rust-version = "1.88.0"
 
 [lib]
-name = "dbx_lib"
+name = "ogdeveloper_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [features]
 default = ["system-fonts"]
 custom-protocol = ["tauri/custom-protocol"]
-system-fonts = ["dbx-core/system-fonts"]
+system-fonts = ["ogdeveloper-core/system-fonts"]
 
 [build-dependencies]
 tauri-build = { version = "2.5.6", features = [] }
@@ -55,7 +55,7 @@ russh = "0.60"
 csv = "1.4.0"
 calamine = "0.30.1"
 zip = "4.6.1"
-dbx-core = { path = "../crates/dbx-core", default-features = false }
+ogdeveloper-core = { path = "../crates/ogdeveloper-core", default-features = false }
 axum = { version = "0.8", features = ["ws"] }
 font-kit = "0.14.3"
 tauri-plugin-clipboard-manager = "2.3.2"

@@ -169,7 +169,7 @@ export interface DriverRuntimeSummary {
 }
 
 export interface DesktopSettings {
-  // 与 Rust 端 dbx_core::storage::DesktopSettings 保持一致的完整契约，
+  // 与 Rust 端 ogdeveloper_core::storage::DesktopSettings 保持一致的完整契约，
   // show_tray_icon / quit_on_close 为遗留字段（托盘已移除），加载后需原样回传，
   // 否则 Tauri 命令参数反序列化会因缺少必填字段而失败，导致设置保存被回滚。
   show_tray_icon: boolean;

@@ -55,7 +55,7 @@ describe("dataGridColumnNameCopy", () => {
     expect(loadColumnNameCopySeparator()).toBe("tab");
     saveColumnNameCopySeparator("comma-newline");
     expect(loadColumnNameCopySeparator()).toBe("comma-newline");
-    store.set("dbx-copy-column-names-separator", "bogus");
+    store.set("ogdeveloper-copy-column-names-separator", "bogus");
     expect(loadColumnNameCopySeparator()).toBe("tab");
   });
 });

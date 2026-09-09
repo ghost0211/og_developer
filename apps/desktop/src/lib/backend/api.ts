@@ -26,17 +26,17 @@ function forward<K extends keyof Backend>(name: K): Backend[K] {
   return (async (...args: unknown[]) => {
     const startedAt = performance.now();
     const operation = String(name);
-    appendDebugLog("debug", "[DBX][api:start]", operation);
+    appendDebugLog("debug", "[ogdeveloper][api:start]", operation);
     const b = await getBackend();
     try {
       const result = await (b[name] as (...a: unknown[]) => unknown)(...args);
-      appendDebugLog("debug", "[DBX][api:success]", {
+      appendDebugLog("debug", "[ogdeveloper][api:success]", {
         operation,
         elapsedMs: Math.round(performance.now() - startedAt),
       });
       return result;
     } catch (error) {
-      appendDebugLog("error", "[DBX][api:error]", {
+      appendDebugLog("error", "[ogdeveloper][api:error]", {
         operation,
         elapsedMs: Math.round(performance.now() - startedAt),
         error,

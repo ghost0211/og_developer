@@ -39,7 +39,7 @@ function conn(id: string, name: string): ConnectionConfig {
 
 test("removeConnection prunes pinned ids and persists the pruned set", async () => {
   const storage = installMemoryStorage({
-    "dbx-pinned-tree-nodes": JSON.stringify(["conn-a", "conn-a:db:main", "conn-b:db:main"]),
+    "ogdeveloper-pinned-tree-nodes": JSON.stringify(["conn-a", "conn-a:db:main", "conn-b:db:main"]),
   });
   const originalFetch = globalThis.fetch;
   const savedPayloads: unknown[] = [];
@@ -76,7 +76,7 @@ test("removeConnection prunes pinned ids and persists the pruned set", async () 
     assert.equal(store.isTreeNodePinned("conn-a"), false);
     assert.equal(store.isTreeNodePinned("conn-a:db:main"), false);
     assert.equal(store.isTreeNodePinned("conn-b:db:main"), true);
-    assert.deepEqual(JSON.parse(storage.values.get("dbx-pinned-tree-nodes") || "[]"), ["conn-b:db:main"]);
+    assert.deepEqual(JSON.parse(storage.values.get("ogdeveloper-pinned-tree-nodes") || "[]"), ["conn-b:db:main"]);
     assert.equal(savedPayloads.length >= 1, true);
   } finally {
     globalThis.fetch = originalFetch;
@@ -118,7 +118,7 @@ test("removeConnection clears persisted sidebar table filters for the removed co
 
     assert.equal(store.sidebarTableNameFilters[removedScope], undefined);
     assert.deepEqual(store.sidebarTableNameFilters[keptScope], { includePatterns: ["b_%"], excludePatterns: [] });
-    assert.deepEqual(JSON.parse(storage.values.get("dbx-sidebar-table-name-filters") || "{}"), {
+    assert.deepEqual(JSON.parse(storage.values.get("ogdeveloper-sidebar-table-name-filters") || "{}"), {
       [keptScope]: { includePatterns: ["b_%"], excludePatterns: [] },
     });
   } finally {
@@ -164,7 +164,7 @@ test("removeConnections clears persisted sidebar table filters for every removed
     assert.equal(store.sidebarTableNameFilters[scopeA], undefined);
     assert.equal(store.sidebarTableNameFilters[scopeB], undefined);
     assert.deepEqual(store.sidebarTableNameFilters[scopeC], { includePatterns: ["c_%"], excludePatterns: [] });
-    assert.deepEqual(JSON.parse(storage.values.get("dbx-sidebar-table-name-filters") || "{}"), {
+    assert.deepEqual(JSON.parse(storage.values.get("ogdeveloper-sidebar-table-name-filters") || "{}"), {
       [scopeC]: { includePatterns: ["c_%"], excludePatterns: [] },
     });
   } finally {

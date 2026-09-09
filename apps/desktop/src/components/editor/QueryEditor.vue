@@ -383,7 +383,7 @@ let codeMirrorVim: typeof import("@replit/codemirror-vim").vim | null = null;
 let codeMirrorVimApi: typeof import("@replit/codemirror-vim").Vim | null = null;
 let codeMirrorGetVimCm: typeof import("@replit/codemirror-vim").getCM | null = null;
 let codeMirrorVimImportPromise: Promise<typeof import("@replit/codemirror-vim")> | null = null;
-let dbxVimCommandsConfigured = false;
+let ogdeveloperVimCommandsConfigured = false;
 let buildSqlDiagnosticExtension: (() => import("@codemirror/state").Extension) | null = null;
 let buildSqlSignatureExtension: (() => import("@codemirror/state").Extension) | null = null;
 let buildSqlCompletionExtension: (() => import("@codemirror/state").Extension) | null = null;
@@ -450,7 +450,7 @@ let editorSelectionDropCursorEl: HTMLDivElement | null = null;
 const EDITOR_SCROLLBAR_POINTER_GUTTER_PX = 18;
 const EDITOR_SELECTION_DRAG_THRESHOLD_PX = 6;
 const tableNavigationHoverClass = "query-editor--table-navigation-hover";
-const DBX_VIM_SAVE_EVENT = "dbx-vim-save";
+const OGDEVELOPER_VIM_SAVE_EVENT = "ogdeveloper-vim-save";
 
 function editorThemeAppearance() {
   return isDark.value ? "dark" : "light";
@@ -1037,7 +1037,7 @@ function updateEditorSelectionDropCursor(currentView: EditorViewType, event: Mou
   const cursor = editorSelectionDropCursorEl ?? ownerDocument.createElement("div");
   if (!editorSelectionDropCursorEl) {
     cursor.setAttribute("aria-hidden", "true");
-    cursor.className = "dbx-editor-selection-drop-cursor";
+    cursor.className = "ogdeveloper-editor-selection-drop-cursor";
     // Use a fixed overlay instead of CodeMirror's internal drop cursor layer so
     // the marker stays visible above selection layers, themes, and scrollers.
     cursor.style.position = "fixed";
@@ -1678,10 +1678,10 @@ function vimModeExtension(enabled = settingsStore.editorSettings.vimModeEnabled)
 }
 
 function configureDbxVimCommands(vimApi: typeof import("@replit/codemirror-vim").Vim) {
-  if (dbxVimCommandsConfigured) return;
-  dbxVimCommandsConfigured = true;
+  if (ogdeveloperVimCommandsConfigured) return;
+  ogdeveloperVimCommandsConfigured = true;
   vimApi.defineEx("write", "w", (cm) => {
-    cm.cm6?.contentDOM.dispatchEvent(new CustomEvent(DBX_VIM_SAVE_EVENT, { bubbles: true }));
+    cm.cm6?.contentDOM.dispatchEvent(new CustomEvent(OGDEVELOPER_VIM_SAVE_EVENT, { bubbles: true }));
   });
 }
 
@@ -1958,7 +1958,7 @@ async function ensureForeignKeysForTable(table: { name: string; database?: strin
     const foreignKeys = await connectionStore.listCompletionForeignKeys(props.connectionId, target.database, table.name, target.schema);
     cachedForeignKeysByTable.set(cacheKey, foreignKeys);
   } catch (e) {
-    console.warn(`[DBX] Failed to load foreign keys for ${cacheKey}:`, e);
+    console.warn(`[ogdeveloper] Failed to load foreign keys for ${cacheKey}:`, e);
     cachedForeignKeysByTable.set(cacheKey, []);
   }
 }
@@ -2035,7 +2035,7 @@ async function resolveSqlHoverTooltip(currentView: EditorViewType, pos: number) 
       semanticModel = buildSqlSemanticModel(sql, pos, sqlCompletionDialectOptions());
     } catch (error) {
       semanticModel = null;
-      console.warn(`[DBX] Failed to build semantic model for hover tooltip:`, error);
+      console.warn(`[ogdeveloper] Failed to build semantic model for hover tooltip:`, error);
     }
   }
   const semanticTarget = semanticModel ? resolveSqlSemanticNavigationTarget(semanticModel, parts) : null;
@@ -2098,7 +2098,7 @@ async function resolveSqlHoverTooltip(currentView: EditorViewType, pos: number) 
           sqlContent = reformatHoverDdl(rawDdl, quoteQualifiedName(hoverQualifiedName));
         }
       } catch (error) {
-        console.warn(`[DBX] Failed to load table DDL for ${hoverDatabase}.${hoverSchema}.${table.name}:`, error);
+        console.warn(`[ogdeveloper] Failed to load table DDL for ${hoverDatabase}.${hoverSchema}.${table.name}:`, error);
       }
 
       // Fallback path: rebuild the DDL from cached table metadata when the
@@ -2116,14 +2116,14 @@ async function resolveSqlHoverTooltip(currentView: EditorViewType, pos: number) 
           fullIndexes = indexesResult.value;
         } catch (error) {
           metadataLoadFailed = true;
-          console.warn(`[DBX] Failed to load table metadata for ${hoverDatabase}.${hoverSchema}.${table.name}:`, error);
+          console.warn(`[ogdeveloper] Failed to load table metadata for ${hoverDatabase}.${hoverSchema}.${table.name}:`, error);
         }
         if (!metadataLoadFailed) {
           try {
             const commentResult = await loadObjectMetadataFacet(objectMetadataRequest, "comment", () => api.getTableComment(props.connectionId!, hoverDatabase, hoverSchema, table.name, hoverScope.catalog));
             if (commentResult.value) tableComment = commentResult.value;
           } catch (error) {
-            console.warn(`[DBX] Failed to load table comment for ${hoverDatabase}.${hoverSchema}.${table.name}:`, error);
+            console.warn(`[ogdeveloper] Failed to load table comment for ${hoverDatabase}.${hoverSchema}.${table.name}:`, error);
           }
         }
         if (fullColumns.length > 0) {
@@ -3403,7 +3403,7 @@ async function performAsyncCompletionWithResult(epoch: number, completionContext
           if (columns.length === 0) return;
           cachedColumnsByTable.set(cacheKey, columns);
         } catch (e) {
-          console.error(`[DBX] Failed to load columns for ${cacheKey}:`, e);
+          console.error(`[ogdeveloper] Failed to load columns for ${cacheKey}:`, e);
         }
       }),
     );
@@ -3564,7 +3564,7 @@ onMounted(async () => {
   if (!editorRef.value) return;
 
   // 菜单栏编辑命令（撤销/重做/剪贴板/查找）经窗口事件桥接。
-  window.addEventListener("dbx-editor-command", handleMenuEditorCommand);
+  window.addEventListener("ogdeveloper-editor-command", handleMenuEditorCommand);
 
   // Pre-load SQL highlighter for hover tooltips (non-blocking)
   void (async () => {
@@ -3962,7 +3962,7 @@ onMounted(async () => {
             Decoration.line({
               class: classes.join(" "),
               attributes: {
-                style: `--dbx-current-statement-frame-width: ${frameWidth};`,
+                style: `--ogdeveloper-current-statement-frame-width: ${frameWidth};`,
               },
             }).range(line.from),
           );
@@ -4006,7 +4006,7 @@ onMounted(async () => {
 
   const editorElement = editorRef.value;
   if (!editorElement) return;
-  const tooltipParent = editorElement.closest<HTMLElement>("#root")?.querySelector<HTMLElement>("#dbx-query-editor-tooltip-root") ?? editorElement;
+  const tooltipParent = editorElement.closest<HTMLElement>("#root")?.querySelector<HTMLElement>("#ogdeveloper-query-editor-tooltip-root") ?? editorElement;
   const state = EditorState.create({
     doc: props.modelValue,
     selection: normalizedEditorSelection(props.initialSelection, props.modelValue.length),
@@ -4202,7 +4202,7 @@ onMounted(async () => {
           window.setTimeout(flushImeComposition, 0);
           return false;
         },
-        [DBX_VIM_SAVE_EVENT]() {
+        [OGDEVELOPER_VIM_SAVE_EVENT]() {
           emit("save");
           return true;
         },
@@ -4446,7 +4446,7 @@ onMounted(async () => {
                 emit("clickColumn", matchedCols);
               }
             } catch (e) {
-              console.error("[DBX] Ctrl+click error:", e);
+              console.error("[ogdeveloper] Ctrl+click error:", e);
             }
           }, 0);
           return true;
@@ -4769,7 +4769,7 @@ onDeactivated(pauseQueryEditorBackgroundWork);
 
 onBeforeUnmount(() => {
   pauseQueryEditorBackgroundWork();
-  window.removeEventListener("dbx-editor-command", handleMenuEditorCommand);
+  window.removeEventListener("ogdeveloper-editor-command", handleMenuEditorCommand);
   if (viewportEmitFrame !== null) {
     cancelAnimationFrame(viewportEmitFrame);
     viewportEmitFrame = null;
@@ -4976,7 +4976,7 @@ defineExpose({
 }
 
 :deep(.cm-db-execution-preview) {
-  background: var(--dbx-editor-selection-background, rgba(59, 130, 246, 0.35));
+  background: var(--ogdeveloper-editor-selection-background, rgba(59, 130, 246, 0.35));
 }
 
 :deep(.cm-lineNumbers .cm-db-result-source-line-number) {
@@ -4999,7 +4999,7 @@ defineExpose({
   bottom: 0;
   left: 0;
   box-sizing: border-box;
-  width: var(--dbx-current-statement-frame-width, 100%);
+  width: var(--ogdeveloper-current-statement-frame-width, 100%);
   border-right: 1px solid rgb(34 197 94 / 0.75);
   border-left: 1px solid rgb(34 197 94 / 0.75);
   pointer-events: none;
@@ -5031,12 +5031,12 @@ defineExpose({
   align-items: center;
   justify-content: center;
   box-sizing: border-box;
-  width: min(24px, calc(var(--dbx-editor-font-size, 13px) * 1.6));
-  height: min(24px, calc(var(--dbx-editor-font-size, 13px) * 1.6));
+  width: min(24px, calc(var(--ogdeveloper-editor-font-size, 13px) * 1.6));
+  height: min(24px, calc(var(--ogdeveloper-editor-font-size, 13px) * 1.6));
   margin: 0;
   padding: 0;
   border: 1px solid transparent;
-  border-radius: var(--dbx-radius-fixed-6);
+  border-radius: var(--ogdeveloper-radius-fixed-6);
   vertical-align: middle;
   white-space: nowrap;
   transition:
@@ -5083,12 +5083,12 @@ defineExpose({
   align-items: center;
   justify-content: center;
   box-sizing: border-box;
-  width: min(24px, calc(var(--dbx-editor-font-size, 13px) * 1.6));
-  height: min(24px, calc(var(--dbx-editor-font-size, 13px) * 1.6));
+  width: min(24px, calc(var(--ogdeveloper-editor-font-size, 13px) * 1.6));
+  height: min(24px, calc(var(--ogdeveloper-editor-font-size, 13px) * 1.6));
   margin: 0;
   padding: 0;
   border: 1px solid transparent;
-  border-radius: var(--dbx-radius-fixed-6);
+  border-radius: var(--ogdeveloper-radius-fixed-6);
   background: transparent;
   color: transparent;
   vertical-align: middle;
@@ -5162,10 +5162,10 @@ defineExpose({
 }
 
 :deep(.cm-statement-execution-spinner) {
-  animation: dbx-statement-execution-spin 0.8s linear infinite;
+  animation: ogdeveloper-statement-execution-spin 0.8s linear infinite;
 }
 
-@keyframes dbx-statement-execution-spin {
+@keyframes ogdeveloper-statement-execution-spin {
   to {
     transform: rotate(360deg);
   }

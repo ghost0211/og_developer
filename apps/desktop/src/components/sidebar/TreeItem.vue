@@ -829,7 +829,7 @@ function clearTreeDragTarget() {
 
 const TABLE_REFERENCE_DRAG_THRESHOLD = 5;
 
-const TABLE_REFERENCE_DRAGGING_CLASS = "dbx-table-reference-dragging";
+const TABLE_REFERENCE_DRAGGING_CLASS = "ogdeveloper-table-reference-dragging";
 
 const canDragTableReference = computed(() => {
   if (props.referenceDragDisabled || !activeNode.value.connectionId) return false;

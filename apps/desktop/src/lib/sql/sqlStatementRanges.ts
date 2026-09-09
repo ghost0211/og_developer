@@ -94,7 +94,7 @@ const ORACLE_PL_SQL_TERMINATORS = new Set(["IF", "LOOP", "CASE"]);
  * Delimiters inside string literals, double/backtick/bracket quoted
  * identifiers, dollar-quoted bodies (Postgres), line comments (`--`, `#`) and
  * block comments (`/* *​/`) are ignored, mirroring the backend splitter in
- * `dbx-core/src/sql.rs`. Ranges are returned as `[from, to)` offsets covering
+ * `ogdeveloper-core/src/sql.rs`. Ranges are returned as `[from, to)` offsets covering
  * only the statement text (the trailing semicolon and inter-statement
  * whitespace are excluded so editor highlights stay tight).
  */

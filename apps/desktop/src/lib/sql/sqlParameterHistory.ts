@@ -1,7 +1,7 @@
 import { safeLocalStorageGet, safeLocalStorageSet } from "@/lib/backend/safeStorage";
 import type { SqlParameterInput } from "@/lib/sql/sqlParameters";
 
-const STORAGE_KEY = "dbx-sql-parameter-history";
+const STORAGE_KEY = "ogdeveloper-sql-parameter-history";
 export const MAX_SQL_PARAMETER_HISTORY = 8;
 
 interface StoredSqlParameterHistory {

@@ -107,7 +107,7 @@ describe("data grid column layout storage", () => {
 
   it("loads the previous order-only payload format", () => {
     localStorage.setItem(
-      "dbx-data-grid-column-layout:legacy-layout",
+      "ogdeveloper-data-grid-column-layout:legacy-layout",
       JSON.stringify({
         version: 1,
         columnSignature: "id\0name",

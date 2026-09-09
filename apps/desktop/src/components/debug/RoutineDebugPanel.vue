@@ -221,17 +221,17 @@ async function refreshState(requestedSessionId = sessionId.value) {
   if (localsResult.status === "fulfilled") {
     locals.value = mergeDebugSnapshot(locals.value, localsResult.value, phase.value);
   } else {
-    console.warn("[DBX][Debug] locals refresh warning:", localsResult.reason);
+    console.warn("[ogdeveloper][Debug] locals refresh warning:", localsResult.reason);
   }
   if (backtraceResult.status === "fulfilled") {
     backtrace.value = mergeDebugSnapshot(backtrace.value, backtraceResult.value, phase.value);
   } else {
-    console.warn("[DBX][Debug] backtrace refresh warning:", backtraceResult.reason);
+    console.warn("[ogdeveloper][Debug] backtrace refresh warning:", backtraceResult.reason);
   }
   if (breakpointsResult.status === "fulfilled") {
     breakpoints.value = breakpointsResult.value;
   } else {
-    console.warn("[DBX][Debug] breakpoints refresh warning:", breakpointsResult.reason);
+    console.warn("[ogdeveloper][Debug] breakpoints refresh warning:", breakpointsResult.reason);
   }
 }
 

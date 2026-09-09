@@ -1,4 +1,4 @@
 #[allow(unused_imports)]
-pub use dbx_core::db::*;
+pub use ogdeveloper_core::db::*;
 #[allow(unused_imports)]
-pub use dbx_core::types::*;
+pub use ogdeveloper_core::types::*;

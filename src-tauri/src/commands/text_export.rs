@@ -1,4 +1,4 @@
-use dbx_core::text_export::{format_json, format_markdown, QueryResultTextExportData};
+use ogdeveloper_core::text_export::{format_json, format_markdown, QueryResultTextExportData};
 use serde::Deserialize;
 use serde_json::Value;
 

@@ -8,9 +8,9 @@ const quickControlSource = readFileSync("apps/desktop/src/components/grid/DataGr
 
 test("applies the configured result grid font to DOM and canvas renderers", () => {
   assert.match(dataGridSource, /const tableFontFamily = computed\(\(\) => settingsStore\.editorSettings\.tableFontFamily\)/);
-  assert.match(dataGridSource, /"--dbx-data-grid-font-family": tableFontFamily\.value/);
-  assert.match(dataGridSource, /class="canvas-grid-surface dbx-data-grid-font-family/);
-  assert.match(dataGridSource, /class="data-grid-scroller dbx-data-grid-font-family/);
+  assert.match(dataGridSource, /"--ogdeveloper-data-grid-font-family": tableFontFamily\.value/);
+  assert.match(dataGridSource, /class="canvas-grid-surface ogdeveloper-data-grid-font-family/);
+  assert.match(dataGridSource, /class="data-grid-scroller ogdeveloper-data-grid-font-family/);
 });
 
 test("invalidates grid measurements and canvas rendering when the result font changes", () => {

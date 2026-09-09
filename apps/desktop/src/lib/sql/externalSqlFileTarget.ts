@@ -1,6 +1,7 @@
+import { safeLocalStorageGet, safeLocalStorageSet } from "@/lib/backend/safeStorage";
 import { normalizeExternalSqlPath } from "@/lib/sql/sqlFileOpen";
 
-export const EXTERNAL_SQL_FILE_TARGETS_STORAGE_KEY = "dbx-external-sql-file-targets-v1";
+export const EXTERNAL_SQL_FILE_TARGETS_STORAGE_KEY = "ogdeveloper-external-sql-file-targets-v1";
 export const MAX_EXTERNAL_SQL_FILE_TARGETS = 200;
 
 export interface ExternalSqlFileTarget {
@@ -15,7 +16,7 @@ interface StoredExternalSqlFileTarget extends ExternalSqlFileTarget {
 
 function loadExternalSqlFileTargets(): StoredExternalSqlFileTarget[] {
   try {
-    const parsed = JSON.parse(localStorage.getItem(EXTERNAL_SQL_FILE_TARGETS_STORAGE_KEY) || "[]");
+    const parsed = JSON.parse(safeLocalStorageGet(EXTERNAL_SQL_FILE_TARGETS_STORAGE_KEY) || "[]");
     if (!Array.isArray(parsed)) return [];
     return parsed.filter((item): item is StoredExternalSqlFileTarget => typeof item?.path === "string" && typeof item?.connectionId === "string" && typeof item?.database === "string" && typeof item?.updatedAt === "number");
   } catch {
@@ -25,7 +26,7 @@ function loadExternalSqlFileTargets(): StoredExternalSqlFileTarget[] {
 
 function saveExternalSqlFileTargets(targets: StoredExternalSqlFileTarget[]) {
   try {
-    localStorage.setItem(EXTERNAL_SQL_FILE_TARGETS_STORAGE_KEY, JSON.stringify(targets));
+    safeLocalStorageSet(EXTERNAL_SQL_FILE_TARGETS_STORAGE_KEY, JSON.stringify(targets));
   } catch {}
 }
 

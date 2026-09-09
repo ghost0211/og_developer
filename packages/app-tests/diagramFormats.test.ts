@@ -35,11 +35,11 @@ function rel(partial: Pick<DiagramRelationship, "sourceCardinality" | "targetCar
 }
 
 test("diagramExportFileName builds safe names for each format and mode", () => {
-  assert.equal(diagramExportFileName("", "", "table", "svg"), "dbx-diagram-table-structure.svg");
-  assert.equal(diagramExportFileName("prod/main", "billing db", "engineering", "png"), "dbx-prod-main-billing-db-engineering-er.png");
-  assert.equal(diagramExportFileName("a", "b", "table", "json"), "dbx-a-b-diagram.json");
-  assert.equal(diagramExportFileName("a", "b", "table", "dbml"), "dbx-a-b-schema.dbml");
-  assert.equal(diagramExportFileName("a", "b", "engineering", "mermaid"), "dbx-a-b-er.mmd");
+  assert.equal(diagramExportFileName("", "", "table", "svg"), "ogdeveloper-diagram-table-structure.svg");
+  assert.equal(diagramExportFileName("prod/main", "billing db", "engineering", "png"), "ogdeveloper-prod-main-billing-db-engineering-er.png");
+  assert.equal(diagramExportFileName("a", "b", "table", "json"), "ogdeveloper-a-b-diagram.json");
+  assert.equal(diagramExportFileName("a", "b", "table", "dbml"), "ogdeveloper-a-b-schema.dbml");
+  assert.equal(diagramExportFileName("a", "b", "engineering", "mermaid"), "ogdeveloper-a-b-er.mmd");
 });
 
 test("buildDiagramJson pretty-prints with trailing newline", () => {

@@ -6,7 +6,7 @@ use tauri::{AppHandle, Emitter, State};
 
 use crate::commands::connection::AppState;
 
-pub use dbx_core::table_export::{ExportStatus, TableExportProgress, TableExportRequest};
+pub use ogdeveloper_core::table_export::{ExportStatus, TableExportProgress, TableExportRequest};
 
 fn emit_progress(app: &AppHandle, progress: TableExportProgress) {
     let _ = app.emit("table-export-progress", progress);
@@ -32,7 +32,7 @@ pub async fn start_table_export(
     tokio::spawn(async move {
         let cancelled = Arc::new(AtomicBool::new(false));
         let cancelled_progress = cancelled.clone();
-        let result = dbx_core::table_export::export_table_data_core(&state, &request, |progress| {
+        let result = ogdeveloper_core::table_export::export_table_data_core(&state, &request, |progress| {
             if matches!(progress.status, ExportStatus::Cancelled) {
                 cancelled_progress.store(true, Ordering::SeqCst);
             }
@@ -40,7 +40,7 @@ pub async fn start_table_export(
         })
         .await;
 
-        let client_session_id = dbx_core::table_export::table_export_client_session_id(&export_id);
+        let client_session_id = ogdeveloper_core::table_export::table_export_client_session_id(&export_id);
         let _ =
             state.close_client_session_pool(&request.connection_id, Some(&request.database), &client_session_id).await;
 
@@ -62,7 +62,7 @@ pub async fn start_table_export(
             );
         }
 
-        dbx_core::database_export::clear_export_cancelled(&export_id).await;
+        ogdeveloper_core::database_export::clear_export_cancelled(&export_id).await;
     });
 
     Ok(())
@@ -70,7 +70,7 @@ pub async fn start_table_export(
 
 #[tauri::command]
 pub async fn cancel_table_export(export_id: String) -> Result<(), String> {
-    dbx_core::database_export::set_export_cancelled(&export_id).await;
+    ogdeveloper_core::database_export::set_export_cancelled(&export_id).await;
     Ok(())
 }
 

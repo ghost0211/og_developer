@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { safeLocalStorageGet, safeLocalStorageSet } from "@/lib/backend/safeStorage";
+
 import { computed, ref, watch, onBeforeUnmount } from "vue";
 import { useI18n } from "vue-i18n";
 import { Dialog, DialogHeader, DialogTitle, DialogFooter, DialogContent } from "@/components/ui/dialog";
@@ -120,13 +122,13 @@ const showRenamePanel = ref(true);
 const deploySqlMode = ref<"forward" | "rollback">("forward");
 
 // Dialog size memory (width + height + splitpanes ratio)
-const DIALOG_SIZE_KEY = "dbx-schema-diff-size";
-const SPLITPANES_SIZE_KEY = "dbx-schema-diff-splitpanes-v2";
-const savedSize = JSON.parse(localStorage.getItem(DIALOG_SIZE_KEY) || "null");
+const DIALOG_SIZE_KEY = "ogdeveloper-schema-diff-size";
+const SPLITPANES_SIZE_KEY = "ogdeveloper-schema-diff-splitpanes-v2";
+const savedSize = JSON.parse(safeLocalStorageGet(DIALOG_SIZE_KEY) || "null");
 
 const savedSplitpanes = (() => {
   try {
-    const raw = localStorage.getItem(SPLITPANES_SIZE_KEY);
+    const raw = safeLocalStorageGet(SPLITPANES_SIZE_KEY);
     if (!raw) return null;
     const val = JSON.parse(raw);
     return typeof val === "number" && val >= 10 && val <= 90 ? val : null;
@@ -142,7 +144,7 @@ function handleSplitpanesResized(payload: { panes: { size: number }[] }) {
   if (payload.panes && payload.panes.length > 0) {
     const size = payload.panes[0].size;
     splitpanesSize.value = size;
-    localStorage.setItem(SPLITPANES_SIZE_KEY, JSON.stringify(size));
+    safeLocalStorageSet(SPLITPANES_SIZE_KEY, JSON.stringify(size));
   }
 }
 
@@ -199,7 +201,7 @@ function setupResizeObserver() {
       const { width, height } = entry.contentRect;
       if (saveTimeout) clearTimeout(saveTimeout);
       saveTimeout = window.setTimeout(() => {
-        localStorage.setItem(
+        safeLocalStorageSet(
           DIALOG_SIZE_KEY,
           JSON.stringify({
             width: `${width}px`,

@@ -103,7 +103,7 @@
         # or `pnpm dev:web` + `pnpm dev:backend` for the web variant.         #
         # ------------------------------------------------------------------ #
         devShells.default = pkgs.mkShell {
-          name = "dbx-dev";
+          name = "ogdeveloper-dev";
 
           buildInputs =
             [ rustToolchain ]
@@ -158,32 +158,32 @@
         };
 
         # Convenience alias
-        packages.default = self.packages.${system}.dbx-desktop;
+        packages.default = self.packages.${system}.ogdeveloper-desktop;
 
         # Fast fixed-output target used by CI to validate pnpm dependency hashes
         # without compiling the frontend and Rust desktop application.
-        packages.dbx-pnpm-deps = self.packages.${system}.dbx-desktop.pnpmDeps;
+        packages.ogdeveloper-pnpm-deps = self.packages.${system}.ogdeveloper-desktop.pnpmDeps;
 
         # Fast dependency target used by CI to validate Cargo vendoring without
         # compiling the frontend and Rust desktop application.
-        packages.dbx-cargo-deps = self.packages.${system}.dbx-desktop.cargoVendorDir;
+        packages.ogdeveloper-cargo-deps = self.packages.${system}.ogdeveloper-desktop.cargoVendorDir;
 
         # ------------------------------------------------------------------ #
-        # packages.dbx-desktop — Tauri desktop application                    #
-        # Build with: nix build .#dbx-desktop                                 #
+        # packages.ogdeveloper-desktop — Tauri desktop application                    #
+        # Build with: nix build .#ogdeveloper-desktop                                 #
         #                                                                      #
         # Two-phase build strategy:                                            #
         #   1. pnpm.fetchDeps  → vendor all npm/pnpm deps offline             #
         #   2. Crane vendoring → vendor all Cargo deps offline                #
         #   3. pnpm build      → compile Vue/TypeScript frontend               #
-        #   4. cargo build -p dbx → compile Tauri Rust backend                 #
+        #   4. cargo build -p ogdeveloper → compile Tauri Rust backend                 #
         #                                                                      #
         # The pnpmDeps hash is verified by the nix-packaging CI job.           #
         # When dependency inputs change, use the hash reported by the failed  #
         # Nix build and rerun the job before merging.                          #
         # ------------------------------------------------------------------ #
-        packages.dbx-desktop = pkgs.stdenv.mkDerivation (finalAttrs: {
-          pname = "dbx-desktop";
+        packages.ogdeveloper-desktop = pkgs.stdenv.mkDerivation (finalAttrs: {
+          pname = "ogdeveloper-desktop";
           version = "0.5.76";
 
           src = pkgs.lib.cleanSource ./.;
@@ -196,7 +196,7 @@
             # `fetcherVersion = 4` is supported for `pnpm_11`
             fetcherVersion = 4;
             # Update with the hash reported by a failed fixed-output build:
-            #   nix build .#dbx-pnpm-deps 2>&1 | grep 'got:'
+            #   nix build .#ogdeveloper-pnpm-deps 2>&1 | grep 'got:'
             hash = "sha256-dHSsx/b47KOmzwO98Li6UUfp5vM/+V2JtpC484Yqdp8=";
           };
 
@@ -233,13 +233,13 @@
 
           # ── Desktop entry (freedesktop .desktop file) ────────────────────── #
           # Built with `makeDesktopItem` so it is validated against the spec
-          # at build time. Icon name "dbx" resolves via the hicolor theme
+          # at build time. Icon name "ogdeveloper" resolves via the hicolor theme
           # (the installPhase copies PNGs into share/icons/hicolor/<size>/apps).
           desktopItem = pkgs.makeDesktopItem {
-            name = "dbx";
+            name = "ogdeveloper";
             type = "Application";
-            exec = "dbx %u";
-            icon = "dbx";
+            exec = "ogdeveloper %u";
+            icon = "ogdeveloper";
             desktopName = "DBX";
             genericName = "Database Management Tool";
             comment = "openGauss database development tool";
@@ -253,7 +253,7 @@
             ];
             startupWMClass = "DBX";
             terminal = false;
-            mimeTypes = [ "application/sql" "x-scheme-handler/dbx" ];
+            mimeTypes = [ "application/sql" "x-scheme-handler/ogdeveloper" "x-scheme-handler/dbx" ];
           };
 
           # ── Linked libraries (present at both build and runtime) ─────────── #
@@ -326,7 +326,7 @@
             #   - Properly initialises the Tauri IPC layer inside the binary
             #   - Skips platform-specific installer/bundle creation (AppImage, deb, …)
             #
-            # DO NOT replace this with a bare `cargo build -p dbx`.
+            # DO NOT replace this with a bare `cargo build -p ogdeveloper`.
             # A raw cargo build skips Tauri's asset-embedding pipeline, so the
             # WebView has no bundled frontend to load → __TAURI_INTERNALS__ is
             # never injected → isTauriRuntime() returns false → the UI falls back
@@ -340,8 +340,8 @@
             runHook preInstall
 
             mkdir -p $out/bin
-            # tauri build --no-bundle puts the binary at target/release/dbx
-            cp target/release/dbx $out/bin/dbx
+            # tauri build --no-bundle puts the binary at target/release/ogdeveloper
+            cp target/release/ogdeveloper $out/bin/ogdeveloper
 
             # Install icon files into the hicolor theme tree so that all
             # desktop environments (GNOME Shell, KDE Plasma, XFCE, etc.) can
@@ -352,7 +352,7 @@
                 if [ -f "src-tauri/icons/''${size}x''${size}.png" ]; then
                   mkdir -p "$out/share/icons/hicolor/''${size}x''${size}/apps"
                   cp "src-tauri/icons/''${size}x''${size}.png" \
-                    "$out/share/icons/hicolor/''${size}x''${size}/apps/dbx.png"
+                    "$out/share/icons/hicolor/''${size}x''${size}/apps/ogdeveloper.png"
                 fi
               done
 
@@ -360,7 +360,7 @@
               if [ -f "src-tauri/icons/128x128@2x.png" ]; then
                 mkdir -p "$out/share/icons/hicolor/256x256/apps"
                 cp "src-tauri/icons/128x128@2x.png" \
-                  "$out/share/icons/hicolor/256x256/apps/dbx.png"
+                  "$out/share/icons/hicolor/256x256/apps/ogdeveloper.png"
               fi
 
               # Generate missing common sizes so hicolor directory metadata
@@ -375,7 +375,7 @@
                   continue
                 fi
                 magick "$src" -resize "''${size}x''${size}" \
-                  "$out/share/icons/hicolor/''${size}x''${size}/apps/dbx.png"
+                  "$out/share/icons/hicolor/''${size}x''${size}/apps/ogdeveloper.png"
               done
 
               # Install the full-size icon.png as the scalable fallback so that
@@ -383,17 +383,17 @@
               if [ -f "src-tauri/icons/icon.png" ]; then
                 mkdir -p "$out/share/icons/hicolor/512x512/apps"
                 cp "src-tauri/icons/icon.png" \
-                  "$out/share/icons/hicolor/512x512/apps/dbx.png"
+                  "$out/share/icons/hicolor/512x512/apps/ogdeveloper.png"
               fi
             fi
 
             # Register the freedesktop .desktop file so app launchers (GNOME
             # Shell, KDE Plasma, etc.) can discover the application.
             mkdir -p $out/share/applications
-            cp ${finalAttrs.desktopItem}/share/applications/dbx.desktop \
-              $out/share/applications/dbx.desktop
+            cp ${finalAttrs.desktopItem}/share/applications/ogdeveloper.desktop \
+              $out/share/applications/ogdeveloper.desktop
             ${pkgs.desktop-file-utils}/bin/desktop-file-validate \
-              $out/share/applications/dbx.desktop
+              $out/share/applications/ogdeveloper.desktop
 
             runHook postInstall
           '';
@@ -409,12 +409,12 @@
             homepage = "https://github.com/t8y2/dbx";
             maintainers = [ ];
             platforms = platforms.linux; # macOS/Windows need platform-specific adjustments
-            mainProgram = "dbx";
+            mainProgram = "ogdeveloper";
           } // {
             # Non-lib meta: absolute path to the installed .desktop file so
             # `nix profile install`/home-manager can register it with the
             # user's desktop environment.
-            desktopFile = "${placeholder "out"}/share/applications/dbx.desktop";
+            desktopFile = "${placeholder "out"}/share/applications/ogdeveloper.desktop";
           };
         });
       }

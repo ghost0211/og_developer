@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use dbx_core::models::connection::TransportLayerConfig;
+use ogdeveloper_core::models::connection::TransportLayerConfig;
 use tauri::State;
 
 use super::connection::AppState;

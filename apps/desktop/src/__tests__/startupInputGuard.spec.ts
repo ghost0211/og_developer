@@ -8,7 +8,7 @@ const indexSource = readFileSync(resolve(process.cwd(), "apps/desktop/index.html
 const mainSource = readFileSync(resolve(process.cwd(), "apps/desktop/src/main.ts"), "utf8");
 
 function installStartupInputGuard() {
-  const script = indexSource.match(/<script data-dbx-startup-input-guard>([\s\S]*?)<\/script>/)?.[1];
+  const script = indexSource.match(/<script data-ogdeveloper-startup-input-guard>([\s\S]*?)<\/script>/)?.[1];
   if (!script) throw new Error("Startup input guard script not found");
   new Function(script)();
 }
@@ -25,14 +25,14 @@ describe("startup input guard", () => {
     expect(startupEscape.defaultPrevented).toBe(true);
     expect(regularKey.defaultPrevented).toBe(false);
 
-    window.dispatchEvent(new Event("dbx:startup-ready"));
+    window.dispatchEvent(new Event("ogdeveloper:startup-ready"));
     const readyEscape = new KeyboardEvent("keydown", { key: "Escape", cancelable: true });
     window.dispatchEvent(readyEscape);
     expect(readyEscape.defaultPrevented).toBe(false);
   });
 
   it("installs before the application module and is released after mount", () => {
-    expect(indexSource.indexOf("data-dbx-startup-input-guard")).toBeLessThan(indexSource.indexOf('src="/src/main.ts"'));
-    expect(mainSource.indexOf('app.mount("#root")')).toBeLessThan(mainSource.indexOf('window.dispatchEvent(new Event("dbx:startup-ready"))'));
+    expect(indexSource.indexOf("data-ogdeveloper-startup-input-guard")).toBeLessThan(indexSource.indexOf('src="/src/main.ts"'));
+    expect(mainSource.indexOf('app.mount("#root")')).toBeLessThan(mainSource.indexOf('window.dispatchEvent(new Event("ogdeveloper:startup-ready"))'));
   });
 });

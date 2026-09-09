@@ -373,7 +373,7 @@ function formatLocalDate(d: Date): string {
 
 function ensureRange(start: Date, end: Date): [Date, Date] {
   if (start.getTime() > end.getTime()) {
-    console.warn("[dbx] date range reversed, swapping start/end", start, end);
+    console.warn("[ogdeveloper] date range reversed, swapping start/end", start, end);
     return [end, start];
   }
   return [start, end];
@@ -1558,7 +1558,7 @@ export function generateValue(columnName: string, dataType: string, generatorKey
 
   const key = generatorKey ?? findGeneratorKey(columnName, dataType);
   if ((key === "date" || key === "datetime") && rowIndex === 0) {
-    console.log("[dbx:gen] col=%s key=%s start=%j end=%j allDay=%j", columnName, key, params?.start, params?.end, params?.allDay);
+    console.log("[ogdeveloper:gen] col=%s key=%s start=%j end=%j allDay=%j", columnName, key, params?.start, params?.end, params?.allDay);
   }
 
   if (key === "number") {

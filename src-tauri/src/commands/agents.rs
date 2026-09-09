@@ -1,6 +1,6 @@
-use dbx_core::connection::AppState;
-use dbx_core::driver_runtime::DriverRuntimeSummary;
-use dbx_core::DownloadSource;
+use ogdeveloper_core::connection::AppState;
+use ogdeveloper_core::driver_runtime::DriverRuntimeSummary;
+use ogdeveloper_core::DownloadSource;
 use std::sync::Arc;
 use tauri::State;
 
@@ -40,17 +40,17 @@ pub async fn clear_driver_download_cache(_state: State<'_, Arc<AppState>>) -> Re
 
 #[tauri::command]
 pub async fn get_driver_runtime_summary(state: State<'_, Arc<AppState>>) -> Result<DriverRuntimeSummary, String> {
-    Ok(dbx_core::driver_runtime::collect_driver_runtime_summary(state.inner().as_ref()).await)
+    Ok(ogdeveloper_core::driver_runtime::collect_driver_runtime_summary(state.inner().as_ref()).await)
 }
 
 #[tauri::command]
 pub async fn stop_driver_runtime(state: State<'_, Arc<AppState>>, runtime_id: String) -> Result<(), String> {
-    dbx_core::driver_runtime::stop_driver_runtime(state.inner().as_ref(), &runtime_id).await
+    ogdeveloper_core::driver_runtime::stop_driver_runtime(state.inner().as_ref(), &runtime_id).await
 }
 
 #[tauri::command]
 pub async fn restart_driver_runtime(state: State<'_, Arc<AppState>>, runtime_id: String) -> Result<(), String> {
-    dbx_core::driver_runtime::restart_driver_runtime(state.inner().as_ref(), &runtime_id).await
+    ogdeveloper_core::driver_runtime::restart_driver_runtime(state.inner().as_ref(), &runtime_id).await
 }
 
 #[tauri::command]

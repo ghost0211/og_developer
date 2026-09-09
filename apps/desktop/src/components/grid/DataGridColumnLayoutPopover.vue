@@ -278,7 +278,7 @@ function startColumnDrag(option: DataGridColumnLayoutOption, event: PointerEvent
   try {
     handle.setPointerCapture?.(event.pointerId);
   } catch (error) {
-    console.warn("[DBX][DataGridColumnLayoutPopover:pointer-capture]", error);
+    console.warn("[ogdeveloper][DataGridColumnLayoutPopover:pointer-capture]", error);
   }
 }
 

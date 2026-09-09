@@ -8,7 +8,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile
 COPY apps/desktop/ apps/desktop/
-COPY crates/dbx-core/assets/database-drivers.manifest.json crates/dbx-core/assets/database-drivers.manifest.json
+COPY crates/ogdeveloper-core/assets/database-drivers.manifest.json crates/ogdeveloper-core/assets/database-drivers.manifest.json
 RUN pnpm build
 
 # Stage 2: Cross-compile Rust backend for the requested platform (native, no emulation)
@@ -27,16 +27,16 @@ RUN dpkg --add-architecture arm64 \
 # Copy dependency manifests only and create dummy sources to pre-compile dependencies.
 # This layer is cached by GHA as long as Cargo.toml/Cargo.lock don't change.
 COPY Cargo.toml Cargo.lock ./
-COPY crates/dbx-core/Cargo.toml crates/dbx-core/
-COPY crates/dbx-web/Cargo.toml crates/dbx-web/
+COPY crates/ogdeveloper-core/Cargo.toml crates/ogdeveloper-core/
+COPY crates/ogdeveloper-web/Cargo.toml crates/ogdeveloper-web/
 COPY crates/dbx-mcp/Cargo.toml crates/dbx-mcp/
 COPY crates/dbx-cli/Cargo.toml crates/dbx-cli/
 COPY src-tauri/Cargo.toml src-tauri/
 # Copy every vendored crate: root Cargo.toml [patch.crates-io] points at
 # vendor/{ctor,rumqttc,dirs-sys,pageant,wry}; omitting any breaks the offline build.
 COPY vendor/ vendor/
-RUN mkdir -p crates/dbx-core/src && echo '' > crates/dbx-core/src/lib.rs \
-    && mkdir -p crates/dbx-web/src && echo 'fn main() {}' > crates/dbx-web/src/main.rs \
+RUN mkdir -p crates/ogdeveloper-core/src && echo '' > crates/ogdeveloper-core/src/lib.rs \
+    && mkdir -p crates/ogdeveloper-web/src && echo 'fn main() {}' > crates/ogdeveloper-web/src/main.rs \
     && mkdir -p crates/dbx-mcp/src && echo '' > crates/dbx-mcp/src/lib.rs && echo 'fn main() {}' > crates/dbx-mcp/src/main.rs \
     && mkdir -p crates/dbx-cli/src && echo 'fn main() {}' > crates/dbx-cli/src/main.rs \
     && mkdir -p src-tauri/src && echo 'fn main() {}' > src-tauri/src/main.rs && echo 'pub fn run() {}' > src-tauri/src/lib.rs
@@ -53,7 +53,7 @@ RUN case "$TARGETARCH" in \
     PKG_CONFIG_PATH="/usr/lib/$lib_arch/pkgconfig" \
     PKG_CONFIG_SYSROOT_DIR="/" \
     RUSTFLAGS="-L native=/usr/lib/$lib_arch" \
-    cargo zigbuild --release -p dbx-web --target "$rust_target" || true
+    cargo zigbuild --release -p ogdeveloper-web --target "$rust_target" || true
 
 # Copy real sources and rebuild (only application code recompiles)
 COPY crates/ crates/
@@ -73,9 +73,9 @@ RUN case "$TARGETARCH" in \
     PKG_CONFIG_PATH="/usr/lib/$lib_arch/pkgconfig" \
     PKG_CONFIG_SYSROOT_DIR="/" \
     RUSTFLAGS="-L native=/usr/lib/$lib_arch" \
-    cargo zigbuild --release -p dbx-web --target "$rust_target" && \
+    cargo zigbuild --release -p ogdeveloper-web --target "$rust_target" && \
     mkdir -p "/out/linux/$TARGETARCH" && \
-    cp "/app/target/$rust_target/release/dbx-web" "/out/linux/$TARGETARCH/"
+    cp "/app/target/$rust_target/release/ogdeveloper-web" "/out/linux/$TARGETARCH/"
 
 # Stage 3: Final image
 FROM debian:bookworm-slim
@@ -88,10 +88,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libssl3 \
     openjdk-17-jre-headless \
     && rm -rf /var/lib/apt/lists/*
-COPY --from=backend /out/${TARGETPLATFORM}/dbx-web /usr/local/bin/
+COPY --from=backend /out/${TARGETPLATFORM}/ogdeveloper-web /usr/local/bin/
 COPY --from=frontend /app/dist /app/static
 ENV DBX_STATIC_DIR=/app/static
 ENV DBX_DATA_DIR=/app/data
 ENV DBX_JAVA_BIN=/usr/bin/java
 EXPOSE 4224
-CMD ["dbx-web"]
+CMD ["ogdeveloper-web"]

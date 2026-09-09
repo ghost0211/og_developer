@@ -29,7 +29,7 @@ class MemoryStorage implements Storage {
   }
 }
 
-const DEBUG_LOG_ENABLED_KEY = "dbx-debug-logging-enabled";
+const DEBUG_LOG_ENABLED_KEY = "ogdeveloper-debug-logging-enabled";
 
 let originalLocalStorage: PropertyDescriptor | undefined;
 

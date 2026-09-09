@@ -12,7 +12,7 @@
 - **package_manager**: pnpm
 
 ## Current Task
-We are finishing the review-driven stabilization of the Schema Diff and synchronization tool. The main active blocker is in `crates/dbx-core/src/query.rs`, specifically `execute_schema_diff_deploy`, which currently distinguishes `committed`, `rolled_back`, and `mixed`, but still needs a stronger DDL atomicity model based on both target database behavior and SQL type semantics. This affects the Desktop and Web deploy flow exposed through `src-tauri/src/commands/query.rs`, `crates/dbx-web/src/routes/query.rs`, and the frontend orchestration in `apps/desktop/src/components/diff/SchemaDiffDialog.vue`. In parallel, we documented the overall problem and optimization plan in a new requirements doc and completed a long-term DDL architecture refactor that introduced `DdlDialectProfile` and `type_rewrite` for cross-database DDL generation.
+We are finishing the review-driven stabilization of the Schema Diff and synchronization tool. The main active blocker is in `crates/ogdeveloper-core/src/query.rs`, specifically `execute_schema_diff_deploy`, which currently distinguishes `committed`, `rolled_back`, and `mixed`, but still needs a stronger DDL atomicity model based on both target database behavior and SQL type semantics. This affects the Desktop and Web deploy flow exposed through `src-tauri/src/commands/query.rs`, `crates/ogdeveloper-web/src/routes/query.rs`, and the frontend orchestration in `apps/desktop/src/components/diff/SchemaDiffDialog.vue`. In parallel, we documented the overall problem and optimization plan in a new requirements doc and completed a long-term DDL architecture refactor that introduced `DdlDialectProfile` and `type_rewrite` for cross-database DDL generation.
 
 ## Progress
 - [x] Merged latest `origin/main` into local `main`, then merged local `main` into local `cmp`
@@ -24,8 +24,8 @@ We are finishing the review-driven stabilization of the Schema Diff and synchron
 - [x] Fixed `two_phase_commit` mixed-status logic to avoid re-running `commit()` as a probe
 - [x] Added `detectTableRenames` option and separated table-rename detection from column rename detection
 - [x] Aligned Schema Diff field mapping type source with table structure editor using `listDataTypes(connectionId, database)` + `getDataTypeOptions(dbType)`
-- [x] Introduced `crates/dbx-core/src/sql_dialect/ddl_profile.rs`
-- [x] Introduced `crates/dbx-core/src/sql_dialect/type_rewrite.rs`
+- [x] Introduced `crates/ogdeveloper-core/src/sql_dialect/ddl_profile.rs`
+- [x] Introduced `crates/ogdeveloper-core/src/sql_dialect/type_rewrite.rs`
 - [x] Migrated CREATE/ALTER table, index, FK, comment, trigger, rename, and permission SQL generation onto profile/type-rewrite driven behavior
 - [x] Reworked MySQL -> Access CREATE TABLE generation to use Access-compatible types and `COUNTER`
 - [x] `execute_schema_diff_deploy` classifies atomicity by DB capability (`CAP_TRANSACTIONAL_DDL`) + SQL risk + transactional path
@@ -38,15 +38,15 @@ We are finishing the review-driven stabilization of the Schema Diff and synchron
 ## Active Files
 - `handoff.md` — this handoff document for the next AI
 - `需求问题/2026年7月24日-结构比对与同步工具-问题与优化方案.md` — new problem statement and optimization plan based on current code
-- `crates/dbx-core/src/query.rs` — `SchemaDiffDeployResult` and `execute_schema_diff_deploy`; current blocker lives here
+- `crates/ogdeveloper-core/src/query.rs` — `SchemaDiffDeployResult` and `execute_schema_diff_deploy`; current blocker lives here
 - `src-tauri/src/commands/query.rs` — Tauri deploy endpoint now delegates to `execute_schema_diff_deploy`
-- `crates/dbx-web/src/routes/query.rs` — Web deploy route now delegates to `execute_schema_diff_deploy`; includes tests
-- `crates/dbx-core/src/two_phase_commit.rs` — mixed / rolled_back logic no longer probes by re-calling `commit()`
-- `crates/dbx-core/src/schema_diff.rs` — main schema diff DDL generation path; profile-driven create/alter/index/fk/comment/trigger logic
-- `crates/dbx-core/src/script_generator.rs` — idempotent wrapper and lock-timeout behavior now profile-driven
-- `crates/dbx-core/src/sql_dialect.rs` — exports for new ddl_profile and type_rewrite modules
-- `crates/dbx-core/src/sql_dialect/ddl_profile.rs` — target `DatabaseType` profile registry and DDL behavior knobs
-- `crates/dbx-core/src/sql_dialect/type_rewrite.rs` — type rewrite pipeline and auto-increment helpers
+- `crates/ogdeveloper-web/src/routes/query.rs` — Web deploy route now delegates to `execute_schema_diff_deploy`; includes tests
+- `crates/ogdeveloper-core/src/two_phase_commit.rs` — mixed / rolled_back logic no longer probes by re-calling `commit()`
+- `crates/ogdeveloper-core/src/schema_diff.rs` — main schema diff DDL generation path; profile-driven create/alter/index/fk/comment/trigger logic
+- `crates/ogdeveloper-core/src/script_generator.rs` — idempotent wrapper and lock-timeout behavior now profile-driven
+- `crates/ogdeveloper-core/src/sql_dialect.rs` — exports for new ddl_profile and type_rewrite modules
+- `crates/ogdeveloper-core/src/sql_dialect/ddl_profile.rs` — target `DatabaseType` profile registry and DDL behavior knobs
+- `crates/ogdeveloper-core/src/sql_dialect/type_rewrite.rs` — type rewrite pipeline and auto-increment helpers
 - `apps/desktop/src/components/diff/SchemaDiffDialog.vue` — unified protected deploy flow, rollback completeness handling, field mapping dialog wiring
 - `apps/desktop/src/components/diff/SchemaDiffDdlPanel.vue` — rollback incomplete banner and execution block props
 - `apps/desktop/src/components/diff/SchemaDiffDeployStep.vue` — deploy-step rollback incomplete banner and disabled deploy state
@@ -63,11 +63,11 @@ We are finishing the review-driven stabilization of the Schema Diff and synchron
 - `apps/desktop/src/i18n/locales/it.ts` — same strings for Italian
 - `apps/desktop/src/i18n/locales/ja.ts` — same strings for Japanese
 - `apps/desktop/src/i18n/locales/pt-BR.ts` — same strings for Brazilian Portuguese
-- `crates/dbx-web/src/state.rs` — added `WebState::for_tests` helper to avoid missing new fields in scattered test fixtures
-- `crates/dbx-web/src/routes/connection.rs` — updated tests to use `WebState::for_tests`
-- `crates/dbx-web/src/routes/mongo.rs` — updated tests to use `WebState::for_tests`
-- `crates/dbx-core/tests/api_contract_verification.rs` — full options initializer updated with `detect_table_renames`
-- `crates/dbx-core/tests/bidirectional_diff_e2e.rs` — rename detection test updated to enable table rename detection explicitly
+- `crates/ogdeveloper-web/src/state.rs` — added `WebState::for_tests` helper to avoid missing new fields in scattered test fixtures
+- `crates/ogdeveloper-web/src/routes/connection.rs` — updated tests to use `WebState::for_tests`
+- `crates/ogdeveloper-web/src/routes/mongo.rs` — updated tests to use `WebState::for_tests`
+- `crates/ogdeveloper-core/tests/api_contract_verification.rs` — full options initializer updated with `detect_table_renames`
+- `crates/ogdeveloper-core/tests/bidirectional_diff_e2e.rs` — rename detection test updated to enable table rename detection explicitly
 
 ## Blocker
 PR #3861 owner review items (2PC fake prepare, structured rollback, status mapping) are implemented on `cmp`.
@@ -100,7 +100,7 @@ GitHub still may show `mergeable_state: dirty` until rechecked after push.
 ## For the Next AI
 - Read all Active Files before doing anything.
 - Do NOT change Key Decisions without flagging first.
-- Start from `crates/dbx-core/src/query.rs`; that is the last review blocker that is still not fully solved.
+- Start from `crates/ogdeveloper-core/src/query.rs`; that is the last review blocker that is still not fully solved.
 - Treat the new DDL profile architecture as the canonical direction; do not reintroduce scattered database-specific generator branches.
 - Do not touch table structure editor code.
 - Use the requirements doc in `需求问题/2026年7月24日-结构比对与同步工具-问题与优化方案.md` as the planning baseline.

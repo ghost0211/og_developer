@@ -2,7 +2,7 @@ use std::sync::Arc;
 use tauri::State;
 
 use super::connection::AppState;
-use dbx_core::ai::AiConfigItem;
+use ogdeveloper_core::ai::AiConfigItem;
 
 #[tauri::command]
 pub async fn save_ai_configs(state: State<'_, Arc<AppState>>, configs: Vec<AiConfigItem>) -> Result<(), String> {

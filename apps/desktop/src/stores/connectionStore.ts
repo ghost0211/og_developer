@@ -2,7 +2,7 @@ import { defineStore } from "pinia";
 import { uuid } from "@/lib/common/utils";
 import { containsHan, orderedSubsequenceSpan, pinyinFirstLetters } from "@/lib/common/pinyin";
 import { ref, computed, watch, markRaw } from "vue";
-import { safeLocalStorageSet, safeLocalStorageRemove } from "@/lib/backend/safeStorage";
+import { safeLocalStorageSet, safeLocalStorageRemove, safeLocalStorageGet } from "@/lib/backend/safeStorage";
 import type {
   ColumnInfo,
   CompletionAssistantCandidate,
@@ -111,9 +111,9 @@ import { TreeNodeLoadRegistry, type TreeNodeLoadHandle } from "@/lib/metadata/tr
 import i18n from "@/i18n";
 import { applySidebarDatabaseStorage, applySidebarTableStorage, sidebarDatabaseNames, supportsSidebarDatabaseStorage, supportsSidebarTableStorage, type SidebarTableStorageScope } from "@/lib/sidebar/sidebarDatabaseStorage";
 
-const PINNED_TREE_NODES_STORAGE_KEY = "dbx-pinned-tree-nodes";
-const ACTIVE_CONNECTION_STORAGE_KEY = "dbx-active-connection";
-const SIDEBAR_TABLE_NAME_FILTERS_STORAGE_KEY = "dbx-sidebar-table-name-filters";
+const PINNED_TREE_NODES_STORAGE_KEY = "ogdeveloper-pinned-tree-nodes";
+const ACTIVE_CONNECTION_STORAGE_KEY = "ogdeveloper-active-connection";
+const SIDEBAR_TABLE_NAME_FILTERS_STORAGE_KEY = "ogdeveloper-sidebar-table-name-filters";
 const CONNECTION_HEALTH_CHECK_TTL_MS = 2000;
 const CONNECTION_HEALTH_CHECK_TIMEOUT_MS = 5000;
 const METADATA_LOAD_MIN_TIMEOUT_MS = 15_000;
@@ -141,7 +141,7 @@ function tableNameFilterIsEmpty(filter: TableNameFilter | undefined | null): boo
 function loadSidebarTableNameFilters(): Record<string, TableNameFilter> {
   if (typeof localStorage === "undefined") return {};
   try {
-    const parsed = JSON.parse(localStorage.getItem(SIDEBAR_TABLE_NAME_FILTERS_STORAGE_KEY) || "{}");
+    const parsed = JSON.parse(safeLocalStorageGet(SIDEBAR_TABLE_NAME_FILTERS_STORAGE_KEY) || "{}");
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
     const result: Record<string, TableNameFilter> = {};
     for (const [key, value] of Object.entries(parsed)) {
@@ -156,7 +156,7 @@ function loadSidebarTableNameFilters(): Record<string, TableNameFilter> {
 
 function saveSidebarTableNameFilters(filters: Record<string, TableNameFilter>) {
   if (typeof localStorage === "undefined") return;
-  localStorage.setItem(SIDEBAR_TABLE_NAME_FILTERS_STORAGE_KEY, JSON.stringify(filters));
+  safeLocalStorageSet(SIDEBAR_TABLE_NAME_FILTERS_STORAGE_KEY, JSON.stringify(filters));
 }
 
 function sidebarObjectGroupPageSize(): number {
@@ -231,7 +231,7 @@ export const useConnectionStore = defineStore("connection", () => {
   const tunnelProfileStore = useTunnelProfileStore();
   const connections = ref<ConnectionConfig[]>([]);
   const isDesktop = isTauriRuntime();
-  const activeConnectionId = ref<string | null>(localStorage.getItem(ACTIVE_CONNECTION_STORAGE_KEY));
+  const activeConnectionId = ref<string | null>(safeLocalStorageGet(ACTIVE_CONNECTION_STORAGE_KEY));
   const selectedTreeNodeId = ref<string | null>(null);
   const selectedTreeNodeIds = ref<string[]>([]);
   // O(1) membership set — rebuilds only when selectedTreeNodeIds changes.
@@ -283,7 +283,7 @@ export const useConnectionStore = defineStore("connection", () => {
   const completionForeignKeyIndex = new Map<string, { touched: number; foreignKeys: SqlCompletionForeignKey[] }>();
   const completionInFlight = new Map<string, Promise<unknown>>();
   const completionMetadataLimiter = new MetadataTaskLimiter(COMPLETION_METADATA_CONCURRENCY, (event) => {
-    console.debug("[DBX][completion-metadata:limit]", event);
+    console.debug("[ogdeveloper][completion-metadata:limit]", event);
   });
   const transferSource = ref<{
     connectionId: string;
@@ -349,14 +349,14 @@ export const useConnectionStore = defineStore("connection", () => {
   const activeTreeRefreshGenerations = new Map<string, number>();
   let nextTreeRefreshGeneration = 0;
   const metadataLoadCoordinator = new MetadataLoadCoordinator((event) => {
-    console.debug("[DBX][metadata-load:coordinator]", event);
+    console.debug("[ogdeveloper][metadata-load:coordinator]", event);
   });
   const metadataListPageCache = new MetadataResultCache<MetadataListPageResult>({
     ttlMs: METADATA_LIST_PAGE_CACHE_TTL_MS,
     maxEntries: METADATA_LIST_PAGE_CACHE_MAX_ENTRIES,
   });
   const metadataTraceLogger: MetadataLoadTraceLogger = (event) => {
-    console.debug("[DBX][metadata-load:trace]", event);
+    console.debug("[ogdeveloper][metadata-load:trace]", event);
   };
   const connectInFlight = new Map<string, Promise<void>>();
   const disconnectInFlight = new Map<string, Promise<void>>();
@@ -566,7 +566,7 @@ export const useConnectionStore = defineStore("connection", () => {
     const bounded = withDisconnectRequestTimeout(connectionId, request);
     const tracked = bounded
       .catch((error) => {
-        console.warn("[DBX][connection:disconnect-error]", { connectionId, error });
+        console.warn("[ogdeveloper][connection:disconnect-error]", { connectionId, error });
       })
       .finally(() => {
         if (disconnectInFlight.get(connectionId) === tracked) {
@@ -606,7 +606,7 @@ export const useConnectionStore = defineStore("connection", () => {
     }
     const tracked = withDisconnectRequestTimeout(connectionId, request)
       .catch((error) => {
-        console.warn("[DBX][connection:cancel-disconnect-error]", { connectionId, attempt, error });
+        console.warn("[ogdeveloper][connection:cancel-disconnect-error]", { connectionId, attempt, error });
         throw error;
       })
       .finally(() => {
@@ -624,7 +624,7 @@ export const useConnectionStore = defineStore("connection", () => {
       // attempt, so clean again if that cancelled connect later returns a pool.
       await withDisconnectRequestTimeout(connectionId, api.disconnectDb(connectionId, attempt));
     } catch (error) {
-      console.warn("[DBX][connection:cancel-result-cleanup-error]", { connectionId, attempt, error });
+      console.warn("[ogdeveloper][connection:cancel-result-cleanup-error]", { connectionId, attempt, error });
     }
   }
 
@@ -779,7 +779,7 @@ export const useConnectionStore = defineStore("connection", () => {
     let timedOut = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     void promise.catch((error) => {
-      if (timedOut) console.warn("[DBX][connection:disconnect-late-error]", { connectionId, error });
+      if (timedOut) console.warn("[ogdeveloper][connection:disconnect-late-error]", { connectionId, error });
     });
     try {
       await Promise.race([
@@ -787,7 +787,7 @@ export const useConnectionStore = defineStore("connection", () => {
         new Promise<void>((resolve) => {
           timer = setTimeout(() => {
             timedOut = true;
-            console.warn("[DBX][connection:disconnect-timeout]", { connectionId, timeoutMs: DISCONNECT_REQUEST_TIMEOUT_MS });
+            console.warn("[ogdeveloper][connection:disconnect-timeout]", { connectionId, timeoutMs: DISCONNECT_REQUEST_TIMEOUT_MS });
             resolve();
           }, DISCONNECT_REQUEST_TIMEOUT_MS);
         }),
@@ -843,7 +843,7 @@ export const useConnectionStore = defineStore("connection", () => {
         const cleanupConnectionId = typeof connectionId === "string" && connectionId ? connectionId : config.id;
         if (connectedIds.value.has(cleanupConnectionId)) return;
         void api.disconnectDb(cleanupConnectionId).catch((error) => {
-          console.warn("[DBX][connection:timeout-cleanup-failed]", { connectionId: cleanupConnectionId, error });
+          console.warn("[ogdeveloper][connection:timeout-cleanup-failed]", { connectionId: cleanupConnectionId, error });
         });
       },
       (error) => {
@@ -900,7 +900,7 @@ export const useConnectionStore = defineStore("connection", () => {
   function loadPinnedTreeNodeOrderFromLocalStorage(): string[] {
     try {
       if (typeof localStorage === "undefined") return [];
-      const saved = localStorage.getItem(PINNED_TREE_NODES_STORAGE_KEY);
+      const saved = safeLocalStorageGet(PINNED_TREE_NODES_STORAGE_KEY);
       const ids = saved ? JSON.parse(saved) : [];
       return normalizePinnedTreeNodeOrder(Array.isArray(ids) ? ids.filter((id): id is string => typeof id === "string") : []);
     } catch {
@@ -919,7 +919,7 @@ export const useConnectionStore = defineStore("connection", () => {
     if (legacy.length > 0) {
       await api.savePinnedTreeNodeIds(legacy).catch(() => undefined);
       if (typeof localStorage !== "undefined") {
-        localStorage.removeItem(PINNED_TREE_NODES_STORAGE_KEY);
+        safeLocalStorageRemove(PINNED_TREE_NODES_STORAGE_KEY);
       }
     }
     return legacy;
@@ -940,7 +940,7 @@ export const useConnectionStore = defineStore("connection", () => {
       return;
     }
     if (typeof localStorage === "undefined") return;
-    localStorage.setItem(PINNED_TREE_NODES_STORAGE_KEY, JSON.stringify(snapshot));
+    safeLocalStorageSet(PINNED_TREE_NODES_STORAGE_KEY, JSON.stringify(snapshot));
   }
 
   function findLoadedTreeNodeById(nodes: readonly TreeNode[], id: string): TreeNode | null {
@@ -1723,7 +1723,7 @@ export const useConnectionStore = defineStore("connection", () => {
       await savePersistedTreeChildren(options.cacheKey, nextChildren);
     } catch (error) {
       // Some drivers only expose table metadata; keep the already-rendered table tree usable.
-      console.debug("[DBX][metadata:simple-supplemental:error]", {
+      console.debug("[ogdeveloper][metadata:simple-supplemental:error]", {
         connectionId: options.connectionId,
         database: options.database,
         schema: options.effectiveSchema,
@@ -2686,7 +2686,7 @@ export const useConnectionStore = defineStore("connection", () => {
         applySidebarDatabaseStorage(currentNode?.children, storage);
       }
     } catch (error) {
-      console.debug("[DBX][sidebar-database-storage:unavailable]", { connectionId, error });
+      console.debug("[ogdeveloper][sidebar-database-storage:unavailable]", { connectionId, error });
     } finally {
       if (sidebarDatabaseStorageInFlight.get(requestKey) === request) {
         sidebarDatabaseStorageInFlight.delete(requestKey);
@@ -2722,7 +2722,7 @@ export const useConnectionStore = defineStore("connection", () => {
       });
       applySidebarTableStorage(treeNodes.value, scope, statistics);
     } catch (error) {
-      console.debug("[DBX][sidebar-table-storage:unavailable]", { ...scope, error });
+      console.debug("[ogdeveloper][sidebar-table-storage:unavailable]", { ...scope, error });
     } finally {
       if (sidebarTableStorageInFlight.get(requestKey) === request) {
         sidebarTableStorageInFlight.delete(requestKey);
@@ -5402,7 +5402,7 @@ export const useConnectionStore = defineStore("connection", () => {
       const { writeTextFile } = await import("@tauri-apps/plugin-fs");
       const path = await save({
         filters: [{ name: "JSON", extensions: ["json"] }],
-        defaultPath: "dbx-connections.json",
+        defaultPath: "ogdeveloper-connections.json",
       });
       if (!path) return;
       await writeTextFile(path, content);
@@ -5411,7 +5411,7 @@ export const useConnectionStore = defineStore("connection", () => {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = "dbx-connections.json";
+      a.download = "ogdeveloper-connections.json";
       a.click();
       URL.revokeObjectURL(url);
     }
@@ -5565,7 +5565,7 @@ export const useConnectionStore = defineStore("connection", () => {
       const { open } = await import("@tauri-apps/plugin-dialog");
       const { readTextFile } = await import("@tauri-apps/plugin-fs");
       const path = await open({
-        filters: source === "navicat" ? [{ name: "Navicat Connection Export", extensions: ["ncx", "xml"] }] : [{ name: "DBX JSON", extensions: ["json"] }],
+        filters: source === "navicat" ? [{ name: "Navicat Connection Export", extensions: ["ncx", "xml"] }] : [{ name: "ogdeveloper JSON", extensions: ["json"] }],
         multiple: false,
       });
       if (!path) return null;
@@ -5630,7 +5630,7 @@ export const useConnectionStore = defineStore("connection", () => {
 
         if (Array.isArray(parsed)) {
           imported = parsed;
-        } else if (parsed.format === "dbx-config" && Array.isArray(parsed.connections)) {
+        } else if ((parsed.format === "ogdeveloper-config" || parsed.format === "dbx-config") && Array.isArray(parsed.connections)) {
           imported = parsed.connections;
         } else if (parsed.connections && Array.isArray(parsed.connections)) {
           imported = parsed.connections;

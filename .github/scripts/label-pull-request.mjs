@@ -133,10 +133,10 @@ export function inferAreaLabels(changedFiles) {
     || file.startsWith("src-tauri/"))) {
     labels.add("area/desktop");
   }
-  if (has((file) => file.startsWith("crates/dbx-core/") || file.startsWith("packages/node-core/"))) {
+  if (has((file) => file.startsWith("crates/ogdeveloper-core/") || file.startsWith("packages/node-core/"))) {
     labels.add("area/core");
   }
-  if (has((file) => file.startsWith("crates/dbx-web/") || file.startsWith("examples/web-api/"))) {
+  if (has((file) => file.startsWith("crates/ogdeveloper-web/") || file.startsWith("examples/web-api/"))) {
     labels.add("area/web");
   }
   if (has((file) => file.startsWith("agents/"))) labels.add("area/agents");
@@ -220,7 +220,7 @@ export function inferDatabaseTypes(changedFiles, knownDatabaseTypes) {
 
     if (file.startsWith("plugins/jdbc/")) add("jdbc");
 
-    if (file.startsWith("apps/desktop/src/") || file.startsWith("crates/dbx-core/src/")) {
+    if (file.startsWith("apps/desktop/src/") || file.startsWith("crates/ogdeveloper-core/src/")) {
       for (const [pattern, databaseType] of DATABASE_PATH_TOKENS) {
         if (pattern.test(file)) add(databaseType);
       }
@@ -428,7 +428,7 @@ function loadEvent() {
 }
 
 function loadDatabaseCatalog() {
-  const manifestUrl = new URL("../../crates/dbx-core/assets/database-drivers.manifest.json", import.meta.url);
+  const manifestUrl = new URL("../../crates/ogdeveloper-core/assets/database-drivers.manifest.json", import.meta.url);
   const manifest = JSON.parse(fs.readFileSync(manifestUrl, "utf8"));
   return new Map(manifest.drivers.map((driver) => [driver.dbType, driver.label]));
 }

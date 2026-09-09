@@ -33,18 +33,22 @@ test("parses encoded database URL with password", () => {
   assert.equal(draft?.urlParams, "sslmode=require");
 });
 
-
-
-
-
 test("allows password query field to override database URL password", () => {
   const draft = parseConnectionDeepLink("dbx://connection/new?url=postgres%3A%2F%2Fapp%3Asecret%40db.internal%3A5432%2Forders&password=override");
 
   assert.equal(draft?.password, "override");
 });
 
-
 test("ignores unsupported dbx deep link targets", () => {
   assert.equal(parseConnectionDeepLink("dbx://query/open?sql=select%201"), null);
   assert.equal(parseConnectionDeepLink("dbx://connections/new?type=postgres"), null);
+});
+
+test("accepts ogdeveloper links while retaining dbx compatibility", () => {
+  const suffix = "://connection/new?type=postgres&host=db.internal&port=15432&database=orders";
+  const current = parseConnectionDeepLink(`ogdeveloper${suffix}`);
+  assert.ok(current);
+  assert.deepEqual(current, parseConnectionDeepLink(`dbx${suffix}`));
+  assert.equal(parseConnectionDeepLink("ogdeveloper://connection/newer?type=postgres"), null);
+  assert.equal(parseConnectionDeepLink("https://connection/new?type=postgres"), null);
 });

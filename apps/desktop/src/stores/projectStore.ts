@@ -19,8 +19,8 @@ export interface SqlProject {
   updatedAt?: number;
 }
 
-const STORAGE_KEY = "dbx-sql-projects-v1";
-const ACTIVE_PROJECT_STORAGE_KEY = "dbx-sql-active-project-v1";
+const STORAGE_KEY = "ogdeveloper-sql-projects-v1";
+const ACTIVE_PROJECT_STORAGE_KEY = "ogdeveloper-sql-active-project-v1";
 
 export function normalizeProjectPath(value: string): string {
   const trimmed = value.trim();

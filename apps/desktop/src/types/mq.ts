@@ -1,4 +1,4 @@
-// Message queue admin types, matching dbx-core/src/mq/types.rs
+// Message queue admin types, matching ogdeveloper-core/src/mq/types.rs
 
 export type MqSystemKind = "pulsar" | "kafka" | "rocketmq" | "rabbitmq";
 

@@ -1,4 +1,4 @@
-export const DATA_GRID_NATIVE_SELECTION_BLOCK_CLASS = "dbx-data-grid-native-selection-blocked";
+export const DATA_GRID_NATIVE_SELECTION_BLOCK_CLASS = "ogdeveloper-data-grid-native-selection-blocked";
 export const DATA_GRID_NATIVE_SELECTION_RELEASE_DELAY_MS = 2000;
 
 interface NativeSelectionBlockEnvironment {

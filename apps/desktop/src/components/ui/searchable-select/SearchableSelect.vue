@@ -78,7 +78,7 @@ const selectedLabel = computed(() => {
 
 const triggerBaseClass = computed(() =>
   props.triggerVariant === "outline"
-    ? "dbx-searchable-select-trigger dbx-control-chrome h-8 w-full min-w-0 justify-between gap-1.5 border border-input bg-transparent px-2.5 text-sm font-normal shadow-none hover:bg-muted/40 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30 dark:hover:bg-input/50"
+    ? "ogdeveloper-searchable-select-trigger ogdeveloper-control-chrome h-8 w-full min-w-0 justify-between gap-1.5 border border-input bg-transparent px-2.5 text-sm font-normal shadow-none hover:bg-muted/40 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30 dark:hover:bg-input/50"
     : "h-6 w-auto max-w-56 min-w-0 justify-between gap-1 border-0 bg-transparent px-1 text-xs font-normal shadow-none hover:bg-muted/50 focus-visible:ring-0",
 );
 
@@ -249,7 +249,7 @@ function handleKeydown(event: KeyboardEvent) {
             <span v-if="!searchText" class="pointer-events-none absolute left-[25px] top-1/2 -translate-y-1/2 text-sm text-muted-foreground">{{ searchPlaceholder }}</span>
             <Input ref="searchInput" :model-value="searchText" class="h-6 border-0 pl-6 pr-2 text-sm caret-foreground shadow-none focus-visible:ring-0" @update:model-value="(value) => (searchText = String(value))" @keydown="handleKeydown" />
           </div>
-          <div ref="listContainer" class="dbx-searchable-select-list max-h-64 overflow-y-auto py-1" @scroll="updateHelpPanelOffset">
+          <div ref="listContainer" class="ogdeveloper-searchable-select-list max-h-64 overflow-y-auto py-1" @scroll="updateHelpPanelOffset">
             <div v-if="loading" class="px-2 py-2 text-sm text-muted-foreground">
               {{ loadingText }}
             </div>
@@ -274,7 +274,7 @@ function handleKeydown(event: KeyboardEvent) {
                   <X v-if="clearSelectedOption && option === modelValue" class="absolute inset-0 h-3.5 w-3.5 opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100" />
                 </span>
                 <!-- Keep custom labels inside the flex row so long content cannot overlap adjacent UI. -->
-                <div class="dbx-searchable-select-option-label min-w-0 flex-1 overflow-hidden">
+                <div class="ogdeveloper-searchable-select-option-label min-w-0 flex-1 overflow-hidden">
                   <slot name="option-label" :option="option" :label="displayName?.(option)">
                     <span class="block truncate">{{ displayName?.(option) }}</span>
                   </slot>
@@ -295,7 +295,7 @@ function handleKeydown(event: KeyboardEvent) {
                 @click="selectCustomOption"
               >
                 <Check class="h-3.5 w-3.5 shrink-0 opacity-0" />
-                <div class="dbx-searchable-select-option-label min-w-0 flex-1 overflow-hidden">
+                <div class="ogdeveloper-searchable-select-option-label min-w-0 flex-1 overflow-hidden">
                   <slot name="custom-option-label" :value="customOptionValue">
                     <span class="block truncate">{{ customOptionValue }}</span>
                   </slot>
@@ -317,7 +317,7 @@ function handleKeydown(event: KeyboardEvent) {
               @click="selectCustomOption"
             >
               <Check class="h-3.5 w-3.5 shrink-0 opacity-0" />
-              <div class="dbx-searchable-select-option-label min-w-0 flex-1 overflow-hidden">
+              <div class="ogdeveloper-searchable-select-option-label min-w-0 flex-1 overflow-hidden">
                 <slot name="custom-option-label" :value="customOptionValue">
                   <span class="block truncate">{{ customOptionValue }}</span>
                 </slot>
@@ -335,42 +335,42 @@ function handleKeydown(event: KeyboardEvent) {
 </template>
 
 <style>
-.dbx-searchable-select-list {
+.ogdeveloper-searchable-select-list {
   scrollbar-width: thin;
   scrollbar-color: color-mix(in oklch, var(--foreground) 30%, transparent) transparent;
 }
 
-.dbx-searchable-select-list::-webkit-scrollbar {
+.ogdeveloper-searchable-select-list::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 
-.dbx-searchable-select-list::-webkit-scrollbar-track {
+.ogdeveloper-searchable-select-list::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.dbx-searchable-select-list::-webkit-scrollbar-thumb {
+.ogdeveloper-searchable-select-list::-webkit-scrollbar-thumb {
   border: 1px solid transparent;
   border-radius: 999px;
   background: color-mix(in oklch, var(--foreground) 30%, transparent);
   background-clip: padding-box;
 }
 
-.dbx-searchable-select-list:hover::-webkit-scrollbar-thumb {
+.ogdeveloper-searchable-select-list:hover::-webkit-scrollbar-thumb {
   border: 0;
   background: color-mix(in oklch, var(--foreground) 48%, transparent);
 }
 
-.dark .dbx-searchable-select-list {
+.dark .ogdeveloper-searchable-select-list {
   scrollbar-color: rgb(82, 82, 91) transparent;
 }
 
-.dark .dbx-searchable-select-list::-webkit-scrollbar-thumb {
+.dark .ogdeveloper-searchable-select-list::-webkit-scrollbar-thumb {
   background: rgb(82, 82, 91);
   background-clip: padding-box;
 }
 
-.dark .dbx-searchable-select-list:hover::-webkit-scrollbar-thumb {
+.dark .ogdeveloper-searchable-select-list:hover::-webkit-scrollbar-thumb {
   background: rgb(113, 113, 122);
 }
 </style>

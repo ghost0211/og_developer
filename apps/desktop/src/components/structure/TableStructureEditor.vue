@@ -254,9 +254,9 @@ function isPlainModShortcut(event: KeyboardEvent, key: string): boolean {
 }
 
 const structureDensityValues: StructureEditorDensity[] = ["compact", "standard", "comfortable"];
-const STRUCTURE_COLUMNS_WIDTHS_STORAGE_KEY = "dbx-structure-editor-column-widths";
-const STRUCTURE_INDEX_COLUMNS_WIDTHS_STORAGE_KEY = "dbx-structure-editor-index-column-widths";
-const STRUCTURE_SQL_PREVIEW_COLLAPSED_STORAGE_KEY = "dbx-structure-editor-sql-preview-collapsed";
+const STRUCTURE_COLUMNS_WIDTHS_STORAGE_KEY = "ogdeveloper-structure-editor-column-widths";
+const STRUCTURE_INDEX_COLUMNS_WIDTHS_STORAGE_KEY = "ogdeveloper-structure-editor-index-column-widths";
+const STRUCTURE_SQL_PREVIEW_COLLAPSED_STORAGE_KEY = "ogdeveloper-structure-editor-sql-preview-collapsed";
 const STRUCTURE_COLUMN_WIDTH_COUNT = 12;
 const STRUCTURE_INDEX_COLUMN_WIDTH_COUNT = 8;
 const PERSISTED_STRUCTURE_INDEX_COLUMN_WIDTHS = new Set([0, 1, 6]);
@@ -861,7 +861,7 @@ async function hydrateRestoredDraftFromDatabase() {
     markDraftHydratedAndSync();
     shouldRefreshPreview = true;
   } catch (e: any) {
-    console.warn("[DBX][structure-editor:draft-hydration-failed]", e);
+    console.warn("[ogdeveloper][structure-editor:draft-hydration-failed]", e);
   } finally {
     hydratingRestoredDraft = false;
     if (shouldRefreshPreview) scheduleSqlPreviewRefresh();
@@ -1173,7 +1173,7 @@ async function loadStructure(silent = false, scope: TableStructureRefreshScope =
     secondaryMetadataScheduled = true;
     const secondaryMetadataPromise = applySecondaryMetadata()
       .catch((error) => {
-        console.warn("[DBX][structure-editor:secondary-metadata-failed]", error);
+        console.warn("[ogdeveloper][structure-editor:secondary-metadata-failed]", error);
       })
       .finally(() => {
         if (requestId === structureLoadRequestId) setSecondaryMetadataLoading(scope, false);
@@ -1186,7 +1186,7 @@ async function loadStructure(silent = false, scope: TableStructureRefreshScope =
     if (showErrors) {
       errorMessage.value = e?.message || String(e);
     } else {
-      console.warn("[DBX][structure-editor:refresh-failed]", e);
+      console.warn("[ogdeveloper][structure-editor:refresh-failed]", e);
     }
   } finally {
     if (!secondaryMetadataScheduled && requestId === structureLoadRequestId) {
@@ -1203,7 +1203,7 @@ async function refreshStructureAfterSave(scope: TableStructureRefreshScope) {
   try {
     await loadStructure(true, scope, false, { blockSecondaryMetadata: true });
   } catch (e) {
-    console.warn("[DBX][structure-editor:post-save-refresh-failed]", e);
+    console.warn("[ogdeveloper][structure-editor:post-save-refresh-failed]", e);
   } finally {
     postSaveRefreshing.value = false;
     if (activeTab.value === "ddl") void fetchDdl(true);
@@ -1898,7 +1898,7 @@ async function recordStructureHistory(sql: string, start: number, success: boole
       affected_rows: success ? result?.affected_rows : undefined,
     });
   } catch (e) {
-    console.warn("[DBX][structure-history:save-failed]", e);
+    console.warn("[ogdeveloper][structure-history:save-failed]", e);
   }
 }
 

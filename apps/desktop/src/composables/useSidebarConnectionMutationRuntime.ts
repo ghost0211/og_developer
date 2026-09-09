@@ -92,7 +92,7 @@ export function useSidebarConnectionMutationRuntime(options: SidebarConnectionMu
       for (const connectionId of connectionIds) {
         connectionStore.disconnect(connectionId).catch((error) => {
           // Removal has already succeeded; disconnect cleanup must not turn it into a failed delete.
-          console.warn("[DBX][connection:delete:disconnect-failed]", { connectionId, error });
+          console.warn("[ogdeveloper][connection:delete:disconnect-failed]", { connectionId, error });
         });
       }
       toast(targets.length > 1 ? t("connection.deletedSelected", { count: targets.length }) : t("connection.deleted"), 2000);

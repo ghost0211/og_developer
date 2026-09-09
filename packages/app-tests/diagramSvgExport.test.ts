@@ -81,7 +81,7 @@ test("omits relationship paths when relationshipPaths entry is missing", () => {
   });
 
   assert.doesNotMatch(svg, /marker-end=/);
-  assert.doesNotMatch(svg, /id="dbx-diagram-arrow"/);
+  assert.doesNotMatch(svg, /id="ogdeveloper-diagram-arrow"/);
 });
 
 test("draws visible layers and skips zero-size layers", () => {
@@ -206,8 +206,8 @@ test("exports the engineering ER diagram with Chen-style shapes and cardinalitie
 });
 
 test("builds safe SVG file names from the active diagram context", () => {
-  assert.equal(diagramSvgFileName("prod/main", "billing db", "engineering"), "dbx-prod-main-billing-db-engineering-er.svg");
-  assert.equal(diagramSvgFileName("", "", "table"), "dbx-diagram-table-structure.svg");
+  assert.equal(diagramSvgFileName("prod/main", "billing db", "engineering"), "ogdeveloper-prod-main-billing-db-engineering-er.svg");
+  assert.equal(diagramSvgFileName("", "", "table"), "ogdeveloper-diagram-table-structure.svg");
 });
 
 test("buildTableRelationshipPaths uses waypoints when length >= 2", () => {

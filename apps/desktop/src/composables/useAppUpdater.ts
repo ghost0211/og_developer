@@ -165,7 +165,7 @@ export function useAppUpdater(options: UseAppUpdaterOptions = {}) {
       if (attempt !== activeDownloadAttempt) return;
       downloadProgress.value = 0;
       const rawMsg = e?.message || String(e);
-      console.error("[DBX update error]", rawMsg);
+      console.error("[ogdeveloper update error]", rawMsg);
       const lower = rawMsg.toLowerCase();
       if (lower.includes("canceled") || lower.includes("cancelled")) {
         return;

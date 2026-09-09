@@ -13,4 +13,4 @@ export DBX_JDBC_PLUGIN_ZIP="$DIR/target/release/jdbc-plugin.zip"
 # DBX_DISABLE_PASSWORD=1 可关闭登录密码（仅限可信内网）
 
 echo "ogdeveloper web → http://0.0.0.0:$PORT"
-exec "$DIR/target/release/dbx-web"
+exec "$DIR/target/release/ogdeveloper-web"

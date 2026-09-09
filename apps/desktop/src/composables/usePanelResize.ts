@@ -2,13 +2,13 @@ import { ref, type Ref } from "vue";
 import { safeLocalStorageGet, safeLocalStorageSet } from "@/lib/backend/safeStorage";
 
 export function usePanelResize() {
-  const sidebarWidth = ref(Number(safeLocalStorageGet("dbx-sidebar-width")) || 260);
-  const aiPanelWidth = ref(Number(safeLocalStorageGet("dbx-ai-panel-width")) || 360);
-  const historyWidth = ref(Number(safeLocalStorageGet("dbx-history-width")) || 288);
-  const sqlLibraryWidth = ref(Number(safeLocalStorageGet("dbx-sql-library-width")) || 288);
-  const sqlFilePanelWidth = ref(Number(safeLocalStorageGet("dbx-sql-file-panel-width")) || 288);
-  const projectFilePanelWidth = ref(Number(safeLocalStorageGet("dbx-project-file-panel-width")) || 288);
-  const gitPanelWidth = ref(Number(safeLocalStorageGet("dbx-git-panel-width")) || 288);
+  const sidebarWidth = ref(Number(safeLocalStorageGet("ogdeveloper-sidebar-width")) || 260);
+  const aiPanelWidth = ref(Number(safeLocalStorageGet("ogdeveloper-ai-panel-width")) || 360);
+  const historyWidth = ref(Number(safeLocalStorageGet("ogdeveloper-history-width")) || 288);
+  const sqlLibraryWidth = ref(Number(safeLocalStorageGet("ogdeveloper-sql-library-width")) || 288);
+  const sqlFilePanelWidth = ref(Number(safeLocalStorageGet("ogdeveloper-sql-file-panel-width")) || 288);
+  const projectFilePanelWidth = ref(Number(safeLocalStorageGet("ogdeveloper-project-file-panel-width")) || 288);
+  const gitPanelWidth = ref(Number(safeLocalStorageGet("ogdeveloper-git-panel-width")) || 288);
 
   function startPanelResize(widthRef: Ref<number>, storageKey: string, direction: "left" | "right") {
     return (e: MouseEvent) => {
@@ -32,13 +32,13 @@ export function usePanelResize() {
     };
   }
 
-  const startSidebarResize = startPanelResize(sidebarWidth, "dbx-sidebar-width", "right");
-  const startAiPanelResize = startPanelResize(aiPanelWidth, "dbx-ai-panel-width", "left");
-  const startHistoryResize = startPanelResize(historyWidth, "dbx-history-width", "left");
-  const startSqlLibraryResize = startPanelResize(sqlLibraryWidth, "dbx-sql-library-width", "left");
-  const startSqlFilePanelResize = startPanelResize(sqlFilePanelWidth, "dbx-sql-file-panel-width", "left");
-  const startProjectFilePanelResize = startPanelResize(projectFilePanelWidth, "dbx-project-file-panel-width", "left");
-  const startGitPanelResize = startPanelResize(gitPanelWidth, "dbx-git-panel-width", "left");
+  const startSidebarResize = startPanelResize(sidebarWidth, "ogdeveloper-sidebar-width", "right");
+  const startAiPanelResize = startPanelResize(aiPanelWidth, "ogdeveloper-ai-panel-width", "left");
+  const startHistoryResize = startPanelResize(historyWidth, "ogdeveloper-history-width", "left");
+  const startSqlLibraryResize = startPanelResize(sqlLibraryWidth, "ogdeveloper-sql-library-width", "left");
+  const startSqlFilePanelResize = startPanelResize(sqlFilePanelWidth, "ogdeveloper-sql-file-panel-width", "left");
+  const startProjectFilePanelResize = startPanelResize(projectFilePanelWidth, "ogdeveloper-project-file-panel-width", "left");
+  const startGitPanelResize = startPanelResize(gitPanelWidth, "ogdeveloper-git-panel-width", "left");
 
   return {
     sidebarWidth,

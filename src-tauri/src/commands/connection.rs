@@ -2,12 +2,14 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use tauri::State;
 
-pub use dbx_core::connection::{
+pub use ogdeveloper_core::connection::{
     connection_url_for_endpoint, metadata_connection_config, probe_connection_endpoint,
     redacted_connection_url_for_endpoint, AppState, PoolKind,
 };
-use dbx_core::db;
-use dbx_core::models::connection::{ConnectionConfig, ConnectionTestResult, DatabaseConnectionInfo, DatabaseType};
+use ogdeveloper_core::db;
+use ogdeveloper_core::models::connection::{
+    ConnectionConfig, ConnectionTestResult, DatabaseConnectionInfo, DatabaseType,
+};
 
 fn is_transient_runtime_config_id(id: &str) -> bool {
     id.starts_with("__test_") || id.starts_with("__visible_draft_") || id.starts_with("__visible_schema_draft_")
@@ -188,7 +190,7 @@ pub async fn disconnect_db(
     connection_id: String,
     client_attempt: Option<u64>,
 ) -> Result<(), String> {
-    // 对齐 dbx-web 的 /connection/disconnect：带 client_attempt 的断开仅在
+    // 对齐 ogdeveloper-web 的 /connection/disconnect：带 client_attempt 的断开仅在
     // 该尝试仍是当前连接尝试时生效，避免关闭旧对话框时取消新建立的连接。
     let should_disconnect = if let Some(client_attempt) = client_attempt {
         state.supersede_connection_attempt_if_client_attempt(&connection_id, client_attempt).await
@@ -268,7 +270,7 @@ pub async fn save_connection_database_info(
 }
 
 pub async fn ensure_connection_writable(state: &AppState, connection_id: &str, _action: &str) -> Result<(), String> {
-    dbx_core::query::check_read_only_for_connection(state, connection_id, "").await
+    ogdeveloper_core::query::check_read_only_for_connection(state, connection_id, "").await
 }
 
 #[tauri::command]

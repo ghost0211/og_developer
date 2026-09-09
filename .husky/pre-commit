@@ -16,5 +16,5 @@ format_staged_rust() {
 }
 
 format_staged_rust "src-tauri"
-format_staged_rust "crates/dbx-core"
-format_staged_rust "crates/dbx-web"
+format_staged_rust "crates/ogdeveloper-core"
+format_staged_rust "crates/ogdeveloper-web"

@@ -2,7 +2,7 @@ use std::sync::Arc;
 use tauri::State;
 
 use super::connection::AppState;
-pub use dbx_core::history::{HistoryConnectionOption, HistoryEntry, HistorySearchRequest, HistorySearchResult};
+pub use ogdeveloper_core::history::{HistoryConnectionOption, HistoryEntry, HistorySearchRequest, HistorySearchResult};
 
 #[tauri::command]
 pub async fn save_history(state: State<'_, Arc<AppState>>, entry: HistoryEntry) -> Result<(), String> {

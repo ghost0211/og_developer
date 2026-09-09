@@ -35,7 +35,7 @@ jobs:
           set -euo pipefail
 
           build_log=$(mktemp)
-          if nix build .#dbx-pnpm-deps --no-link --print-build-logs >"$build_log" 2>&1; then
+          if nix build .#ogdeveloper-pnpm-deps --no-link --print-build-logs >"$build_log" 2>&1; then
             echo "Nix pnpm dependencies already have the correct hash."
             exit 0
           fi
@@ -50,7 +50,7 @@ jobs:
           EXPECTED_HASH="$expected_hash" perl -0pi -e \
             's/(hash = ")sha256-[^"]+(")/$1 . $ENV{EXPECTED_HASH} . $2/e' flake.nix
 
-          nix build .#dbx-pnpm-deps --no-link --print-build-logs
+          nix build .#ogdeveloper-pnpm-deps --no-link --print-build-logs
 
           if git diff --quiet -- flake.nix; then
             echo "The Nix build passed without changing flake.nix."

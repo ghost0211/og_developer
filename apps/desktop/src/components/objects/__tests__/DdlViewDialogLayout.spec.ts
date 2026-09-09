@@ -5,7 +5,7 @@ const source = readFileSync(new URL("../DdlViewDialog.vue", import.meta.url), "u
 
 describe("DdlViewDialog layout", () => {
   it("keeps the loading, editor, and footer rows in a stable dialog viewport", () => {
-    expect(source).toContain("h-[min(760px,calc(var(--dbx-viewport-height)-2rem))]");
+    expect(source).toContain("h-[min(760px,calc(var(--ogdeveloper-viewport-height)-2rem))]");
     expect(source).toContain("grid-rows-[auto_minmax(0,1fr)_auto]");
     expect(source).toContain('<div class="grid min-h-0 gap-3">');
   });

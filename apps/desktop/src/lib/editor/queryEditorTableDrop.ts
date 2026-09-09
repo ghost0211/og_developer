@@ -2,10 +2,10 @@ import type { DatabaseType } from "@/types/database";
 import { qualifiedTableName, quoteTableIdentifier } from "@/lib/table/tableSelectSql";
 
 export const DBX_TABLE_REFERENCE_MIME = "application/x-dbx-table-reference";
-export const DBX_TABLE_REFERENCE_DROP_EVENT = "dbx-table-reference-drop";
+export const DBX_TABLE_REFERENCE_DROP_EVENT = "ogdeveloper-table-reference-drop";
 
 export interface QueryEditorTableReferencePayload {
-  kind: "dbx-table-reference";
+  kind: "ogdeveloper-table-reference";
   connectionId: string;
   database: string;
   schema?: string;
@@ -28,7 +28,7 @@ export function createTableReferencePayload(options: { connectionId?: string; da
   const referenceType = options.referenceType ?? (options.columnName ? "column" : "table");
   if (referenceType !== "database" && !options.tableName) return null;
   const payload: QueryEditorTableReferencePayload = {
-    kind: "dbx-table-reference",
+    kind: "ogdeveloper-table-reference",
     connectionId: options.connectionId,
     database: options.database,
   };
@@ -54,12 +54,12 @@ export function parseTableReferencePayload(value: string | undefined | null): Qu
   if (!value) return null;
   try {
     const parsed = JSON.parse(value) as Partial<QueryEditorTableReferencePayload>;
-    if (parsed.kind !== "dbx-table-reference" || typeof parsed.connectionId !== "string" || typeof parsed.database !== "string" || !parsed.connectionId) {
+    if (parsed.kind !== "ogdeveloper-table-reference" || typeof parsed.connectionId !== "string" || typeof parsed.database !== "string" || !parsed.connectionId) {
       return null;
     }
     if (parsed.referenceType === "database") {
       const payload: QueryEditorTableReferencePayload = {
-        kind: "dbx-table-reference",
+        kind: "ogdeveloper-table-reference",
         connectionId: parsed.connectionId,
         database: parsed.database,
         referenceType: "database",
@@ -72,7 +72,7 @@ export function parseTableReferencePayload(value: string | undefined | null): Qu
     const referenceType = parsed.referenceType === "column" || columnName ? "column" : "table";
     if (referenceType === "column" && !columnName) return null;
     const payload: QueryEditorTableReferencePayload = {
-      kind: "dbx-table-reference",
+      kind: "ogdeveloper-table-reference",
       connectionId: parsed.connectionId,
       database: parsed.database,
       tableName: parsed.tableName,

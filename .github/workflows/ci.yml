@@ -86,7 +86,7 @@ jobs:
         uses: dtolnay/rust-toolchain@1.97.1
 
       - name: Check standard Windows dependency path
-        run: cargo check --locked --package dbx --no-default-features --target x86_64-pc-windows-msvc
+        run: cargo check --locked --package ogdeveloper --no-default-features --target x86_64-pc-windows-msvc
 
       - name: Setup Rust for Windows 7
         uses: dtolnay/rust-toolchain@nightly
@@ -109,26 +109,20 @@ jobs:
       - name: Build frontend
         run: pnpm build
 
-      - name: Build DBX for Windows 7
+      - name: Build ogdeveloper for Windows 7
         shell: pwsh
         run: |
           $env:TAURI_CONFIG = Get-Content src-tauri/tauri.webview2-win7-fixed.conf.json -Raw
-          cargo build --locked --package dbx --release --features custom-protocol --target x86_64-win7-windows-msvc -Z build-std=std,panic_abort
+          cargo build --locked --package ogdeveloper --release --features custom-protocol --target x86_64-win7-windows-msvc -Z build-std=std,panic_abort
 
       - name: Audit Windows 7 PE imports
         shell: pwsh
-        run: ./.github/scripts/assert-win7-pe-compat.ps1 -BinaryPath target/x86_64-win7-windows-msvc/release/dbx.exe
+        run: ./.github/scripts/assert-win7-pe-compat.ps1 -BinaryPath target/x86_64-win7-windows-msvc/release/ogdeveloper.exe
 
       - name: Bundle Windows 7 fixed-runtime installer
         shell: pwsh
         run: |
           $bundleDir = "target/x86_64-win7-windows-msvc/release/bundle/nsis"
-          # tauri 2 resolves the main binary via mainBinaryName (ogdeveloper),
-          # while cargo --package dbx emits dbx.exe; provide the expected name.
-          $releaseDir = "target/x86_64-win7-windows-msvc/release"
-          if (Test-Path "$releaseDir/dbx.exe") {
-            Copy-Item "$releaseDir/dbx.exe" "$releaseDir/ogdeveloper.exe" -Force
-          }
           pnpm tauri bundle --bundles nsis --target x86_64-win7-windows-msvc --config src-tauri/tauri.webview2-win7-fixed.conf.json
           $installer = Get-ChildItem $bundleDir -Filter "*.exe" |
             Sort-Object LastWriteTimeUtc -Descending |
@@ -150,7 +144,7 @@ jobs:
       - name: Upload Windows 7 test installer
         uses: actions/upload-artifact@v4
         with:
-          name: DBX-win7-fixed-runtime-test
+          name: ogdeveloper-win7-fixed-runtime-test
           path: target/x86_64-win7-windows-msvc/release/bundle/nsis/*.exe
           if-no-files-found: error
           retention-days: 7
@@ -166,7 +160,7 @@ jobs:
       # The fast lane skips only system font discovery while retaining the other default capabilities.
       RUST_FEATURE_MODE: ${{ github.event_name == 'pull_request' && needs.changes.outputs.rust_full != 'true' && 'fast' || 'full' }}
       RUST_FAST_FEATURES: ""
-      RUST_FULL_FEATURES: dbx/system-fonts,dbx-core/system-fonts,dbx-web/system-fonts
+      RUST_FULL_FEATURES: ogdeveloper/system-fonts,ogdeveloper-core/system-fonts,ogdeveloper-web/system-fonts
       # Fork PRs cannot read repository secrets, so retain the GHA backend for them.
       SCCACHE_GHA_ENABLED: ${{ secrets.SCCACHE_S3_BUCKET == '' && 'true' || 'false' }}
     steps:
@@ -248,7 +242,7 @@ jobs:
       # The fast lane skips only system font discovery while retaining the other default capabilities.
       RUST_FEATURE_MODE: ${{ github.event_name == 'pull_request' && needs.changes.outputs.rust_full != 'true' && 'fast' || 'full' }}
       RUST_FAST_FEATURES: ""
-      RUST_FULL_FEATURES: dbx/system-fonts,dbx-core/system-fonts,dbx-web/system-fonts
+      RUST_FULL_FEATURES: ogdeveloper/system-fonts,ogdeveloper-core/system-fonts,ogdeveloper-web/system-fonts
       # Fork PRs cannot read repository secrets, so retain the GHA backend for them.
       SCCACHE_GHA_ENABLED: ${{ secrets.SCCACHE_S3_BUCKET == '' && 'true' || 'false' }}
     steps:
@@ -376,7 +370,7 @@ jobs:
         uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
 
       - name: Validate Nix dependency closures
-        run: nix build .#dbx-pnpm-deps .#dbx-cargo-deps --no-link --print-build-logs
+        run: nix build .#ogdeveloper-pnpm-deps .#ogdeveloper-cargo-deps --no-link --print-build-logs
 
   changes:
     runs-on: ubuntu-22.04
@@ -443,9 +437,9 @@ jobs:
               - 'src-tauri/Cargo.toml'
               - 'src-tauri/windows/nsis/**'
               - 'src-tauri/src/commands/update.rs'
-              - 'crates/dbx-core/Cargo.toml'
-              - 'crates/dbx-core/src/db/postgres.rs'
-              - 'crates/dbx-core/src/update.rs'
+              - 'crates/ogdeveloper-core/Cargo.toml'
+              - 'crates/ogdeveloper-core/src/db/postgres.rs'
+              - 'crates/ogdeveloper-core/src/update.rs'
               - 'Cargo.toml'
               - 'Cargo.lock'
               - 'vendor/ctor/**'
@@ -456,7 +450,7 @@ jobs:
               - '.github/scripts/**'
               - '.github/workflows/ci.yml'
               - 'apps/desktop/src/types/database.ts'
-              - 'crates/dbx-core/assets/database-drivers.manifest.json'
+              - 'crates/ogdeveloper-core/assets/database-drivers.manifest.json'
 
       - name: Select Rust feature coverage
         id: rust-mode

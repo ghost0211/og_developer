@@ -56,7 +56,7 @@ function confirmCopy() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent position="popper" align="end">
-              <SelectItem v-for="option in COLUMN_NAME_COPY_SEPARATOR_OPTIONS" :key="option" :value="option" class="dbx-data-grid-value-font text-xs">{{ COLUMN_NAME_COPY_SEPARATOR_LABELS[option] }}</SelectItem>
+              <SelectItem v-for="option in COLUMN_NAME_COPY_SEPARATOR_OPTIONS" :key="option" :value="option" class="ogdeveloper-data-grid-value-font text-xs">{{ COLUMN_NAME_COPY_SEPARATOR_LABELS[option] }}</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -70,7 +70,7 @@ function confirmCopy() {
         </div>
         <div class="space-y-1.5">
           <Label class="text-sm">{{ t("grid.copyColumnNamesPreview") }}</Label>
-          <pre class="dbx-data-grid-value-font max-h-40 min-h-16 w-full overflow-auto whitespace-pre-wrap break-all rounded-[6px] border border-input bg-muted/30 px-2.5 py-1.5 text-xs" data-copy-column-names-preview>{{ previewText }}</pre>
+          <pre class="ogdeveloper-data-grid-value-font max-h-40 min-h-16 w-full overflow-auto whitespace-pre-wrap break-all rounded-[6px] border border-input bg-muted/30 px-2.5 py-1.5 text-xs" data-copy-column-names-preview>{{ previewText }}</pre>
         </div>
       </div>
       <DialogFooter

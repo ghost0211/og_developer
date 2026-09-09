@@ -148,7 +148,7 @@ const settingsRootProps = computed(() => (isSettingsPage.value ? {} : { open: pr
 const settingsRootClass = computed(() => (isSettingsPage.value ? "h-full min-h-0 overflow-hidden bg-background" : ""));
 const settingsContentComponent = computed(() => (isSettingsPage.value ? "div" : DialogContent));
 const settingsContentClass = computed(() =>
-  isSettingsPage.value ? "flex h-full min-h-0 flex-col gap-4 overflow-hidden bg-background p-4" : "h-[min(760px,calc(var(--dbx-viewport-height)-48px))] !max-w-[min(1080px,calc(100vw-32px))] grid-rows-[auto_minmax(0,1fr)] gap-3 p-4 sm:!max-w-[min(1080px,calc(100vw-48px))]",
+  isSettingsPage.value ? "flex h-full min-h-0 flex-col gap-4 overflow-hidden bg-background p-4" : "h-[min(760px,calc(var(--ogdeveloper-viewport-height)-48px))] !max-w-[min(1080px,calc(100vw-32px))] grid-rows-[auto_minmax(0,1fr)] gap-3 p-4 sm:!max-w-[min(1080px,calc(100vw-48px))]",
 );
 const settingsTitleComponent = computed(() => (isSettingsPage.value ? "h2" : DialogTitle));
 
@@ -1685,7 +1685,7 @@ function globalInstructionsTooLong(): boolean {
 }
 
 // Agent turn limit for DBX's API-backed agent loop. CLI providers enforce their own limits.
-// Mirrors DEFAULT/MIN/MAX_MAX_AGENT_TURNS in crates/dbx-core/src/agent_loop.rs —
+// Mirrors DEFAULT/MIN/MAX_MAX_AGENT_TURNS in crates/ogdeveloper-core/src/agent_loop.rs —
 // keep in sync; the backend clamp on save/load is the actual source of truth.
 const editMaxAgentTurns = ref<number | undefined>(undefined);
 const maxAgentTurnsSaving = ref(false);
@@ -2319,7 +2319,7 @@ function buildPreviewCurrentStatementFrameExtension(viewModule: Pick<typeof impo
       bottom: "0",
       left: "0",
       boxSizing: "border-box",
-      width: "var(--dbx-current-statement-frame-width, 100%)",
+      width: "var(--ogdeveloper-current-statement-frame-width, 100%)",
       borderRight: "1px solid rgb(34 197 94 / 0.75)",
       borderLeft: "1px solid rgb(34 197 94 / 0.75)",
       pointerEvents: "none",
@@ -2366,7 +2366,7 @@ function buildPreviewCurrentStatementFrameExtension(viewModule: Pick<typeof impo
             Decoration.line({
               class: classes.join(" "),
               attributes: {
-                style: `--dbx-current-statement-frame-width: ${frameWidth};`,
+                style: `--ogdeveloper-current-statement-frame-width: ${frameWidth};`,
               },
             }).range(line.from),
           );
@@ -3162,7 +3162,7 @@ onUnmounted(() => {
                 <div class="settings-appearance-group min-w-0">
                   <Label>{{ t("settings.theme") }}</Label>
                   <div class="settings-appearance-button-row flex flex-wrap gap-2">
-                    <Button v-for="option in appThemeModeOptions" :key="option.value" type="button" variant="outline" size="sm" class="settings-choice-button h-8 gap-1.5 px-3" :class="themeMode === option.value ? 'dbx-choice-selected' : 'text-foreground'" @click="setThemeMode(option.value)">
+                    <Button v-for="option in appThemeModeOptions" :key="option.value" type="button" variant="outline" size="sm" class="settings-choice-button h-8 gap-1.5 px-3" :class="themeMode === option.value ? 'ogdeveloper-choice-selected' : 'text-foreground'" @click="setThemeMode(option.value)">
                       <component :is="option.icon" class="h-3.5 w-3.5" />
                       {{ option.label }}
                     </Button>
@@ -3179,7 +3179,7 @@ onUnmounted(() => {
                       variant="outline"
                       size="sm"
                       class="settings-choice-button h-8 px-3"
-                      :class="cornerStyle === option.value ? 'dbx-choice-selected' : 'text-foreground'"
+                      :class="cornerStyle === option.value ? 'ogdeveloper-choice-selected' : 'text-foreground'"
                       :style="{ borderRadius: option.previewRadius }"
                       @click="setCornerStyle(option.value)"
                     >
@@ -3194,7 +3194,7 @@ onUnmounted(() => {
               <div class="settings-appearance-group">
                 <Label>{{ t("settings.appLayout") }}</Label>
                 <div class="settings-appearance-choice-grid">
-                  <Button type="button" variant="outline" class="settings-choice-card h-auto justify-start border p-3" :class="editAppLayout === 'separated' ? 'dbx-choice-selected' : ''" @click="setAppLayout('separated')">
+                  <Button type="button" variant="outline" class="settings-choice-card h-auto justify-start border p-3" :class="editAppLayout === 'separated' ? 'ogdeveloper-choice-selected' : ''" @click="setAppLayout('separated')">
                     <TooltipProvider>
                       <Tooltip>
                         <TooltipTrigger as-child>
@@ -3213,7 +3213,7 @@ onUnmounted(() => {
                       </Tooltip>
                     </TooltipProvider>
                   </Button>
-                  <Button type="button" variant="outline" class="settings-choice-card h-auto justify-start border p-3" :class="editAppLayout === 'classic' ? 'dbx-choice-selected' : ''" @click="setAppLayout('classic')">
+                  <Button type="button" variant="outline" class="settings-choice-card h-auto justify-start border p-3" :class="editAppLayout === 'classic' ? 'ogdeveloper-choice-selected' : ''" @click="setAppLayout('classic')">
                     <TooltipProvider>
                       <Tooltip>
                         <TooltipTrigger as-child>
@@ -3240,7 +3240,7 @@ onUnmounted(() => {
               <div class="settings-appearance-group">
                 <Label>{{ t("settings.tabLayout") }}</Label>
                 <div class="settings-appearance-choice-grid">
-                  <Button type="button" variant="outline" class="settings-choice-card h-auto justify-start border p-3" :class="editTabLayout === 'scroll' ? 'dbx-choice-selected' : ''" @click="setTabLayout('scroll')">
+                  <Button type="button" variant="outline" class="settings-choice-card h-auto justify-start border p-3" :class="editTabLayout === 'scroll' ? 'ogdeveloper-choice-selected' : ''" @click="setTabLayout('scroll')">
                     <div class="w-full min-w-0 text-left">
                       <div class="text-sm font-medium">
                         {{ t("settings.tabLayoutScroll") }}
@@ -3250,7 +3250,7 @@ onUnmounted(() => {
                       </div>
                     </div>
                   </Button>
-                  <Button type="button" variant="outline" class="settings-choice-card h-auto justify-start border p-3" :class="editTabLayout === 'wrap' ? 'dbx-choice-selected' : ''" @click="setTabLayout('wrap')">
+                  <Button type="button" variant="outline" class="settings-choice-card h-auto justify-start border p-3" :class="editTabLayout === 'wrap' ? 'ogdeveloper-choice-selected' : ''" @click="setTabLayout('wrap')">
                     <div class="w-full min-w-0 text-left">
                       <div class="text-sm font-medium">
                         {{ t("settings.tabLayoutWrap") }}
@@ -3403,7 +3403,7 @@ onUnmounted(() => {
               <div class="space-y-2">
                 <Label>{{ t("settings.sidebarActivation") }}</Label>
                 <div class="grid grid-cols-2 gap-2">
-                  <Button type="button" variant="outline" class="h-auto justify-start border p-3" :class="editSidebarActivation === 'single' ? 'dbx-choice-selected' : ''" @click="setSidebarActivation('single')">
+                  <Button type="button" variant="outline" class="h-auto justify-start border p-3" :class="editSidebarActivation === 'single' ? 'ogdeveloper-choice-selected' : ''" @click="setSidebarActivation('single')">
                     <div class="text-left">
                       <div class="text-sm font-medium">
                         {{ t("settings.sidebarActivationSingle") }}
@@ -3413,7 +3413,7 @@ onUnmounted(() => {
                       </div>
                     </div>
                   </Button>
-                  <Button type="button" variant="outline" class="h-auto justify-start border p-3" :class="editSidebarActivation === 'double' ? 'dbx-choice-selected' : ''" @click="setSidebarActivation('double')">
+                  <Button type="button" variant="outline" class="h-auto justify-start border p-3" :class="editSidebarActivation === 'double' ? 'ogdeveloper-choice-selected' : ''" @click="setSidebarActivation('double')">
                     <div class="text-left">
                       <div class="text-sm font-medium">
                         {{ t("settings.sidebarActivationDouble") }}
@@ -3433,7 +3433,7 @@ onUnmounted(() => {
                   </HelpTooltip>
                 </div>
                 <div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                  <Button type="button" variant="outline" class="h-auto items-start justify-start border p-3" :class="editDataTabReuseMode === 'always-new' ? 'dbx-choice-selected' : ''" @click="editDataTabReuseMode = 'always-new'">
+                  <Button type="button" variant="outline" class="h-auto items-start justify-start border p-3" :class="editDataTabReuseMode === 'always-new' ? 'ogdeveloper-choice-selected' : ''" @click="editDataTabReuseMode = 'always-new'">
                     <div class="text-left">
                       <div class="flex items-center gap-2">
                         <div class="text-sm font-medium">{{ t("settings.dataTabReuseAlwaysNew") }}</div>
@@ -3450,7 +3450,7 @@ onUnmounted(() => {
                       </div>
                     </div>
                   </Button>
-                  <Button type="button" variant="outline" class="h-auto items-start justify-start border p-3" :class="editDataTabReuseMode === 'same-table' ? 'dbx-choice-selected' : ''" @click="editDataTabReuseMode = 'same-table'">
+                  <Button type="button" variant="outline" class="h-auto items-start justify-start border p-3" :class="editDataTabReuseMode === 'same-table' ? 'ogdeveloper-choice-selected' : ''" @click="editDataTabReuseMode = 'same-table'">
                     <div class="text-left">
                       <div class="flex items-center gap-2">
                         <div class="text-sm font-medium">{{ t("settings.dataTabReuseSameTable") }}</div>
@@ -3467,7 +3467,7 @@ onUnmounted(() => {
                       </div>
                     </div>
                   </Button>
-                  <Button type="button" variant="outline" class="h-auto items-start justify-start border p-3" :class="editDataTabReuseMode === 'active-tab' ? 'dbx-choice-selected' : ''" @click="editDataTabReuseMode = 'active-tab'">
+                  <Button type="button" variant="outline" class="h-auto items-start justify-start border p-3" :class="editDataTabReuseMode === 'active-tab' ? 'ogdeveloper-choice-selected' : ''" @click="editDataTabReuseMode = 'active-tab'">
                     <div class="text-left">
                       <div class="flex items-center gap-2">
                         <div class="text-sm font-medium">{{ t("settings.dataTabReuseActiveTab") }}</div>
@@ -3489,7 +3489,7 @@ onUnmounted(() => {
               <div class="space-y-2">
                 <Label>{{ t("settings.sidebarObjectDisplay") }}</Label>
                 <div class="grid grid-cols-2 gap-2">
-                  <Button type="button" variant="outline" class="h-auto justify-start border p-3" :class="editSidebarObjectDisplay === 'grouped' ? 'dbx-choice-selected' : ''" @click="setSidebarObjectDisplay('grouped')">
+                  <Button type="button" variant="outline" class="h-auto justify-start border p-3" :class="editSidebarObjectDisplay === 'grouped' ? 'ogdeveloper-choice-selected' : ''" @click="setSidebarObjectDisplay('grouped')">
                     <div class="text-left">
                       <div class="flex items-center gap-2">
                         <div class="text-sm font-medium">
@@ -3508,7 +3508,7 @@ onUnmounted(() => {
                       </div>
                     </div>
                   </Button>
-                  <Button type="button" variant="outline" class="h-auto justify-start border p-3" :class="editSidebarObjectDisplay === 'simple' ? 'dbx-choice-selected' : ''" @click="setSidebarObjectDisplay('simple')">
+                  <Button type="button" variant="outline" class="h-auto justify-start border p-3" :class="editSidebarObjectDisplay === 'simple' ? 'ogdeveloper-choice-selected' : ''" @click="setSidebarObjectDisplay('simple')">
                     <div class="text-left">
                       <div class="flex items-center gap-2">
                         <div class="text-sm font-medium">
@@ -3537,7 +3537,7 @@ onUnmounted(() => {
                   </HelpTooltip>
                 </div>
                 <div class="grid grid-cols-2 gap-2">
-                  <Button type="button" variant="outline" class="h-auto justify-start border p-3" :class="editRoutineSourceOpenMode === 'query-tab' ? 'dbx-choice-selected' : ''" @click="setRoutineSourceOpenMode('query-tab')">
+                  <Button type="button" variant="outline" class="h-auto justify-start border p-3" :class="editRoutineSourceOpenMode === 'query-tab' ? 'ogdeveloper-choice-selected' : ''" @click="setRoutineSourceOpenMode('query-tab')">
                     <div class="text-left">
                       <div class="text-sm font-medium">{{ t("settings.routineSourceOpenModeQueryTab") }}</div>
                       <div class="text-xs text-muted-foreground">
@@ -3545,7 +3545,7 @@ onUnmounted(() => {
                       </div>
                     </div>
                   </Button>
-                  <Button type="button" variant="outline" class="h-auto justify-start border p-3" :class="editRoutineSourceOpenMode === 'dialog' ? 'dbx-choice-selected' : ''" @click="setRoutineSourceOpenMode('dialog')">
+                  <Button type="button" variant="outline" class="h-auto justify-start border p-3" :class="editRoutineSourceOpenMode === 'dialog' ? 'ogdeveloper-choice-selected' : ''" @click="setRoutineSourceOpenMode('dialog')">
                     <div class="text-left">
                       <div class="text-sm font-medium">{{ t("settings.routineSourceOpenModeDialog") }}</div>
                       <div class="text-xs text-muted-foreground">
@@ -4453,7 +4453,7 @@ onUnmounted(() => {
                       variant="outline"
                       class="h-8 flex-1 text-xs"
                       :class="{
-                        'dbx-choice-selected': aiEditApiStyle === 'completions',
+                        'ogdeveloper-choice-selected': aiEditApiStyle === 'completions',
                       }"
                       @click="aiSelectApiStyle('completions')"
                       >/chat/completions</Button
@@ -4463,7 +4463,7 @@ onUnmounted(() => {
                       variant="outline"
                       class="h-8 flex-1 text-xs"
                       :class="{
-                        'dbx-choice-selected': aiEditApiStyle === 'responses',
+                        'ogdeveloper-choice-selected': aiEditApiStyle === 'responses',
                       }"
                       @click="aiSelectApiStyle('responses')"
                       >/responses</Button
@@ -4474,7 +4474,7 @@ onUnmounted(() => {
                       variant="outline"
                       class="h-8 flex-1 text-xs"
                       :class="{
-                        'dbx-choice-selected': aiEditApiStyle === 'anthropic-messages',
+                        'ogdeveloper-choice-selected': aiEditApiStyle === 'anthropic-messages',
                       }"
                       @click="aiSelectApiStyle('anthropic-messages')"
                       >/messages</Button

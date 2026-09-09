@@ -601,7 +601,7 @@ function runRowClickAction(clickDetail: number) {
 function openDriverStoreForInstallError(errMsg: string, node: TreeNode = activeNode.value) {
   const config = node.connectionId ? connectionStore.getConfig(node.connectionId) : undefined;
   const focus = driverStoreFocusForInstallError(errMsg, config?.db_type, config?.driver_profile);
-  if (focus) window.dispatchEvent(new CustomEvent("dbx-open-driver-store", { detail: focus }));
+  if (focus) window.dispatchEvent(new CustomEvent("ogdeveloper-open-driver-store", { detail: focus }));
 }
 
 async function loadMoreObjectGroupChildren() {
@@ -1027,7 +1027,7 @@ async function loadTemplateContext(allowView = false) {
     const querySchema = connectionObjectTreeQuerySchema(config, node.database, tableSchema);
     columns = await api.getColumns(node.connectionId, node.database, querySchema, node.label, node.catalog);
   } catch (e) {
-    console.warn("[DBX][tableSqlTemplate:getColumns:error]", e);
+    console.warn("[ogdeveloper][tableSqlTemplate:getColumns:error]", e);
   }
 
   const tableType = node.tableType;
@@ -1574,7 +1574,7 @@ async function refreshMutatedTableDataTabsForNode(node: TreeNode) {
   try {
     await queryStore.refreshDataTabsForTable(target);
   } catch (error) {
-    console.warn("[DBX][table-data-refresh-after-mutation:error]", { target, error });
+    console.warn("[ogdeveloper][table-data-refresh-after-mutation:error]", { target, error });
   }
 }
 

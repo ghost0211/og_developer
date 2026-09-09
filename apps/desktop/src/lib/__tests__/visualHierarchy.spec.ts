@@ -11,7 +11,7 @@ describe("visual hierarchy surfaces", () => {
     const chrome = globalsCss.slice(chromeStart, chromeEnd);
 
     expect(chrome).toContain("backdrop-filter: blur(12px) saturate(1.15)");
-    expect(chrome).toContain("color-mix(in oklab, var(--dbx-chrome) 82%, transparent)");
+    expect(chrome).toContain("color-mix(in oklab, var(--ogdeveloper-chrome) 82%, transparent)");
     expect(chrome).toContain("inset -1px 0 0 color-mix(in oklab, var(--sidebar-border) 78%, transparent)");
     expect(activityBarSource).toContain("box-shadow: inset -1px 0 0 var(--border);");
   });

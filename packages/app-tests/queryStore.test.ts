@@ -253,7 +253,7 @@ test("clean saved SQL tabs persist without duplicating SQL text", async () => {
     });
     await store.flushPendingPersist();
 
-    const rawTabs = localStorage.getItem("dbx-app-state:open_tabs") ?? "";
+    const rawTabs = localStorage.getItem("ogdeveloper-app-state:open_tabs") ?? "";
     assert.equal(rawTabs.includes("large_table"), false);
 
     setActivePinia(createPinia());
@@ -471,7 +471,7 @@ test("dirty saved SQL tabs keep unsaved edits in open tab persistence", async ()
     store.updateSql(tabId, "SELECT 2;");
     await store.flushPendingPersist();
 
-    const rawTabs = localStorage.getItem("dbx-app-state:open_tabs") ?? "";
+    const rawTabs = localStorage.getItem("ogdeveloper-app-state:open_tabs") ?? "";
     assert.equal(rawTabs.includes("SELECT 2;"), true);
 
     setActivePinia(createPinia());
@@ -938,7 +938,7 @@ test("close other tabs pauses on restored unsaved query tabs", async () => {
   const restoreStorage = installMemoryStorage();
   try {
     localStorage.setItem(
-      "dbx-open-tabs",
+      "ogdeveloper-open-tabs",
       JSON.stringify([
         {
           id: "a",
@@ -958,7 +958,7 @@ test("close other tabs pauses on restored unsaved query tabs", async () => {
         },
       ]),
     );
-    localStorage.setItem("dbx-active-tab", "b");
+    localStorage.setItem("ogdeveloper-active-tab", "b");
     setActivePinia(createPinia());
     const store = useQueryStore();
     await store.initOpenTabs();

@@ -41,7 +41,7 @@ function installBrowserStubs() {
 }
 
 async function loadTheme(mode: "light" | "dark" | "system" = "system") {
-  window.localStorage.setItem("dbx-theme", mode);
+  window.localStorage.setItem("ogdeveloper-theme", mode);
   const { useTheme } = await import("@/composables/useTheme");
   return useTheme();
 }

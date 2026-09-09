@@ -8,7 +8,7 @@ use tauri::{AppHandle, Emitter, State};
 use crate::commands::connection::{ensure_connection_writable, AppState};
 
 // Re-export types and functions used by other modules
-pub use dbx_core::transfer::{get_db_type, TransferProgress, TransferRequest, TransferStatus};
+pub use ogdeveloper_core::transfer::{get_db_type, TransferProgress, TransferRequest, TransferStatus};
 
 fn emit_progress(app: &AppHandle, progress: TransferProgress) {
     let _ = app.emit("transfer-progress", progress);
@@ -43,7 +43,7 @@ pub async fn start_transfer(
         // Sort tables by FK dependency so referenced tables are transferred first.
         // Skip for external Doris/StarRocks catalogs — the database name does not
         // exist in the default catalog and sorting is unnecessary (no FK constraints).
-        let sorted_tables = dbx_core::transfer::sort_tables_by_fk_dependency(
+        let sorted_tables = ogdeveloper_core::transfer::sort_tables_by_fk_dependency(
             &state,
             &source_pool_key,
             &request.source_database,
@@ -64,7 +64,7 @@ pub async fn start_transfer(
         let mut last_total_rows = None;
 
         for (i, table) in sorted_tables.iter().enumerate() {
-            if dbx_core::transfer::is_cancelled(&transfer_id).await {
+            if ogdeveloper_core::transfer::is_cancelled(&transfer_id).await {
                 emit_progress(
                     &app,
                     TransferProgress {
@@ -79,13 +79,13 @@ pub async fn start_transfer(
                         terminal: true,
                     },
                 );
-                dbx_core::transfer::clear_cancelled(&transfer_id).await;
+                ogdeveloper_core::transfer::clear_cancelled(&transfer_id).await;
                 return;
             }
 
             log::info!("[transfer] table {}/{}: {}", i + 1, total_tables, table);
 
-            match dbx_core::transfer::transfer_table(
+            match ogdeveloper_core::transfer::transfer_table(
                 &state,
                 &request,
                 table,
@@ -134,7 +134,7 @@ pub async fn start_transfer(
                                 terminal: true,
                             },
                         );
-                        dbx_core::transfer::clear_cancelled(&transfer_id).await;
+                        ogdeveloper_core::transfer::clear_cancelled(&transfer_id).await;
                         return;
                     }
                     failed_tables.push(table.clone());
@@ -161,8 +161,8 @@ pub async fn start_transfer(
         // Core decision handles all content modes: DataOnly never
         // transfers schema objects; PG→PG keeps the legacy empty-selection
         // default only when structure participates in the transfer.
-        let mut object_outcome = dbx_core::transfer::TransferObjectOutcome::default();
-        match dbx_core::transfer::transfer_schema_objects(
+        let mut object_outcome = ogdeveloper_core::transfer::TransferObjectOutcome::default();
+        match ogdeveloper_core::transfer::transfer_schema_objects(
             &state,
             &request,
             &source_pool_key,
@@ -189,7 +189,7 @@ pub async fn start_transfer(
                         terminal: true,
                     },
                 );
-                dbx_core::transfer::clear_cancelled(&transfer_id).await;
+                ogdeveloper_core::transfer::clear_cancelled(&transfer_id).await;
                 return;
             }
             Err(e) => {
@@ -248,7 +248,7 @@ pub async fn start_transfer(
                 terminal: true,
             },
         );
-        dbx_core::transfer::clear_cancelled(&transfer_id).await;
+        ogdeveloper_core::transfer::clear_cancelled(&transfer_id).await;
     });
 
     Ok(())
@@ -264,6 +264,6 @@ pub async fn preview_transfer_ownership(
 
 #[tauri::command]
 pub async fn cancel_transfer(transfer_id: String) -> Result<(), String> {
-    dbx_core::transfer::set_cancelled(&transfer_id).await;
+    ogdeveloper_core::transfer::set_cancelled(&transfer_id).await;
     Ok(())
 }

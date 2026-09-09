@@ -1,7 +1,7 @@
 import type { QueryTab } from "@/types/database";
 
-export const OPEN_TABS_STORAGE_KEY = "dbx-open-tabs";
-export const ACTIVE_TAB_STORAGE_KEY = "dbx-active-tab";
+export const OPEN_TABS_STORAGE_KEY = "ogdeveloper-open-tabs";
+export const ACTIVE_TAB_STORAGE_KEY = "ogdeveloper-active-tab";
 
 export interface SavedQueryResultRun {
   id: string;

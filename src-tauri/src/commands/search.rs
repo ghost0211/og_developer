@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use tauri::State;
 
-use dbx_core::connection::AppState;
+use ogdeveloper_core::connection::AppState;
 
 #[tauri::command]
 pub async fn search_files(
@@ -12,11 +12,11 @@ pub async fn search_files(
     root: String,
     query: String,
     limit: Option<usize>,
-) -> Result<Vec<dbx_core::search::FileSearchHit>, String> {
+) -> Result<Vec<ogdeveloper_core::search::FileSearchHit>, String> {
     let root = root.clone();
     let query = query.clone();
     let limit = limit.unwrap_or(200);
-    tauri::async_runtime::spawn_blocking(move || dbx_core::search::search_files(&root, &query, limit))
+    tauri::async_runtime::spawn_blocking(move || ogdeveloper_core::search::search_files(&root, &query, limit))
         .await
         .map_err(|e| e.to_string())?
 }
@@ -24,8 +24,8 @@ pub async fn search_files(
 #[tauri::command]
 pub async fn list_database_search_scope_targets(
     state: State<'_, Arc<AppState>>,
-) -> Result<Vec<dbx_core::search::DatabaseSearchScopeTarget>, String> {
-    Ok(dbx_core::search::list_database_search_scope_targets(&state).await)
+) -> Result<Vec<ogdeveloper_core::search::DatabaseSearchScopeTarget>, String> {
+    Ok(ogdeveloper_core::search::list_database_search_scope_targets(&state).await)
 }
 
 #[tauri::command]
@@ -33,9 +33,10 @@ pub async fn search_metadata(
     state: State<'_, Arc<AppState>>,
     query: String,
     limit: Option<usize>,
-    targets: Option<Vec<dbx_core::search::DatabaseSearchScopeTarget>>,
-) -> Result<Vec<dbx_core::search::MetadataSearchHit>, String> {
-    Ok(dbx_core::search::search_metadata_for_targets(&state, &query, limit.unwrap_or(200), targets.as_deref()).await)
+    targets: Option<Vec<ogdeveloper_core::search::DatabaseSearchScopeTarget>>,
+) -> Result<Vec<ogdeveloper_core::search::MetadataSearchHit>, String> {
+    Ok(ogdeveloper_core::search::search_metadata_for_targets(&state, &query, limit.unwrap_or(200), targets.as_deref())
+        .await)
 }
 
 #[tauri::command]
@@ -43,9 +44,9 @@ pub async fn search_object_definitions(
     state: State<'_, Arc<AppState>>,
     query: String,
     limit: Option<usize>,
-    targets: Option<Vec<dbx_core::search::DatabaseSearchScopeTarget>>,
-) -> Result<Vec<dbx_core::search::DefinitionSearchHit>, String> {
-    Ok(dbx_core::search::search_object_definitions_for_targets(
+    targets: Option<Vec<ogdeveloper_core::search::DatabaseSearchScopeTarget>>,
+) -> Result<Vec<ogdeveloper_core::search::DefinitionSearchHit>, String> {
+    Ok(ogdeveloper_core::search::search_object_definitions_for_targets(
         &state,
         &query,
         limit.unwrap_or(100),
@@ -56,25 +57,25 @@ pub async fn search_object_definitions(
 
 #[tauri::command]
 pub fn list_directories(path: String) -> Result<Vec<String>, String> {
-    dbx_core::search::list_directories(&path)
+    ogdeveloper_core::search::list_directories(&path)
 }
 
 #[tauri::command]
 pub fn read_text_file(path: String) -> Result<String, String> {
-    dbx_core::search::read_text_file(&path)
+    ogdeveloper_core::search::read_text_file(&path)
 }
 
 #[tauri::command]
 pub fn write_text_file(path: String, content: String) -> Result<(), String> {
-    dbx_core::search::write_text_file(&path, &content)
+    ogdeveloper_core::search::write_text_file(&path, &content)
 }
 
 #[tauri::command]
 pub fn ensure_directory(path: String) -> Result<(), String> {
-    dbx_core::search::ensure_directory(&path)
+    ogdeveloper_core::search::ensure_directory(&path)
 }
 
 #[tauri::command]
 pub fn default_projects_root() -> Result<String, String> {
-    Ok(dbx_core::search::default_projects_root())
+    Ok(ogdeveloper_core::search::default_projects_root())
 }

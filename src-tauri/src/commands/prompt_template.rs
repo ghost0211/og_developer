@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use tauri::State;
 
-use dbx_core::prompt_template::PromptTemplate;
+use ogdeveloper_core::prompt_template::PromptTemplate;
 
 use super::connection::AppState;
 

@@ -1,4 +1,4 @@
-use dbx_core::connection::AppState;
+use ogdeveloper_core::connection::AppState;
 use std::sync::Arc;
 use tauri::State;
 
@@ -6,7 +6,7 @@ use tauri::State;
 pub async fn document_list_databases(
     _state: State<'_, Arc<AppState>>,
     _connection_id: String,
-) -> Result<Vec<dbx_core::types::DatabaseInfo>, String> {
+) -> Result<Vec<ogdeveloper_core::types::DatabaseInfo>, String> {
     Err("Document store not supported".to_string())
 }
 
@@ -15,7 +15,7 @@ pub async fn document_list_collections(
     _state: State<'_, Arc<AppState>>,
     _connection_id: String,
     _database: String,
-) -> Result<Vec<dbx_core::types::TableInfo>, String> {
+) -> Result<Vec<ogdeveloper_core::types::TableInfo>, String> {
     Err("Document store not supported".to_string())
 }
 

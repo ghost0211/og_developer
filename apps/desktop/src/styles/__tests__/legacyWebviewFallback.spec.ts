@@ -32,29 +32,29 @@ describe("legacy WebView CSS fallbacks", () => {
   });
 
   it("falls back to the legacy viewport height when dynamic viewport units are unavailable", () => {
-    const fallback = globalsCss.indexOf("--dbx-viewport-height: 100vh;");
+    const fallback = globalsCss.indexOf("--ogdeveloper-viewport-height: 100vh;");
     const supports = globalsCss.indexOf("@supports (height: 100dvh)");
-    const enhanced = globalsCss.indexOf("--dbx-viewport-height: min(100vh, 100dvh);");
+    const enhanced = globalsCss.indexOf("--ogdeveloper-viewport-height: min(100vh, 100dvh);");
 
     expect(fallback).toBeGreaterThan(-1);
     expect(supports).toBeGreaterThan(fallback);
     expect(enhanced).toBeGreaterThan(supports);
-    expect(dialogContentSource).toContain("max-h-[calc(var(--dbx-viewport-height)-2rem)]");
-    expect(dialogScrollContentSource).toContain("max-h-[calc(var(--dbx-viewport-height)-6rem)]");
+    expect(dialogContentSource).toContain("max-h-[calc(var(--ogdeveloper-viewport-height)-2rem)]");
+    expect(dialogScrollContentSource).toContain("max-h-[calc(var(--ogdeveloper-viewport-height)-6rem)]");
   });
 
   it("uses a lightweight theme-aware mask without full-window filters", () => {
     expect(dialogOverlaySource).not.toContain("backdrop-filter");
     expect(dialogOverlaySource).toContain("bg-black/25");
     expect(dialogOverlaySource).toContain("dark:bg-background/70");
-    expect(globalsCss).not.toContain("dbx-dialog-backdrop");
+    expect(globalsCss).not.toContain("ogdeveloper-dialog-backdrop");
     expect(globalsCss).not.toContain("filter: blur(4px);");
   });
 
   it("keeps legacy tab triggers connected to the configured corner style", () => {
     const tabsTriggerRule = globalsCss.match(/\[data-slot="tabs-trigger"\] \{([\s\S]*?)\n  \}/)?.[1];
 
-    expect(tabsTriggerRule).toContain("border-radius: var(--dbx-radius-fixed-6);");
+    expect(tabsTriggerRule).toContain("border-radius: var(--ogdeveloper-radius-fixed-6);");
   });
 
   it("loads connection dialog media fallbacks without CSS transformation", () => {

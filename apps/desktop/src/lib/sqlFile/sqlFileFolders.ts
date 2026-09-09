@@ -1,7 +1,7 @@
 import { ref } from "vue";
 import { safeLocalStorageGet, safeLocalStorageSet } from "@/lib/backend/safeStorage";
 
-const STORAGE_KEY = "dbx-sql-file-folders";
+const STORAGE_KEY = "ogdeveloper-sql-file-folders";
 
 /**
  * Shared reactive version counter — bumped whenever SQL file folder paths change.

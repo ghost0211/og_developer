@@ -81,12 +81,12 @@ export function useDataGridActions(activeTab: ComputedRef<QueryTab | undefined>)
       tableType: tableMeta.tableType,
     };
 
-    console.info("[DBX][reloadData:metadata:ensure-connected:start]", { traceId: trace?.traceId, elapsed: trace?.elapsed() });
+    console.info("[ogdeveloper][reloadData:metadata:ensure-connected:start]", { traceId: trace?.traceId, elapsed: trace?.elapsed() });
     await connectionStore.ensureConnected(target.connectionId);
-    console.info("[DBX][reloadData:metadata:ensure-connected:done]", { traceId: trace?.traceId, elapsed: trace?.elapsed() });
+    console.info("[ogdeveloper][reloadData:metadata:ensure-connected:done]", { traceId: trace?.traceId, elapsed: trace?.elapsed() });
     const config = connectionStore.getConfig(target.connectionId);
     const querySchema = metadataSchemaForConnection(config, target.database, target.schema);
-    console.info("[DBX][reloadData:metadata:get-columns:start]", { traceId: trace?.traceId, elapsed: trace?.elapsed(), schema: querySchema, table: target.tableName });
+    console.info("[ogdeveloper][reloadData:metadata:get-columns:start]", { traceId: trace?.traceId, elapsed: trace?.elapsed(), schema: querySchema, table: target.tableName });
     // 复用共享表元数据缓存（30s TTL + in-flight 去重），多个入口对同一张表
     // 不再各自往返 getColumns/listIndexes
     const { metadata } = await loadTableMetadata({
@@ -100,11 +100,11 @@ export function useDataGridActions(activeTab: ComputedRef<QueryTab | undefined>)
       catalog: target.catalog,
     });
     const columns = metadata.columns;
-    console.info("[DBX][reloadData:metadata:get-columns:done]", { traceId: trace?.traceId, elapsed: trace?.elapsed(), columnCount: columns.length });
+    console.info("[ogdeveloper][reloadData:metadata:get-columns:done]", { traceId: trace?.traceId, elapsed: trace?.elapsed(), columnCount: columns.length });
     const current = queryStore.tabs.find((item) => item.id === target.tabId);
     const currentMeta = current ? tableMetaForDataTab(current) : undefined;
     if (!current || current.mode !== "data" || current.connectionId !== target.connectionId || current.database !== target.database || currentMeta?.tableName !== target.tableName || (currentMeta.schema ?? "") !== (target.schema ?? "") || (currentMeta.catalog ?? "") !== (target.catalog ?? "")) {
-      console.info("[DBX][reloadData:metadata:stale-tab]", { traceId: trace?.traceId, elapsed: trace?.elapsed(), table: target.tableName });
+      console.info("[ogdeveloper][reloadData:metadata:stale-tab]", { traceId: trace?.traceId, elapsed: trace?.elapsed(), table: target.tableName });
       return;
     }
     const primaryKeys = metadata.primaryKeys;
@@ -139,7 +139,7 @@ export function useDataGridActions(activeTab: ComputedRef<QueryTab | undefined>)
       if (incomingSortMissing) tab.orderByInput = undefined;
       const pageLimit = limit ?? tab.resultPageLimit ?? tableOpenPageLimit(settingsStore.editorSettings.tableOpenPageSize);
       const pageOffset = offset ?? 0;
-      console.info("[DBX][reloadData:start]", {
+      console.info("[ogdeveloper][reloadData:start]", {
         traceId,
         tabId: tab.id,
         connectionId: tab.connectionId,
@@ -156,13 +156,13 @@ export function useDataGridActions(activeTab: ComputedRef<QueryTab | undefined>)
       const shouldRefreshMetadata = !hasRealTableMetaColumns || metadataAgeMs > DATA_TAB_METADATA_TTL_MS;
       const deferMetadataRefresh = false;
       const startMetadataRefresh = () => {
-        console.info("[DBX][reloadData:metadata:background:start]", { traceId, elapsed: elapsed(), reason: hasRealTableMetaColumns ? "stale" : "missing", metadataAgeMs });
+        console.info("[ogdeveloper][reloadData:metadata:background:start]", { traceId, elapsed: elapsed(), reason: hasRealTableMetaColumns ? "stale" : "missing", metadataAgeMs });
         void refreshDataTabTableMeta(tab, { traceId, elapsed })
           .then(() => {
-            console.info("[DBX][reloadData:metadata:background:done]", { traceId, elapsed: elapsed() });
+            console.info("[ogdeveloper][reloadData:metadata:background:done]", { traceId, elapsed: elapsed() });
           })
           .catch((e: any) => {
-            console.warn("[DBX][reloadData:metadata:background:error]", { traceId, elapsed: elapsed(), error: e });
+            console.warn("[ogdeveloper][reloadData:metadata:background:error]", { traceId, elapsed: elapsed(), error: e });
             toast(e?.message || String(e), 5000);
           });
       };
@@ -173,21 +173,21 @@ export function useDataGridActions(activeTab: ComputedRef<QueryTab | undefined>)
         if (!hasRealTableMetaColumns) tab.tableMetaPending = true;
         if (!deferMetadataRefresh) startMetadataRefresh();
       } else {
-        console.info("[DBX][reloadData:metadata:skip]", { traceId, elapsed: elapsed(), columnCount: tab.tableMeta!.columns.length, metadataAgeMs });
+        console.info("[ogdeveloper][reloadData:metadata:skip]", { traceId, elapsed: elapsed(), columnCount: tab.tableMeta!.columns.length, metadataAgeMs });
       }
       try {
-        console.info("[DBX][reloadData:build-sql:start]", { traceId, elapsed: elapsed() });
+        console.info("[ogdeveloper][reloadData:build-sql:start]", { traceId, elapsed: elapsed() });
         const nextSql = await buildTableSql(tab, { whereInput, orderBy: incomingSortMissing ? undefined : orderBy, limit: pageLimit, offset: pageOffset });
-        console.info("[DBX][reloadData:build-sql:done]", { traceId, elapsed: elapsed() });
+        console.info("[ogdeveloper][reloadData:build-sql:done]", { traceId, elapsed: elapsed() });
         queryStore.updateSql(tab.id, nextSql);
-        console.info("[DBX][reloadData:execute:start]", { traceId, elapsed: elapsed() });
+        console.info("[ogdeveloper][reloadData:execute:start]", { traceId, elapsed: elapsed() });
         await queryStore.executeTabSql(tab.id, nextSql, {
           pagination: { limit: pageLimit, offset: pageOffset },
           preserveResultDuringExecution: true,
         });
-        console.info("[DBX][reloadData:execute:done]", { traceId, elapsed: elapsed() });
+        console.info("[ogdeveloper][reloadData:execute:done]", { traceId, elapsed: elapsed() });
       } catch (e) {
-        console.error("[DBX][reloadData:error]", { traceId, elapsed: elapsed(), error: e });
+        console.error("[ogdeveloper][reloadData:error]", { traceId, elapsed: elapsed(), error: e });
         queryStore.setExecuting(tab.id, false);
         if (shouldRefreshMetadata && deferMetadataRefresh) startMetadataRefresh();
         throw e;

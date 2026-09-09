@@ -40,7 +40,7 @@ export function useCloseActionPrompt(options: { requestClose: (action: AppCloseA
     if (!isTauriRuntime()) return;
     try {
       const { listen } = await import("@tauri-apps/api/event");
-      const unlisten = await listen<AppCloseRequestPayload>("dbx-app-close-requested", (event) => {
+      const unlisten = await listen<AppCloseRequestPayload>("ogdeveloper-app-close-requested", (event) => {
         handleCloseRequest(event.payload?.payload ?? "settings");
       });
       unlistenHandles.push(unlisten);

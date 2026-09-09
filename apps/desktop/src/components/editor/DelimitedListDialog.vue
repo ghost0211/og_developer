@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { safeLocalStorageGet, safeLocalStorageSet } from "@/lib/backend/safeStorage";
+
 import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { List, Copy } from "@lucide/vue";
@@ -22,7 +24,7 @@ const emit = defineEmits<{
   confirm: [result: string];
 }>();
 
-const STORAGE_KEY = "dbx:delimited-list-settings";
+const STORAGE_KEY = "ogdeveloper:delimited-list-settings";
 
 interface DelimitedListSettings {
   columnDelimiter: string;
@@ -44,7 +46,7 @@ const DEFAULT_SETTINGS: DelimitedListSettings = {
 
 function loadSettings(): DelimitedListSettings {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = safeLocalStorageGet(STORAGE_KEY);
     if (raw) return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
   } catch {
     /* ignore */
@@ -70,7 +72,7 @@ function saveSettings() {
       prefixText: prefixText.value,
       suffixText: suffixText.value,
     };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+    safeLocalStorageSet(STORAGE_KEY, JSON.stringify(settings));
   } catch {
     /* ignore */
   }

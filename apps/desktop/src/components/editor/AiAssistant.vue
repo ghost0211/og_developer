@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { safeLocalStorageGet, safeLocalStorageSet } from "@/lib/backend/safeStorage";
+
 import { computed, nextTick, onMounted, onUnmounted, ref, watch, type Component } from "vue";
 import { uuid } from "@/lib/common/utils";
 import { useI18n } from "vue-i18n";
@@ -535,7 +537,7 @@ const pendingCompaction = ref<{ summary: string; compactedMessages: number } | n
 
 const AI_TEXTAREA_MIN_HEIGHT_PX = 64;
 const AI_TEXTAREA_MAX_PANEL_RATIO = 0.5;
-const AI_TEXTAREA_HEIGHT_STORAGE_KEY = "dbx-ai-textarea-height";
+const AI_TEXTAREA_HEIGHT_STORAGE_KEY = "ogdeveloper-ai-textarea-height";
 
 const textareaHeight = ref<number>(AI_TEXTAREA_MIN_HEIGHT_PX);
 const assistantRootRef = ref<HTMLElement | null>(null);
@@ -2001,7 +2003,7 @@ function startNewChat() {
 }
 
 onMounted(async () => {
-  const savedHeight = localStorage.getItem(AI_TEXTAREA_HEIGHT_STORAGE_KEY);
+  const savedHeight = safeLocalStorageGet(AI_TEXTAREA_HEIGHT_STORAGE_KEY);
   if (savedHeight) {
     const height = parseInt(savedHeight, 10);
     if (!isNaN(height)) {
@@ -2068,7 +2070,7 @@ function stopResize() {
   document.body.style.userSelect = "";
   document.body.style.cursor = "";
 
-  localStorage.setItem(AI_TEXTAREA_HEIGHT_STORAGE_KEY, clampTextareaHeight(textareaHeight.value).toString());
+  safeLocalStorageSet(AI_TEXTAREA_HEIGHT_STORAGE_KEY, clampTextareaHeight(textareaHeight.value).toString());
 }
 
 onUnmounted(() => {

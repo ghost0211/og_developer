@@ -26,7 +26,7 @@ export type { SavedSqlOpenTargetMode };
 export type { DataTabReuseMode };
 
 export interface DesktopSettings {
-  // 与 Rust 端 dbx_core::storage::DesktopSettings 保持一致的完整契约；
+  // 与 Rust 端 ogdeveloper_core::storage::DesktopSettings 保持一致的完整契约；
   // show_tray_icon / quit_on_close 为遗留字段（托盘已移除），需随设置加载并原样回传，
   // 否则 Tauri 保存命令会因缺少必填字段反序列化失败，导致修改被静默回滚。
   show_tray_icon: boolean;
@@ -680,9 +680,9 @@ export const DEFAULT_EDITOR_SETTINGS: EditorSettings = {
   clickTableNavigationTarget: "data",
 };
 
-export const STORAGE_KEY = "dbx-editor-settings";
-const OLD_FONT_SIZE_KEY = "dbx-query-editor-font-size";
-const EXPORT_BATCH_SIZE_DEFAULT_MIGRATION_KEY = "dbx-export-batch-size-default-migrated-v1";
+export const STORAGE_KEY = "ogdeveloper-editor-settings";
+const OLD_FONT_SIZE_KEY = "ogdeveloper-query-editor-font-size";
+const EXPORT_BATCH_SIZE_DEFAULT_MIGRATION_KEY = "ogdeveloper-export-batch-size-default-migrated-v1";
 const LEGACY_DEFAULT_EXPORT_BATCH_SIZE = 10000;
 const MIN_UI_SCALE = 0.75;
 const MAX_UI_SCALE = 2;

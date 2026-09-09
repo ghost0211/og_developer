@@ -19,7 +19,7 @@
         background-color: rgb(19 20 22);
       }
     </style>
-    <script data-dbx-startup-theme>
+    <script data-ogdeveloper-startup-theme>
       (() => {
         const root = document.documentElement;
         let mode = null;
@@ -27,8 +27,8 @@
 
         // localStorage can throw when WebView storage is unavailable; keep the existing light fallback.
         try {
-          mode = localStorage.getItem("dbx-theme");
-          cornerStyle = localStorage.getItem("dbx-corner-style");
+          mode = localStorage.getItem("ogdeveloper-theme") ?? localStorage.getItem("dbx-theme");
+          cornerStyle = localStorage.getItem("ogdeveloper-corner-style") ?? localStorage.getItem("dbx-corner-style");
         } catch {}
 
         const followsSystem = mode === "system" || mode === "soft-system";
@@ -47,9 +47,9 @@
         root.style.colorScheme = dark ? "dark" : "light";
       })();
     </script>
-    <script data-dbx-startup-input-guard>
+    <script data-ogdeveloper-startup-input-guard>
       (() => {
-        const readyEvent = "dbx:startup-ready";
+        const readyEvent = "ogdeveloper:startup-ready";
         const preventStartupEscape = (event) => {
           if (event.key !== "Escape") return;
           event.preventDefault();

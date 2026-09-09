@@ -79,7 +79,7 @@ export function diagramExportFileName(connectionName: string, databaseName: stri
   const modeSuffix = mode === "engineering" ? "engineering-er" : "table-structure";
   const ext = format === "svg" ? "svg" : format === "png" ? "png" : format === "json" ? "json" : format === "dbml" ? "dbml" : "mmd";
   const kind = format === "svg" || format === "png" ? modeSuffix : format === "json" ? "diagram" : format === "dbml" ? "schema" : "er";
-  return ["dbx", ...(context.length > 0 ? context : ["diagram"]), kind].join("-") + `.${ext}`;
+  return ["ogdeveloper", ...(context.length > 0 ? context : ["diagram"]), kind].join("-") + `.${ext}`;
 }
 
 export function buildDiagramJson(snapshot: DiagramJsonSnapshot): string {

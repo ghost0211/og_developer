@@ -11,10 +11,10 @@ This product is a derivative work of dbx, an open-source database manager:
 The following files/directories contain modifications relative to upstream
 dbx (openGauss-specific support, product branding and feature trimming):
 
-  crates/dbx-core/src/sql.rs                 (SQL splitter: openGauss PL/SQL profile)
-  crates/dbx-core/src/db/postgres.rs         (object tree: synonym / package catalogs)
-  crates/dbx-core/src/schema.rs              (source reconstruction for package/synonym)
-  crates/dbx-core/src/jdbc.rs                 (openGauss JDBC driver support)
+  crates/ogdeveloper-core/src/sql.rs                 (SQL splitter: openGauss PL/SQL profile)
+  crates/ogdeveloper-core/src/db/postgres.rs         (object tree: synonym / package catalogs)
+  crates/ogdeveloper-core/src/schema.rs              (source reconstruction for package/synonym)
+  crates/ogdeveloper-core/src/jdbc.rs                 (openGauss JDBC driver support)
   apps/desktop/src/lib/database/databaseObjectCapabilities.ts
   apps/desktop/src/components/connection/ConnectionDialog.vue
   plugins/dialects/opengauss.yaml            (A-compatible types)

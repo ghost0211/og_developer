@@ -2,14 +2,14 @@ use std::sync::Arc;
 use tauri::State;
 
 use crate::commands::connection::AppState;
-use dbx_core::db;
+use ogdeveloper_core::db;
 
 #[tauri::command]
 pub async fn list_databases(
     state: State<'_, Arc<AppState>>,
     connection_id: String,
 ) -> Result<Vec<db::DatabaseInfo>, String> {
-    dbx_core::schema::list_databases_core(&state, &connection_id).await
+    ogdeveloper_core::schema::list_databases_core(&state, &connection_id).await
 }
 
 #[tauri::command]
@@ -18,7 +18,7 @@ pub async fn list_database_storage(
     connection_id: String,
     _databases: Vec<String>,
 ) -> Result<Vec<db::DatabaseStorageInfo>, String> {
-    dbx_core::schema::list_database_storage_core(&state, &connection_id).await
+    ogdeveloper_core::schema::list_database_storage_core(&state, &connection_id).await
 }
 
 #[tauri::command]
@@ -95,7 +95,7 @@ pub async fn list_schemas(
     database: String,
     _apply_visible_filter: Option<bool>,
 ) -> Result<Vec<String>, String> {
-    dbx_core::schema::list_schemas_core_with_visible_filter(&state, &connection_id, &database, None, None).await
+    ogdeveloper_core::schema::list_schemas_core_with_visible_filter(&state, &connection_id, &database, None, None).await
 }
 
 #[tauri::command]
@@ -104,7 +104,7 @@ pub async fn list_schema_infos(
     connection_id: String,
     database: String,
 ) -> Result<Vec<db::SchemaInfo>, String> {
-    dbx_core::schema::list_schema_infos_core(&state, &connection_id, &database, None).await
+    ogdeveloper_core::schema::list_schema_infos_core(&state, &connection_id, &database, None).await
 }
 
 #[tauri::command]
@@ -113,7 +113,7 @@ pub async fn list_data_types(
     connection_id: String,
     database: String,
 ) -> Result<Vec<String>, String> {
-    dbx_core::schema::list_data_types_core(&state, &connection_id, &database, "public", None).await
+    ogdeveloper_core::schema::list_data_types_core(&state, &connection_id, &database, "public", None).await
 }
 
 #[tauri::command]
@@ -128,9 +128,9 @@ pub async fn list_tables(
     limit: Option<usize>,
     offset: Option<usize>,
     object_types: Option<Vec<String>>,
-    table_name_filter: Option<dbx_core::types::TableNameFilter>,
+    table_name_filter: Option<ogdeveloper_core::types::TableNameFilter>,
 ) -> Result<Vec<db::TableInfo>, String> {
-    dbx_core::schema::list_tables_core(
+    ogdeveloper_core::schema::list_tables_core(
         &state,
         &connection_id,
         &database,
@@ -152,7 +152,7 @@ pub async fn get_table_comment(
     schema: String,
     table: String,
 ) -> Result<Option<String>, String> {
-    dbx_core::schema::get_table_comment_core(&state, &connection_id, &database, &schema, &table, None).await
+    ogdeveloper_core::schema::get_table_comment_core(&state, &connection_id, &database, &schema, &table, None).await
 }
 
 #[tauri::command]
@@ -168,7 +168,7 @@ pub async fn list_objects(
     offset: Option<usize>,
     object_types: Option<Vec<String>>,
 ) -> Result<Vec<db::ObjectInfo>, String> {
-    dbx_core::schema::list_objects_core(
+    ogdeveloper_core::schema::list_objects_core(
         &state,
         &connection_id,
         &database,
@@ -189,7 +189,7 @@ pub async fn list_object_statistics(
     database: String,
     schema: String,
 ) -> Result<Vec<db::ObjectStatisticsInfo>, String> {
-    dbx_core::schema::list_object_statistics_core(&state, &connection_id, &database, &schema, None).await
+    ogdeveloper_core::schema::list_object_statistics_core(&state, &connection_id, &database, &schema, None).await
 }
 
 #[tauri::command]
@@ -199,16 +199,16 @@ pub async fn list_completion_objects(
     database: String,
     schema: String,
 ) -> Result<Vec<db::ObjectInfo>, String> {
-    dbx_core::schema::list_completion_objects_core(&state, &connection_id, &database, &schema, None).await
+    ogdeveloper_core::schema::list_completion_objects_core(&state, &connection_id, &database, &schema, None).await
 }
 
 #[tauri::command]
 pub async fn completion_assistant_search(
     state: State<'_, Arc<AppState>>,
-    request: dbx_core::types::CompletionAssistantRequest,
-) -> Result<dbx_core::types::CompletionAssistantResponse, String> {
-    let candidates = dbx_core::schema::completion_assistant_search_core(&state, &request).await?;
-    Ok(dbx_core::types::CompletionAssistantResponse { candidates, fallback_used: false, incomplete: false })
+    request: ogdeveloper_core::types::CompletionAssistantRequest,
+) -> Result<ogdeveloper_core::types::CompletionAssistantResponse, String> {
+    let candidates = ogdeveloper_core::schema::completion_assistant_search_core(&state, &request).await?;
+    Ok(ogdeveloper_core::types::CompletionAssistantResponse { candidates, fallback_used: false, incomplete: false })
 }
 
 #[tauri::command]
@@ -222,7 +222,7 @@ pub async fn get_object_source(
     signature: Option<String>,
     catalog: Option<String>,
 ) -> Result<db::ObjectSource, String> {
-    dbx_core::schema::get_object_source_core(
+    ogdeveloper_core::schema::get_object_source_core(
         &state,
         &connection_id,
         &database,
@@ -244,7 +244,7 @@ pub async fn get_columns(
     table: String,
     client_session_id: Option<String>,
 ) -> Result<Vec<db::ColumnInfo>, String> {
-    dbx_core::schema::get_columns_core_for_session(
+    ogdeveloper_core::schema::get_columns_core_for_session(
         &state,
         &connection_id,
         &database,
@@ -262,7 +262,7 @@ pub async fn get_all_columns(
     _connection_id: String,
     _database: String,
     _schema: String,
-) -> Result<Vec<dbx_core::types::TableColumnsResult>, String> {
+) -> Result<Vec<ogdeveloper_core::types::TableColumnsResult>, String> {
     Ok(Vec::new())
 }
 
@@ -274,7 +274,7 @@ pub async fn list_indexes(
     schema: String,
     table: String,
 ) -> Result<Vec<db::IndexInfo>, String> {
-    dbx_core::schema::list_indexes_core(&state, &connection_id, &database, &schema, &table, None).await
+    ogdeveloper_core::schema::list_indexes_core(&state, &connection_id, &database, &schema, &table, None).await
 }
 
 #[tauri::command]
@@ -285,7 +285,7 @@ pub async fn list_foreign_keys(
     schema: String,
     table: String,
 ) -> Result<Vec<db::ForeignKeyInfo>, String> {
-    dbx_core::schema::list_foreign_keys_core(&state, &connection_id, &database, &schema, &table, None).await
+    ogdeveloper_core::schema::list_foreign_keys_core(&state, &connection_id, &database, &schema, &table, None).await
 }
 
 #[tauri::command]
@@ -296,7 +296,7 @@ pub async fn list_triggers(
     schema: String,
     table: String,
 ) -> Result<Vec<db::TriggerInfo>, String> {
-    dbx_core::schema::list_triggers_core(&state, &connection_id, &database, &schema, &table, None).await
+    ogdeveloper_core::schema::list_triggers_core(&state, &connection_id, &database, &schema, &table, None).await
 }
 
 #[tauri::command]
@@ -307,7 +307,7 @@ pub async fn list_constraints(
     schema: String,
     table: String,
 ) -> Result<Vec<db::ConstraintInfo>, String> {
-    dbx_core::schema::list_constraints_core(&state, &connection_id, &database, &schema, &table).await
+    ogdeveloper_core::schema::list_constraints_core(&state, &connection_id, &database, &schema, &table).await
 }
 
 #[tauri::command]
@@ -318,7 +318,7 @@ pub async fn list_partitions(
     schema: String,
     table: String,
 ) -> Result<Vec<db::PartitionInfo>, String> {
-    dbx_core::schema::list_partitions_core(&state, &connection_id, &database, &schema, &table).await
+    ogdeveloper_core::schema::list_partitions_core(&state, &connection_id, &database, &schema, &table).await
 }
 
 #[tauri::command]
@@ -330,7 +330,7 @@ pub async fn list_subpartitions(
     table: String,
     partition_name: Option<String>,
 ) -> Result<Vec<db::SubpartitionInfo>, String> {
-    dbx_core::schema::list_subpartitions_core(
+    ogdeveloper_core::schema::list_subpartitions_core(
         &state,
         &connection_id,
         &database,
@@ -352,9 +352,10 @@ pub async fn get_table_ddl(
     _object_type: Option<db::ObjectSourceKind>,
 ) -> Result<String, String> {
     if display.unwrap_or(false) {
-        dbx_core::schema::get_table_display_ddl_core(&state, &connection_id, &database, &schema, &table, None).await
+        ogdeveloper_core::schema::get_table_display_ddl_core(&state, &connection_id, &database, &schema, &table, None)
+            .await
     } else {
-        dbx_core::schema::get_table_ddl_core(&state, &connection_id, &database, &schema, &table, None).await
+        ogdeveloper_core::schema::get_table_ddl_core(&state, &connection_id, &database, &schema, &table, None).await
     }
 }
 
@@ -365,7 +366,7 @@ pub async fn list_functions(
     database: String,
     schema: String,
 ) -> Result<Vec<db::FunctionInfo>, String> {
-    dbx_core::schema::list_functions_core(&state, &connection_id, &database, &schema).await
+    ogdeveloper_core::schema::list_functions_core(&state, &connection_id, &database, &schema).await
 }
 
 #[tauri::command]
@@ -376,8 +377,14 @@ pub async fn list_opengauss_package_subprograms(
     schema: String,
     package_name: String,
 ) -> Result<Vec<db::FunctionInfo>, String> {
-    dbx_core::schema::list_opengauss_package_subprograms_core(&state, &connection_id, &database, &schema, &package_name)
-        .await
+    ogdeveloper_core::schema::list_opengauss_package_subprograms_core(
+        &state,
+        &connection_id,
+        &database,
+        &schema,
+        &package_name,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -388,7 +395,7 @@ pub async fn list_sequences(
     schema: String,
     _with_last_values: Option<bool>,
 ) -> Result<Vec<db::SequenceInfo>, String> {
-    dbx_core::schema::list_sequences_core(&state, &connection_id, &database, &schema).await
+    ogdeveloper_core::schema::list_sequences_core(&state, &connection_id, &database, &schema).await
 }
 
 #[tauri::command]
@@ -399,7 +406,14 @@ pub async fn list_rules(
     schema: String,
     table: Option<String>,
 ) -> Result<Vec<db::RuleInfo>, String> {
-    dbx_core::schema::list_rules_core(&state, &connection_id, &database, &schema, table.as_deref().unwrap_or("")).await
+    ogdeveloper_core::schema::list_rules_core(
+        &state,
+        &connection_id,
+        &database,
+        &schema,
+        table.as_deref().unwrap_or(""),
+    )
+    .await
 }
 
 #[tauri::command]
@@ -408,11 +422,15 @@ pub async fn list_owners(
     connection_id: String,
     database: String,
     _schema: Option<String>,
-) -> Result<Vec<dbx_core::types::OwnerInfo>, String> {
-    let owners = dbx_core::schema::list_owners_core(&state, &connection_id, &database).await?;
+) -> Result<Vec<ogdeveloper_core::types::OwnerInfo>, String> {
+    let owners = ogdeveloper_core::schema::list_owners_core(&state, &connection_id, &database).await?;
     Ok(owners
         .into_iter()
-        .map(|o| dbx_core::types::OwnerInfo { object_name: "".to_string(), object_type: "".to_string(), owner: o })
+        .map(|o| ogdeveloper_core::types::OwnerInfo {
+            object_name: "".to_string(),
+            object_type: "".to_string(),
+            owner: o,
+        })
         .collect())
 }
 
@@ -423,7 +441,7 @@ pub async fn list_extensions(
     database: String,
     schema: Option<String>,
 ) -> Result<Vec<db::ExtensionInfo>, String> {
-    dbx_core::schema::list_extensions_core(&state, &connection_id, &database, schema.as_deref()).await
+    ogdeveloper_core::schema::list_extensions_core(&state, &connection_id, &database, schema.as_deref()).await
 }
 
 #[tauri::command]
@@ -432,7 +450,7 @@ pub async fn list_available_extensions(
     connection_id: String,
     database: String,
 ) -> Result<Vec<db::ExtensionInfo>, String> {
-    dbx_core::schema::list_available_extensions_core(&state, &connection_id, &database).await
+    ogdeveloper_core::schema::list_available_extensions_core(&state, &connection_id, &database).await
 }
 
 #[tauri::command]
@@ -442,8 +460,9 @@ pub async fn resolve_synonym_target(
     database: String,
     schema: String,
     synonym_name: String,
-) -> Result<Option<dbx_core::schema::SynonymTargetInfo>, String> {
-    dbx_core::schema::resolve_synonym_target_core(&state, &connection_id, &database, &schema, &synonym_name).await
+) -> Result<Option<ogdeveloper_core::schema::SynonymTargetInfo>, String> {
+    ogdeveloper_core::schema::resolve_synonym_target_core(&state, &connection_id, &database, &schema, &synonym_name)
+        .await
 }
 
 #[tauri::command]
@@ -454,7 +473,8 @@ pub async fn list_type_attributes(
     schema: String,
     name: String,
 ) -> Result<Vec<db::ColumnInfo>, String> {
-    let attrs = dbx_core::schema::list_type_attributes_core(&state, &connection_id, &database, &schema, &name).await?;
+    let attrs =
+        ogdeveloper_core::schema::list_type_attributes_core(&state, &connection_id, &database, &schema, &name).await?;
     Ok(attrs
         .into_iter()
         .map(|a| db::ColumnInfo {
@@ -479,8 +499,8 @@ pub async fn list_object_references(
     name: String,
     object_type: String,
     direction: Option<String>,
-) -> Result<Vec<dbx_core::schema::ObjectReferenceInfo>, String> {
-    dbx_core::schema::list_object_references_core(
+) -> Result<Vec<ogdeveloper_core::schema::ObjectReferenceInfo>, String> {
+    ogdeveloper_core::schema::list_object_references_core(
         &state,
         &connection_id,
         &database,
@@ -498,9 +518,14 @@ pub async fn list_invalid_objects(
     connection_id: String,
     database: String,
     schema: Option<String>,
-) -> Result<Vec<dbx_core::opengauss_maintenance::InvalidObjectInfo>, String> {
-    dbx_core::opengauss_maintenance::list_invalid_objects_core(&state, &connection_id, &database, schema.as_deref())
-        .await
+) -> Result<Vec<ogdeveloper_core::opengauss_maintenance::InvalidObjectInfo>, String> {
+    ogdeveloper_core::opengauss_maintenance::list_invalid_objects_core(
+        &state,
+        &connection_id,
+        &database,
+        schema.as_deref(),
+    )
+    .await
 }
 
 #[tauri::command]
@@ -511,8 +536,8 @@ pub async fn recompile_object(
     schema: String,
     object_name: String,
     object_type: String,
-) -> Result<dbx_core::opengauss_maintenance::RecompileObjectResult, String> {
-    dbx_core::opengauss_maintenance::recompile_object_core(
+) -> Result<ogdeveloper_core::opengauss_maintenance::RecompileObjectResult, String> {
+    ogdeveloper_core::opengauss_maintenance::recompile_object_core(
         &state,
         &connection_id,
         &database,
@@ -528,8 +553,8 @@ pub async fn opengauss_profiler_status(
     state: State<'_, Arc<AppState>>,
     connection_id: String,
     database: String,
-) -> Result<dbx_core::opengauss_profiler::ProfilerStatus, String> {
-    dbx_core::opengauss_profiler::check_profiler_status_core(&state, &connection_id, &database).await
+) -> Result<ogdeveloper_core::opengauss_profiler::ProfilerStatus, String> {
+    ogdeveloper_core::opengauss_profiler::check_profiler_status_core(&state, &connection_id, &database).await
 }
 
 #[tauri::command]
@@ -540,8 +565,8 @@ pub async fn opengauss_profiler_run(
     schema: Option<String>,
     call_sql: String,
     comment: String,
-) -> Result<dbx_core::opengauss_profiler::ProfilerRunResult, String> {
-    dbx_core::opengauss_profiler::run_profiler_core(
+) -> Result<ogdeveloper_core::opengauss_profiler::ProfilerRunResult, String> {
+    ogdeveloper_core::opengauss_profiler::run_profiler_core(
         &state,
         &connection_id,
         &database,

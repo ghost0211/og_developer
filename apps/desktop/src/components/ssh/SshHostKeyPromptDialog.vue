@@ -79,7 +79,7 @@ function handleWebEvent(data: string) {
     else if (event.type === "notice" && event.notice) handleNotice(event.notice);
     else if (event.type === "dismiss" && event.id) dismissPrompt(event.id);
   } catch (error) {
-    console.error("[DBX] invalid SSH prompt event:", error);
+    console.error("[ogdeveloper] invalid SSH prompt event:", error);
   }
 }
 
@@ -198,7 +198,7 @@ async function resolve(action: "accept" | "reject" | "secret") {
     // Advance to the next queued prompt (if any) and reset per-prompt state.
     dismissPrompt(prompt.id);
   } catch (e) {
-    console.error("[DBX] resolve_ssh_prompt failed:", e);
+    console.error("[ogdeveloper] resolve_ssh_prompt failed:", e);
     // "No pending" / "already cancelled" mean the backend already dropped this
     // prompt (timeout or cancelled) — remove it from the queue and move on so
     // the dialog does not get stuck.

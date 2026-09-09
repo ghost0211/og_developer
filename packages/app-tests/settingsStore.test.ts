@@ -22,7 +22,7 @@ vi.mock("../../apps/desktop/src/lib/backend/api", async (importOriginal) => {
   };
 });
 
-const OLD_FONT_SIZE_KEY = "dbx-query-editor-font-size";
+const OLD_FONT_SIZE_KEY = "ogdeveloper-query-editor-font-size";
 
 beforeEach(() => {
   saveEditorSettingsMock.mockClear();
@@ -113,20 +113,20 @@ test("updateEditorSettings persists numericColumnRightAlign toggles", async () =
 });
 
 test("migrates legacy execute-all settings to current once and preserves later explicit choices", async () => {
-  await withMockLocalStorage({ "dbx-app-state:editor_settings": JSON.stringify({ executeMode: "all" }) }, async () => {
+  await withMockLocalStorage({ "ogdeveloper-app-state:editor_settings": JSON.stringify({ executeMode: "all" }) }, async () => {
     setActivePinia(createPinia());
     const migratedStore = useSettingsStore();
     await migratedStore.initEditorSettings();
 
     assert.equal(migratedStore.editorSettings.executeMode, "current");
-    let saved = JSON.parse(localStorage.getItem("dbx-app-state:editor_settings") || "{}");
+    let saved = JSON.parse(localStorage.getItem("ogdeveloper-app-state:editor_settings") || "{}");
     assert.equal(saved.executeMode, "current");
     assert.equal(saved.executeModeDefaultVersion, EXECUTE_MODE_CURRENT_DEFAULT_VERSION);
 
     migratedStore.updateEditorSettings({ executeMode: "all" });
     assert.equal(migratedStore.editorSettings.executeMode, "all");
     await vi.waitFor(() => {
-      saved = JSON.parse(localStorage.getItem("dbx-app-state:editor_settings") || "{}");
+      saved = JSON.parse(localStorage.getItem("ogdeveloper-app-state:editor_settings") || "{}");
       assert.equal(saved.executeMode, "all");
     });
     assert.equal(saved.executeModeDefaultVersion, EXECUTE_MODE_CURRENT_DEFAULT_VERSION);
@@ -156,22 +156,22 @@ test("defaults export batch size to 2000 rows", () => {
 });
 
 test("migrates the legacy saved export batch default to 2000 once", async () => {
-  await withMockLocalStorage({ "dbx-editor-settings": JSON.stringify({ exportBatchSize: 10000 }) }, async () => {
+  await withMockLocalStorage({ "ogdeveloper-editor-settings": JSON.stringify({ exportBatchSize: 10000 }) }, async () => {
     setActivePinia(createPinia());
     const store = useSettingsStore();
     await store.initEditorSettings();
 
     assert.equal(store.editorSettings.exportBatchSize, 2000);
-    assert.equal(localStorage.getItem("dbx-editor-settings"), null);
-    assert.equal(JSON.parse(localStorage.getItem("dbx-app-state:editor_settings") || "{}").exportBatchSize, 2000);
+    assert.equal(localStorage.getItem("ogdeveloper-editor-settings"), null);
+    assert.equal(JSON.parse(localStorage.getItem("ogdeveloper-app-state:editor_settings") || "{}").exportBatchSize, 2000);
   });
 });
 
 test("keeps a manually saved 10000 export batch size after migration", async () => {
   await withMockLocalStorage(
     {
-      "dbx-editor-settings": JSON.stringify({ exportBatchSize: 10000 }),
-      "dbx-export-batch-size-default-migrated-v1": "1",
+      "ogdeveloper-editor-settings": JSON.stringify({ exportBatchSize: 10000 }),
+      "ogdeveloper-export-batch-size-default-migrated-v1": "1",
     },
     async () => {
       setActivePinia(createPinia());

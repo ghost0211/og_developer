@@ -12,7 +12,7 @@ export interface LiveTablePatch {
 }
 
 function storageKey(kind: "draft-tables" | "layers" | "positions" | "live-patches", connectionId: string, database: string, schema: string): string {
-  return ["dbx", "diagram", kind, "v1", connectionId, database, schema].join(":");
+  return ["ogdeveloper", "diagram", kind, "v1", connectionId, database, schema].join(":");
 }
 
 function isValidColumn(value: unknown): value is ColumnInfo {

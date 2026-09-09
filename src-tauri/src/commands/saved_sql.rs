@@ -2,8 +2,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tauri::State;
 
-use dbx_core::connection::AppState;
-use dbx_core::saved_sql::{SavedSqlFile, SavedSqlFolder, SavedSqlLibrary};
+use ogdeveloper_core::connection::AppState;
+use ogdeveloper_core::saved_sql::{SavedSqlFile, SavedSqlFolder, SavedSqlLibrary};
 
 #[derive(Clone)]
 pub struct SavedSqlStorageState {
@@ -206,21 +206,21 @@ fn unique_file_path(dir: &Path, file_name: &str) -> PathBuf {
 fn open_path(path: &Path) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     let mut command = {
-        let mut command = dbx_core::process::new_std_command("open");
+        let mut command = ogdeveloper_core::process::new_std_command("open");
         command.arg(path);
         command
     };
 
     #[cfg(target_os = "windows")]
     let mut command = {
-        let mut command = dbx_core::process::new_std_command("explorer");
+        let mut command = ogdeveloper_core::process::new_std_command("explorer");
         command.arg(path);
         command
     };
 
     #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
     let mut command = {
-        let mut command = dbx_core::process::new_std_command("xdg-open");
+        let mut command = ogdeveloper_core::process::new_std_command("xdg-open");
         command.arg(path);
         command
     };

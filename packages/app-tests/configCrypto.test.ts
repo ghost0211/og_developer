@@ -6,7 +6,7 @@ test("encrypts and decrypts config round-trip", async () => {
   const original = JSON.stringify([{ id: "1", name: "test", password: "secret123" }]);
   const encrypted = await encryptConfig(original, "my-passphrase");
 
-  assert.equal(encrypted.format, "dbx-encrypted");
+  assert.equal(encrypted.format, "ogdeveloper-encrypted");
   assert.equal(encrypted.version, 1);
   assert.ok(encrypted.salt);
   assert.ok(encrypted.iv);
@@ -51,4 +51,11 @@ test("reports crypto unavailable when Web Crypto is missing", async () => {
       value: originalCrypto,
     });
   }
+});
+
+test("imports legacy encrypted exports", async () => {
+  const value = await encryptConfig("legacy contents", "password");
+  value.format = "dbx-encrypted";
+  assert.equal(isEncryptedConfig(value), true);
+  assert.equal(await decryptConfig(value, "password"), "legacy contents");
 });

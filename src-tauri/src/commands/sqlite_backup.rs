@@ -1,4 +1,4 @@
-use dbx_core::connection::AppState;
+use ogdeveloper_core::connection::AppState;
 use std::sync::Arc;
 use tauri::State;
 

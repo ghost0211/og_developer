@@ -7,7 +7,7 @@
 
 ### 1. 执行 package/存储过程脚本被切碎（SQL 切分器）
 
-**根因**：`crates/dbx-core/src/sql.rs` 的 `SqlDialectProfile::for_database_type()` 没有
+**根因**：`crates/ogdeveloper-core/src/sql.rs` 的 `SqlDialectProfile::for_database_type()` 没有
 `DatabaseType::OpenGauss` 分支，落入了不支持 PL/SQL 块、不支持 `/` 行终止符的默认
 profile，导致 `CREATE PACKAGE BODY` 这类内部全是分号的语句被按 `;` 切碎（GaussDB 有
 正确配置，openGauss 漏了）。
@@ -17,7 +17,7 @@ dollar-quoted 例程体）。
 
 ### 2. 对象树缺少 同义词 / 包 节点
 
-**后端**（`crates/dbx-core/src/db/postgres.rs`）：
+**后端**（`crates/ogdeveloper-core/src/db/postgres.rs`）：
 - 新增目录探测 `postgres_has_pg_catalog_relation()`（沿用 prokind/prosp 探测模式）；
 - 探测到 `pg_catalog.gs_package` 时，对象列表追加 `PACKAGE` / `PACKAGE_BODY` 行
   （有 `pkgbodydeclsrc` 时才出 body 行，对齐 Oracle 的展示方式）；
@@ -32,7 +32,7 @@ dollar-quoted 例程体）。
 
 ### 3. package / synonym 源码查看与编译回环
 
-`crates/dbx-core/src/schema.rs` 的 `postgres_object_source_sql_inner` 原先对这些
+`crates/ogdeveloper-core/src/schema.rs` 的 `postgres_object_source_sql_inner` 原先对这些
 对象类型一律返回 `SELECT NULL WHERE FALSE`。新增 openGauss 专属分支：
 - `SYNONYM` → 由 `pg_synonym` 重建 `CREATE OR REPLACE SYNONYM x FOR y;`；
 - `PACKAGE` / `PACKAGE_BODY` → 由 `gs_package` 重建可执行 DDL。
@@ -66,8 +66,8 @@ dollar-quoted 例程体）。
 
 ## 验证结果
 
-- `cargo check -p dbx-core` ✓
-- `cargo test -p dbx-core --lib`：4036 通过 / 1 失败——失败项
+- `cargo check -p ogdeveloper-core` ✓
+- `cargo test -p ogdeveloper-core --lib`：4036 通过 / 1 失败——失败项
   `sql_parser::git::tests::rejects_non_git_directory` 是环境性失败（本机 `/tmp/.git`
   碰巧存在），与本次修改无关。
 - 新增测试：切分器 profile 断言、openGauss package 脚本端到端切分（带 `/` 与不带）、

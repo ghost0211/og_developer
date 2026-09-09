@@ -130,7 +130,7 @@ function localDateKey() {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  localStorage.removeItem("dbx-filter-builder-value-shortcut-hint-days");
+  localStorage.removeItem("ogdeveloper-filter-builder-value-shortcut-hint-days");
 });
 
 describe("DataGridSearchBar", () => {
@@ -509,19 +509,19 @@ describe("DataGridFilterBuilder", () => {
     dispatch(secondValueEditor, "blur");
     await nextTick();
     expect(hostText(mounted.root)).not.toContain("grid.filterBuilderValueShortcutHint");
-    expect(JSON.parse(localStorage.getItem("dbx-filter-builder-value-shortcut-hint-days") ?? "[]")).toEqual([{ date: localDateKey(), count: 1 }]);
+    expect(JSON.parse(localStorage.getItem("ogdeveloper-filter-builder-value-shortcut-hint-days") ?? "[]")).toEqual([{ date: localDateKey(), count: 1 }]);
 
     dispatch(secondValueEditor, "focus");
     await nextTick();
     expect(hostText(mounted.root)).toContain("grid.filterBuilderValueShortcutHint");
-    expect(JSON.parse(localStorage.getItem("dbx-filter-builder-value-shortcut-hint-days") ?? "[]")).toEqual([{ date: localDateKey(), count: 2 }]);
+    expect(JSON.parse(localStorage.getItem("ogdeveloper-filter-builder-value-shortcut-hint-days") ?? "[]")).toEqual([{ date: localDateKey(), count: 2 }]);
     dispatch(secondValueEditor, "blur");
     dispatch(secondValueEditor, "focus");
     await nextTick();
     expect(hostText(mounted.root)).not.toContain("grid.filterBuilderValueShortcutHint");
 
     localStorage.setItem(
-      "dbx-filter-builder-value-shortcut-hint-days",
+      "ogdeveloper-filter-builder-value-shortcut-hint-days",
       JSON.stringify([
         { date: "2026-01-01", count: 2 },
         { date: "2026-01-02", count: 2 },
@@ -532,10 +532,10 @@ describe("DataGridFilterBuilder", () => {
     dispatch(thirdDaySecondValueEditor, "focus");
     await nextTick();
     expect(hostText(thirdDayMounted.root)).toContain("grid.filterBuilderValueShortcutHint");
-    expect(JSON.parse(localStorage.getItem("dbx-filter-builder-value-shortcut-hint-days") ?? "[]")).toHaveLength(3);
+    expect(JSON.parse(localStorage.getItem("ogdeveloper-filter-builder-value-shortcut-hint-days") ?? "[]")).toHaveLength(3);
 
     localStorage.setItem(
-      "dbx-filter-builder-value-shortcut-hint-days",
+      "ogdeveloper-filter-builder-value-shortcut-hint-days",
       JSON.stringify([
         { date: "2026-01-01", count: 2 },
         { date: "2026-01-02", count: 2 },
@@ -748,7 +748,7 @@ describe("cell detail surfaces", () => {
 
 describe("DataGridCopyColumnNamesDialog", () => {
   beforeEach(() => {
-    localStorage.removeItem("dbx-copy-column-names-separator");
+    localStorage.removeItem("ogdeveloper-copy-column-names-separator");
   });
 
   function previewText(mounted: ReturnType<typeof mountComponent>) {
@@ -778,7 +778,7 @@ describe("DataGridCopyColumnNamesDialog", () => {
     );
     expect(copy).toHaveBeenCalledWith('"id",\n"type"');
     expect(openChange).toHaveBeenCalledWith(false);
-    expect(localStorage.getItem("dbx-copy-column-names-separator")).toBe("comma-newline");
+    expect(localStorage.getItem("ogdeveloper-copy-column-names-separator")).toBe("comma-newline");
   });
 
   it("hides the quote option for unquotable databases and ignores invalid separators", async () => {

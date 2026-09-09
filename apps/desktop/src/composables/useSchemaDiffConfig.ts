@@ -1,10 +1,11 @@
+import { safeLocalStorageGet, safeLocalStorageSet } from "@/lib/backend/safeStorage";
 import { ref, computed, watch } from "vue";
 import { uuid } from "@/lib/common/utils";
 import type { SchemaDiffConfig, SchemaDiffCompareOptions } from "@/types/schemaDiff";
 import { createEmptyConfig, getDefaultOptionsForDbType } from "@/types/schemaDiff";
 
-const STORAGE_KEY = "dbx-schema-diff-configs";
-const HISTORY_KEY = "dbx-schema-diff-history";
+const STORAGE_KEY = "ogdeveloper-schema-diff-configs";
+const HISTORY_KEY = "ogdeveloper-schema-diff-history";
 const MAX_HISTORY = 10;
 
 const configs = ref<SchemaDiffConfig[]>(loadConfigsFromStorage());
@@ -13,7 +14,7 @@ const recentConfigs = ref<SchemaDiffConfig[]>(loadHistoryFromStorage());
 
 function loadConfigsFromStorage(): SchemaDiffConfig[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = safeLocalStorageGet(STORAGE_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw) as SchemaDiffConfig[];
     return Array.isArray(parsed) ? parsed : [];
@@ -24,7 +25,7 @@ function loadConfigsFromStorage(): SchemaDiffConfig[] {
 
 function loadHistoryFromStorage(): SchemaDiffConfig[] {
   try {
-    const raw = localStorage.getItem(HISTORY_KEY);
+    const raw = safeLocalStorageGet(HISTORY_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw) as SchemaDiffConfig[];
     return Array.isArray(parsed) ? parsed : [];
@@ -34,11 +35,11 @@ function loadHistoryFromStorage(): SchemaDiffConfig[] {
 }
 
 function saveConfigsToStorage() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(configs.value));
+  safeLocalStorageSet(STORAGE_KEY, JSON.stringify(configs.value));
 }
 
 function saveHistoryToStorage() {
-  localStorage.setItem(HISTORY_KEY, JSON.stringify(recentConfigs.value));
+  safeLocalStorageSet(HISTORY_KEY, JSON.stringify(recentConfigs.value));
 }
 
 function createDefaultConfig(dbType?: string): SchemaDiffConfig {

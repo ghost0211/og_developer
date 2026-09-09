@@ -28,7 +28,7 @@ const STRUCTURED_BACKEND_ERROR_KEYS = [
   "backendErrors.unknown",
 ] as const;
 
-// Reproduces the exact string crates/dbx-core/src/agent_service.rs builds on
+// Reproduces the exact string crates/ogdeveloper-core/src/agent_service.rs builds on
 // Windows: `\` line continuations strip the newline plus the following indent.
 const WINDOWS_JRE_REMOVE_ERROR = [
   "Failed to remove the old JRE directory: C:\\dbx\\jre21",
@@ -388,9 +388,9 @@ describe("backend error wording is pinned to the Rust sources", () => {
   const rust = (path: string) => readFileSync(new URL(`../../../../../${path}`, import.meta.url), "utf8");
 
   test.each([
-    ["crates/dbx-core/src/query_result_export.rs", "Streaming export is unsupported for this query. Simplify it or use a supported driver."],
-    ["crates/dbx-core/src/query_result_export.rs", "Streaming export needs a result-set session, but this driver returned no session_id."],
-    ["crates/dbx-web/src/auth.rs", "Please try again in {remaining}s"],
+    ["crates/ogdeveloper-core/src/query_result_export.rs", "Streaming export is unsupported for this query. Simplify it or use a supported driver."],
+    ["crates/ogdeveloper-core/src/query_result_export.rs", "Streaming export needs a result-set session, but this driver returned no session_id."],
+    ["crates/ogdeveloper-web/src/auth.rs", "Please try again in {remaining}s"],
     ["src-tauri/src/commands/fs_open.rs", "file does not exist: "],
   ])("%s still emits %j", (path, fragment) => {
     expect(rust(path)).toContain(fragment);

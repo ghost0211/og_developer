@@ -539,7 +539,7 @@ watch(
 
 <template>
   <Dialog :open="open" @update:open="handleOpenChange">
-    <DialogScrollContent class="flex max-h-[calc(var(--dbx-viewport-height)-6rem)] min-h-0 min-w-0 flex-col overflow-hidden sm:max-w-[860px]" :trap-focus="false" @interact-outside.prevent>
+    <DialogScrollContent class="flex max-h-[calc(var(--ogdeveloper-viewport-height)-6rem)] min-h-0 min-w-0 flex-col overflow-hidden sm:max-w-[860px]" :trap-focus="false" @interact-outside.prevent>
       <DialogHeader class="shrink-0">
         <DialogTitle class="flex items-center gap-2">
           <FileCode class="w-4 h-4" />

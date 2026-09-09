@@ -77,7 +77,7 @@ function onDragEnd(event: PointerEvent) {
   event.preventDefault();
   dragging.value = false;
   dragPointerId = null;
-  document.body.classList.remove("dbx-search-panel-dragging");
+  document.body.classList.remove("ogdeveloper-search-panel-dragging");
   detachDragListeners();
 }
 
@@ -94,7 +94,7 @@ function startDrag(event: PointerEvent) {
   startClientY = event.clientY;
   originX = offsetX.value;
   originY = offsetY.value;
-  document.body.classList.add("dbx-search-panel-dragging");
+  document.body.classList.add("ogdeveloper-search-panel-dragging");
 
   window.addEventListener("pointermove", onDragMove, true);
   window.addEventListener("pointerup", onDragEnd, true);
@@ -123,7 +123,7 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
-  document.body.classList.remove("dbx-search-panel-dragging");
+  document.body.classList.remove("ogdeveloper-search-panel-dragging");
   detachDragListeners();
 });
 
@@ -136,13 +136,20 @@ defineExpose({ focusInput, inputEl: inputRef });
     data-redis-value-search
     data-draggable-search-panel
     data-search-drag-chrome
-    class="dbx-text-search-panel absolute right-3 top-3 z-50 isolate flex flex-col gap-1 rounded-lg border border-border bg-popover p-1.5 text-popover-foreground shadow-xl ring-1 ring-border/60"
+    class="ogdeveloper-text-search-panel absolute right-3 top-3 z-50 isolate flex flex-col gap-1 rounded-lg border border-border bg-popover p-1.5 text-popover-foreground shadow-xl ring-1 ring-border/60"
     :class="{ 'is-dragging': dragging }"
     :style="{ transform: `translate(${offsetX}px, ${offsetY}px)` }"
     @pointerdown="startDrag"
   >
     <div class="flex items-center gap-1" data-search-drag-chrome>
-      <button type="button" data-drag-handle class="dbx-search-drag-handle flex h-8 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground" :title="t('editor.search.find')" :aria-label="t('editor.search.find')" @pointerdown="startDrag">
+      <button
+        type="button"
+        data-drag-handle
+        class="ogdeveloper-search-drag-handle flex h-8 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+        :title="t('editor.search.find')"
+        :aria-label="t('editor.search.find')"
+        @pointerdown="startDrag"
+      >
         <GripVertical class="pointer-events-none h-4 w-4" />
       </button>
 
@@ -156,7 +163,7 @@ defineExpose({ focusInput, inputEl: inputRef });
           autocomplete="off"
           autocorrect="off"
           spellcheck="false"
-          class="dbx-search-input h-full min-w-0 flex-1 bg-transparent px-2 text-sm text-foreground outline-none placeholder:text-muted-foreground"
+          class="ogdeveloper-search-input h-full min-w-0 flex-1 bg-transparent px-2 text-sm text-foreground outline-none placeholder:text-muted-foreground"
           :placeholder="resolvedPlaceholder()"
           @mousedown.stop
           @pointerdown.stop
@@ -204,31 +211,31 @@ defineExpose({ focusInput, inputEl: inputRef });
 </template>
 
 <style scoped>
-.dbx-text-search-panel {
+.ogdeveloper-text-search-panel {
   max-width: min(calc(100vw - 2rem), 620px);
 }
 
-.dbx-search-drag-handle {
+.ogdeveloper-search-drag-handle {
   cursor: grab;
   touch-action: none;
   user-select: none;
 }
 
-.dbx-search-input {
+.ogdeveloper-search-input {
   user-select: text;
   touch-action: manipulation;
   cursor: text;
 }
 
-.dbx-text-search-panel.is-dragging,
-.dbx-text-search-panel.is-dragging .dbx-search-drag-handle {
+.ogdeveloper-text-search-panel.is-dragging,
+.ogdeveloper-text-search-panel.is-dragging .ogdeveloper-search-drag-handle {
   cursor: grabbing;
   user-select: none;
 }
 </style>
 
 <style>
-body.dbx-search-panel-dragging {
+body.ogdeveloper-search-panel-dragging {
   cursor: grabbing !important;
   user-select: none !important;
 }

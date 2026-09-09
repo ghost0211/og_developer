@@ -278,7 +278,7 @@ export function useDataGridConditionEditor(options: UseDataGridConditionEditorOp
       if (!controller.signal.aborted && requestId === suggestionRequestId) {
         suggestions.value = [];
         highlightedIndex.value = -1;
-        console.warn("[DBX][condition-editor] Failed to load suggestions", error);
+        console.warn("[ogdeveloper][condition-editor] Failed to load suggestions", error);
       }
     } finally {
       if (requestId === suggestionRequestId) suggestionsLoading.value = false;

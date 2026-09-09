@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use dbx_core::sql::decode_sql_file_bytes;
+use ogdeveloper_core::sql::decode_sql_file_bytes;
 use serde::Serialize;
 use tokio::io::AsyncReadExt;
 

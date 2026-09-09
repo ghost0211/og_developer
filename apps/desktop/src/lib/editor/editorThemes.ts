@@ -7,10 +7,10 @@ import { tags } from "@lezer/highlight";
 type CodeMirrorStyleSpec = Parameters<typeof import("@codemirror/view").EditorView.theme>[0];
 type LucideIconNode = Array<[string, Record<string, string>]>;
 
-export const EDITOR_FONT_SIZE_CSS_VAR = "--dbx-editor-font-size";
-export const EDITOR_FONT_FAMILY_CSS_VAR = "--dbx-editor-font-family";
-export const SQL_TABLE_COLOR_CSS_VAR = "--dbx-sql-table-color";
-const EDITOR_SELECTION_BACKGROUND_CSS_VAR = "--dbx-editor-selection-background";
+export const EDITOR_FONT_SIZE_CSS_VAR = "--ogdeveloper-editor-font-size";
+export const EDITOR_FONT_FAMILY_CSS_VAR = "--ogdeveloper-editor-font-family";
+export const SQL_TABLE_COLOR_CSS_VAR = "--ogdeveloper-sql-table-color";
+const EDITOR_SELECTION_BACKGROUND_CSS_VAR = "--ogdeveloper-editor-selection-background";
 
 export function createRunStatementButtonDom(ariaLabel = "Execute statement"): HTMLButtonElement {
   const marker = document.createElement("button");
@@ -92,8 +92,8 @@ function createCustomTheme(EditorView: typeof import("@codemirror/view").EditorV
         color: c.foreground,
         [EDITOR_SELECTION_BACKGROUND_CSS_VAR]: c.selection,
         [SQL_TABLE_COLOR_CSS_VAR]: tableColor,
-        "--dbx-editor-bracket-background": c.matchingBracket,
-        "--dbx-editor-bracket-glow": bracketGlow,
+        "--ogdeveloper-editor-bracket-background": c.matchingBracket,
+        "--ogdeveloper-editor-bracket-glow": bracketGlow,
       },
       ".cm-content": {
         caretColor: c.cursor,
@@ -535,8 +535,8 @@ function createIdeEditorTheme(EditorView: typeof import("@codemirror/view").Edit
         color: c.foreground,
         [EDITOR_SELECTION_BACKGROUND_CSS_VAR]: c.selection,
         [SQL_TABLE_COLOR_CSS_VAR]: c.table,
-        "--dbx-editor-bracket-background": c.matchingBracket,
-        "--dbx-editor-bracket-glow": bracketGlow,
+        "--ogdeveloper-editor-bracket-background": c.matchingBracket,
+        "--ogdeveloper-editor-bracket-glow": bracketGlow,
       },
       ".cm-scroller": {
         backgroundColor: c.background,
@@ -661,7 +661,7 @@ function encodeSvgIcon(iconNode: LucideIconNode): string {
 function lucideCompletionIconMask(iconNode: LucideIconNode) {
   const mask = encodeSvgIcon(iconNode);
   return {
-    "--dbx-completion-icon-mask": mask,
+    "--ogdeveloper-completion-icon-mask": mask,
   };
 }
 
@@ -678,8 +678,8 @@ export function cellDetailActiveLineColor(): string {
 }
 
 export function buildEditorChromeThemeRules(): CodeMirrorStyleSpec {
-  const bracketBackground = "var(--dbx-editor-bracket-background, color-mix(in oklab, currentColor 12%, transparent))";
-  const bracketGlow = "var(--dbx-editor-bracket-glow, color-mix(in oklab, currentColor 55%, transparent))";
+  const bracketBackground = "var(--ogdeveloper-editor-bracket-background, color-mix(in oklab, currentColor 12%, transparent))";
+  const bracketGlow = "var(--ogdeveloper-editor-bracket-glow, color-mix(in oklab, currentColor 55%, transparent))";
   return {
     ".cm-matchingBracket": {
       borderRadius: "3px",
@@ -845,7 +845,7 @@ export function buildEditorFontThemeRules(opts?: { fixedHeight?: boolean; scroll
       alignItems: "center",
       background: "transparent",
       border: "1px solid transparent",
-      borderRadius: "var(--dbx-radius-fixed-6)",
+      borderRadius: "var(--ogdeveloper-radius-fixed-6)",
       boxSizing: "border-box",
       color: "transparent",
       display: "inline-flex",
@@ -934,7 +934,7 @@ export function buildSqlCompletionThemeRules(): CodeMirrorStyleSpec {
       background: "var(--popover)",
       backgroundClip: "padding-box",
       border: colorMixValue("1px solid var(--border)", "1px solid color-mix(in oklch, var(--border) 82%, var(--foreground) 18%)"),
-      borderRadius: "var(--dbx-radius-md)",
+      borderRadius: "var(--ogdeveloper-radius-md)",
       boxShadow: "0 8px 18px rgb(0 0 0 / 0.14)",
       color: "var(--popover-foreground)",
       fontFamily: `var(${EDITOR_FONT_FAMILY_CSS_VAR}, var(--font-mono, monospace))`,
@@ -963,7 +963,7 @@ export function buildSqlCompletionThemeRules(): CodeMirrorStyleSpec {
     },
     ".cm-tooltip.cm-tooltip-autocomplete > ul > li": {
       alignItems: "center",
-      borderRadius: "var(--dbx-radius-sm)",
+      borderRadius: "var(--ogdeveloper-radius-sm)",
       color: "var(--popover-foreground)",
       display: "flex",
       fontSize: `clamp(12px, var(${EDITOR_FONT_SIZE_CSS_VAR}, 13px), 14px)`,
@@ -1000,11 +1000,11 @@ export function buildSqlCompletionThemeRules(): CodeMirrorStyleSpec {
       display: "block",
       height: "14px",
       position: "absolute",
-      WebkitMaskImage: "var(--dbx-completion-icon-mask)",
+      WebkitMaskImage: "var(--ogdeveloper-completion-icon-mask)",
       WebkitMaskPosition: "center",
       WebkitMaskRepeat: "no-repeat",
       WebkitMaskSize: "14px 14px",
-      maskImage: "var(--dbx-completion-icon-mask)",
+      maskImage: "var(--ogdeveloper-completion-icon-mask)",
       maskPosition: "center",
       maskRepeat: "no-repeat",
       maskSize: "14px 14px",

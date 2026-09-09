@@ -468,7 +468,7 @@ watch(
 onMounted(() => {
   window.addEventListener("resize", onViewportResize);
   window.visualViewport?.addEventListener("resize", onViewportResize);
-  window.addEventListener("dbx:ui-scale-applied", onViewportResize);
+  window.addEventListener("ogdeveloper:ui-scale-applied", onViewportResize);
   document.addEventListener("pointerdown", onDocumentPointerDown, true);
   if (typeof ResizeObserver !== "undefined" && controlRef.value) {
     resizeObserver = new ResizeObserver(() => resizeEditor());
@@ -482,7 +482,7 @@ onUnmounted(() => {
   resizeObserver?.disconnect();
   window.removeEventListener("resize", onViewportResize);
   window.visualViewport?.removeEventListener("resize", onViewportResize);
-  window.removeEventListener("dbx:ui-scale-applied", onViewportResize);
+  window.removeEventListener("ogdeveloper:ui-scale-applied", onViewportResize);
   document.removeEventListener("pointerdown", onDocumentPointerDown, true);
 });
 

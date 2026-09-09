@@ -52,19 +52,19 @@ describe("SQL completion theme", () => {
     const rules = buildEditorChromeThemeRules();
 
     expect(rules[".cm-matchingBracket"]).toMatchObject({
-      boxShadow: expect.stringContaining("inset 0 0 0 1px var(--dbx-editor-bracket-glow"),
+      boxShadow: expect.stringContaining("inset 0 0 0 1px var(--ogdeveloper-editor-bracket-glow"),
     });
     expect(rules[".cm-sql-block-match"]).toMatchObject({
-      backgroundColor: "var(--dbx-editor-bracket-background, color-mix(in oklab, currentColor 12%, transparent))",
-      boxShadow: expect.stringContaining("inset 0 0 0 1px var(--dbx-editor-bracket-glow"),
+      backgroundColor: "var(--ogdeveloper-editor-bracket-background, color-mix(in oklab, currentColor 12%, transparent))",
+      boxShadow: expect.stringContaining("inset 0 0 0 1px var(--ogdeveloper-editor-bracket-glow"),
     });
   });
 
   it("uses the configurable medium radius for the popup container", () => {
     const rules = buildSqlCompletionThemeRules();
 
-    expect(rules[".cm-tooltip.cm-tooltip-autocomplete"]).toMatchObject({ borderRadius: "var(--dbx-radius-md)" });
-    expect(rules[".cm-tooltip.cm-tooltip-autocomplete > ul > li"]).toMatchObject({ borderRadius: "var(--dbx-radius-sm)" });
+    expect(rules[".cm-tooltip.cm-tooltip-autocomplete"]).toMatchObject({ borderRadius: "var(--ogdeveloper-radius-md)" });
+    expect(rules[".cm-tooltip.cm-tooltip-autocomplete > ul > li"]).toMatchObject({ borderRadius: "var(--ogdeveloper-radius-sm)" });
   });
 
   it("keeps completion labels ahead of long detail text", () => {

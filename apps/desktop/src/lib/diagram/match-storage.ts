@@ -1,7 +1,7 @@
 import { safeLocalStorageGet, safeLocalStorageSet } from "@/lib/backend/safeStorage";
 
 function matchStorageKey(type: "match-confirms" | "match-ignores" | "match-rules", connectionId: string, database: string, schema: string): string {
-  return ["dbx", "diagram", type, "v1", connectionId, database, schema].join(":");
+  return ["ogdeveloper", "diagram", type, "v1", connectionId, database, schema].join(":");
 }
 
 export function loadMatchConfirms(connectionId: string, database: string, schema: string): string[] {
@@ -47,11 +47,11 @@ export function saveMatchRules(rules: MatchRule[], connectionId: string, databas
 }
 
 export function isAutoMatchEnabled(): boolean {
-  return safeLocalStorageGet("dbx:diagram:match-enabled") !== "false";
+  return safeLocalStorageGet("ogdeveloper:diagram:match-enabled") !== "false";
 }
 
 export function setAutoMatchEnabled(enabled: boolean): void {
-  safeLocalStorageSet("dbx:diagram:match-enabled", String(enabled));
+  safeLocalStorageSet("ogdeveloper:diagram:match-enabled", String(enabled));
 }
 
 export interface MatchRule {

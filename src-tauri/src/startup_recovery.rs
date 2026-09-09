@@ -8,14 +8,14 @@ use std::time::Duration;
 use tauri::Manager;
 
 const STARTUP_LOG_FILE: &str = "startup.log";
-const STARTUP_LOG_DIR_ENV: &str = "DBX_STARTUP_LOG_DIR";
-const KEEP_STARTUP_LOG_ENV: &str = "DBX_KEEP_STARTUP_LOG";
+const STARTUP_LOG_DIR_ENV: &str = "OGDEVELOPER_STARTUP_LOG_DIR";
+const KEEP_STARTUP_LOG_ENV: &str = "OGDEVELOPER_KEEP_STARTUP_LOG";
 #[cfg(target_os = "windows")]
-const NO_SANDBOX_ENV: &str = "DBX_WEBVIEW2_NO_SANDBOX";
-const RECOVERY_ATTEMPT_ENV: &str = "DBX_STARTUP_COMPAT_RECOVERY";
-const RECOVERY_PARENT_PID_ENV: &str = "DBX_STARTUP_COMPAT_PARENT_PID";
-const DISABLE_ENTERPRISE_COMPAT_ENV: &str = "DBX_DISABLE_ENTERPRISE_COMPAT";
-const WINDOWS_APP_DATA_DIR_NAME: &str = "com.dbx.app";
+const NO_SANDBOX_ENV: &str = "OGDEVELOPER_WEBVIEW2_NO_SANDBOX";
+const RECOVERY_ATTEMPT_ENV: &str = "OGDEVELOPER_STARTUP_COMPAT_RECOVERY";
+const RECOVERY_PARENT_PID_ENV: &str = "OGDEVELOPER_STARTUP_COMPAT_PARENT_PID";
+const DISABLE_ENTERPRISE_COMPAT_ENV: &str = "OGDEVELOPER_DISABLE_ENTERPRISE_COMPAT";
+const WINDOWS_APP_DATA_DIR_NAME: &str = "com.ogdeveloper.app";
 const COMPATIBILITY_MARKER_FILE: &str = "webview2-enterprise-compat.enabled";
 const COMPATIBILITY_PROFILE_DIR: &str = "webview2-enterprise-compat";
 const STARTUP_LOG_BUFFER_CAPACITY: usize = 256;
@@ -39,7 +39,7 @@ static RUN_EVENT_COUNT: AtomicUsize = AtomicUsize::new(0);
 static FRONTEND_READY_SIGNAL: LazyLock<(Mutex<bool>, Condvar)> = LazyLock::new(|| (Mutex::new(false), Condvar::new()));
 
 fn env_flag(name: &str) -> bool {
-    matches!(std::env::var(name).as_deref(), Ok("1"))
+    matches!(ogdeveloper_core::branding::var(name).as_deref(), Ok("1"))
 }
 
 fn startup_log_dir_from_inputs(
@@ -60,7 +60,7 @@ fn startup_log_dir_from_inputs(
 fn startup_log_dir() -> Option<PathBuf> {
     startup_log_dir_from_inputs(
         std::env::consts::OS,
-        std::env::var_os(STARTUP_LOG_DIR_ENV),
+        ogdeveloper_core::branding::var_os(STARTUP_LOG_DIR_ENV),
         std::env::var_os("APPDATA"),
     )
 }
@@ -69,11 +69,22 @@ fn startup_log_path() -> Option<PathBuf> {
     startup_log_dir().map(|dir| dir.join(STARTUP_LOG_FILE))
 }
 
+// Preserve existing recovery preferences and profiles during the rename.
+fn compatible_recovery_path(base: &Path, name: &str) -> PathBuf {
+    let current = base.join(WINDOWS_APP_DATA_DIR_NAME).join(name);
+    let legacy = base.join("com.dbx.app").join(name);
+    if !current.exists() && legacy.exists() {
+        legacy
+    } else {
+        current
+    }
+}
+
 fn compatibility_marker_path_from_appdata(windows_appdata: Option<OsString>) -> Option<PathBuf> {
     windows_appdata
         .filter(|value| !value.is_empty())
         .map(PathBuf::from)
-        .map(|dir| dir.join(WINDOWS_APP_DATA_DIR_NAME).join(COMPATIBILITY_MARKER_FILE))
+        .map(|dir| compatible_recovery_path(&dir, COMPATIBILITY_MARKER_FILE))
 }
 
 fn compatibility_marker_path() -> Option<PathBuf> {
@@ -93,10 +104,10 @@ fn compatibility_profile_path_from_inputs(
     windows_appdata: Option<OsString>,
 ) -> (Option<PathBuf>, &'static str) {
     if let Some(dir) = local_appdata.filter(|value| !value.is_empty()).map(PathBuf::from) {
-        return (Some(dir.join(WINDOWS_APP_DATA_DIR_NAME).join(COMPATIBILITY_PROFILE_DIR)), "local_appdata");
+        return (Some(compatible_recovery_path(&dir, COMPATIBILITY_PROFILE_DIR)), "local_appdata");
     }
     if let Some(dir) = windows_appdata.filter(|value| !value.is_empty()).map(PathBuf::from) {
-        return (Some(dir.join(WINDOWS_APP_DATA_DIR_NAME).join(COMPATIBILITY_PROFILE_DIR)), "appdata_fallback");
+        return (Some(compatible_recovery_path(&dir, COMPATIBILITY_PROFILE_DIR)), "appdata_fallback");
     }
     (None, "unavailable")
 }
@@ -127,8 +138,10 @@ fn wait_for_recovery_parent_exit() -> &'static str {
     use windows_sys::Win32::Foundation::{CloseHandle, WAIT_OBJECT_0, WAIT_TIMEOUT};
     use windows_sys::Win32::System::Threading::{OpenProcess, WaitForSingleObject, PROCESS_SYNCHRONIZE};
 
-    let parent_pid = std::env::var(RECOVERY_PARENT_PID_ENV).ok().and_then(|value| value.parse::<u32>().ok());
+    let parent_pid =
+        ogdeveloper_core::branding::var(RECOVERY_PARENT_PID_ENV).ok().and_then(|value| value.parse::<u32>().ok());
     std::env::remove_var(RECOVERY_PARENT_PID_ENV);
+    std::env::remove_var("DBX_STARTUP_COMPAT_PARENT_PID");
     let Some(parent_pid) = parent_pid.filter(|pid| *pid != 0) else {
         return "parent_pid_unavailable";
     };
@@ -456,8 +469,9 @@ pub(crate) fn mark_frontend_ready() {
             result.unwrap_or_else(|error| format!("enterprise compatibility marker failed: {error}")),
         );
         std::env::remove_var(RECOVERY_ATTEMPT_ENV);
+        std::env::remove_var("DBX_STARTUP_COMPAT_RECOVERY");
     } else if keep_requested {
-        record("frontend ready; startup log retained by DBX_KEEP_STARTUP_LOG=1");
+        record("frontend ready; startup log retained by OGDEVELOPER_KEEP_STARTUP_LOG=1");
         persist_buffer();
         deactivate_probe();
     } else if let Some(path) = startup_log_path() {
@@ -490,14 +504,14 @@ fn confirm_keep_compatibility_mode() -> bool {
     let locale = sys_locale::get_locale().unwrap_or_default().to_ascii_lowercase();
     let body = if locale.starts_with("zh") {
         format!(
-            "DBX 已通过企业环境兼容模式恢复主界面。\n\n该模式会为 WebView2 使用独立数据目录并关闭沙箱，仅建议在标准模式无法显示窗口时保留。\n\n是否让当前 DBX 版本后续启动直接使用兼容模式？\n选择“否”后，下次启动会重新尝试标准模式。\n\n本次恢复日志：{log_path}"
+            "OG Developer 已通过企业环境兼容模式恢复主界面。\n\n该模式会为 WebView2 使用独立数据目录并关闭沙箱，仅建议在标准模式无法显示窗口时保留。\n\n是否让当前 OG Developer 版本后续启动直接使用兼容模式？\n选择“否”后，下次启动会重新尝试标准模式。\n\n本次恢复日志：{log_path}"
         )
     } else {
         format!(
-            "DBX restored the main window using enterprise environment compatibility mode.\n\nThis mode uses an isolated WebView2 data directory and disables the sandbox. Keep it only when the standard mode cannot display the window.\n\nUse compatibility mode directly for future launches of this DBX version?\nChoose No to retry standard mode on the next launch.\n\nRecovery log: {log_path}"
+            "OG Developer restored the main window using enterprise environment compatibility mode.\n\nThis mode uses an isolated WebView2 data directory and disables the sandbox. Keep it only when the standard mode cannot display the window.\n\nUse compatibility mode directly for future launches of this OG Developer version?\nChoose No to retry standard mode on the next launch.\n\nRecovery log: {log_path}"
         )
     };
-    let title = "DBX".encode_utf16().chain(std::iter::once(0)).collect::<Vec<_>>();
+    let title = "OG Developer".encode_utf16().chain(std::iter::once(0)).collect::<Vec<_>>();
     let body = body.encode_utf16().chain(std::iter::once(0)).collect::<Vec<_>>();
     unsafe {
         MessageBoxW(
@@ -520,13 +534,13 @@ fn show_recovery_failure_message() {
         startup_log_path().map(|path| path.display().to_string()).unwrap_or_else(|| "startup.log".to_string());
     let locale = sys_locale::get_locale().unwrap_or_default().to_ascii_lowercase();
     let body = if locale.starts_with("zh") {
-        format!("DBX 已尝试企业环境兼容模式，但主窗口仍未创建。\n\n请将此日志发给维护者：{log_path}")
+        format!("OG Developer 已尝试企业环境兼容模式，但主窗口仍未创建。\n\n请将此日志发给维护者：{log_path}")
     } else {
         format!(
-            "DBX tried enterprise environment compatibility mode, but the main window was still not created.\n\nPlease send this log to the maintainer: {log_path}"
+            "OG Developer tried enterprise environment compatibility mode, but the main window was still not created.\n\nPlease send this log to the maintainer: {log_path}"
         )
     };
-    windows_ok_message("DBX", &body);
+    windows_ok_message("OG Developer", &body);
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -546,7 +560,7 @@ mod tests {
     fn startup_log_uses_windows_appdata() {
         assert_eq!(
             startup_log_dir_from_inputs("windows", None, Some(OsString::from(r"C:\Users\test\AppData\Roaming")),),
-            Some(PathBuf::from(r"C:\Users\test\AppData\Roaming").join("com.dbx.app"))
+            Some(PathBuf::from(r"C:\Users\test\AppData\Roaming").join("com.ogdeveloper.app"))
         );
     }
 
@@ -568,7 +582,7 @@ mod tests {
             compatibility_marker_path_from_appdata(Some(OsString::from(r"C:\Users\test\AppData\Roaming"))),
             Some(
                 PathBuf::from(r"C:\Users\test\AppData\Roaming")
-                    .join("com.dbx.app")
+                    .join("com.ogdeveloper.app")
                     .join("webview2-enterprise-compat.enabled")
             )
         );
@@ -580,7 +594,7 @@ mod tests {
             (
                 Some(
                     PathBuf::from(r"C:\Users\test\AppData\Local")
-                        .join("com.dbx.app")
+                        .join("com.ogdeveloper.app")
                         .join("webview2-enterprise-compat")
                 ),
                 "local_appdata",
@@ -626,7 +640,7 @@ mod tests {
 
     #[test]
     fn recovery_child_receives_parent_handoff_without_disabling_single_instance() {
-        let mut command = std::process::Command::new("dbx-test");
+        let mut command = std::process::Command::new("ogdeveloper-test");
         configure_recovery_child(&mut command, 4242);
         let envs = command.get_envs().collect::<Vec<_>>();
         assert!(envs

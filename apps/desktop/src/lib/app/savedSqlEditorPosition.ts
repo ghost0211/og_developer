@@ -1,7 +1,7 @@
 import * as api from "@/lib/backend/api";
 import { safeLocalStorageGet, safeLocalStorageRemove } from "@/lib/backend/safeStorage";
 
-export const SAVED_SQL_EDITOR_POSITIONS_STORAGE_KEY = "dbx-saved-sql-editor-positions";
+export const SAVED_SQL_EDITOR_POSITIONS_STORAGE_KEY = "ogdeveloper-saved-sql-editor-positions";
 
 const MAX_SAVED_SQL_EDITOR_POSITIONS = 200;
 const ANCHOR_CONTEXT_CHARS = 80;

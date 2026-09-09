@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
-use dbx_core::connection::AppState;
+use ogdeveloper_core::connection::AppState;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
@@ -54,7 +54,7 @@ pub async fn load_tab_runtime_cache(
 #[tauri::command]
 pub async fn list_tab_runtime_cache_metadata(
     state: State<'_, Arc<AppState>>,
-) -> Result<Vec<dbx_core::storage::TabRuntimeCacheMetadata>, String> {
+) -> Result<Vec<ogdeveloper_core::storage::TabRuntimeCacheMetadata>, String> {
     state.storage.list_tab_runtime_cache_metadata().await
 }
 
@@ -71,7 +71,7 @@ pub struct PruneTabRuntimeCacheRequest {
 pub async fn prune_tab_runtime_cache(
     state: State<'_, Arc<AppState>>,
     request: PruneTabRuntimeCacheRequest,
-) -> Result<dbx_core::storage::TabRuntimeCachePruneResult, String> {
+) -> Result<ogdeveloper_core::storage::TabRuntimeCachePruneResult, String> {
     state
         .storage
         .prune_tab_runtime_cache(request.live_keys, request.max_bytes, request.orphan_grace_ms, request.max_age_ms)

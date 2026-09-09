@@ -586,7 +586,7 @@ export const useQueryStore = defineStore("query", () => {
   const MAX_CACHED_RESULT_BYTES = 128 * 1024 * 1024;
 
   function queryExecutionLog(level: "debug" | "info" | "warn" | "error", event: string, details: Record<string, unknown>) {
-    appendDebugLog(level, `[DBX][executeTabSql:${event}]`, details);
+    appendDebugLog(level, `[ogdeveloper][executeTabSql:${event}]`, details);
   }
 
   async function closeResultSession(tab: QueryTab | undefined, preserveSessionId?: string, throwOnError = false) {
@@ -599,7 +599,7 @@ export const useQueryStore = defineStore("query", () => {
       if (catalog) await api.closeQuerySession(tab.connectionId, executionDatabase, sessionId, tab.id, catalog);
       else await api.closeQuerySession(tab.connectionId, executionDatabase, sessionId, tab.id);
     } catch (error) {
-      console.warn("[DBX][query-session:close:error]", { tabId: tab.id, sessionId, error });
+      console.warn("[ogdeveloper][query-session:close:error]", { tabId: tab.id, sessionId, error });
       if (throwOnError) throw error;
     } finally {
       if (tab.resultSessionId === sessionId) tab.resultSessionId = undefined;
@@ -616,7 +616,7 @@ export const useQueryStore = defineStore("query", () => {
       if (catalog) await api.closeClientConnectionSession(connectionId, database, clientSessionId, catalog);
       else await api.closeClientConnectionSession(connectionId, database, clientSessionId);
     } catch (error) {
-      console.warn("[DBX][client-session:close:error]", { ...logContext, clientSessionId, error });
+      console.warn("[ogdeveloper][client-session:close:error]", { ...logContext, clientSessionId, error });
       if (throwOnError) throw error;
     }
   }
@@ -1064,7 +1064,7 @@ export const useQueryStore = defineStore("query", () => {
   function scheduleResultCacheMaintenance() {
     const maintain = () => {
       const liveKeys = tabs.value.flatMap((tab) => [tab.resultCacheKey, ...(tab.resultRuns?.map((run) => run.resultCacheKey) ?? [])]).filter((key): key is string => !!key);
-      void pruneTabResultSnapshots(liveKeys).catch((error) => console.warn("[DBX][result-cache:maintenance:error]", error));
+      void pruneTabResultSnapshots(liveKeys).catch((error) => console.warn("[ogdeveloper][result-cache:maintenance:error]", error));
     };
     if (typeof requestIdleCallback !== "undefined") requestIdleCallback(maintain, { timeout: 5000 });
     else if (typeof window !== "undefined") window.setTimeout(maintain, 0);
@@ -2351,7 +2351,7 @@ export const useQueryStore = defineStore("query", () => {
       const existing = savedSqlStore.getFile(tab.savedSqlId);
       if (existing && existing.name !== normalizedTitle) {
         void savedSqlStore.renameFile(tab.savedSqlId, normalizedTitle).catch((error) => {
-          console.warn("[DBX][saved-sql:rename:error]", error);
+          console.warn("[ogdeveloper][saved-sql:rename:error]", error);
           tab.title = previousTitle;
         });
       }
@@ -2486,7 +2486,7 @@ export const useQueryStore = defineStore("query", () => {
         database: tab.database,
         schema: tab.schema,
       })
-      .catch((error) => console.warn("[DBX][saved-sql:target:error]", error));
+      .catch((error) => console.warn("[ogdeveloper][saved-sql:target:error]", error));
   }
 
   function updateDatabase(id: string, database: string, options: UpdateExecutionTargetOptions = {}) {
@@ -3042,7 +3042,7 @@ export const useQueryStore = defineStore("query", () => {
         tableMeta: target.tableMeta,
       };
     } catch (err) {
-      console.error("[DBX] ERROR fetching columns for query metadata:", err);
+      console.error("[ogdeveloper] ERROR fetching columns for query metadata:", err);
       return {
         queryAnalysis: undefined,
         querySourceColumns: undefined,

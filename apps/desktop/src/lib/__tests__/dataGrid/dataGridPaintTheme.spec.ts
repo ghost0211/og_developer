@@ -120,14 +120,14 @@ describe("data grid paint theme", () => {
   });
 });
 
-describe("dbx-control-chrome cascade contract", () => {
+describe("ogdeveloper-control-chrome cascade contract", () => {
   it("keeps chrome defaults layered and low-specificity so invalid/focus utilities can win", () => {
     const css = readFileSync(new URL("../../../styles/globals.css", import.meta.url), "utf8");
     const chromeBlockStart = css.indexOf("Shared control chrome defaults");
     expect(chromeBlockStart).toBeGreaterThanOrEqual(0);
     const chromeSlice = css.slice(chromeBlockStart - 40, chromeBlockStart + 1600);
     expect(chromeSlice).toMatch(/@layer components/);
-    expect(chromeSlice).toMatch(/:where\(\.dbx-control-chrome\)/);
+    expect(chromeSlice).toMatch(/:where\(\.ogdeveloper-control-chrome\)/);
     expect(chromeSlice).toMatch(/\[aria-invalid="true"\]/);
     expect(chromeSlice).not.toMatch(/box-shadow:\s*none/);
   });

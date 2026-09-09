@@ -127,7 +127,7 @@ import { normalizeConnectionTestResult } from "@/lib/connection/connectionDataba
 // Helpers
 // ---------------------------------------------------------------------------
 
-const DESKTOP_SETTINGS_STORAGE_KEY = "dbx-desktop-settings";
+const DESKTOP_SETTINGS_STORAGE_KEY = "ogdeveloper-desktop-settings";
 const DEFAULT_DESKTOP_SETTINGS: DesktopSettings = {
   show_tray_icon: true,
   quit_on_close: false,
