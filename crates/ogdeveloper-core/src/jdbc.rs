@@ -558,6 +558,16 @@ fn jdbc_maven_resolver_executable(plugin_dir: &Path) -> PathBuf {
     }
 }
 
+// Cached upstream packages continue to use the legacy launcher names.
+fn preferred_maven_launcher(plugin_dir: &Path, current: &str, legacy: &str) -> PathBuf {
+    let current = plugin_dir.join("bin").join(current);
+    if current.exists() {
+        current
+    } else {
+        plugin_dir.join("bin").join(legacy)
+    }
+}
+
 async fn jdbc_plugin_status_from_dir(plugin_dir: &Path) -> Result<JdbcPluginStatus, String> {
     let manifest_path = plugin_dir.join("manifest.json");
     let manifest = match std::fs::read_to_string(&manifest_path) {
@@ -1320,15 +1330,5 @@ mod tests {
         assert_eq!(drivers[0].name, "env-driver.jar");
 
         let _ = std::fs::remove_dir_all(root);
-    }
-}
-
-// Cached upstream packages continue to use the legacy launcher names.
-fn preferred_maven_launcher(plugin_dir: &Path, current: &str, legacy: &str) -> PathBuf {
-    let current = plugin_dir.join("bin").join(current);
-    if current.exists() {
-        current
-    } else {
-        plugin_dir.join("bin").join(legacy)
     }
 }

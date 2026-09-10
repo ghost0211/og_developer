@@ -7,7 +7,7 @@ const editorToolbarSource = readFileSync(new URL("../../../components/layout/Edi
 
 describe("SearchableSelect layout", () => {
   it("keeps slotted option labels inside a shrinkable overflow boundary", () => {
-    const labelBoundaries = searchableSelectSource.match(/dbx-searchable-select-option-label min-w-0 flex-1 overflow-hidden/g) ?? [];
+    const labelBoundaries = searchableSelectSource.match(/ogdeveloper-searchable-select-option-label min-w-0 flex-1 overflow-hidden/g) ?? [];
 
     expect(labelBoundaries).toHaveLength(3);
   });
