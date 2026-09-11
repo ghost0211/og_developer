@@ -104,14 +104,16 @@ impl ExecuteMultiResult {
     }
 
     pub fn execution_error(result: db::QueryResult) -> Self {
-        let err_msg = result.columns.first().cloned().unwrap_or_default();
-        let backend_error = crate::backend_error::BackendError::from_legacy_backend(&err_msg);
+        let err_msg =
+            result.rows.first().and_then(|row| row.first()).and_then(serde_json::Value::as_str).unwrap_or_default();
+        let backend_error = crate::backend_error::BackendError::from_legacy_backend(err_msg);
         Self { result, execution_error: true, statement_index: None, error: Some(backend_error), server_message: false }
     }
 
     pub fn execution_error_with_index(result: db::QueryResult, statement_index: usize) -> Self {
-        let err_msg = result.columns.first().cloned().unwrap_or_default();
-        let backend_error = crate::backend_error::BackendError::from_legacy_backend(&err_msg);
+        let err_msg =
+            result.rows.first().and_then(|row| row.first()).and_then(serde_json::Value::as_str).unwrap_or_default();
+        let backend_error = crate::backend_error::BackendError::from_legacy_backend(err_msg);
         Self {
             result,
             execution_error: true,
@@ -200,9 +202,11 @@ fn empty_query_result(execution_time_ms: u128) -> db::QueryResult {
 }
 
 fn error_query_result(message: String) -> db::QueryResult {
-    let mut res = empty_query_result(0);
-    res.columns = vec![message];
-    res
+    db::QueryResult {
+        columns: vec!["Error".to_string()],
+        rows: vec![vec![serde_json::Value::String(message)]],
+        ..Default::default()
+    }
 }
 
 pub async fn check_read_only_for_connection(state: &AppState, pool_key: &str, sql: &str) -> Result<(), String> {
@@ -1551,6 +1555,41 @@ pub async fn rollback_manual_transaction(state: &AppState, txn_session_id: &str)
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn execution_error_results_preserve_message_in_rows_and_diagnostics() {
+        let message = "ERROR: relation \"dual\" does not exist on dn_6001 Position: 15";
+        for result in [
+            ExecuteMultiResult::execution_error(error_query_result(message.to_string())),
+            ExecuteMultiResult::execution_error_with_index(error_query_result(message.to_string()), 2),
+        ] {
+            let payload = serde_json::to_value(&result).unwrap();
+            assert_eq!(payload["execution_error"], true);
+            assert_eq!(payload["columns"], serde_json::json!(["Error"]));
+            assert_eq!(payload["rows"], serde_json::json!([[message]]));
+            assert_eq!(
+                payload["error"],
+                serde_json::to_value(crate::backend_error::BackendError::from_legacy_backend(message)).unwrap()
+            );
+            assert_eq!(payload["statement_index"], serde_json::json!(result.statement_index));
+        }
+    }
+
+    #[test]
+    fn successful_error_column_is_not_an_execution_error() {
+        let result = ExecuteMultiResult::success_with_index(
+            db::QueryResult {
+                columns: vec!["Error".to_string()],
+                rows: vec![vec![serde_json::json!("ordinary data")]],
+                ..Default::default()
+            },
+            0,
+        );
+        let payload = serde_json::to_value(result).unwrap();
+        assert!(payload.get("execution_error").is_none());
+        assert!(payload.get("error").is_none());
+        assert_eq!(payload["rows"], serde_json::json!([["ordinary data"]]));
+    }
 
     #[test]
     fn test_is_write_sql_basic() {
