@@ -1,6 +1,6 @@
 [package]
 name = "ogdeveloper"
-version = "0.2.8"
+version = "0.2.9"
 description = "Open-source database management tool"
 authors = ["skyler"]
 license = "Apache-2.0"
