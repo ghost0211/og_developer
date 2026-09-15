@@ -1,0 +1,625 @@
+# OG Developer — 未提交改动与问题修复记录
+
+> **2026-09-15 更新：G、H 已修复并通过 B/A/PG 双驱动真机回归；新增部署脚本注释/拆分修复。最新结论见第 6 节。**
+> 原始记录写于 2026-09-11。基线提交 `72ada3873 chore(release): bump desktop version to 0.2.9`。
+> **工作区所有改动均未提交**（无新增 commit、无新分支）。本文档列出：改了什么、为什么、
+> 怎么验证、以及还没修的三个真问题的完整证据与修法。
+
+---
+
+## 0. 速览
+
+| # | 主题 | 状态 | 风险 |
+|---|---|---|---|
+| A | shiki 语法包按需加载（安装包 -8MB） | 已改，已验证 | 低 |
+| B | i18n key 对齐测试 + 3 个漏译补全 | 已改，已验证 | 低 |
+| C | 工程残留清理 | 已改 | 低 |
+| D | Schema Diff 部署结果契约（`status` 字段） | 已改，**真机验证通过** | 低 |
+| E | 失败的部署污染连接池 | 已改，**真机验证通过**（含反证） | 低 |
+| F | 部署错误信息被吞成 `"db error"` | 已改，**真机验证通过** | 低 |
+| **G** | **JDBC 路径调用的 `executeTransaction` 在插件里不存在** | **已修，0.1.29 真机通过** | 低 |
+| **H** | **B/M 兼容模式 DDL 引号用错（生成 `"` 应为反引号）** | **已修，B/A/PG 真机通过；M 离线验证** | 低 |
+| I | 深链可绕过 openGauss 白名单 | 未修（已知，暂不处理） | 低 |
+| J | `two_phase_commit.rs` 是死代码 | 未处理 | 低 |
+
+**H → G 已完成；下方第 1–5 节保留原始记录，最新验证及剩余范围见第 6 节。**
+
+---
+
+## 1. 环境信息（复现真机测试需要）
+
+本机存在一个已配置好的桌面端数据目录，可直接用于真机测试：
+
+```
+数据目录   : %APPDATA%\com.ogdeveloper.app
+连接库     : 该目录下 dbx.db（注意：文件名仍是 dbx.db，见 NAMING_MIGRATION.md）
+连接       : tygl_biz@192.168.10.158:15400   db_type=opengauss   driver_profile=opengauss-jdbc
+服务端     : openGauss 6.0.0（非 lite）
+JDBC 插件  : %APPDATA%\com.ogdeveloper.app\plugins\jdbc
+             ├─ lib/dbx-jdbc-plugin.jar                    （已安装，版本 0.1.28，app.dbx.jdbc.DbxJdbcPlugin）
+             ├─ drivers/opengauss-jdbc-7.0.0-RC3-og.jar
+             └─ bin/dbx-jdbc-plugin[.bat]
+Java       : Temurin 21.0.11（JAVA_HOME 已设置）
+Docker     : 本机**没有** docker 命令
+```
+
+服务器上可见的库：`test_a`、`test_b`、`test_pg`、`erow`、`erow_b`、`erow_boip_a`、`tygl`、`sgzb` 等。
+
+- `test_b` → `sql_compatibility = B`（MySQL 兼容模式）
+- `test_a` / `test_pg` → A / PG 模式
+
+> ⚠️ `plugins/jdbc/src/**/*.java` 在工作区是**亿赛通（E-SafeNet）透明加密**的，`Get-Content` /
+> `read` 工具读到的是密文。但 `.git` 对象库里是明文，用 `git show HEAD:plugins/jdbc/src/main/java/app/ogdeveloper/jdbc/OgdeveloperJdbcPlugin.java`
+> 可以拿到可读源码。**读源码务必用这个方法。**
+
+### 真机测试命令
+
+```powershell
+$env:DBX_TEST_OPENGAUSS_DATA_DIR = "$env:APPDATA\com.ogdeveloper.app"
+$env:DBX_TEST_OPENGAUSS_DATABASE = "test_b"
+
+cargo test -p ogdeveloper-core --no-default-features `
+  --test live_opengauss_schema_diff_deploy -- --ignored --nocapture
+```
+
+测试文件会先把 `dbx.db` **复制到临时目录**再打开（`Storage::open` 会跑 schema migration，
+不能碰用户的真实 profile），插件目录仍指向真实数据目录。测试只创建/删除自己命名的 schema。
+
+---
+
+## 2. 已完成的改动
+
+### A. shiki 语法包按需加载 —— 安装包体积 22.1MB → 14.1MB
+
+**根因**：`SqlPreviewPanel.vue` 从 `shiki` **根入口**导入，根入口是 `bundle-full`，会把全部
+250 种语言语法都产出 chunk。实测 dist 里躺着 250 个语法 chunk，合计 **7,384 KB**。
+
+| 文件 | 改动 |
+|---|---|
+| `apps/desktop/src/components/editor/SqlPreviewPanel.vue` | `import("shiki")` → `shiki/core` + `langs/sql.mjs` + 两个主题（`dark-plus`/`min-light`）。已校验主题名与 `codeToHtml` 传参一致 |
+| `apps/desktop/src/lib/ai/aiCodeHighlighter.ts` | 拆成 **eager**（`bash/json/shellscript/sql/xml/yaml`，约 84KB，随高亮器加载）与 **deferred**（`css/go/html/java/javascript/markdown/php/python/rust/tsx/typescript/vue`，首次用到才拉）。新增 `onLanguageLoaded` 回调 |
+| `apps/desktop/src/components/editor/AiAssistant.vue` | 新增 `shikiGrammarVersion` ref 接 `onLanguageLoaded`，语法到位后重建 renderer 重渲染；语法未到时返回转义纯文本（与 `aiMessageRender` 的兜底字节一致，无视觉跳变） |
+| `apps/desktop/src/lib/__tests__/ai/aiCodeHighlighter.spec.ts` | 新增 6 项：eager 即时高亮、别名识别、无语法转义、延迟语法"先纯文本后高亮"、主题映射、未知语言 |
+
+**验证**：`dist/assets` 18.17MB → **10.24MB**；整个 `dist` 22.10MB → **14.13MB**。
+
+### B. i18n key 对齐测试
+
+**关键发现**：`zh-CN.ts` 是 `withEnglishFallback({...})` 包起来的。直接扁平化比对得到
+7090 = 7090 **零差异**——因为 fallback 已经把英文合并进来了，缺口被掩盖。必须比 **fallback
+之前的原始 override**。
+
+| 文件 | 改动 |
+|---|---|
+| `apps/desktop/src/i18n/locales/zh-CN.ts` | 抽取并额外 `export const zhCNMessages`（原始对象，不含 fallback）；补 3 个一直静默显示英文的 key：`userAdmin.addHost`、`diff.addHost`、`mqBroker.addHost` |
+| `packages/app-tests/localeKeyParity.test.ts` | 新增 4 项断言：无漏译、无孤儿 key、值类型一致、无空串 |
+
+**验证**：临时给 `en.ts` 注入 `app.__parityProbe` → 测试精确报出该 key，随后 `git checkout` 还原。
+
+> 注：`mqBroker.*` 整个 namespace 在代码里**零引用**（只有 locale 文件里有），属于孤儿数据。
+> 详见第 4 节 J。
+
+### C. 工程残留清理
+
+| 动作 | 对象 | 依据 |
+|---|---|---|
+| 删除 | `.cleanup-worktree/` | 不是注册的 worktree（`git worktree list` 只有主工作区），内部只有失效的 node_modules 符号链接 |
+| 删除 | `packages/cli/`、`packages/mcp-server/`、`packages/mongo-shell/` | tracked 文件数均为 0，只剩 node_modules/断链；全仓库无引用 |
+| 删除 | `scripts/dev-full.cmd` | 与 `dev-full.bat` MD5 完全相同，只有 `.bat` 被 `package.json` 引用 |
+| 删除 | `handoff.md` | 内容是上游 dbx 的 AI 交接稿（`name: dbx`、`root: D:\...\rust\dbx`），引用的 `需求问题/` 目录本仓库不存在 |
+| `.gitignore` | `DBX_*_x64-portable.zip` → `ogdeveloper_*-portable.zip` | 实际产物名由 `update_portable.rs:63` 生成，旧模式永远匹配不到 |
+| `.gitignore` | 新增 `需求问题/`、`handoff.md` | 与已有的 `需求文档/` 同类；防止以后的交接稿再被提交 |
+
+`handoff.md` 与 `dev-full.cmd` 删除前备份到了 `tmp/cleanup-backup/`（`tmp/` 已 gitignore，仅本地）；
+也能从 `git log -- handoff.md` 取回。
+
+### D. Schema Diff 部署结果契约 —— 前端把成功显示成失败
+
+**症状**：部署**成功**时，结果弹窗显示红色"部署失败 / `diff.deployFailed {status:"unknown"}`"。
+
+**根因**：后端重构过（`handoff.md` 提到的 "Replaced fake per-statement 2PC deploy path with
+`execute_schema_diff_deploy`"），但前端适配函数没跟着改：
+
+- 后端 `SchemaDiffDeployResult` 产出 `{success, executedStatements, totalStatements, error, transactional}`，**没有 `status` 字段**
+- 前端 `buildDeployTxResult` 只认 `txLog.status`，于是永远走 fallback 分支返回 `success: false`
+- `tauri.ts:1031` 把返回类型声明成 `Promise<TransactionLog>`（旧的 2PC 形状），TypeScript 抓不到漂移
+- 旧测试喂的是手写的 `TransactionLog` 假数据，所以测试一路绿着
+
+| 文件 | 改动 |
+|---|---|
+| `crates/ogdeveloper-core/src/query.rs:1116` | 新增 `SchemaDiffDeployStatus { Committed, RolledBack }`（serde `snake_case` → `"committed"`/`"rolled_back"`），`SchemaDiffDeployResult` 增加 `status` 字段并填充 |
+| `apps/desktop/src/types/database.ts` | 删除谎言类型 `TransactionLog`/`ParticipantInfo`；新增 `SchemaDiffDeployStatus` / `SchemaDiffDeployResult`（注释标明 `"mixed"` 是预留值） |
+| `apps/desktop/src/lib/schema/deployTxResult.ts` | 改为读取后端真实字段；不再从 `success` 反推状态 |
+| `apps/desktop/src/lib/backend/tauri.ts:1031`、`http.ts:979` | 返回类型 `TransactionLog`/`any` → `SchemaDiffDeployResult` |
+| `apps/desktop/src/components/diff/SchemaDiffDialog.vue` | `deployResult` ref 改用 `DeployTxResult`；`showDeployTxResult` 参数去掉 `any` |
+| `apps/desktop/src/lib/schema/__tests__/deployTxResult.spec.ts` | **重写**：改用真实后端报文（这是关键，旧测试的形状后端从不产出） |
+| `crates/ogdeveloper-core/src/query.rs`（tests mod） | 新增序列化形状测试，钉死 `status`/`executedStatements`/`totalStatements` 字段名 |
+
+### E. 失败的部署污染连接池
+
+**根因**：`execute_transaction_on_pool_once` 的 Postgres 分支在语句失败时用 `?` 提前返回，
+**从不 ROLLBACK**。deadpool 用 `RecyclingMethod::Fast`（`postgres.rs:1665`），而 Fast 回收
+只检查 `is_closed()`、**一个清理查询都不发**（已核对 deadpool-postgres 0.14.1 源码
+`lib.rs:157 recycle()`：`Some(sql) => simple_query`，Fast 走 `None => Ok(())`）。
+
+结果：aborted 状态的事务被原样还给池子，下一个 checkout 到它的查询撞 `SQLSTATE 25P02
+current transaction is aborted`——一个和部署无关的查询报出莫名其妙的错。
+
+**改动**：`query.rs:1339` 抽出 `run_statements_in_open_transaction()`（SET LOCAL / 语句循环 /
+COMMIT），失败时在 `query.rs:1299` 显式 `conn.batch_execute("ROLLBACK")`（用 simple query 协议，
+aborted 事务里无条件接受）。
+
+**反证**（把 ROLLBACK 改成空操作后重跑）：
+
+```
+[native] connection unusable after a failed deploy: Some("db error")
+test result: FAILED
+```
+
+恢复修复后立即通过。**这就是这个修复有效的证据。**
+
+### F. 部署错误信息被吞成 `"db error"`
+
+`tokio_postgres::Error` 的 `Display` 对数据库错误只印 `"db error"`，真正消息只在 `Debug` 里。
+事务路径用裸 `e.to_string()`，用户看到的失败原因就是字面上的 "db error"。
+
+`crates/ogdeveloper-core/src/db/postgres.rs:921` 把已有的 `pg_error_to_string`（会取
+`as_db_error()` + SQLSTATE + `LINE n` 上下文）从 private 提为 `pub(crate)`，`query.rs:1294/1304`
+改用它（BEGIN 失败与语句失败两处）。
+
+### 真机验证结果（test_b，B 模式）
+
+```
+[native] committed  deploy: {"success":true, "status":"committed",   "executedStatements":1,"totalStatements":1,"error":null,"transactional":true}
+[native] rolled back deploy: {"success":false,"status":"rolled_back","executedStatements":0,"totalStatements":3,
+                              "error":"ERROR: syntax error at or near \"CREAT\"","transactional":true}
+test result: ok.
+```
+
+断言覆盖：状态正确、失败后**无残留对象**（第 1 条 CREATE SCHEMA 成功、第 3 条失败 → schema 不存在）、
+失败后**连接仍可用**、错误信息保留 SQL 原文。
+
+---
+
+## 3. 问题的原始证据与修法（G/H 已在第 6 节完成）
+
+### 🔴 G. JDBC 部署 100% 失败：`executeTransaction` 方法不存在
+
+**证据**（真机，test_b，JDBC 连接）：
+
+```
+[jdbc] committed deploy: {"success":false,"status":"rolled_back","executedStatements":0,
+                          "totalStatements":1,"error":"Unsupported JDBC plugin method: executeTransaction"}
+```
+
+**根因**：`crates/ogdeveloper-core/src/query.rs:1287` 附近的 `PoolKind::ExternalDriver` 分支在调
+`session.invoke("executeTransaction", ...)`。而插件的方法分发表里没有这个方法。用 git 明文源码核对：
+
+```powershell
+# 工作区文件是加密的，必须走 git 对象库
+git show HEAD:plugins/jdbc/src/main/java/app/ogdeveloper/jdbc/OgdeveloperJdbcPlugin.java > /tmp/Plugin.java
+```
+
+分发表（约 335-401 行）只有：
+
+```
+testConnection / connect / connectionInfo / executeQuery / executeQueryPage /
+fetchQueryPage / closeQuerySession / listDatabases / listSchemas / listTables /
+listObjects / listDataTypes / getObjectSource / getColumns / getExplainInfo
+```
+
+并且 `git log --all -S 'executeTransaction' -- plugins` **全分支全历史零命中** → 不是回归，
+是从来没实现过。已安装的 `dbx-jdbc-plugin.jar` 与仓库新构建的
+`plugins/jdbc/build/libs/ogdeveloper-jdbc-plugin-all.jar` 我都反编译查过 class 里的方法名，
+两者都没有。
+
+**影响**：openGauss 的默认连接方式是 JDBC（`OPENGAUSS_ROADMAP.md`：「JDBC 内嵌：默认走官方
+`org.opengauss.Driver`」），所以**用默认配置的用户，Schema Diff 部署从未成功过一次**。
+
+**修法（推荐 a）**：
+
+- **(a) 在 Java 插件里实现 `executeTransaction`** —— 符合设计意图。插件本来就有
+  `sharedConnection` 缓存（`openConnection()` 起点在 628 行，`sharedConnection = DriverManager.getConnection(...)` 在 662 行），所以正确实现是：这一个调用内
+  `setAutoCommit(false)` → 按顺序执行 statements → `commit()`；任一步失败 → `rollback()` →
+  返回错误。返回结构要与 `db::QueryResult` 反序列化兼容。
+  代价：改加密的 Java 源码 → `./gradlew shadowJar`（本机能构建，`build/libs` 里有 9/9 的产物）
+  → 重新打包插件（`package.sh`）→ 更新 `plugins/jdbc/manifest.json` 版本号 +
+  `src-tauri/resources/jdbc-plugin.zip`（9.1MB）→ 装回数据目录才能真机验证。
+  **注意**：工作区 Java 文件是透明加密的，写回后要确认 `git diff` 拿到的是明文改动。
+
+- **(b) 在 Rust 侧用 `executeQuery` 手搓 BEGIN/COMMIT** —— 不用碰 Java，但插件所有 invoke
+  **共用同一个物理连接**（`openConnection` 返回同一个 `sharedConnection`），一旦开事务，并发的
+  元数据查询会被卷进这个事务里。这是设计上要避免的，**不建议**。
+
+修好后 `live_schema_diff_deploy_reports_status_and_rolls_back_over_jdbc` 会自动从 FAILED 变
+通过（它的 `#[ignore]` 原因已写明这是已知缺口）。
+
+### 🔴 H. B/M 兼容模式的 DDL 引号用错
+
+**证据链**：
+
+1. 应用自己知道规则（`crates/ogdeveloper-core/src/db/postgres.rs:137`）：
+
+```rust
+"B" | "M" | "MYSQL" => Some("`"),      // 反引号
+"A" | "PG" | "ORA"  => Some("\""),     // 双引号
+```
+
+2. 真机实测（test_b，`sql_compatibility = B`）：
+
+```
+compatibility mode = B
+double-quoted -> FAIL 42601 syntax error at or near ""zz_dq_double""
+backtick      -> OK
+plain         -> OK
+dq table      -> FAIL 42601 syntax error at or near ""zz_dq_double""
+bt table      -> OK
+app identifier_quote = "`"            ← 探测本身是对的
+```
+
+3. 但 DDL 生成**完全不看这个**。用应用自己的生成器（`prepare_schema_diff` +
+`generate_schema_sync_sql`，target = `DatabaseType::OpenGauss`）输出的真实脚本：
+
+```sql
+-- Create table: new_table
+CREATE TABLE "new_table" (
+  "id" integer NOT NULL
+);
+
+-- Alter table: orders
+ALTER TABLE "orders"  ADD COLUMN "total" numeric(10,2) NOT NULL;
+ALTER TABLE "orders"  ADD COLUMN "note" varchar(80) NOT NULL;
+```
+
+**这些语句在 test_b 上全部会报 42601。**
+
+**根因**：`profile_for(DatabaseType::OpenGauss)` → `postgres_family()`
+（`crates/ogdeveloper-core/src/sql_dialect/ddl_profile.rs:207`）里
+`quote: QuoteStyle::DoubleQuote` 是**硬编码**的，签名只吃 `DatabaseType`，拿不到兼容模式。
+`schema_diff.rs:2795 quote_id()` 又把它用在所有标识符上。
+
+**修法**：把兼容模式接进 DDL profile。结构上本来就打算这么做——`ddl_profile.rs` 文件头自己写着
+"generators must only consult profile fields (quote style, auto-increment form, type map, …)"，
+而 `profile_for` 的文档注释写着 "the **only** place that maps `DatabaseType` → profile data"。
+
+具体：新增 `profile_for_connection(db_type, sql_compatibility: Option<&str>)`，B/M 时把
+`quote` 覆盖为 `QuoteStyle::Backtick`；然后把 `schema_diff.rs` 里的 `db_type: DatabaseType`
+（**17 处参数声明**）替换为携带模式的 profile 或加上模式参数，覆盖 **约 35 处 `quote_id` 引用**
+（含 `schema_diff.rs:2795` 的定义；另有 `schema_diff.rs:2796`/`2965` 直接调 `profile.quote_ident`）。
+
+`SchemaDiffPreparationOptions` 已经有 `database_type` / `source_dialect` / `target_dialect`
+字段，需要确认兼容模式从哪条路传进来（前端 `ConnectionConfig.database_info.sqlCompatibility`
+有值；`crates/ogdeveloper-core/src/connection.rs:1367` 在读 `datcompatibility`）。
+
+**为什么必须修**：即使 G 修好了，**任何 B 模式或 M 模式库上的部署依然每条语句都失败**。
+用户的 `test_b` 就是 B 模式。
+
+**顺带修正一处文档**：`OPENGAUSS_ROADMAP.md:64` 写着
+「openGauss-lite 7.0.0-RC3 镜像连接 B 模式库会崩溃，无法真机验证 B」——
+那是**镜像**的问题，不是 B 模式的问题。本机这台 **6.0.0** 连 `test_b` 一切正常，
+`datcompatibility` 探测返回 `B`，`test_a`/`test_pg` 也都在。**B 模式一直可测，只是没人测过。**
+其余标着「手册」未验证的 B 模式条目（`CREATE EVENT`、B 模式下 `gs_package` 目录是否存在等）
+现在都可以补上真机验证了。
+
+### 🟡 I. 深链可绕过 openGauss 白名单（已知，暂不处理）
+
+`ENABLED_DATABASE_TYPES = {opengauss}`（`ConnectionDialog.vue:2680`）只过滤**连接类型选择器**。
+深链零校验。实测 `parseConnectionDeepLink` 输出：
+
+```
+ogdeveloper://connection/new                    -> dbType=mysql      profile=mysql      port=3306
+ogdeveloper://connection/new?type=redis         -> dbType=redis      profile=redis      port=6379
+ogdeveloper://connection/new?type=mongodb       -> dbType=mongodb    profile=mongodb    port=27017
+ogdeveloper://connection/new?url=mysql://root@10.0.0.5:3306/shop -> dbType=mysql  port=3306
+dbx://connection/new?type=sqlserver&host=win.internal            -> dbType=sqlserver port=1433
+```
+
+原因：`connectionDeepLink.ts:70` 的 `parseConnectionDeepLink` 零类型校验，`type` 直接查
+40 多个 URL scheme 的 `SCHEME_PROFILES`；`ConnectionDialog.vue:4420`
+`applyConnectionDraftToForm` 无条件接受 `selectedType = draft.driverProfile`；而且**默认值是
+mysql**：`connectionProfileForScheme(preferredProfile || "mysql")`。
+`dbx:` scheme 仍在 `tauri.conf.json` 注册。
+
+后果不严重（后端是 stub，会返回 `"Redis not supported"` 之类），用户已表示暂不处理。
+若要堵：在 `parseConnectionDeepLink` 里加白名单校验并返回 `null`，一处改动 + 单测即可。
+
+### 🟡 J. 其他残留
+
+- `crates/ogdeveloper-core/src/two_phase_commit.rs`（约 400 行）在 `lib.rs:76` 声明为
+  `pub mod`，但模块外**零引用**（`TransactionStatus`/`TransactionLog` 只在模块内部使用）。
+  前端对应的 `TransactionLog`/`ParticipantInfo` 类型本轮已删除。历史上有过
+  `2679bde6c refactor: remove dead two-phase-commit module`，但被后续的整块回滚
+  （`a9c00d06f`）带回来了。
+- i18n 里 `mqBroker.*` 整个 namespace 零代码引用（MQ 表单实际用 `connection.*`）；
+  `types/mq.ts` 的 `BrokerNode` 也没有对应组件。
+- `DatabaseUserAdmin.vue` 里 MySQL 风格分支不可达（provider 注册表只剩 postgres/opengauss）；
+  driver manifest 里 9 个 driver 声明 `userAdmin: true` 但无 provider。
+- `handoff.md` 里那批历史遗留的命名残留（`deploy/dbx_tunnel.php`、`skills/dbx/SKILL.md`、
+  `vendor/*/DBX-PATCH.md`、`dbx-er-diagram-architecture.html`）已在上一轮讨论中确认**保留不动**。
+
+---
+
+## 4. 验证状态
+
+### 本轮改动后的检查结果
+
+| 检查 | 命令 | 结果 |
+|---|---|---|
+| Rust 格式 | `cargo fmt -p ogdeveloper-core -- --check` | ✅ exit 0 |
+| Rust lint | `cargo clippy -p ogdeveloper-core --no-default-features --tests` | ✅ 无警告 |
+| Rust 单测 | `cargo test -p ogdeveloper-core --no-default-features --lib` | ✅ 1143 passed, 11 ignored |
+| 真机 native | 见第 1 节命令 | ✅ 2 passed（native + 报告） |
+| 真机 JDBC | 同上 | ❌ 1 failed —— **这是已知缺口 G，故意保留为绊线** |
+| 前端类型 | `npx vue-tsc --noEmit --project apps/desktop/tsconfig.json` | ✅ exit 0 |
+| 前端格式 | `npx oxfmt --check "apps/desktop/src/**/*.{ts,vue}"` | ✅ exit 0 |
+| 前端 lint | `npx oxlint --vue-plugin apps/desktop/src` | ✅ exit 0（改动文件零警告） |
+| 前端测试 | `npx vitest run` | ✅ 4999 passed / 605 files |
+| 前端构建 | `pnpm build` | ✅ |
+
+### ⚠️ 本机 5 个预存测试失败（与本轮改动无关）
+
+```
+packages/app-tests/diagramSvgToPng.test.ts
+packages/app-tests/saveDiagramExport.test.ts
+apps/desktop/src/__tests__/startupInputGuard.spec.ts
+apps/desktop/src/components/grid/__tests__/DataGridConditionEditor.spec.ts
+apps/desktop/src/components/ssh/__tests__/SshHostKeyPromptDialog.spec.ts
+```
+
+报错都是 `Error: No such built-in module: node:` —— 这 5 个文件都用
+`// @vitest-environment happy-dom` 同时 import `node:fs`/`node:path`/`node:assert`，是本地
+vitest/happy-dom 环境解析问题。**已用 `git stash` 在干净基线上复现同样的失败**，确认与本轮改动无关。
+
+### 建议的接手顺序
+
+1. **先修 H（B/M 引号）** —— 纯 Rust 改动，本机 `test_a`/`test_b`/`test_pg` 都在，可以直接真机
+   验证；而且 H 不修，G 修好也没用（B 模式库上照样每条语句失败）。
+2. **再修 G（JDBC `executeTransaction`）** —— 需要动加密的 Java 源码 + 重建/重打包/重装插件，
+   工作量和风险都大一档。修完 `live_..._over_jdbc` 会自动转绿。
+3. 顺带可以用现在可用的 B 模式实例，把 `OPENGAUSS_ROADMAP.md` 里那些标「手册」未验证的
+   B 模式条目补上真机结论（`CREATE EVENT`、`gs_package` 目录在 B 模式是否存在等）。
+
+---
+
+## 5. 改动文件清单（全部未提交）
+
+```
+修改:
+  .gitignore
+  apps/desktop/src/components/diff/SchemaDiffDialog.vue
+  apps/desktop/src/components/editor/AiAssistant.vue
+  apps/desktop/src/components/editor/SqlPreviewPanel.vue
+  apps/desktop/src/i18n/locales/zh-CN.ts
+  apps/desktop/src/lib/ai/aiCodeHighlighter.ts
+  apps/desktop/src/lib/backend/http.ts
+  apps/desktop/src/lib/backend/tauri.ts
+  apps/desktop/src/lib/schema/__tests__/deployTxResult.spec.ts
+  apps/desktop/src/lib/schema/deployTxResult.ts
+  apps/desktop/src/types/database.ts
+  crates/ogdeveloper-core/src/db/postgres.rs
+  crates/ogdeveloper-core/src/query.rs
+
+新增:
+  apps/desktop/src/lib/__tests__/ai/aiCodeHighlighter.spec.ts
+  crates/ogdeveloper-core/tests/live_opengauss_schema_diff_deploy.rs
+  packages/app-tests/localeKeyParity.test.ts
+
+删除:
+  handoff.md                     (备份: tmp/cleanup-backup/handoff.md)
+  scripts/dev-full.cmd           (备份: tmp/cleanup-backup/dev-full.cmd)
+  packages/cli/                  (只剩 node_modules 的空壳)
+  packages/mcp-server/           (同上)
+  packages/mongo-shell/          (同上)
+  .cleanup-worktree/             (失效 worktree 残留)
+
+统计: 15 files changed, 355 insertions(+), 277 deletions(-)  (不含 3 个新增文件)
+```
+
+> 建议拆成多个 commit：A（shiki）/ B（i18n）/ C（清理）/ D+E+F（Schema Diff 部署修复）互不相关。
+
+---
+
+## 6. 2026-09-15 续修结果（仍未提交）
+
+### H：目标兼容模式贯通 DDL profile
+
+- `profile_for_connection(DatabaseType, Option<&str>)` 在 openGauss B/M/MYSQL 下使用反引号；A/PG 和旧请求保持双引号。大小写和首尾空格统一处理，反引号按双写转义。
+- `SchemaDiffPreparationOptions.targetSqlCompatibility` 贯通整段 SQL、每个对象预览、索引/外键/注释/权限及逆向回滚。生成器内部统一传递 `DdlDialectProfile`；公共函数仍接受原来的 `DatabaseType` 调用，也可传具体 profile。
+- `SchemaDiffDialog` 按**目标连接 + 目标数据库**查询 `connectionDatabaseInfo`，避免把连接默认库的模式用于另一个库；未探测到模式时显示可翻译错误并停止生成。
+- Tauri/Web 直接生成接口增加可选 `targetSqlCompatibility`；`RollbackScriptOptions` 支持相同字段。
+- 新增 `tests/schema_diff_compatibility_mode.rs`，覆盖 B/M/MYSQL、A/PG、转义、旧请求兼容、权限和回滚。
+
+### G：JDBC 单次 RPC 事务与内嵌插件更新
+
+- 插件分发器新增 `executeTransaction`，同一物理连接顺序执行全部语句，再 commit；任一步失败 rollback，成功回滚后恢复 autoCommit。
+- 已有手动事务时拒绝执行，避免提交其他事务。拒绝列表内的显式事务控制和 SET AUTOCOMMIT；回滚失败时关闭连接，避免恢复 autoCommit 时误提交。
+- 结果兼容 Rust `QueryResult` 的 `columns/rows/affected_rows/execution_time_ms`；保留 SQL 错误及 SQLSTATE。
+- `plugins/jdbc/build.gradle`、`manifest.json` 版本升到 **0.1.29**；已通过 Gradle `test bundleZip` 并更新 `src-tauri/resources/jdbc-plugin.zip`。
+- 新增 `ExecuteTransactionTest.java`：提交、失败回滚、已有事务拒绝、控制语句拒绝、回滚失败关闭连接，共 5 项；插件全部 80 项测试通过。
+- 真机使用隔离目录 `tmp/schema-diff-live-20260915/plugins` 中的新包，**没有覆盖真实 APPDATA 插件或连接库**。新版桌面已有的 bundled 版本同步逻辑会在启动时升级较旧插件。
+
+### 新发现并修复：生成脚本被注释判空、多语句未拆分
+
+前端传 `[整段脚本]`，生成器通常以 `-- Create table` 开头。旧部署入口用 `starts_with("--")` 判空，会将有真实 SQL 的整段脚本直接作为成功返回；native 路径还不能用一次 prepared execute 运行多条 SQL。
+
+`execute_schema_diff_deploy` 现在复用已有按数据库方言拆分器，丢弃纯注释、保留注释后的 SQL、逐条执行并按实际语句数量报告结果。新增单测覆盖注释、多语句及 dollar-quoted 函数体内部的分号。
+
+### 本次验证
+
+| 检查 | 结果 |
+|---|---|
+| Rust core `cargo check --no-default-features --tests` | 通过 |
+| Rust 格式 / Clippy | 通过；唯一新测试 lint 提示修复后定向复查通过 |
+| Web 服务端 `cargo check -p ogdeveloper-web --tests` | 通过 |
+| Rust core `--lib` | **1145 passed，11 ignored** |
+| API 契约回归 | **13 passed** |
+| 新增兼容模式回归 | **3 passed** |
+| Java `gradlew.bat --offline test bundleZip` | **80 passed**，打包成功 |
+| openGauss 6.0.0 test_b / test_a / test_pg | 每库 **4 passed**，共 **12 passed** |
+| 前端 `pnpm typecheck` / 改动文件 oxlint / oxfmt | 通过 |
+| 部署结果 + i18n parity 定向 Vitest | **10 passed** |
+
+真机覆盖 native/JDBC 两路：成功/失败状态、失败后无残留对象、连接恢复，以及真正生成的 CREATE → 两条 ALTER → ALTER 逆向回滚 → CREATE 逆向回滚。表名含空格、列名含保留字，以前端相同的整段带注释脚本输入部署。
+
+**反证**：在 H 修复前，新用例精确报 `wrong identifiers in B`；旧 JDBC 包报 `Unsupported JDBC plugin method: executeTransaction`。修复后同一用例通过。
+
+真机运行仍用第 1 节命令，另加隔离插件目录：
+
+```powershell
+$env:DBX_TEST_OPENGAUSS_PLUGIN_DIR = 'D:\proj\og_developer\tmp\schema-diff-live-20260915\plugins'
+```
+
+### 剩余范围
+
+- **I 深链白名单**：按已有决定暂不处理。
+- **J 低优先级死代码/孤儿数据**及已确认保留的命名残留：本次未扩展清理。
+- **M 模式**：有离线回归，当前实例没有用于本次测试的 M 库，未声称真机验证。
+- B 模式确认 `pg_catalog.gs_package` 和 `pg_job` 目录存在；`CREATE EVENT` 等功能仍未实测，路线图继续明确标注手册依据。
+- 本次未重跑全量前端测试，也未生成完整桌面安装包；之前记录的 5 个 happy-dom 环境问题未处理。
+
+---
+
+## 7. 2026-09-15 剩余问题核实结果（独立复查）
+
+### I 深链白名单 —— 确认属实
+
+- `connectionDeepLink.ts` `parseConnectionDeepLink`：只校验 scheme（`ogdeveloper:`/`dbx:`）与路径
+  （`connection/new`），`type` 直接查 `SCHEME_PROFILES`（40+ 个），无 `ENABLED_DATABASE_TYPES`
+  白名单；缺省 `type` 时默认 `mysql`。
+- `ConnectionDialog.vue:4420` `applyConnectionDraftToForm`：`selectedType.value = draft.driverProfile`
+  无条件接受。两条入口都通：系统深链 + 对话框粘贴 URL（`applyConnectionUrlToForm`，约 3230 行）。
+- `src-tauri/tauri.conf.json:87-91`：`dbx` scheme 仍注册。
+- 修法（若要堵）：`parseConnectionDeepLink` 里对 `dbType`/`driverProfile` 做白名单，一处改动 + 单测。
+
+### J 死代码/孤儿数据 —— 全部确认属实
+
+- `two_phase_commit.rs`：模块外零引用，`lib.rs:76` 的 `pub mod` 是唯一关联；
+  `TransactionStatus`/`TransactionLog`/`ParticipantInfo` 无外部使用。
+- `mqBroker.*` i18n：代码零引用（仅 locale 文件）。`lib/backend/mq-tauri.ts` 也无任何组件引用
+  （MQ 表单走 `connection.*` + `mqAuth.ts`/`mqConsoleDefaults.ts`）。
+- `DatabaseUserAdmin.vue` MySQL 风格分支不可达：provider 注册表（`databaseUserAdmin.ts:271-273`）
+  只剩 postgres/opengauss，`isPostgres` 的 else 侧（lock/unlock、username 文案）不可达。
+- driver manifest：`database-drivers.manifest.json` 共 11 个 driver 声明 userAdmin 能力，
+  其中 9 个（mysql/doris/starrocks/kingbase/highgo/vastbase/goldendb/gaussdb/kwdb）无 provider，与记录一致。
+
+### 5 个 happy-dom 测试失败 —— 根因确定，非本地环境污染
+
+- **触发条件**（最小探针复现）：`// @vitest-environment happy-dom` + 顶层静态 import 任何 node
+  内置模块（`node:fs`、裸 `fs`、`node:path`、`node:assert` 均一样）→ 收集期崩溃
+  `Error: No such built-in module: node:`（模块名为空，工具链 bug 的实锤）。
+  node 环境下同样导入正常；`--pool=forks` / `--pool=vmForks` 均复现。
+- **机制**：vitest 4 把 DOM 环境测试文件交给 vite 的 client 环境处理，node 内置模块被
+  "externalized for browser compatibility"（vite 有对应警告），被 externalize 的 specifier
+  在 vitest 模块求值器（`module-evaluator.js`）里崩掉。
+- **确定性**：vitest 4.1.8 + vite 8.0.16，lockfile 自 2026-08 起未变 → 同 commit 同 lockfile
+  处处可复现；与本轮改动无关（stash 基线复现 + 独立探针）。若 CI（Linux）同 commit 是绿的，
+  则是 Windows-only 的工具链 bug（`module-evaluator.js:65` 有 `isWindows` 分支）。
+- **可用规避方案（已验证）**：spec 里不写静态 builtin import，改用
+  `process.getBuiltinModule("node:fs")`（Node 22+，CI 引擎要求满足）——探针通过。
+  5 个文件各改数行即可转绿；或跟踪上游修复。
+
+### M 模式 —— 重要结论：openGauss 社区版没有 M 兼容模式
+
+- 官方文档（6.0.0 / 7.0.0-RC3 / master 三分支均查）CREATE DATABASE 的 `DBCOMPATIBILITY`
+  取值 = **A、B、C、PG、D**（O / MY / TD / POSTGRES / S）。
+- openGauss-server master 源码 `guc/guc_sql.cpp` 的 `adapt_database[]` 枚举 = {A, C, B, PG, D}，
+  无 M。即 **7.0.0-RC3 也没有 M**。
+- 代码里的 "M" 源自 `0d461f6db`（commit message 称 "M mode as SQL Server (shark)"）——但 shark
+  官方文档明确是 **D** 兼容库（`dbcompatibility='D'`）的扩展，当时把概念搞混了。M 兼容实际是
+  **GaussDB（华为商业版）** 的 MySQL 全兼容概念；应用里 M→反引号 的映射对 GaussDB M 库是合理的
+  前瞻处理。
+- **本机 openGauss 6.0.0 无法创建可用的 M 库**：CREATE 不校验字符串会落库，但连接时
+  `sql_compatibility` 枚举无 M → 会话初始化 FATAL → 僵尸库（需从其它库 DROP 清理）。
+- 已给出探测+建库+清理脚本 `tmp/probe-m-compatibility.sql`（幂等，含僵尸库清理步骤）；
+  若将来接 GaussDB 实例可直接用。M 链路保持离线回归即可——引号路径与 B 同码路，
+  `test_b`（B 模式）已覆盖同等风险。
+
+---
+
+## 8. SQL 编辑器 `schema.` 不提示未展开 schema 的对象（已修复，2026-09-09）
+
+**现象**：侧边栏从未展开过的 schema，在 SQL 编辑器输入 `schema名.` 无任何表/视图提示；
+展开过一次后即正常。
+
+**根因（两层）**：
+1. 前端本地补全数据来自侧边栏树（`completionTreeIndex`），未展开的 schema 自然没有缓存——
+   此时应走远端补全 `completionAssistantSearch`（connectionStore.ts `listCompletionTables` 的
+   remote 分支）。
+2. 但收窄重构 `c527cadba` 把 Rust 端 `completion_assistant_search_core` 砍成了桩函数
+   （直接 `Ok(vec![])`），`postgres::completion_assistant_search` 完整实现成为死代码。
+   桩返回空数组**不抛错**，前端不会走 `listTables` 兜底 → 未展开 schema 永远提示为空。
+   （列补全不受影响：`get_columns_core` 路由完整，所以已输入表名后的列提示一直正常。）
+
+**修复**（`crates/ogdeveloper-core/src/schema.rs`，+146/-3）：
+- `completion_assistant_search_core` 恢复真实分派：`PoolKind::Postgres` →
+  `db::postgres::completion_assistant_search`；`ExternalDriver + openGauss` → 经
+  `opengauss_metadata_postgres_pool` 走原生协议元数据池（JDBC 插件无 completion 端点）；
+- 新增 `completion_assistant_fallback`：原生池不可用时用 `list_schemas_core` /
+  `list_tables_core` / `get_columns_core`（这些核心函数自身已有 JDBC 插件路由）拼装
+  Schema/Table/View/Column 候选，行为与收窄前一致。
+
+**验证**：
+- 新增真机回归 `crates/ogdeveloper-core/tests/live_opengauss_completion_assistant.rs`：
+  建独立 schema + 表 + 视图 + 函数（绝不展开侧边栏），断言 `schema.` 空 mask 列出表和视图、
+  前缀 mask 正确过滤、函数例程可见；JDBC 与原生两种驱动并行跑均 **PASS**（对 test_b）。
+- 教训：两个并行测试共用同一库，夹具 schema 名必须带标签区分（`ogd_completion_probe_{label}_{ms}`），
+  否则毫秒级同名互相 DROP 造成偶发失败。
+- `cargo check --workspace`、`cargo clippy --tests`、`cargo fmt`、crate 单测（37 个）全绿；
+  tauri/web 两侧壳层签名未动（`fallback_used/incomplete` 仍由壳层构造）。
+
+---
+
+## 9. 函数展开把 RETURNS TABLE 输出列当参数显示（已修复，2026-09-09）
+
+**现象**：`app.get_menu_tree_user_system(p_user_id, p_root_menu_id, p_system_id) RETURNS TABLE(...)`
+实际只有 3 个入参，侧边栏展开却列出 18 行——多出的是 RETURNS TABLE 的输出列（标记 OUT）。
+
+**根因**：PG/openGauss 把 RETURNS TABLE 的输出列以 `proargmodes='t'` 存进 pg_proc
+（现网实测：`{i,i,i,t×15}`，纯 IN 函数 proargmodes 为 NULL）。参数查询
+`lib/table/routineParameters.ts` 的 `routineParametersQuery` 未过滤 't'，
+且 CASE 把 't' 也映射成 'OUT'。侧栏 `loadRoutineReferenceGroups` 全量渲染所致。
+
+**修复**：查询增加 `AND COALESCE(p.proargmodes[gs.ordinal], 'i') <> 't'`，并删掉
+`WHEN 't' THEN 'OUT'` 分支。**真实 OUT 参数（'o'）保留**——过程执行窗口要声明它们
+接收输出（`acceptsRoutineInput` 只放行 IN/INOUT，执行 SQL 不受影响；调试面板同样受益）。
+三个消费方（侧栏展开 / 执行对话框 / 测试窗口、调试面板）共用此查询，一处修复全部生效。
+
+**验证**：
+- 现网直查（tygl_pg）：修复后的完整查询对 `app.get_menu_tree_user_system` 返回且仅返回
+  3 个 IN 参数，has_default 判定不变。
+- 回归测试加入 `lib/__tests__/table/routineExecutionSql.spec.ts`（断言排除 't'、保留 o/b 映射），
+  该文件 13 个用例全过；`pnpm typecheck` 通过。
+
+---
+
+## 10. 非 FROM 语境输入 `schema.` 不提示任何对象（已修复，2026-09-09）
+
+**现象**：只有 `FROM schema.` 能提示表；SELECT 列表 / WHERE / SET / CALL 等其它位置输入
+`schema.` 一概无提示。
+
+**根因（链路三段，前两段已由 §8 的后端修复盘活，第三段本次修）**：
+1. 数据：`completionAssistantSearch` 桩函数返回空（§8 已修复，所有语境共用此数据源）。
+2. 拉取：列语境下 `resolveSqlCompletionTableLookupTarget` 把 qualifier 当作当前 schema 的
+   “名字过滤器”（`suggestTables=false` 分支），注定查空；QueryEditor 的 schema 兜底
+   （`qualifierIsSchema`）要求先查空再按 schema 重查——后端修复后此兜底开始生效。
+3. 展示（本次修的存量前端 bug）：兜底重写 `effectiveContext` 时把 `qualifier` 清成
+   `undefined`，而 `connectionStore.completionAssistantObjects` 对非当前 schema 的候选
+   总是带 `schema.name` 形式的 applyName → 插入后变成 `schema.schema.name` **双重限定**；
+   且重写打开 exclusive 闸门后，`matchesPrefix(候选, "")` 恒真会让内置函数片段全部涌入弹窗。
+
+**修复**：
+- `QueryEditor.vue`：兜底重写**保留 qualifier**（表/例程构建器会以它为元数据作用域生成点号后
+  裸名插入；CodeMirror 从 prefix 起点替换）；`exclusiveRoutineSuggestions`（CALL/EXEC）语境
+  不启用表条目，保持只提示过程。
+- `sqlCompletion.ts`：片段/内置函数块增加 `!context.qualifier` 闸门。对
+  `getSqlCompletionContext` 派生的原生语境该条件恒为冗余（qualifier 必伴随 exclusiveTable
+  或 exclusiveColumn），零行为变化；只约束重写后的语境。
+
+**验证**：新增 `lib/__tests__/sql/sqlCompletionSchemaQualifier.spec.ts`（4 例）：
+SELECT 列表 `app.` 的 exclusiveColumn 前置钉死；重写后表/视图/函数裸名插入、无双重限定、
+无内置函数涌入；CALL 语境保持仅过程；非空前缀正常过滤。补全相关 59 个测试文件 698 用例全过，
+typecheck + oxlint 干净。
+
+**修复后各语境行为**：FROM/JOIN/UPDATE/INTO/DELETE `schema.` → 表/视图（原本可用）；
+SELECT/WHERE/SET/ORDER BY `schema.` → 该 schema 的表/视图 + 函数/过程；
+CALL/EXEC `schema.` → 仅过程。

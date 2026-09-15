@@ -68,7 +68,7 @@ latest-en.json
 
 test.pdb
 portable/
-DBX_*_x64-portable.zip
+ogdeveloper_*-portable.zip
 .agents/skills
 .pnpm-store/*
 .ogdeveloper-web
@@ -79,3 +79,7 @@ outputs/opengauss-docs/
 
 # Local requirement docs (working notes; do not track)
 需求文档/
+需求问题/
+
+# AI session handoff notes (per-session scratch, not repository content)
+handoff.md

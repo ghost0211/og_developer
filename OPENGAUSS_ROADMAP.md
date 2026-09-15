@@ -1,13 +1,13 @@
 # openGauss 专用版特性路线图
 
-> 依据：openGauss 6.0.0 官方手册（Markdown 源码）+ openGauss-lite 7.0.0-RC3 真机实测。
-> 凡标注「已实测」的条目均在 7.0 实例上验证过；标注「手册」的来自 6.0 官方文档。
+> 依据：openGauss 6.0.0 官方手册（Markdown 源码）+ openGauss-lite 7.0.0-RC3 真机实测；补充 openGauss 6.0.0 完整版 B 模式验证（2026-09-15）。
+> 未注明版本的「已实测」条目来自 7.0 实例；标注「手册」的来自 6.0 官方文档。6.0 B 模式验证单独注明，不能由目录存在推断功能已验证。
 
 ## 一、对象树补齐（P0）
 
 | 特性 | 目录/语法 | 状态 | 说明 |
 |---|---|---|---|
-| 包/同义词节点 | `gs_package` / `pg_synonym` | ✅ 已修复 | 见 OPENGAUSS_FIXES.md |
+| 包/同义词节点 | `gs_package` / `pg_synonym` | ✅ 已修复 | 见 OPENGAUSS_FIXES.md；6.0 B 模式已确认 `pg_catalog.gs_package` 存在（2026-09-15，目录探测） |
 | 包内层级 | `pg_proc.propackageid → gs_package.oid` | 已实测 | 包节点展开显示子程序（函数/过程），含签名 |
 | 无效对象标记 | `dbe_pldeveloper.gs_source.status='f'` | 已实测 | **编译失败的对象也记录**，树中红色标记（对标 Oracle INVALID） |
 | 源码查看增强 | `dbe_pldeveloper.gs_source.src` | 已实测 | **存原始 CREATE 全文**（含失败对象），优于 gs_package 规范化文本；应优先取它、gs_package 兜底 |
@@ -61,7 +61,7 @@
 
 1. ~~裁剪定型~~ ✅ 已完成
 2. ~~JDBC 内嵌~~ ✅ 已完成（默认官方 JDBC 驱动，自动下载，真机验证）
-3. ~~兼容模式感知~~ ✅ 已完成（datcompatibility 探测 → 树节点显隐/编辑器方言/信息面板；A/PG 规则已真机验证，B/M 按手册实现——注意：openGauss-lite 7.0.0-RC3 镜像连接 B 模式库会崩溃，无法真机验证 B）
+3. ~~兼容模式感知~~ ✅ 已完成（datcompatibility 探测 → 树节点显隐/编辑器方言/信息面板；A/PG 规则已真机验证，B/M 最初按手册实现；openGauss-lite 7.0.0-RC3 镜像连接 B 模式库崩溃属于该镜像的限制。openGauss 6.0.0 完整版的 test_b 可正常连接，B/A/PG 模式探测及 native/JDBC 双路 Schema Diff 生成、部署和回滚已在 2026-09-15 验证；M 模式仍需真机验证）
 4. ~~P0 树补齐~~ ✅ 已完成本轮核心项：包内层级（propackageid 关联，包下挂子程序）✅、无效对象标记（gs_source.status='f' + 失败幽灵节点）✅、gs_source 源码（优先原始文本、gs_package 兜底）✅、JOB 节点（pg_job 只读列表）✅；待做：TYPE/增量 MV/回收站/目录对象等次要节点
 5. ~~DBMS_OUTPUT 面板 + 编译错误行定位~~ ✅ 已完成（QueryResult.messages + 原生/JDBC 双路 drain + 执行摘要输出行；psql 风格 LINE 上下文合成 + 编辑器块内偏移映射）
 6. ~~调试器~~ ✅ 已完成（dbe_pldebugger 双会话模型，后端真机全流程集成测试通过：turn_on→attach→断点→单步→变量→栈→完成；PlDebugDialog 图形界面，执行对话框加“调试”入口）→ 7. Profiler/监控 → 8. 打包
