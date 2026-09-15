@@ -661,11 +661,154 @@ pub async fn list_completion_objects_core(
     }
 }
 
+// Completion runs server-side so it does not depend on what the sidebar tree
+// has expanded so far: typing `schema.` must resolve objects from catalogs even
+// for a schema that was never opened in the tree.
 pub async fn completion_assistant_search_core(
-    _state: &AppState,
-    _params: &CompletionAssistantSearchParams,
+    state: &AppState,
+    request: &CompletionAssistantSearchParams,
 ) -> Result<Vec<CompletionAssistantCandidate>, String> {
-    Ok(Vec::new())
+    let pool = get_schema_pool(state, &request.connection_id, &request.database).await?;
+    match pool {
+        PoolKind::Postgres(p) => {
+            let response = db::postgres::completion_assistant_search(&p, request).await?;
+            Ok(response.candidates)
+        }
+        PoolKind::ExternalDriver { .. } => {
+            let db_config = connection_config(state, &request.connection_id).await;
+            if db_config.as_ref().is_some_and(is_opengauss_family_config) {
+                // The openGauss JDBC plugin exposes no completion endpoint; serve
+                // completion through the native wire metadata pool when available,
+                // otherwise fall back to the list-style metadata APIs below.
+                let pool_key = state
+                    .get_or_create_pool(
+                        &request.connection_id,
+                        if request.database.trim().is_empty() { None } else { Some(request.database.as_str()) },
+                    )
+                    .await?;
+                if let Ok(Some(p)) =
+                    opengauss_metadata_postgres_pool(state, &request.connection_id, &request.database, &pool_key).await
+                {
+                    let response = db::postgres::completion_assistant_search(&p, request).await?;
+                    return Ok(response.candidates);
+                }
+            }
+            completion_assistant_fallback(state, request).await
+        }
+    }
+}
+
+// List-style fallback for drivers without a completion endpoint. Mirrors what
+// the native path returns, built from schemas/tables/columns metadata.
+async fn completion_assistant_fallback(
+    state: &AppState,
+    request: &CompletionAssistantSearchParams,
+) -> Result<Vec<CompletionAssistantCandidate>, String> {
+    let limit = request.max_results.unwrap_or(100).clamp(1, 1000);
+    let kinds = if request.object_kinds.is_empty() {
+        vec![db::CompletionAssistantObjectKind::Table, db::CompletionAssistantObjectKind::View]
+    } else {
+        request.object_kinds.clone()
+    };
+    let mut candidates = Vec::new();
+    let schema = request.parent_schema.as_deref().or(request.schema.as_deref()).unwrap_or("");
+    let filter = request.mask.trim().trim_matches('%');
+
+    if kinds.iter().any(|kind| matches!(kind, db::CompletionAssistantObjectKind::Schema)) {
+        for schema_name in list_schemas_core(state, &request.connection_id, &request.database).await? {
+            if completion_name_matches(&schema_name, filter, request.match_mode.as_ref()) {
+                candidates.push(db::CompletionAssistantCandidate {
+                    name: schema_name.clone(),
+                    kind: db::CompletionAssistantCandidateKind::Schema,
+                    database: Some(request.database.clone()),
+                    schema: Some(schema_name),
+                    parent_schema: None,
+                    parent_name: None,
+                    comment: None,
+                    data_type: None,
+                    signature: None,
+                });
+            }
+            if candidates.len() >= limit {
+                return Ok(candidates);
+            }
+        }
+    }
+
+    if kinds.iter().any(db::CompletionAssistantObjectKind::is_table_like) {
+        let name_filter = (!filter.is_empty()).then(|| TableNameFilter { pattern: filter.to_string(), exact: false });
+        let tables = list_tables_core(
+            state,
+            &request.connection_id,
+            &request.database,
+            schema,
+            name_filter.as_ref(),
+            None,
+            None,
+            None,
+            None,
+        )
+        .await?;
+        for table in tables {
+            let kind = if table.table_type.to_uppercase().contains("VIEW") {
+                db::CompletionAssistantCandidateKind::View
+            } else {
+                db::CompletionAssistantCandidateKind::Table
+            };
+            candidates.push(db::CompletionAssistantCandidate {
+                name: table.name,
+                kind,
+                database: Some(request.database.clone()),
+                schema: if schema.is_empty() { None } else { Some(schema.to_string()) },
+                parent_schema: table.parent_schema,
+                parent_name: table.parent_name,
+                comment: table.comment,
+                data_type: None,
+                signature: None,
+            });
+            if candidates.len() >= limit {
+                return Ok(candidates);
+            }
+        }
+    }
+
+    if kinds.iter().any(|kind| matches!(kind, db::CompletionAssistantObjectKind::Column)) {
+        if let Some(table) = request.parent_name.as_deref().filter(|table| !table.trim().is_empty()) {
+            let columns = get_columns_core(state, &request.connection_id, &request.database, schema, table).await?;
+            for column in columns {
+                if completion_name_matches(&column.name, filter, request.match_mode.as_ref()) {
+                    candidates.push(db::CompletionAssistantCandidate {
+                        name: column.name,
+                        kind: db::CompletionAssistantCandidateKind::Column,
+                        database: Some(request.database.clone()),
+                        schema: if schema.is_empty() { None } else { Some(schema.to_string()) },
+                        parent_schema: None,
+                        parent_name: Some(table.to_string()),
+                        comment: column.comment,
+                        data_type: Some(column.data_type),
+                        signature: None,
+                    });
+                }
+                if candidates.len() >= limit {
+                    return Ok(candidates);
+                }
+            }
+        }
+    }
+
+    Ok(candidates)
+}
+
+fn completion_name_matches(name: &str, filter: &str, mode: Option<&db::CompletionAssistantMatchMode>) -> bool {
+    if filter.is_empty() {
+        return true;
+    }
+    let name = name.to_lowercase();
+    let filter = filter.to_lowercase();
+    match mode.unwrap_or(&db::CompletionAssistantMatchMode::Prefix) {
+        db::CompletionAssistantMatchMode::Prefix => name.starts_with(&filter),
+        db::CompletionAssistantMatchMode::Contains => name.contains(&filter),
+    }
 }
 
 pub async fn get_columns_core(
