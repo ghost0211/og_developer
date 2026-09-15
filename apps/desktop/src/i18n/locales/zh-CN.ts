@@ -1,6 +1,10 @@
 import { withEnglishFallback } from "./fallback";
 
-export default withEnglishFallback({
+/**
+ * The Simplified Chinese overrides on their own, without the English fallback merged in. Exported so
+ * tests can tell a real translation apart from a key that silently falls back to English.
+ */
+export const zhCNMessages = {
   app: {
     name: "OG Developer",
   },
@@ -3118,6 +3122,7 @@ export default withEnglishFallback({
     revoke: "撤权",
     username: "用户名",
     host: "Host",
+    addHost: "添加主机",
     changePassword: "修改密码",
     newPassword: "新密码",
     lock: "锁定",
@@ -5054,6 +5059,7 @@ export default withEnglishFallback({
     collapseAll: "全部折叠",
   },
   diff: {
+    compatibilityUnavailable: "无法获取目标数据库兼容模式，请重新连接后重试。",
     title: "比较架构",
     source: "源数据库",
     target: "目标数据库",
@@ -5163,6 +5169,7 @@ export default withEnglishFallback({
     connType: "连接类型",
     connName: "连接名称",
     host: "主机",
+    addHost: "添加主机",
     port: "端口",
     serverVersion: "服务器版本",
     copied: "已复制到剪贴板",
@@ -6911,6 +6918,7 @@ export default withEnglishFallback({
     brokerEndpoints: "Broker 端点",
     nodeId: "Node ID",
     host: "Host",
+    addHost: "添加主机",
     port: "Port",
     rack: "Rack",
     role: "角色",
@@ -7416,4 +7424,6 @@ export default withEnglishFallback({
     unstaged: "未暂存",
     openClone: "从 Git 仓库克隆",
   },
-});
+};
+
+export default withEnglishFallback(zhCNMessages);

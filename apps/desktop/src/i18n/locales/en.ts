@@ -5056,6 +5056,7 @@ export default {
     collapseAll: "Collapse all",
   },
   diff: {
+    compatibilityUnavailable: "Unable to detect the target database compatibility mode. Reconnect and try again.",
     title: "Compare Schemas",
     source: "Source",
     target: "Target",
