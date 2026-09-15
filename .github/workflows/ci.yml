@@ -177,9 +177,18 @@ jobs:
           components: clippy, rustfmt
 
       - name: Setup sccache
+        id: sccache
+        # sccache release downloads flake occasionally; a missing cache backend
+        # must not fail the whole job (fall back to plain rustc below).
+        continue-on-error: true
         uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
         with:
           version: "v0.10.0"
+
+      - name: Fall back to plain rustc when sccache setup failed
+        if: steps.sccache.outcome == 'failure'
+        shell: bash
+        run: echo "RUSTC_WRAPPER=" >> "$GITHUB_ENV"
 
       - name: Configure S3 sccache
         if: env.SCCACHE_GHA_ENABLED != 'true'
@@ -264,9 +273,18 @@ jobs:
         uses: dtolnay/rust-toolchain@1.97.1
 
       - name: Setup sccache
+        id: sccache
+        # Same reasoning as rust-fmt-clippy: sccache download flakes are
+        # transient and must not fail the test job.
+        continue-on-error: true
         uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
         with:
           version: "v0.10.0"
+
+      - name: Fall back to plain rustc when sccache setup failed
+        if: steps.sccache.outcome == 'failure'
+        shell: bash
+        run: echo "RUSTC_WRAPPER=" >> "$GITHUB_ENV"
 
       - name: Configure S3 sccache
         if: env.SCCACHE_GHA_ENABLED != 'true'
