@@ -426,6 +426,9 @@ const treeExpansionVersion = ref(0);
 // items shrink (collapse left stale children in the DOM). Remount the scroller
 // on shrink only — expands keep scroll position.
 const treeScrollerRemountKey = ref(0);
+// Guards queued scroll restores so a stale frame cannot override a newer
+// collapse's target position.
+let treeScrollRestoreGeneration = 0;
 
 const filteredNodes = computed(() => {
   if (treeExpansionVersion.value < 0) return [];
@@ -711,12 +714,24 @@ watch(
       const scroller = currentTreeScroller();
       const preservedScrollTop = scroller ? scroller.scrollTop : 0;
       treeScrollerRemountKey.value++;
-      void nextTick(() => {
+      if (preservedScrollTop <= 0) return;
+      const restoreGeneration = ++treeScrollRestoreGeneration;
+      const restoreScrollTop = () => {
+        if (restoreGeneration !== treeScrollRestoreGeneration) return;
         const nextScroller = currentTreeScroller();
-        if (nextScroller && preservedScrollTop > 0) {
-          nextScroller.scrollTop = preservedScrollTop;
-          scheduleSidebarScrollMetricsUpdate();
-        }
+        if (!nextScroller) return;
+        nextScroller.scrollTop = preservedScrollTop;
+        scheduleSidebarScrollMetricsUpdate();
+      };
+      void nextTick(() => {
+        restoreScrollTop();
+        // The remounted RecycleScroller first renders only its prerender
+        // window (48 rows) with a zero total size, so the browser clamps the
+        // restored scrollTop to that truncated height — the sidebar lands near
+        // the schema's first table instead of the previous position. Re-apply
+        // on the next frame, once the scroller's onMounted pass has restored
+        // the real content height.
+        window.requestAnimationFrame(restoreScrollTop);
       });
     }
   },
