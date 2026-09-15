@@ -340,6 +340,7 @@ public final class OgdeveloperJdbcPlugin {
                 yield result;
             }
             case "connectionInfo" -> databaseInfoResult(openConnection(connection));
+            case "executeTransaction" -> executeTransaction(connection, params.path("statements"), optionalText(params, "database"), optionalText(params, "schema"));
             case "executeQuery" -> executeQuery(
                 connection,
                 requireText(params, "sql"),
@@ -784,6 +785,102 @@ public final class OgdeveloperJdbcPlugin {
         properties.putIfAbsent("oracle.jdbc.defaultRowPrefetch", "100");
         if (connection.path("sysdba").asBoolean(false)) {
             properties.putIfAbsent("internal_logon", "sysdba");
+        }
+    }
+
+    private static ObjectNode executeTransaction(JsonNode connection, JsonNode statements, String database, String schema) throws SQLException {
+        if (!statements.isArray() || statements.isEmpty()) {
+            throw new IllegalArgumentException("statements must be a non-empty array of SQL strings");
+        }
+        List<String> sqlStatements = new ArrayList<>();
+        for (JsonNode statement : statements) {
+            if (!statement.isTextual() || statement.asText().isBlank()) {
+                throw new IllegalArgumentException("Each transaction statement must be a non-empty SQL string");
+            }
+            sqlStatements.add(statement.asText());
+        }
+        long startedAt = System.nanoTime();
+        Connection conn = openConnection(connection);
+        if (!conn.getAutoCommit()) {
+            throw new SQLException("Cannot execute a transaction while another transaction is active");
+        }
+        applyExecutionContext(connection, conn, database, schema);
+        long affectedRows = executeTransactionOnConnection(conn, sqlStatements);
+        ObjectNode result = MAPPER.createObjectNode();
+        result.putArray("columns");
+        result.putArray("rows");
+        result.put("affected_rows", affectedRows);
+        result.put("execution_time_ms", (System.nanoTime() - startedAt) / 1_000_000L);
+        return result;
+    }
+
+    // main dispatches requests serially. One invocation owns the shared connection
+    // until commit/rollback and restoration finish; never split this across RPCs.
+    static long executeTransactionOnConnection(Connection conn, List<String> statements) throws SQLException {
+        if (statements == null || statements.isEmpty()) {
+            throw new IllegalArgumentException("statements must not be empty");
+        }
+        List<String> normalized = new ArrayList<>();
+        for (String statement : statements) {
+            if (statement == null || statement.isBlank()) {
+                throw new IllegalArgumentException("Each transaction statement must be a non-empty SQL string");
+            }
+            String sql = trimStatementSql(statement);
+            String keyword = firstSqlKeyword(sql);
+            if (List.of("BEGIN", "START", "COMMIT", "ROLLBACK", "SAVEPOINT", "RELEASE", "END", "ABORT").contains(keyword)) {
+                throw new SQLException("Transaction control statement is not allowed inside executeTransaction: " + keyword);
+            }
+            if (sql.replaceAll("(?s)/\\*.*?\\*/", " ").replaceAll("(?m)--[^\\r\\n]*", " ")
+                    .matches("(?is)^\\s*SET\\s+(?:(?:SESSION|LOCAL|GLOBAL)\\s+)?(?:@@(?:(?:SESSION|GLOBAL)\\.)?)?AUTOCOMMIT\\b.*")) {
+                throw new SQLException("Changing autoCommit is not allowed inside executeTransaction");
+            }
+            normalized.add(sql);
+        }
+        if (!conn.getAutoCommit()) {
+            throw new SQLException("Cannot execute a transaction while another transaction is active");
+        }
+        boolean safeToRestore = false;
+        Throwable failure = null;
+        try {
+            conn.setAutoCommit(false);
+            long affectedRows = 0;
+            for (int index = 0; index < normalized.size(); index++) {
+                try (Statement stmt = conn.createStatement()) {
+                    boolean hasRows = stmt.execute(normalized.get(index));
+                    if (!hasRows) {
+                        int count = stmt.getUpdateCount();
+                        if (count > 0) affectedRows += count;
+                    }
+                } catch (SQLException error) {
+                    throw new SQLException("Transaction statement " + (index + 1) + " failed: " + error.getMessage(),
+                            error.getSQLState(), error.getErrorCode(), error);
+                }
+            }
+            conn.commit();
+            safeToRestore = true;
+            return affectedRows;
+        } catch (SQLException | RuntimeException | Error error) {
+            failure = error;
+            try {
+                conn.rollback();
+                safeToRestore = true;
+            } catch (SQLException | RuntimeException | Error rollbackError) {
+                error.addSuppressed(rollbackError);
+                try { conn.close(); }
+                catch (SQLException | RuntimeException | Error closeError) { error.addSuppressed(closeError); }
+            }
+            throw error;
+        } finally {
+            if (safeToRestore) {
+                try {
+                    conn.setAutoCommit(true);
+                } catch (SQLException | RuntimeException | Error restoreError) {
+                    try { conn.close(); }
+                    catch (SQLException | RuntimeException | Error closeError) { restoreError.addSuppressed(closeError); }
+                    if (failure != null) failure.addSuppressed(restoreError);
+                    else throw restoreError;
+                }
+            }
         }
     }
 

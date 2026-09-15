@@ -200,6 +200,7 @@ export interface FieldMappingEntry {
 }
 
 export interface SchemaDiffPreparationOptions {
+  targetSqlCompatibility?: string;
   sourceTables: TableInfo[];
   targetTables: TableInfo[];
   sourceDetails: TableSchemaDetail[];

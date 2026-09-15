@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildDeployTxResult } from "@/lib/schema/deployTxResult";
+import type { SchemaDiffDeployResult } from "@/types/database";
 
 const t = (key: string, params?: Record<string, any>) => {
   const fallback: Record<string, string> = {
@@ -17,73 +18,90 @@ const t = (key: string, params?: Record<string, any>) => {
   return msg;
 };
 
+/**
+ * A successful deploy as `ogdeveloper_core::query::SchemaDiffDeployResult` actually serializes it.
+ * These fixtures deliberately use the real wire shape: the previous suite fed hand-written 2PC
+ * `TransactionLog` objects, so it kept passing while every real deploy rendered as a failure.
+ */
+const committedPayload: SchemaDiffDeployResult = {
+  success: true,
+  status: "committed",
+  executedStatements: 3,
+  totalStatements: 3,
+  error: null,
+  transactional: true,
+};
+
+const rolledBackPayload: SchemaDiffDeployResult = {
+  success: false,
+  status: "rolled_back",
+  executedStatements: 0,
+  totalStatements: 3,
+  error: 'syntax error at or near "CREAT"',
+  transactional: true,
+};
+
 describe("buildDeployTxResult", () => {
-  it("returns success for committed transaction", () => {
-    const result = buildDeployTxResult({ status: "committed", transaction_id: "tx1", executedCount: 2 }, t);
+  it("reports a committed deploy as success", () => {
+    const result = buildDeployTxResult(committedPayload, t);
+
     expect(result.success).toBe(true);
     expect(result.status).toBe("committed");
     expect(result.message).toBe("Executed successfully");
-    expect(result.executedCount).toBe(2);
+    expect(result.executedCount).toBe(3);
+    expect(result.statementCount).toBe(3);
   });
 
-  it("returns failure with mixed status for partially committed", () => {
-    const result = buildDeployTxResult(
-      {
-        status: "mixed",
-        participants: [{ id: "1" }, { id: "2" }],
-        executedCount: 1,
-        statementCount: 2,
-      },
-      t,
-    );
-    expect(result.success).toBe(false);
-    expect(result.status).toBe("mixed");
-    expect(result.message).toContain("partially completed");
-    expect(result.message).toContain("1/2");
-    expect(result.message).toContain("may not be transactional");
-    expect(result.executedCount).toBe(1);
-    expect(result.statementCount).toBe(2);
-  });
+  it("reports a rolled back deploy with the backend error and no executed statements", () => {
+    const result = buildDeployTxResult(rolledBackPayload, t);
 
-  it("returns failure with rolled_back status and error detail", () => {
-    const result = buildDeployTxResult({ status: "rolled_back", error: "syntax error near SELECT", executedCount: 0, statementCount: 2 }, t);
     expect(result.success).toBe(false);
     expect(result.status).toBe("rolled_back");
     expect(result.message).toContain("rolled back");
-    expect(result.message).toContain("syntax error");
+    expect(result.message).toContain('syntax error at or near "CREAT"');
+    expect(result.error).toBe('syntax error at or near "CREAT"');
     expect(result.executedCount).toBe(0);
-    expect(result.statementCount).toBe(2);
+    expect(result.statementCount).toBe(3);
   });
 
-  it("returns failure for unknown status", () => {
-    const result = buildDeployTxResult({ status: "unknown" }, t);
-    expect(result.success).toBe(false);
-    expect(result.status).toBe("unknown");
-    expect(result.message).toContain("unknown");
+  it("never reports success when the backend reports a failure", () => {
+    for (const status of ["rolled_back", "mixed"] as const) {
+      const result = buildDeployTxResult({ ...rolledBackPayload, status }, t);
+      expect(result.success).toBe(false);
+    }
   });
 
-  it("returns failure for null/undefined txLog", () => {
-    const result = buildDeployTxResult(null, t);
-    expect(result.success).toBe(false);
-    expect(result.status).toBe("unknown");
-  });
-
-  it("maps MySQL-style partial DDL failure (1 of 2 applied) for UI", () => {
+  it("keeps the partial-deploy warning wired for a non-transactional path", () => {
     const result = buildDeployTxResult(
       {
+        success: false,
         status: "mixed",
-        executedCount: 1,
-        statementCount: 2,
+        executedStatements: 1,
+        totalStatements: 2,
         error: "Statement 2 failed: table already exists",
-        metadata: { atomicity: "partial_effects_possible", ddl_atomic: false },
+        transactional: false,
       },
       t,
     );
+
     expect(result.success).toBe(false);
     expect(result.status).toBe("mixed");
-    expect(result.executedCount).toBe(1);
-    expect(result.statementCount).toBe(2);
     expect(result.message).toContain("1/2");
-    expect(result.message).toMatch(/may already be applied|may not be transactional/i);
+    expect(result.message).toContain("may not be transactional");
+  });
+
+  it("falls back to the error text when the status is unrecognized", () => {
+    const result = buildDeployTxResult({ ...rolledBackPayload, status: "not_a_status" as SchemaDiffDeployResult["status"] }, t);
+
+    expect(result.success).toBe(false);
+    expect(result.message).toBe('syntax error at or near "CREAT"');
+  });
+
+  it("reports a missing result payload as an unknown failure", () => {
+    const result = buildDeployTxResult(null, t);
+
+    expect(result.success).toBe(false);
+    expect(result.status).toBe("unknown");
+    expect(result.message).toContain("unknown");
   });
 });

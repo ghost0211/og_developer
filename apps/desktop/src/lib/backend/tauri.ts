@@ -47,9 +47,9 @@ import type {
   SavedSqlFile,
   SavedSqlFolder,
   SavedSqlLibrary,
+  SchemaDiffDeployResult,
   SshConfigHostEntry,
   TunnelProfile,
-  TransactionLog,
 } from "@/types/database";
 import { isTauriCommandUnavailable, normalizeConnectionTestResult } from "@/lib/connection/connectionDatabaseInfo";
 import type { SidebarObjectKind } from "@/lib/database/databaseObjectCapabilities";
@@ -1028,7 +1028,7 @@ export async function executeScript(connectionId: string, database: string, sql:
   return invoke("execute_script", { connectionId, database, sql, schema });
 }
 
-export async function executeScriptWith2pc(connectionId: string, database: string, statements: string[], schema?: string): Promise<TransactionLog> {
+export async function executeScriptWith2pc(connectionId: string, database: string, statements: string[], schema?: string): Promise<SchemaDiffDeployResult> {
   return invoke("execute_script_with_2pc", {
     connectionId,
     database,
@@ -1370,10 +1370,21 @@ export async function listDialectDataTypes(dialectName: string): Promise<string[
   return invoke("list_dialect_data_types", { dialectName });
 }
 
-export async function generateSchemaSyncSql(diffs: TableDiff[], databaseType: DatabaseType, targetSchema?: string, functionDiffs?: FunctionDiff[], sequenceDiffs?: SequenceDiff[], ruleDiffs?: RuleDiff[], ownerDiffs?: OwnerDiff[], cascadeDelete?: boolean): Promise<string> {
+export async function generateSchemaSyncSql(
+  diffs: TableDiff[],
+  databaseType: DatabaseType,
+  targetSchema?: string,
+  functionDiffs?: FunctionDiff[],
+  sequenceDiffs?: SequenceDiff[],
+  ruleDiffs?: RuleDiff[],
+  ownerDiffs?: OwnerDiff[],
+  cascadeDelete?: boolean,
+  targetSqlCompatibility?: string,
+): Promise<string> {
   return invoke("generate_schema_sync_sql", {
     diffs,
     databaseType,
+    targetSqlCompatibility,
     targetSchema,
     functionDiffs: functionDiffs ?? [],
     sequenceDiffs: sequenceDiffs ?? [],

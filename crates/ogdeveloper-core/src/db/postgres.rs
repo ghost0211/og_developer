@@ -913,7 +913,12 @@ fn escape_tsvector_lexeme(value: &str) -> String {
     value.replace('\\', "\\\\").replace('\'', "''")
 }
 
-fn pg_error_to_string(err: tokio_postgres::Error) -> String {
+/// Renders a server error for display, keeping the message and SQLSTATE.
+///
+/// `tokio_postgres::Error`'s own `Display` prints only `"db error"` for a database error, so the
+/// server text has to be recovered through `as_db_error()`; anything that reports a failed statement
+/// to the user must go through here rather than `to_string()`.
+pub(crate) fn pg_error_to_string(err: tokio_postgres::Error) -> String {
     let context = err.as_db_error().and_then(pg_error_line_context);
     let base = err.as_db_error().map(ToString::to_string).unwrap_or_else(|| err.to_string());
     match context {

@@ -602,6 +602,8 @@ fn postgres_identifier_value(identifier: &str) -> String {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RollbackScriptOptions {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_sql_compatibility: Option<String>,
     pub db_type: DatabaseType,
     pub target_schema: Option<String>,
     pub cascade_delete: bool,
@@ -614,6 +616,7 @@ impl Default for RollbackScriptOptions {
     fn default() -> Self {
         Self {
             db_type: DatabaseType::Postgres,
+            target_sql_compatibility: None,
             target_schema: None,
             cascade_delete: false,
             include_header: true,
@@ -669,7 +672,10 @@ pub fn generate_rollback_script(rollback_graph: &RollbackGraph, options: &Rollba
         &[],
         &[],
         &[],
-        options.db_type,
+        crate::sql_dialect::ddl_profile::profile_for_connection(
+            options.db_type,
+            options.target_sql_compatibility.as_deref(),
+        ),
         options.target_schema.as_deref(),
         options.cascade_delete,
         None,
@@ -1144,6 +1150,7 @@ pub fn generate_enhanced_rollback_sql(
     if let Some(graph) = &schema_diff.rollback_graph {
         let options = RollbackScriptOptions {
             db_type,
+            target_sql_compatibility: None,
             target_schema: target_schema.map(|s| s.to_string()),
             cascade_delete,
             include_header: true,

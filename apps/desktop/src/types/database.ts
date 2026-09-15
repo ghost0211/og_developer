@@ -710,24 +710,25 @@ export interface QueryResultRun {
   tableMeta?: QueryTab["tableMeta"];
 }
 
-export interface ParticipantInfo {
-  id: string;
-  name: string;
-  role: string;
-}
+/**
+ * Mirrors `ogdeveloper_core::query::SchemaDiffDeployResult` (serde `camelCase`). Keep the field
+ * names in sync with the Rust struct: a rename there is invisible to `vue-tsc` and silently
+ * degrades a successful deploy to an "unknown status" failure at runtime.
+ */
+export type SchemaDiffDeployStatus = "committed" | "rolled_back" | "mixed";
 
-export interface TransactionLog {
-  transaction_id: string;
-  status: string;
-  participants: ParticipantInfo[];
-  created_at: string;
-  updated_at: string;
-  metadata: unknown;
-  /** camelCase fields from SchemaDiffDeployResult */
-  transactionId?: string;
-  executedCount?: number;
-  statementCount?: number;
-  error?: string;
+export interface SchemaDiffDeployResult {
+  success: boolean;
+  /**
+   * `"mixed"` is reserved: the current deploy path always runs as one transaction, so the backend
+   * reports only `committed` or `rolled_back`. It stays in the union so the partial-deploy warning
+   * stays wired for a future non-transactional path.
+   */
+  status: SchemaDiffDeployStatus;
+  executedStatements: number;
+  totalStatements: number;
+  error: string | null;
+  transactional: boolean;
 }
 
 export interface SqlTextSpan {

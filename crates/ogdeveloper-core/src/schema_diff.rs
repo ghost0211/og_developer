@@ -6,7 +6,7 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 
 use crate::models::connection::DatabaseType;
-use crate::sql_dialect::ddl_profile::{profile_for, DdlDialectProfile};
+use crate::sql_dialect::ddl_profile::{profile_for, profile_for_connection, DdlDialectProfile};
 use crate::sql_dialect::descriptor::DialectKind;
 use crate::sql_dialect::inference::{ColumnType, DefaultTypeInferenceEngine, TypeInferenceEngine};
 use crate::sql_dialect::type_rewrite::{
@@ -289,6 +289,8 @@ pub struct SchemaDiffPreparationOptions {
     #[serde(default)]
     pub target_owners: Vec<OwnerInfo>,
     pub database_type: DatabaseType,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_sql_compatibility: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target_schema: Option<String>,
     #[serde(default)]
@@ -1287,7 +1289,7 @@ impl RollbackGraph {
 
 pub fn generate_rollback_sync_sql(
     rollback_graph: &RollbackGraph,
-    db_type: DatabaseType,
+    db_type: impl Into<DdlDialectProfile>,
     schema: Option<&str>,
     cascade_delete: bool,
 ) -> String {
@@ -1296,12 +1298,23 @@ pub fn generate_rollback_sync_sql(
 
 pub fn generate_rollback_sync_sql_with_missing(
     rollback_graph: &RollbackGraph,
-    db_type: DatabaseType,
+    db_type: impl Into<DdlDialectProfile>,
     schema: Option<&str>,
     cascade_delete: bool,
 ) -> (String, Vec<MissingRollbackObject>) {
     let rollback_diffs: Vec<TableDiff> = rollback_graph.rollback_nodes.iter().map(|n| n.table_diff.clone()).collect();
-    generate_schema_sync_sql_inner(&rollback_diffs, &[], &[], &[], &[], db_type, schema, cascade_delete, None, &[])
+    generate_schema_sync_sql_inner(
+        &rollback_diffs,
+        &[],
+        &[],
+        &[],
+        &[],
+        db_type.into(),
+        schema,
+        cascade_delete,
+        None,
+        &[],
+    )
 }
 
 // ============================================================================
@@ -1486,9 +1499,13 @@ pub fn diff_permissions(source: &[PermissionInfo], target: &[PermissionInfo]) ->
     diffs
 }
 
-pub fn generate_permission_sync_sql(diffs: &[PermissionDiff], db_type: DatabaseType, schema: Option<&str>) -> String {
+pub fn generate_permission_sync_sql(
+    diffs: &[PermissionDiff],
+    db_type: impl Into<DdlDialectProfile>,
+    schema: Option<&str>,
+) -> String {
     let mut lines: Vec<String> = Vec::new();
-    let profile = profile_for(db_type);
+    let profile = db_type.into();
 
     for diff in diffs {
         match diff.diff_type.as_str() {
@@ -1507,16 +1524,16 @@ pub fn generate_permission_sync_sql(diffs: &[PermissionDiff], db_type: DatabaseT
                             source.privilege, object_path, grantee_escaped, with_grant
                         ));
                     } else {
-                        let obj_escaped = source.object_name.replace('"', "\"\"");
+                        let obj_escaped = profile.quote_ident(&source.object_name);
                         let object_path = if let Some(sch) = schema {
-                            format!("{} \"{}\".\"{}\"", source.object_type, sch, obj_escaped)
+                            format!("{} {}.{}", source.object_type, profile.quote_ident(sch), obj_escaped)
                         } else {
-                            format!("{} \"{}\"", source.object_type, obj_escaped)
+                            format!("{} {}", source.object_type, obj_escaped)
                         };
                         let with_grant = if source.is_grantable { " WITH GRANT OPTION" } else { "" };
-                        let grantee_escaped = source.grantee.replace('"', "\"\"");
+                        let grantee_escaped = profile.quote_ident(&source.grantee);
                         lines.push(format!(
-                            "GRANT {} ON {} TO \"{}\"{};",
+                            "GRANT {} ON {} TO {}{};",
                             source.privilege, object_path, grantee_escaped, with_grant
                         ));
                     }
@@ -1536,17 +1553,14 @@ pub fn generate_permission_sync_sql(diffs: &[PermissionDiff], db_type: DatabaseT
                             target.privilege, object_path, grantee_escaped
                         ));
                     } else {
-                        let obj_escaped = target.object_name.replace('"', "\"\"");
+                        let obj_escaped = profile.quote_ident(&target.object_name);
                         let object_path = if let Some(sch) = schema {
-                            format!("{} \"{}\".\"{}\"", target.object_type, sch, obj_escaped)
+                            format!("{} {}.{}", target.object_type, profile.quote_ident(sch), obj_escaped)
                         } else {
-                            format!("{} \"{}\"", target.object_type, obj_escaped)
+                            format!("{} {}", target.object_type, obj_escaped)
                         };
-                        let grantee_escaped = target.grantee.replace('"', "\"\"");
-                        lines.push(format!(
-                            "REVOKE {} ON {} FROM \"{}\";",
-                            target.privilege, object_path, grantee_escaped
-                        ));
+                        let grantee_escaped = profile.quote_ident(&target.grantee);
+                        lines.push(format!("REVOKE {} ON {} FROM {};", target.privilege, object_path, grantee_escaped));
                     }
                 }
             }
@@ -1629,6 +1643,7 @@ impl Default for SchemaDiffPreparationOptions {
             source_owners: Vec::new(),
             target_owners: Vec::new(),
             database_type: DatabaseType::Postgres,
+            target_sql_compatibility: None,
             target_schema: None,
             ignore_comments: false,
             cascade_delete: false,
@@ -1717,6 +1732,7 @@ pub fn prepare_schema_diff(options: SchemaDiffPreparationOptions) -> SchemaDiffP
         log::info!("  source_dialect={:?} target_dialect={:?}", options.source_dialect, options.target_dialect);
     }
 
+    let profile = profile_for_connection(options.database_type, options.target_sql_compatibility.as_deref());
     let dialect_str = options.source_dialect.map(|d| d.label().to_string()).unwrap_or_else(|| "generic".to_string());
     let options = AstTransmitFilter::filter_diff_preparation_options(options, &dialect_str);
 
@@ -1819,7 +1835,7 @@ pub fn prepare_schema_diff(options: SchemaDiffPreparationOptions) -> SchemaDiffP
             &[],
             &[],
             &[],
-            options.database_type,
+            profile,
             options.target_schema.as_deref(),
             options.cascade_delete,
             options.source_dialect,
@@ -1836,7 +1852,7 @@ pub fn prepare_schema_diff(options: SchemaDiffPreparationOptions) -> SchemaDiffP
         &sequence_diffs,
         &rule_diffs,
         &owner_diffs,
-        options.database_type,
+        profile,
         options.target_schema.as_deref(),
         options.cascade_delete,
         options.source_dialect,
@@ -1847,7 +1863,7 @@ pub fn prepare_schema_diff(options: SchemaDiffPreparationOptions) -> SchemaDiffP
         Some(graph) => {
             let (sql, missing) = generate_rollback_sync_sql_with_missing(
                 graph,
-                options.database_type,
+                profile,
                 options.target_schema.as_deref(),
                 options.cascade_delete,
             );
@@ -1868,7 +1884,7 @@ pub fn prepare_schema_diff(options: SchemaDiffPreparationOptions) -> SchemaDiffP
     };
 
     let permission_sync_sql = if !permission_diffs.is_empty() {
-        Some(generate_permission_sync_sql(&permission_diffs, options.database_type, options.target_schema.as_deref()))
+        Some(generate_permission_sync_sql(&permission_diffs, profile, options.target_schema.as_deref()))
     } else {
         None
     };
@@ -2792,13 +2808,12 @@ pub fn diff_owners(source: &[OwnerInfo], target: &[OwnerInfo]) -> Vec<OwnerDiff>
     diffs
 }
 
-fn quote_id(name: &str, db_type: DatabaseType) -> String {
-    profile_for(db_type).quote_ident(name)
+fn quote_id(name: &str, profile: DdlDialectProfile) -> String {
+    profile.quote_ident(name)
 }
 
-fn column_def(col: &ColumnInfo, db_type: DatabaseType) -> String {
-    let profile = profile_for(db_type);
-    let mut definition = format!("{} {}", quote_id(&col.name, db_type), col.data_type);
+fn column_def(col: &ColumnInfo, profile: DdlDialectProfile) -> String {
+    let mut definition = format!("{} {}", quote_id(&col.name, profile), col.data_type);
     if !col.is_nullable {
         definition.push_str(" NOT NULL");
     }
@@ -2813,20 +2828,19 @@ fn column_def(col: &ColumnInfo, db_type: DatabaseType) -> String {
     definition
 }
 
-fn qualified_name(name: &str, db_type: DatabaseType, schema: Option<&str>) -> String {
+fn qualified_name(name: &str, profile: DdlDialectProfile, schema: Option<&str>) -> String {
     schema
         .map(str::trim)
         .filter(|schema| !schema.is_empty())
-        .map(|schema| format!("{}.{}", quote_id(schema, db_type), quote_id(name, db_type)))
-        .unwrap_or_else(|| quote_id(name, db_type))
+        .map(|schema| format!("{}.{}", quote_id(schema, profile), quote_id(name, profile)))
+        .unwrap_or_else(|| quote_id(name, profile))
 }
 
-fn drop_index_sql(table_name: &str, index_name: &str, db_type: DatabaseType, schema: Option<&str>) -> String {
-    let profile = profile_for(db_type);
-    let table = qualified_name(table_name, db_type, schema);
-    let index = qualified_name(index_name, db_type, schema);
+fn drop_index_sql(table_name: &str, index_name: &str, profile: DdlDialectProfile, schema: Option<&str>) -> String {
+    let table = qualified_name(table_name, profile, schema);
+    let index = qualified_name(index_name, profile, schema);
     if profile.drop_index_uses_on_table {
-        format!("DROP INDEX {} ON {table};", quote_id(index_name, db_type))
+        format!("DROP INDEX {} ON {table};", quote_id(index_name, profile))
     } else {
         format!("DROP INDEX IF EXISTS {index};")
     }
@@ -2838,18 +2852,17 @@ fn mysql_index_column_sql(column: &str) -> String {
     if trimmed.starts_with("((") && trimmed.ends_with("))") {
         trimmed.to_string()
     } else {
-        quote_id(column, DatabaseType::Postgres)
+        quote_id(column, profile_for(DatabaseType::Postgres))
     }
 }
 
-fn create_index_sql(table_name: &str, index: &IndexInfo, db_type: DatabaseType, schema: Option<&str>) -> String {
+fn create_index_sql(table_name: &str, index: &IndexInfo, profile: DdlDialectProfile, schema: Option<&str>) -> String {
     use crate::sql_dialect::ddl_profile::IndexTypePlacement;
-    let profile = profile_for(db_type);
-    let table = qualified_name(table_name, db_type, schema);
+    let table = qualified_name(table_name, profile, schema);
     let columns = index
         .columns
         .iter()
-        .map(|column| if false { mysql_index_column_sql(column) } else { quote_id(column, db_type) })
+        .map(|column| if false { mysql_index_column_sql(column) } else { quote_id(column, profile) })
         .collect::<Vec<_>>()
         .join(", ");
     let unique = if index.is_unique { "UNIQUE " } else { "" };
@@ -2868,7 +2881,7 @@ fn create_index_sql(table_name: &str, index: &IndexInfo, db_type: DatabaseType, 
     let include_clause = if !included_columns.is_empty() && profile.index_supports_include {
         format!(
             " INCLUDE ({})",
-            included_columns.iter().map(|column| quote_id(column, db_type)).collect::<Vec<_>>().join(", ")
+            included_columns.iter().map(|column| quote_id(column, profile)).collect::<Vec<_>>().join(", ")
         )
     } else {
         String::new()
@@ -2885,20 +2898,19 @@ fn create_index_sql(table_name: &str, index: &IndexInfo, db_type: DatabaseType, 
     if profile.drop_index_uses_on_table {
         format!(
             "CREATE {unique}{type_prefix}INDEX {}{using_before_on} ON {table} ({columns}){comment_clause};",
-            quote_id(&index.name, db_type)
+            quote_id(&index.name, profile)
         )
     } else {
         format!(
             "CREATE {unique}{type_prefix}INDEX {} ON {table}{using_suffix} ({columns}){include_clause}{filter_clause};",
-            quote_id(&index.name, db_type)
+            quote_id(&index.name, profile)
         )
     }
 }
 
-fn drop_foreign_key_sql(table_name: &str, fk_name: &str, db_type: DatabaseType, schema: Option<&str>) -> String {
-    let profile = profile_for(db_type);
-    let table = qualified_name(table_name, db_type, schema);
-    let fk = quote_id(fk_name, db_type);
+fn drop_foreign_key_sql(table_name: &str, fk_name: &str, profile: DdlDialectProfile, schema: Option<&str>) -> String {
+    let table = qualified_name(table_name, profile, schema);
+    let fk = quote_id(fk_name, profile);
     if profile.drop_fk_as_foreign_key {
         format!("ALTER TABLE {table} DROP FOREIGN KEY {fk};")
     } else {
@@ -2906,22 +2918,27 @@ fn drop_foreign_key_sql(table_name: &str, fk_name: &str, db_type: DatabaseType, 
     }
 }
 
-fn add_foreign_key_sql(table_name: &str, fk: &ForeignKeyInfo, db_type: DatabaseType, schema: Option<&str>) -> String {
-    let table = qualified_name(table_name, db_type, schema);
-    let ref_table = qualified_name(&fk.ref_table, db_type, fk.ref_schema.as_deref().or(schema));
+fn add_foreign_key_sql(
+    table_name: &str,
+    fk: &ForeignKeyInfo,
+    profile: DdlDialectProfile,
+    schema: Option<&str>,
+) -> String {
+    let table = qualified_name(table_name, profile, schema);
+    let ref_table = qualified_name(&fk.ref_table, profile, fk.ref_schema.as_deref().or(schema));
     let on_delete = fk.on_delete.as_ref().map(|action| format!(" ON DELETE {action}")).unwrap_or_default();
     let on_update = fk.on_update.as_ref().map(|action| format!(" ON UPDATE {action}")).unwrap_or_default();
     format!(
         "ALTER TABLE {table} ADD CONSTRAINT {} FOREIGN KEY ({}) REFERENCES {ref_table} ({}){on_delete}{on_update};",
-        quote_id(&fk.name, db_type),
-        quote_id(&fk.column, db_type),
-        quote_id(&fk.ref_column, db_type)
+        quote_id(&fk.name, profile),
+        quote_id(&fk.column, profile),
+        quote_id(&fk.ref_column, profile)
     )
 }
 
-fn drop_object_sql(diff: &TableDiff, db_type: DatabaseType, schema: Option<&str>, cascade: &str) -> String {
+fn drop_object_sql(diff: &TableDiff, profile: DdlDialectProfile, schema: Option<&str>, cascade: &str) -> String {
     let object_type = if diff.object_type.as_deref() == Some("view") { "VIEW" } else { "TABLE" };
-    format!("DROP {object_type} IF EXISTS {}{cascade};", qualified_name(&diff.name, db_type, schema))
+    format!("DROP {object_type} IF EXISTS {}{cascade};", qualified_name(&diff.name, profile, schema))
 }
 
 fn comment_literal(comment: &str) -> String {
@@ -2932,20 +2949,18 @@ fn column_comment_sql(
     table_name: &str,
     column_name: &str,
     comment: &str,
-    db_type: DatabaseType,
+    profile: DdlDialectProfile,
     schema: Option<&str>,
 ) -> String {
-    let profile = profile_for(db_type);
     if profile.column_comment_via_modify_only {
         return format!("-- Column comment for {column_name}: use ALTER TABLE ... MODIFY COLUMN to set comment");
     }
-    let table = qualified_name(table_name, db_type, schema);
-    format!("COMMENT ON COLUMN {table}.{} IS {};", quote_id(column_name, db_type), comment_literal(comment))
+    let table = qualified_name(table_name, profile, schema);
+    format!("COMMENT ON COLUMN {table}.{} IS {};", quote_id(column_name, profile), comment_literal(comment))
 }
 
-fn table_comment_sql(table_name: &str, comment: &str, db_type: DatabaseType, schema: Option<&str>) -> String {
-    let profile = profile_for(db_type);
-    let table = qualified_name(table_name, db_type, schema);
+fn table_comment_sql(table_name: &str, comment: &str, profile: DdlDialectProfile, schema: Option<&str>) -> String {
+    let table = qualified_name(table_name, profile, schema);
     if profile.table_comment_via_alter {
         format!("ALTER TABLE {table} COMMENT = {};", comment_literal(comment))
     } else {
@@ -2988,24 +3003,23 @@ fn generate_create_table_sql(
     indexes: &[IndexDiff],
     foreign_keys: &[ForeignKeyDiff],
     table_comment: Option<&str>,
-    db_type: DatabaseType,
+    profile: DdlDialectProfile,
     schema: Option<&str>,
     source_dialect: Option<DialectKind>,
     field_mappings: &[FieldMapping],
     triggers: &[TriggerInfo],
 ) -> (String, Vec<MissingRollbackObject>) {
     let mut lines = Vec::new();
-    let target_dialect = DialectKind::from_database_type(db_type);
-    let profile = profile_for(db_type);
+    let target_dialect = DialectKind::from_database_type(profile.database_type);
     // Type rewrite: user mappings → profile type_map → DialectKind matrix → normalize.
     // Call sites must not branch on individual DatabaseType values.
     let map_type = |source_type: &str| -> String {
         if let Some(user_target) = FieldMapping::apply_with_params(field_mappings, source_type, target_dialect) {
             return user_target;
         }
-        rewrite_column_type(source_type, db_type, source_dialect)
+        rewrite_column_type(source_type, profile.database_type, source_dialect)
     };
-    let table = qualified_name(name, db_type, schema);
+    let table = qualified_name(name, profile, schema);
 
     // Collect column definitions
     let mut col_defs = Vec::new();
@@ -3017,7 +3031,7 @@ fn generate_create_table_sql(
         let Some(col) = &col_diff.source else {
             continue;
         };
-        let col_name = quote_id(&col.name, db_type);
+        let col_name = quote_id(&col.name, profile);
         let mapped_type = map_type(&col.data_type);
         let is_int = type_looks_integer(&mapped_type);
         let auto_build = apply_auto_inc_to_column_def(&profile, &col_name, &mapped_type, col, is_int);
@@ -3054,7 +3068,7 @@ fn generate_create_table_sql(
                 }
                 col_defs.push(def);
                 if col.is_primary_key {
-                    pk_cols.push(quote_id(&col.name, db_type));
+                    pk_cols.push(quote_id(&col.name, profile));
                 }
             }
             AutoIncColumnBuild::Normal { skip_default } => {
@@ -3074,7 +3088,7 @@ fn generate_create_table_sql(
                 }
                 col_defs.push(def);
                 if col.is_primary_key {
-                    pk_cols.push(quote_id(&col.name, db_type));
+                    pk_cols.push(quote_id(&col.name, profile));
                 }
             }
         }
@@ -3085,15 +3099,15 @@ fn generate_create_table_sql(
             let Some(fk) = &fk_diff.source else {
                 continue;
             };
-            let ref_table = qualified_name(&fk.ref_table, db_type, fk.ref_schema.as_deref().or(schema));
+            let ref_table = qualified_name(&fk.ref_table, profile, fk.ref_schema.as_deref().or(schema));
             let on_delete = fk.on_delete.as_ref().map(|action| format!(" ON DELETE {action}")).unwrap_or_default();
             let on_update = fk.on_update.as_ref().map(|action| format!(" ON UPDATE {action}")).unwrap_or_default();
             col_defs.push(format!(
                 "CONSTRAINT {} FOREIGN KEY ({}) REFERENCES {}({}){}{}",
-                quote_id(&fk.name, db_type),
-                quote_id(&fk.column, db_type),
+                quote_id(&fk.name, profile),
+                quote_id(&fk.column, profile),
                 ref_table,
-                quote_id(&fk.ref_column, db_type),
+                quote_id(&fk.ref_column, profile),
                 on_delete,
                 on_update
             ));
@@ -3116,8 +3130,8 @@ fn generate_create_table_sql(
     if has_int_pk {
         if let Some(seq_col) = auto_col_name {
             let seq_name = format!("{}_{}_seq", name, seq_col);
-            let quoted_seq = quote_id(&seq_name, db_type);
-            let quoted_col = quote_id(&seq_col, db_type);
+            let quoted_seq = quote_id(&seq_name, profile);
+            let quoted_col = quote_id(&seq_col, profile);
             lines.push(format!("CREATE SEQUENCE IF NOT EXISTS {} OWNED BY {}.{};", quoted_seq, table, quoted_col));
             lines.push(format!(
                 "ALTER TABLE {} ALTER COLUMN {} SET DEFAULT nextval('{}');",
@@ -3136,7 +3150,7 @@ fn generate_create_table_sql(
         if idx.is_primary {
             continue;
         }
-        lines.push(create_index_sql(name, idx, db_type, schema));
+        lines.push(create_index_sql(name, idx, profile, schema));
     }
     if !indexes.is_empty() {
         lines.push(String::new());
@@ -3150,10 +3164,10 @@ fn generate_create_table_sql(
         let Some(fk) = &fk_diff.source else {
             continue;
         };
-        let fk_name = quote_id(&fk.name, db_type);
-        let fk_col = quote_id(&fk.column, db_type);
-        let ref_table = qualified_name(&fk.ref_table, db_type, fk.ref_schema.as_deref().or(schema));
-        let ref_col = quote_id(&fk.ref_column, db_type);
+        let fk_name = quote_id(&fk.name, profile);
+        let fk_col = quote_id(&fk.column, profile);
+        let ref_table = qualified_name(&fk.ref_table, profile, fk.ref_schema.as_deref().or(schema));
+        let ref_col = quote_id(&fk.ref_column, profile);
         let on_delete = fk.on_delete.as_ref().map(|a| format!(" ON DELETE {}", a)).unwrap_or_default();
         let on_update = fk.on_update.as_ref().map(|a| format!(" ON UPDATE {}", a)).unwrap_or_default();
         lines.push(format!(
@@ -3172,7 +3186,7 @@ fn generate_create_table_sql(
         };
         if let Some(comment) = &col.comment {
             if !comment.is_empty() {
-                let col_name = quote_id(&col.name, db_type);
+                let col_name = quote_id(&col.name, profile);
                 let esc_comment = comment.replace('\'', "''");
                 if !profile.inline_column_comment {
                     lines.push(format!("COMMENT ON COLUMN {}.{} IS '{}';", table, col_name, esc_comment));
@@ -3184,7 +3198,7 @@ fn generate_create_table_sql(
     // Table comment
     if let Some(comment) = table_comment {
         if !comment.is_empty() {
-            lines.push(table_comment_sql(name, comment, db_type, schema));
+            lines.push(table_comment_sql(name, comment, profile, schema));
         }
     }
 
@@ -3244,7 +3258,6 @@ fn append_sequence_diff_sql(
     lines: &mut Vec<String>,
     sequence_diffs: &[SequenceDiff],
     profile: DdlDialectProfile,
-    db_type: DatabaseType,
     schema: Option<&str>,
     cascade: &str,
     should_render: impl Fn(&str) -> bool,
@@ -3262,7 +3275,7 @@ fn append_sequence_diff_sql(
                 if let Some(source) = &diff.source {
                     if let Some(template) = profile.sequence_create_template {
                         lines.push(format!("-- Create sequence: {}", diff.name));
-                        let name = qualified_name(&diff.name, db_type, schema);
+                        let name = qualified_name(&diff.name, profile, schema);
                         let cycle = if source.cycle { "CYCLE" } else { "NO CYCLE" };
                         lines.push(DdlDialectProfile::render_template(
                             template,
@@ -3287,7 +3300,7 @@ fn append_sequence_diff_sql(
             "removed" => {
                 if let Some(template) = profile.sequence_drop_template {
                     lines.push(format!("-- Drop sequence: {}", diff.name));
-                    let name = qualified_name(&diff.name, db_type, schema);
+                    let name = qualified_name(&diff.name, profile, schema);
                     lines.push(DdlDialectProfile::render_template(template, &[("name", &name), ("cascade", cascade)]));
                 } else {
                     lines.push(format!("-- Skip drop sequence {}: unsupported on target", diff.name));
@@ -3297,7 +3310,7 @@ fn append_sequence_diff_sql(
                 if let Some(source) = &diff.source {
                     if let Some(template) = profile.sequence_alter_template {
                         lines.push(format!("-- Alter sequence: {}", diff.name));
-                        let name = qualified_name(&diff.name, db_type, schema);
+                        let name = qualified_name(&diff.name, profile, schema);
                         let cycle = if source.cycle { "CYCLE" } else { "NO CYCLE" };
                         lines.push(DdlDialectProfile::render_template(
                             template,
@@ -3328,7 +3341,7 @@ pub fn generate_schema_sync_sql(
     sequence_diffs: &[SequenceDiff],
     rule_diffs: &[RuleDiff],
     owner_diffs: &[OwnerDiff],
-    db_type: DatabaseType,
+    profile: impl Into<DdlDialectProfile>,
     schema: Option<&str>,
     cascade_delete: bool,
     source_dialect: Option<DialectKind>,
@@ -3340,7 +3353,7 @@ pub fn generate_schema_sync_sql(
         sequence_diffs,
         rule_diffs,
         owner_diffs,
-        db_type,
+        profile.into(),
         schema,
         cascade_delete,
         source_dialect,
@@ -3355,7 +3368,7 @@ fn generate_schema_sync_sql_inner(
     sequence_diffs: &[SequenceDiff],
     rule_diffs: &[RuleDiff],
     owner_diffs: &[OwnerDiff],
-    db_type: DatabaseType,
+    profile: DdlDialectProfile,
     schema: Option<&str>,
     cascade_delete: bool,
     source_dialect: Option<DialectKind>,
@@ -3363,25 +3376,22 @@ fn generate_schema_sync_sql_inner(
 ) -> (String, Vec<MissingRollbackObject>) {
     let mut lines = Vec::new();
     let mut missing_objects: Vec<MissingRollbackObject> = Vec::new();
-    let profile = profile_for(db_type);
     let cascade = if cascade_delete { " CASCADE" } else { "" };
 
     let map_type = |source_type: &str| -> String {
-        let tgt = DialectKind::from_database_type(db_type);
+        let tgt = DialectKind::from_database_type(profile.database_type);
         if let Some(user_target) = FieldMapping::apply_with_params(field_mappings, source_type, tgt) {
             return user_target;
         }
-        rewrite_column_type(source_type, db_type, source_dialect)
+        rewrite_column_type(source_type, profile.database_type, source_dialect)
     };
     let is_same_dialect =
-        source_dialect.map(|source| DialectKind::from_database_type(db_type) == source).unwrap_or(false);
+        source_dialect.map(|source| DialectKind::from_database_type(profile.database_type) == source).unwrap_or(false);
 
-    append_sequence_diff_sql(&mut lines, sequence_diffs, profile, db_type, schema, cascade, |diff_type| {
-        diff_type == "added"
-    });
+    append_sequence_diff_sql(&mut lines, sequence_diffs, profile, schema, cascade, |diff_type| diff_type == "added");
 
     for diff in diffs {
-        let table = qualified_name(&diff.name, db_type, schema);
+        let table = qualified_name(&diff.name, profile, schema);
 
         if diff.diff_type == "added" && diff.object_type.as_deref() == Some("view") {
             if let Some(ddl) = &diff.ddl {
@@ -3420,7 +3430,7 @@ fn generate_schema_sync_sql_inner(
                             .as_ref()
                             .map_or(&[] as &[ForeignKeyDiff], |foreign_keys| foreign_keys.as_slice()),
                         diff.source_table_comment.as_ref().and_then(|comment| comment.as_deref()),
-                        db_type,
+                        profile,
                         schema,
                         None,
                         field_mappings,
@@ -3459,7 +3469,7 @@ fn generate_schema_sync_sql_inner(
                         diff.indexes.as_ref().map_or(&[] as &[IndexDiff], |v| v.as_slice()),
                         diff.foreign_keys.as_ref().map_or(&[] as &[ForeignKeyDiff], |v| v.as_slice()),
                         diff.source_table_comment.as_ref().and_then(|c| c.as_deref()),
-                        db_type,
+                        profile,
                         schema,
                         source_dialect,
                         field_mappings,
@@ -3486,7 +3496,7 @@ fn generate_schema_sync_sql_inner(
                     diff.indexes.as_ref().map_or(&[] as &[IndexDiff], |v| v.as_slice()),
                     diff.foreign_keys.as_ref().map_or(&[] as &[ForeignKeyDiff], |v| v.as_slice()),
                     diff.source_table_comment.as_ref().and_then(|c| c.as_deref()),
-                    db_type,
+                    profile,
                     schema,
                     source_dialect,
                     field_mappings,
@@ -3502,7 +3512,7 @@ fn generate_schema_sync_sql_inner(
 
         if diff.diff_type == "removed" {
             lines.push(format!("-- Drop {}: {}", diff.object_type.as_deref().unwrap_or("table"), diff.name));
-            lines.push(drop_object_sql(diff, db_type, schema, cascade));
+            lines.push(drop_object_sql(diff, profile, schema, cascade));
             lines.push(String::new());
             continue;
         }
@@ -3516,7 +3526,7 @@ fn generate_schema_sync_sql_inner(
         if let Some(foreign_keys) = &diff.foreign_keys {
             for fk in foreign_keys {
                 if fk.diff_type == "removed" || fk.diff_type == "modified" {
-                    lines.push(drop_foreign_key_sql(&diff.name, &fk.name, db_type, schema));
+                    lines.push(drop_foreign_key_sql(&diff.name, &fk.name, profile, schema));
                 }
             }
         }
@@ -3528,21 +3538,21 @@ fn generate_schema_sync_sql_inner(
                 match column.diff_type.as_str() {
                     "added" => {
                         if let Some(source) = &column.source {
-                            parts.push(format!("  ADD COLUMN {}", column_def(&convert_col(source), db_type)));
+                            parts.push(format!("  ADD COLUMN {}", column_def(&convert_col(source), profile)));
                         }
                     }
                     "removed" => {
-                        parts.push(format!("  DROP COLUMN {}", quote_id(&column.name, db_type)));
+                        parts.push(format!("  DROP COLUMN {}", quote_id(&column.name, profile)));
                     }
                     "modified" => {
                         if let Some(source) = &column.source {
                             let mapped = convert_col(source);
                             if profile.alter_uses_modify_column {
                                 if column.changes.iter().any(|change| !change.starts_with("order:")) {
-                                    parts.push(format!("  MODIFY COLUMN {}", column_def(&mapped, db_type)));
+                                    parts.push(format!("  MODIFY COLUMN {}", column_def(&mapped, profile)));
                                 }
                             } else {
-                                let name = quote_id(&column.name, db_type);
+                                let name = quote_id(&column.name, profile);
                                 if column.changes.iter().any(|change| change.starts_with("type:")) {
                                     parts.push(format!("  ALTER COLUMN {name} TYPE {}", mapped.data_type));
                                 }
@@ -3569,16 +3579,16 @@ fn generate_schema_sync_sql_inner(
                             let mapped = convert_col(source);
                             match profile.rename_column {
                                 RenameColumnSyntax::MysqlChangeColumn => {
-                                    let old_name = quote_id(&target_col.name, db_type);
+                                    let old_name = quote_id(&target_col.name, profile);
                                     parts.push(format!(
                                         "  CHANGE COLUMN {} {}",
                                         old_name,
-                                        column_def(&mapped, db_type)
+                                        column_def(&mapped, profile)
                                     ));
                                 }
                                 RenameColumnSyntax::RenameColumn => {
-                                    let old_name = quote_id(&target_col.name, db_type);
-                                    let new_name = quote_id(&column.name, db_type);
+                                    let old_name = quote_id(&target_col.name, profile);
+                                    let new_name = quote_id(&column.name, profile);
                                     parts.push(format!("  RENAME COLUMN {old_name} TO {new_name}"));
                                     if source.data_type.to_lowercase() != target_col.data_type.to_lowercase() {
                                         parts.push(format!("  ALTER COLUMN {new_name} TYPE {}", mapped.data_type));
@@ -3589,8 +3599,8 @@ fn generate_schema_sync_sql_inner(
                                     }
                                 }
                                 RenameColumnSyntax::AlterColumnRenameTo => {
-                                    let old_name = quote_id(&target_col.name, db_type);
-                                    let new_name = quote_id(&column.name, db_type);
+                                    let old_name = quote_id(&target_col.name, profile);
+                                    let new_name = quote_id(&column.name, profile);
                                     parts.push(format!("  ALTER COLUMN {old_name} RENAME TO {new_name}"));
                                     if source.data_type.to_lowercase() != target_col.data_type.to_lowercase() {
                                         parts.push(format!(
@@ -3600,9 +3610,9 @@ fn generate_schema_sync_sql_inner(
                                     }
                                 }
                                 RenameColumnSyntax::SqlServerSpRename => {
-                                    let target_table = qualified_name(&diff.name, db_type, schema);
+                                    let target_table = qualified_name(&diff.name, profile, schema);
                                     let full_obj_path =
-                                        format!("{target_table}.{}", quote_id(&target_col.name, db_type));
+                                        format!("{target_table}.{}", quote_id(&target_col.name, profile));
                                     standalone_statements.push(format!(
                                         "EXEC sp_rename '{}', '{}', 'COLUMN';",
                                         full_obj_path.replace('\'', "''"),
@@ -3642,18 +3652,18 @@ fn generate_schema_sync_sql_inner(
                                 &diff.name,
                                 &column.name,
                                 source.comment.as_deref().unwrap_or_default(),
-                                db_type,
+                                profile,
                                 schema,
                             ));
                         }
                         if column.diff_type == "added" {
                             if let Some(comment) = &source.comment {
-                                lines.push(column_comment_sql(&diff.name, &column.name, comment, db_type, schema));
+                                lines.push(column_comment_sql(&diff.name, &column.name, comment, profile, schema));
                             }
                         }
                         if column.diff_type == "renamed" {
                             if let Some(comment) = &source.comment {
-                                lines.push(column_comment_sql(&diff.name, &column.name, comment, db_type, schema));
+                                lines.push(column_comment_sql(&diff.name, &column.name, comment, profile, schema));
                             }
                         }
                     }
@@ -3663,7 +3673,7 @@ fn generate_schema_sync_sql_inner(
 
         if diff.source_table_comment.is_some() && diff.source_table_comment != diff.target_table_comment {
             let comment = diff.source_table_comment.as_ref().and_then(|comment| comment.as_deref()).unwrap_or_default();
-            lines.push(table_comment_sql(&diff.name, comment, db_type, schema));
+            lines.push(table_comment_sql(&diff.name, comment, profile, schema));
         }
 
         if let Some(indexes) = &diff.indexes {
@@ -3671,14 +3681,14 @@ fn generate_schema_sync_sql_inner(
                 match index.diff_type.as_str() {
                     "added" => {
                         if let Some(source) = &index.source {
-                            lines.push(create_index_sql(&diff.name, source, db_type, schema));
+                            lines.push(create_index_sql(&diff.name, source, profile, schema));
                         }
                     }
-                    "removed" => lines.push(drop_index_sql(&diff.name, &index.name, db_type, schema)),
+                    "removed" => lines.push(drop_index_sql(&diff.name, &index.name, profile, schema)),
                     "modified" => {
                         if let Some(source) = &index.source {
-                            lines.push(drop_index_sql(&diff.name, &index.name, db_type, schema));
-                            lines.push(create_index_sql(&diff.name, source, db_type, schema));
+                            lines.push(drop_index_sql(&diff.name, &index.name, profile, schema));
+                            lines.push(create_index_sql(&diff.name, source, profile, schema));
                         }
                     }
                     _ => {}
@@ -3690,7 +3700,7 @@ fn generate_schema_sync_sql_inner(
             for fk in foreign_keys {
                 if fk.diff_type == "added" || fk.diff_type == "modified" {
                     if let Some(source) = &fk.source {
-                        lines.push(add_foreign_key_sql(&diff.name, source, db_type, schema));
+                        lines.push(add_foreign_key_sql(&diff.name, source, profile, schema));
                     }
                 }
             }
@@ -3736,7 +3746,7 @@ fn generate_schema_sync_sql_inner(
                             } else {
                                 "CREATE FUNCTION"
                             };
-                            let name = qualified_name(&diff.name, db_type, schema);
+                            let name = qualified_name(&diff.name, profile, schema);
                             lines.push(DdlDialectProfile::render_template(
                                 template,
                                 &[("create_kw", create_kw), ("name", &name), ("definition", &source.definition)],
@@ -3752,7 +3762,7 @@ fn generate_schema_sync_sql_inner(
                 "removed" => {
                     if let Some(template) = profile.function_drop_template {
                         lines.push(format!("-- Drop function: {}", diff.name));
-                        let name = qualified_name(&diff.name, db_type, schema);
+                        let name = qualified_name(&diff.name, profile, schema);
                         lines.push(DdlDialectProfile::render_template(
                             template,
                             &[("name", &name), ("cascade", cascade)],
@@ -3766,7 +3776,7 @@ fn generate_schema_sync_sql_inner(
         }
     }
 
-    append_sequence_diff_sql(&mut lines, sequence_diffs, profile, db_type, schema, cascade, |diff_type| {
+    append_sequence_diff_sql(&mut lines, sequence_diffs, profile, schema, cascade, |diff_type| {
         matches!(diff_type, "removed" | "modified")
     });
 
@@ -3796,7 +3806,7 @@ fn generate_schema_sync_sql_inner(
                         lines.push(format!("-- Drop rule: {}", diff.name));
                         // Removed diffs store the object on `target`; tests may put it on `source`.
                         if let Some(rule) = diff.source.as_ref().or(diff.target.as_ref()) {
-                            let table_name = qualified_name(&rule.table_name, db_type, schema);
+                            let table_name = qualified_name(&rule.table_name, profile, schema);
                             lines.push(DdlDialectProfile::render_template(
                                 template,
                                 &[("rule_name", &diff.name), ("table_name", &table_name), ("cascade", cascade)],
@@ -3810,7 +3820,7 @@ fn generate_schema_sync_sql_inner(
                     if let Some(source) = &diff.source {
                         if let Some(template) = profile.rule_drop_template {
                             lines.push(format!("-- Alter rule: {}", diff.name));
-                            let table_name = qualified_name(&source.table_name, db_type, schema);
+                            let table_name = qualified_name(&source.table_name, profile, schema);
                             lines.push(DdlDialectProfile::render_template(
                                 template,
                                 &[("rule_name", &diff.name), ("table_name", &table_name), ("cascade", cascade)],
@@ -3840,7 +3850,7 @@ fn generate_schema_sync_sql_inner(
                         "SEQUENCE" => "SEQUENCE",
                         _ => "TABLE",
                     };
-                    let name = qualified_name(&diff.object_name, db_type, schema);
+                    let name = qualified_name(&diff.object_name, profile, schema);
                     lines.push(DdlDialectProfile::render_template(
                         template,
                         &[("object_type", object_type), ("name", &name), ("owner", &source.owner)],

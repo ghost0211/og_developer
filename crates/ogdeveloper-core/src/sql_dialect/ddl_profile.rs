@@ -290,6 +290,24 @@ fn conservative_ansi(db: DatabaseType) -> DdlDialectProfile {
     }
 }
 
+/// Resolve identifier rules for the actual target database, not just its server family.
+pub fn profile_for_connection(db_type: DatabaseType, sql_compatibility: Option<&str>) -> DdlDialectProfile {
+    let mut profile = profile_for(db_type);
+    if db_type == DatabaseType::OpenGauss
+        && sql_compatibility
+            .is_some_and(|mode| matches!(mode.trim().to_ascii_uppercase().as_str(), "B" | "M" | "MYSQL"))
+    {
+        profile.quote = QuoteStyle::Backtick;
+    }
+    profile
+}
+
+impl From<DatabaseType> for DdlDialectProfile {
+    fn from(db_type: DatabaseType) -> Self {
+        profile_for(db_type)
+    }
+}
+
 /// Resolve DDL profile for a concrete target database type.
 ///
 /// This is the **only** place that maps [`DatabaseType`] → profile data.

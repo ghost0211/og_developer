@@ -13,6 +13,7 @@ import type {
   ObjectStatistics,
   ObjectSource,
   ObjectSourceKind,
+  SchemaDiffDeployResult,
   ColumnInfo,
   IndexInfo,
   ForeignKeyInfo,
@@ -689,10 +690,21 @@ export async function prepareSchemaDiff(options: SchemaDiffPreparationOptions): 
   return post("/api/schema-diff/prepare", options);
 }
 
-export async function generateSchemaSyncSql(diffs: TableDiff[], databaseType: DatabaseType, targetSchema?: string, functionDiffs?: FunctionDiff[], sequenceDiffs?: SequenceDiff[], ruleDiffs?: RuleDiff[], ownerDiffs?: OwnerDiff[], cascadeDelete?: boolean): Promise<string> {
+export async function generateSchemaSyncSql(
+  diffs: TableDiff[],
+  databaseType: DatabaseType,
+  targetSchema?: string,
+  functionDiffs?: FunctionDiff[],
+  sequenceDiffs?: SequenceDiff[],
+  ruleDiffs?: RuleDiff[],
+  ownerDiffs?: OwnerDiff[],
+  cascadeDelete?: boolean,
+  targetSqlCompatibility?: string,
+): Promise<string> {
   return post("/api/schema-diff/generate-sync-sql", {
     diffs,
     databaseType,
+    targetSqlCompatibility,
     targetSchema,
     functionDiffs: functionDiffs ?? [],
     sequenceDiffs: sequenceDiffs ?? [],
@@ -975,7 +987,7 @@ export async function executeScript(connectionId: string, database: string, sql:
   });
 }
 
-export async function executeScriptWith2pc(connectionId: string, database: string, statements: string[], schema?: string): Promise<any> {
+export async function executeScriptWith2pc(connectionId: string, database: string, statements: string[], schema?: string): Promise<SchemaDiffDeployResult> {
   return post("/api/query/execute-script-2pc", {
     connectionId,
     database,

@@ -19,11 +19,11 @@ import SchemaDiffDeployStep from "@/components/diff/SchemaDiffDeployStep.vue";
 import SchemaDiffOptionsPanel from "@/components/diff/SchemaDiffOptionsPanel.vue";
 
 import { getSchemaDiffOptionsForDbType } from "@/lib/schema/schemaDiffOptions";
-import { buildDeployTxResult } from "@/lib/schema/deployTxResult";
+import { buildDeployTxResult, type DeployTxResult } from "@/lib/schema/deployTxResult";
 import { createConcurrencyLimiter, mapWithConcurrency, schemaDiffMetadataConcurrency, schemaDiffMetadataLoadPlan } from "@/lib/schema/schemaDiffMetadataLoad";
 import { normalizeSchemaDiffCompareOptions } from "@/types/schemaDiff";
 import type { SchemaDiffCompareOptions, SchemaDiffConfig, FieldMappingEntry } from "@/types/schemaDiff";
-import type { ObjectSourceKind, TableInfo } from "@/types/database";
+import type { ObjectSourceKind, SchemaDiffDeployResult, TableInfo } from "@/types/database";
 import {
   buildDeploySqlForObjects,
   convertToSchemaDiffObjects,
@@ -104,7 +104,7 @@ const executing = ref(false);
 const lastDiffResult = ref<SchemaDiffPreparation | null>(null);
 const targetDbVersion = ref<string | null>(null);
 const showResultDialog = ref(false);
-const deployResult = ref<{ success: boolean; status?: string; message: string; affectedRows?: number; error?: string } | null>(null);
+const deployResult = ref<DeployTxResult | null>(null);
 
 // Phase 4 result fields
 const rollbackSql = ref("");
@@ -395,6 +395,12 @@ async function handleCompare() {
 
     await store.ensureConnected(sourceConnectionId.value);
     await store.ensureConnected(targetConnectionId.value);
+    // Compatibility belongs to the selected database, not the saved connection's default database.
+    const targetInfo = dbType === "opengauss" ? await api.connectionDatabaseInfo(targetConnectionId.value, targetDatabase.value) : undefined;
+    const targetSqlCompatibility = targetInfo?.sqlCompatibility?.trim();
+    if (dbType === "opengauss" && !targetSqlCompatibility) {
+      throw new Error(t("diff.compatibilityUnavailable"));
+    }
 
     const [srcTables, tgtTables] = await Promise.all([api.listTables(sourceConnectionId.value, sourceDatabase.value, sourceSchema.value), api.listTables(targetConnectionId.value, targetDatabase.value, targetSchema.value)]);
     const { sourceTables, targetTables } = filterSchemaDiffTables(srcTables, tgtTables, tableFilter, opts);
@@ -461,6 +467,7 @@ async function handleCompare() {
       sourceOwners: srcOwners,
       targetOwners: tgtOwners,
       databaseType: dbType,
+      targetSqlCompatibility,
       targetSchema: schemaDiffDeployTargetSchema(dbType, targetDatabase.value, targetSchema.value),
       ignoreComments: ignoreComments.value,
       cascadeDelete: opts?.cascadeDelete ?? false,
@@ -680,8 +687,7 @@ async function executeDeploySql() {
       sql: deploySql.value,
       source: t("production.sourceSchemaDiff"),
       execute: async () => {
-        const txLog = await api.executeScriptWith2pc(targetConnectionId.value, targetDatabase.value, [deploySql.value], targetSchema.value);
-        return txLog;
+        return api.executeScriptWith2pc(targetConnectionId.value, targetDatabase.value, [deploySql.value], targetSchema.value);
       },
     });
     if (failed === undefined) return;
@@ -697,8 +703,8 @@ async function executeDeploySql() {
   }
 }
 
-function showDeployTxResult(txLog: any) {
-  deployResult.value = buildDeployTxResult(txLog, t);
+function showDeployTxResult(result: SchemaDiffDeployResult) {
+  deployResult.value = buildDeployTxResult(result, t);
   showResultDialog.value = true;
 }
 async function handleSelectObject(obj: SchemaDiffObject) {

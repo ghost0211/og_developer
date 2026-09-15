@@ -1107,16 +1107,43 @@ pub async fn execute_statements(
     Ok(multi_results.into_iter().map(|mr| mr.result).collect())
 }
 
+/// Outcome of a Schema Diff deploy, as reported to the UI.
+///
+/// Only the deploy path can decide this, so it travels with the result instead of being inferred by
+/// each caller from `success`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SchemaDiffDeployStatus {
+    /// Every statement ran and the transaction committed.
+    Committed,
+    /// The deploy failed and the transaction was closed with a rollback rather than a commit, so no
+    /// statement was applied.
+    RolledBack,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SchemaDiffDeployResult {
     pub success: bool,
+    pub status: SchemaDiffDeployStatus,
     pub executed_statements: usize,
     pub total_statements: usize,
     pub error: Option<String>,
+    /// Always true for the current deploy path: the statements run as one single-connection
+    /// transaction (`BEGIN`/`COMMIT` on the native pool, one `executeTransaction` call on the JDBC
+    /// session) and a failure rolls the whole transaction back.
     pub transactional: bool,
 }
 
+fn schema_diff_deploy_statements(scripts: &[String], db_type: Option<DatabaseType>) -> Vec<String> {
+    scripts
+        .iter()
+        .flat_map(|script| match db_type {
+            Some(db_type) => split_sql_statements_for_database(script, db_type),
+            None => split_sql_statements(script),
+        })
+        .collect()
+}
 pub async fn execute_schema_diff_deploy(
     state: &AppState,
     connection_id: &str,
@@ -1125,16 +1152,14 @@ pub async fn execute_schema_diff_deploy(
     schema: Option<&str>,
     catalog: Option<&str>,
 ) -> Result<SchemaDiffDeployResult, String> {
-    let non_comment_statements: Vec<&String> = statements
-        .iter()
-        .filter(|s| {
-            let trimmed = s.trim();
-            !trimmed.is_empty() && !trimmed.starts_with("--")
-        })
-        .collect();
-    if non_comment_statements.is_empty() {
+    // The desktop sends the whole script with its comment header in one entry.
+    // Split using the dialect-aware parser: native execution needs one statement per call.
+    let db_type = connection_database_type(state, connection_id).await;
+    let statements = schema_diff_deploy_statements(statements, db_type);
+    if statements.is_empty() {
         return Ok(SchemaDiffDeployResult {
             success: true,
+            status: SchemaDiffDeployStatus::Committed,
             executed_statements: 0,
             total_statements: 0,
             error: None,
@@ -1143,16 +1168,20 @@ pub async fn execute_schema_diff_deploy(
     }
 
     let total_statements = statements.len();
-    match execute_statements_in_transaction(state, connection_id, database, statements, schema, catalog).await {
+    match execute_statements_in_transaction(state, connection_id, database, &statements, schema, catalog).await {
         Ok(_) => Ok(SchemaDiffDeployResult {
             success: true,
+            status: SchemaDiffDeployStatus::Committed,
             executed_statements: total_statements,
             total_statements,
             error: None,
             transactional: true,
         }),
+        // The transaction was closed with a rollback rather than a commit, so reporting zero
+        // executed statements is accurate rather than a best-effort guess.
         Err(e) => Ok(SchemaDiffDeployResult {
             success: false,
+            status: SchemaDiffDeployStatus::RolledBack,
             executed_statements: 0,
             total_statements,
             error: Some(e),
@@ -1266,16 +1295,20 @@ async fn execute_transaction_on_pool_once(
     let result = match pool {
         PoolKind::Postgres(pg) => {
             let conn = pg.get().await.map_err(|e| QueryExecutionError::Legacy(e.to_string()))?;
-            conn.execute("BEGIN", &[]).await.map_err(|e| QueryExecutionError::Legacy(e.to_string()))?;
-            if let Some(s) = schema {
-                conn.execute(&format!("SET LOCAL search_path TO \"{s}\""), &[])
-                    .await
-                    .map_err(|e| QueryExecutionError::Legacy(e.to_string()))?;
+            conn.execute("BEGIN", &[])
+                .await
+                .map_err(|e| QueryExecutionError::Legacy(db::postgres::pg_error_to_string(e)))?;
+            if let Err(error) = run_statements_in_open_transaction(&conn, statements, schema).await {
+                // The pool recycles this connection with `RecyclingMethod::Fast`, which issues no
+                // clean-up query, so an aborted transaction left open here would be handed to the
+                // next checkout and fail it with SQLSTATE 25P02. Close it before returning.
+                if let Err(rollback_error) = conn.batch_execute("ROLLBACK").await {
+                    log::warn!("failed to roll back an aborted deploy transaction: {rollback_error:?}");
+                }
+                // `tokio_postgres::Error`'s Display drops the server message, so the raw `to_string()`
+                // would report every failed deploy as the literal text "db error".
+                return Err(QueryExecutionError::Legacy(db::postgres::pg_error_to_string(error)));
             }
-            for stmt in statements {
-                conn.execute(stmt.as_str(), &[]).await.map_err(|e| QueryExecutionError::Legacy(e.to_string()))?;
-            }
-            conn.execute("COMMIT", &[]).await.map_err(|e| QueryExecutionError::Legacy(e.to_string()))?;
             Ok(empty_query_result(0))
         }
         PoolKind::ExternalDriver { config, session, .. } => {
@@ -1298,6 +1331,30 @@ async fn execute_transaction_on_pool_once(
     };
 
     result
+}
+
+/// Applies `schema`, runs `statements`, and commits, inside the transaction already open on `conn`.
+///
+/// Every step is fallible, so the caller owns the rollback: it must close the transaction whenever
+/// this returns an error, otherwise the pool hands the aborted connection to the next checkout.
+///
+/// An error from the final `COMMIT` is the one case where the outcome is genuinely unknown — a
+/// dropped connection at that point can leave the server's decision unobserved. The caller still
+/// rolls back and reports `RolledBack`, matching every other failure; distinguishing it would need
+/// the transaction id to be reconciled with the server afterwards.
+async fn run_statements_in_open_transaction(
+    conn: &tokio_postgres::Client,
+    statements: &[String],
+    schema: Option<&str>,
+) -> Result<(), tokio_postgres::Error> {
+    if let Some(s) = schema {
+        conn.execute(&format!("SET LOCAL search_path TO \"{s}\""), &[]).await?;
+    }
+    for stmt in statements {
+        conn.execute(stmt.as_str(), &[]).await?;
+    }
+    conn.execute("COMMIT", &[]).await?;
+    Ok(())
 }
 
 pub async fn begin_manual_transaction(
@@ -1589,6 +1646,68 @@ mod tests {
         assert!(payload.get("execution_error").is_none());
         assert!(payload.get("error").is_none());
         assert_eq!(payload["rows"], serde_json::json!([["ordinary data"]]));
+    }
+
+    #[test]
+    fn deploy_splits_scripts_without_discarding_sql_after_comments() {
+        let scripts = vec![
+            "-- Create table\nCREATE TABLE example (id integer);\n-- Add column\nALTER TABLE example ADD COLUMN note text;".to_string(),
+            "/* only a comment */; -- another comment".to_string(),
+            "  ".to_string(),
+        ];
+        let statements = schema_diff_deploy_statements(&scripts, Some(DatabaseType::OpenGauss));
+        assert_eq!(statements.len(), 2);
+        assert!(statements[0].contains("CREATE TABLE example"));
+        assert!(statements[1].contains("ALTER TABLE example"));
+        assert!(schema_diff_deploy_statements(&scripts[1..], None).is_empty());
+    }
+
+    #[test]
+    fn deploy_preserves_semicolons_inside_routine_bodies() {
+        let routine =
+            "CREATE FUNCTION sample() RETURNS void AS $$ BEGIN PERFORM 1; PERFORM 2; END; $$ LANGUAGE plpgsql;";
+        let statements = schema_diff_deploy_statements(&[routine.to_string()], Some(DatabaseType::OpenGauss));
+        assert_eq!(statements.len(), 1);
+        assert!(statements[0].contains("PERFORM 1; PERFORM 2;"));
+    }
+    #[test]
+    fn schema_diff_deploy_result_serializes_the_shape_the_desktop_client_reads() {
+        // The desktop renderer switches on `status` and formats `executedStatements`/`totalStatements`.
+        // Renaming any of these silently turns a successful deploy into an "unknown status" failure,
+        // because the wire format is only checked at runtime.
+        let committed = SchemaDiffDeployResult {
+            success: true,
+            status: SchemaDiffDeployStatus::Committed,
+            executed_statements: 3,
+            total_statements: 3,
+            error: None,
+            transactional: true,
+        };
+        assert_eq!(
+            serde_json::to_value(&committed).unwrap(),
+            serde_json::json!({
+                "success": true,
+                "status": "committed",
+                "executedStatements": 3,
+                "totalStatements": 3,
+                "error": null,
+                "transactional": true,
+            })
+        );
+
+        let rolled_back = SchemaDiffDeployResult {
+            success: false,
+            status: SchemaDiffDeployStatus::RolledBack,
+            executed_statements: 0,
+            total_statements: 3,
+            error: Some("syntax error at or near \"CREAT\"".to_string()),
+            transactional: true,
+        };
+        let payload = serde_json::to_value(&rolled_back).unwrap();
+        assert_eq!(payload["status"], serde_json::json!("rolled_back"));
+        assert_eq!(payload["executedStatements"], serde_json::json!(0));
+        assert_eq!(payload["totalStatements"], serde_json::json!(3));
+        assert_eq!(payload["error"], serde_json::json!("syntax error at or near \"CREAT\""));
     }
 
     #[test]
