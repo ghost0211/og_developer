@@ -48,6 +48,24 @@ describe("openGauss graphical routine invocation", () => {
     expect(packageMember).not.toContain("propackageid = 0");
   });
 
+  it("excludes RETURNS TABLE columns (proargmodes 't') but keeps real OUT params", () => {
+    // 回归：RETURNS TABLE(...) 的输出列以 't' 模式存储在 pg_proc，之前被当作
+    // 参数列出（侧边栏展开一堆伪 OUT 行）。真实 OUT 参数（'o'）必须保留，
+    // 过程执行窗口要声明它们接收输出。
+    const query = routineParametersQuery({
+      database: "postgres",
+      databaseType: "opengauss",
+      schema: "app",
+      routineName: "get_menu_tree_user_system",
+      routineKind: "function",
+    })!;
+    expect(query).toContain("COALESCE(p.proargmodes[gs.ordinal], 'i') <> 't'");
+    expect(query).not.toContain("WHEN 't' THEN");
+    // 'o'/'b' 模式的行仍映射为 OUT/INOUT 返回给调用方
+    expect(query).toContain("WHEN 'o' THEN 'OUT'");
+    expect(query).toContain("WHEN 'b' THEN 'INOUT'");
+  });
+
   const param = (name: string, dataType: string, mode: "IN" | "OUT" | "INOUT", ordinal: number, value = "") => ({ name, dataType, mode, ordinal, value });
 
   it("procedures always run as a DECLARE...BEGIN...END anonymous block (PL/SQL Developer style)", () => {

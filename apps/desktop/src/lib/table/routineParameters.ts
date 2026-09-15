@@ -101,6 +101,8 @@ export function routineParametersQuery(options: Pick<LoadRoutineParametersOption
     const signatureFilter = options.signature?.trim() ? `\n  AND pg_get_function_identity_arguments(p.oid) = ${quoteSqlLiteral(options.signature)}` : "";
     // 独立例程不要混入同名包成员（openGauss 才有 propackageid）。
     const standalonePackageFilter = !packageMember && options.databaseType === "opengauss" ? "\n  AND (p.propackageid = 0 OR p.propackageid IS NULL)" : "";
+    // RETURNS TABLE(...) 的输出列在 pg_proc 里以 proargmodes='t' 存储，不是
+    // 可传参的参数，展开树/执行窗口都不应列出；真正的 OUT 参数（'o'）保留。
     // openGauss 不支持 `CROSS JOIN LATERAL (SELECT ...)`（6.0-lite 实测语法错误），
     // 参数展开改用 generate_series 等值 JOIN；has_default 以“第几个 IN 类参数”
     // （input_ordinal）超过 pronargs - pronargdefaults 判定，窗口函数就地计算。
@@ -116,7 +118,6 @@ SELECT
     WHEN 'o' THEN 'OUT'
     WHEN 'b' THEN 'INOUT'
     WHEN 'v' THEN 'IN'
-    WHEN 't' THEN 'OUT'
     ELSE 'IN'
   END AS mode,
   gs.ordinal AS ordinal,
@@ -132,6 +133,7 @@ JOIN pg_namespace n ON n.oid = p.pronamespace
 ${packageJoin}JOIN generate_series(1, 100) AS gs(ordinal)
   ON gs.ordinal <= COALESCE(array_length(p.proallargtypes, 1), p.pronargs)
 WHERE ${prokindFilter}
+  AND COALESCE(p.proargmodes[gs.ordinal], 'i') <> 't'
   AND n.nspname = ${schema}
   AND ${nameFilter}${signatureFilter}${standalonePackageFilter}
 ORDER BY gs.ordinal;`.trim();
