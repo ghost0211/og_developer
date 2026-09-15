@@ -3457,8 +3457,11 @@ async function performAsyncCompletionWithResult(epoch: number, completionContext
   const effectiveContext = qualifierIsSchema
     ? {
         ...completionContext,
-        qualifier: undefined,
-        suggestTables: true,
+        // 保留 qualifier：表/例程条目把它当作元数据作用域，补全插入的是点号后
+        // 的裸名（CodeMirror 从 prefix 起点替换，即在 `schema.` 之后）。清掉
+        // qualifier 会让例程 apply 退化成 `schema.schema.name` 双重限定。
+        // CALL/EXEC 语境（exclusiveRoutine）不混入表。
+        suggestTables: !completionContext.exclusiveRoutineSuggestions,
         suggestColumns: false,
         exclusiveColumnSuggestions: false,
       }

@@ -1596,7 +1596,11 @@ class SqlCompletionProvider {
     const pendingJoinKeyword = isPendingJoinKeywordContext(context);
 
     const preferReferencedColumns = hasMatchingReferencedColumnPrefix(context, this.input.columnsByTable);
-    if (!pendingJoinKeyword && !context.exclusiveTableSuggestions && !context.exclusiveColumnSuggestions && !context.exclusiveRoutineSuggestions) {
+    // 带 qualifier（如 `schema.`）时不注入内置片段/函数：getSqlCompletionContext
+    // 派生的语境里 qualifier 必然伴随 exclusiveTable/exclusiveColumn 之一，此条件
+    // 对既有行为无影响；它只约束 QueryEditor 里“限定词实为 schema”重写后的语境，
+    // 避免空前缀时全部内置函数涌进 `schema.` 弹窗（matchesPrefix 对空前缀恒真）。
+    if (!pendingJoinKeyword && !context.qualifier && !context.exclusiveTableSuggestions && !context.exclusiveColumnSuggestions && !context.exclusiveRoutineSuggestions) {
       const snippets = this.input.snippets ?? DEFAULT_SQL_SNIPPETS;
       if (!preferReferencedColumns) {
         this.items.push(...buildSnippetItems(context.prefix, snippets, this.input.keywordCase, this.databaseType));
