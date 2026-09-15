@@ -241,6 +241,9 @@ const userPausedAutoScroll = ref(false);
 const showScrollToBottom = ref(false);
 const promptCompositionActive = ref(false);
 const shikiCodeHighlighter = ref<AiCodeHighlighter>();
+// Bumped when a lazily fetched Shiki grammar becomes available, so already rendered answers are
+// re-rendered with highlighting instead of the plain-text fallback shown while it was loading.
+const shikiGrammarVersion = ref(0);
 const promptHistory = ref<string[]>([]);
 const historyIndex = ref(-1);
 const draftBeforeHistory = ref("");
@@ -2014,6 +2017,9 @@ onMounted(async () => {
   conversations.value = await loadAiConversations().catch(() => []);
   shikiCodeHighlighter.value = await createAiShikiCodeHighlighter({
     appearance: () => aiCodeAppearance.value,
+    onLanguageLoaded: () => {
+      shikiGrammarVersion.value += 1;
+    },
   }).catch(() => undefined);
 
   window.addEventListener("resize", handlePanelResize);
@@ -2114,6 +2120,8 @@ defineExpose({ triggerAction, setPrompt });
 const messageRenderer = computed(() => {
   const appearance = aiCodeAppearance.value;
   const highlightCode = shikiCodeHighlighter.value;
+  // Read so a late grammar arrival rebuilds the renderer and drops its plain-text entries.
+  void shikiGrammarVersion.value;
   return createAiMessageRenderer({
     markdown: formatAiInlineMarkdown,
     highlightCode: highlightCode ? (content, lang) => highlightCode(content, lang, appearance) : undefined,

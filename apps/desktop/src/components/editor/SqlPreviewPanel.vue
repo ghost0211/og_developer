@@ -8,7 +8,10 @@ import { useTheme } from "@/composables/useTheme";
 import { useToast } from "@/composables/useToast";
 import { copyToClipboard } from "@/lib/common/clipboard";
 import { formatSqlText, type SqlFormatDialect } from "@/lib/sql/sqlFormatter";
-import type { Highlighter } from "shiki";
+
+// Only SQL is ever highlighted here, so the highlighter is built from "shiki/core" with that one
+// grammar. Importing from the "shiki" root instead would pull in the full bundled language set.
+type SqlPreviewShikiHighlighter = Awaited<ReturnType<typeof import("shiki/core").createHighlighterCore>>;
 
 const props = defineProps<{
   sql: string;
@@ -34,7 +37,7 @@ const formatting = ref(false);
 const highlightedHtml = ref("");
 const highlighterReady = ref(false);
 
-let highlighter: Highlighter | null = null;
+let highlighter: SqlPreviewShikiHighlighter | null = null;
 
 const displaySql = computed(() => {
   if (isFormatted.value && formattedSql.value) {
@@ -48,10 +51,11 @@ const hasSql = computed(() => props.sql.trim().length > 0);
 async function initHighlighter() {
   if (highlighter) return;
   try {
-    const { createHighlighter } = await import("shiki");
-    highlighter = await createHighlighter({
-      themes: ["dark-plus", "min-light"],
-      langs: ["sql"],
+    const [{ createHighlighterCore }, { createJavaScriptRegexEngine }, darkPlus, minLight, sql] = await Promise.all([import("shiki/core"), import("shiki/engine/javascript"), import("shiki/themes/dark-plus.mjs"), import("shiki/themes/min-light.mjs"), import("shiki/langs/sql.mjs")]);
+    highlighter = await createHighlighterCore({
+      engine: createJavaScriptRegexEngine(),
+      themes: [darkPlus.default, minLight.default],
+      langs: [sql.default],
     });
     highlighterReady.value = true;
     await highlightSql();
