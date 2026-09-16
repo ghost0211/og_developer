@@ -2112,4 +2112,16 @@ mod tests {
         assert!(app.configs.read().await.contains_key(&config.id));
         app.remove_connection_pools(&config.id).await;
     }
+
+    #[test]
+    fn session_scoped_pool_key_format_is_stable_for_rebuilds() {
+        // `rebuild_pool_after_connection_error` must reproduce the exact key of the
+        // failed attempt: a session-scoped explain pool lives under a
+        // `:session:`-suffixed key with ':' normalized to '_'.
+        let base = base_pool_key_for(Some(DatabaseType::Opengauss), "conn-1", Some("testdb"), false);
+        assert_eq!(base, "conn-1:testdb");
+        assert_eq!(session_scoped_pool_key(base.clone(), Some("tab-1:explain")), "conn-1:testdb:session:tab-1_explain");
+        assert_eq!(session_scoped_pool_key(base.clone(), None), base);
+        assert_eq!(session_scoped_pool_key(base.clone(), Some("   ")), base);
+    }
 }

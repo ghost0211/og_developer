@@ -53,6 +53,7 @@ import java.util.stream.Collectors;
 public final class OgdeveloperJdbcPlugin {
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final int MAX_ROWS = 10_000;
+    private static final int CONNECTION_VALIDATION_TIMEOUT_SECS = 5;
     private static final String JDBCX_URL_PREFIX = "jdbcx:";
     private static final String JDBCX_EXTENSION_WHITELIST_PROPERTY = "jdbcx.extension.whitelist";
     private static final String JDBCX_HIGH_PRIVILEGE_EXTENSIONS_OPT_IN = "-Dogdeveloper.jdbcx.allowHighPrivilegeExtensions=";
@@ -411,7 +412,8 @@ public final class OgdeveloperJdbcPlugin {
         };
     }
 
-    private static ObjectNode connectionTestResult(Connection connection) {
+    private static ObjectNode connectionTestResult(Connection connection) throws SQLException {
+        ensureConnectionAlive(connection);
         ObjectNode result = MAPPER.createObjectNode();
         result.put("ok", true);
         ObjectNode databaseInfo = databaseInfo(connection);
@@ -419,6 +421,27 @@ public final class OgdeveloperJdbcPlugin {
             result.set("databaseInfo", databaseInfo);
         }
         return result;
+    }
+
+    /**
+     * Real round-trip validation of the shared connection. `isClosed()` is a
+     * client-side flag and cannot see sessions the server terminated while the
+     * connection sat idle (e.g. openGauss `session_timeout` killing idle
+     * backends): pgjdbc only learns about it on the next I/O. `isValid` pings
+     * the server, so a dead session fails here instead of on the caller's next
+     * statement. Drivers predating JDBC 4.1 may not implement `isValid`; those
+     * keep the legacy metadata-only behaviour.
+     */
+    private static void ensureConnectionAlive(Connection connection) throws SQLException {
+        final boolean alive;
+        try {
+            alive = connection.isValid(CONNECTION_VALIDATION_TIMEOUT_SECS);
+        } catch (SQLFeatureNotSupportedException | UnsupportedOperationException | AbstractMethodError ignored) {
+            return;
+        }
+        if (!alive) {
+            throw new SQLException("Connection validation failed: the server already closed this session.");
+        }
     }
 
     private static ObjectNode databaseInfoResult(Connection connection) {
@@ -1016,12 +1039,17 @@ public final class OgdeveloperJdbcPlugin {
             }
         }
         boolean supported = false;
-        try (Connection conn = openConnection(connection);
-             Statement statement = conn.createStatement();
-             ResultSet rs = statement.executeQuery(
-                 "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = 'gms_output')")) {
-            if (rs.next()) {
-                supported = rs.getBoolean(1);
+        try {
+            // openConnection returns the process-wide shared connection: never
+            // close it here, or the caller's own reference dies with
+            // "This connection has been closed." (pgjdbc) right after the probe.
+            Connection conn = openConnection(connection);
+            try (Statement statement = conn.createStatement();
+                 ResultSet rs = statement.executeQuery(
+                     "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = 'gms_output')")) {
+                if (rs.next()) {
+                    supported = rs.getBoolean(1);
+                }
             }
         } catch (SQLException | AbstractMethodError | UnsupportedOperationException ignored) {
             supported = false;

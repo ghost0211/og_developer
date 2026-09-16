@@ -26,10 +26,12 @@ import java.sql.Types;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 final class OgdeveloperJdbcPluginTest {
     private static final ObjectMapper MAPPER = new ObjectMapper();
@@ -386,6 +388,88 @@ final class OgdeveloperJdbcPluginTest {
             assertFalse(response.has("error"), response.toString());
             assertEquals("row-value", response.path("result").path("rows").path(0).path(0).asText());
             assertEquals(List.of("executeQuery"), calls);
+        } finally {
+            DriverManager.deregisterDriver(driver);
+        }
+    }
+
+    @Test
+    void openGaussOutputProbeKeepsSharedConnectionOpen() throws Exception {
+        // Regression: the gms_output package probe borrows the process-wide shared
+        // connection from openConnection; closing it (try-with-resources) killed the
+        // caller's own reference, so the first non-paged executeQuery on a fresh
+        // plugin process (e.g. every Explain Plan session) failed with
+        // "This connection has been closed." from pgjdbc.
+        AtomicBoolean closed = new AtomicBoolean();
+        Driver driver = new CloseTrackingOpenGaussDriver(closed);
+        DriverManager.registerDriver(driver);
+        try {
+            JsonNode response = request("executeQuery", """
+                {
+                  "connection": {
+                    "connection_string": "jdbc:opengauss://dbx-fake:15400/postgres",
+                    "connect_timeout_secs": 30
+                  },
+                  "sql": "EXPLAIN SELECT 1"
+                }
+                """);
+
+            assertFalse(response.has("error"), response.toString());
+            assertEquals("row-value", response.path("result").path("rows").path(0).path(0).asText());
+            assertFalse(closed.get(), "gms_output probe must not close the shared connection");
+        } finally {
+            DriverManager.deregisterDriver(driver);
+        }
+    }
+
+    @Test
+    void testConnectionDetectsServerTerminatedIdleSession() throws Exception {
+        // The server killed the session while the client sat idle (e.g. openGauss
+        // session_timeout): isClosed() is still false because pgjdbc only learns
+        // about the termination on the next I/O. testConnection must ping the
+        // server (isValid) and fail, so the Rust pool manager discards and
+        // rebuilds the pool instead of letting the caller's next statement die
+        // with "FATAL: terminating connection due to administrator command".
+        Driver driver = new ValidationProbeDriver(serverKilledConnection());
+        DriverManager.registerDriver(driver);
+        try {
+            JsonNode response = request("testConnection", """
+                {
+                  "connection": {
+                    "connection_string": "jdbc:dbx-validation:killed",
+                    "connect_timeout_secs": 30
+                  }
+                }
+                """);
+
+            assertTrue(response.has("error"), response.toString());
+            assertTrue(
+                response.path("error").path("message").asText().contains("validation failed"),
+                response.toString()
+            );
+        } finally {
+            DriverManager.deregisterDriver(driver);
+        }
+    }
+
+    @Test
+    void testConnectionToleratesDriversWithoutIsValidSupport() throws Exception {
+        // Drivers predating JDBC 4.1 may not implement isValid; those keep the
+        // legacy metadata-only behaviour instead of failing every health probe.
+        Driver driver = new ValidationProbeDriver(isValidUnsupportedConnection());
+        DriverManager.registerDriver(driver);
+        try {
+            JsonNode response = request("testConnection", """
+                {
+                  "connection": {
+                    "connection_string": "jdbc:dbx-validation:unsupported",
+                    "connect_timeout_secs": 30
+                  }
+                }
+                """);
+
+            assertFalse(response.has("error"), response.toString());
+            assertTrue(response.path("result").path("ok").asBoolean(), response.toString());
         } finally {
             DriverManager.deregisterDriver(driver);
         }
@@ -2260,6 +2344,81 @@ final class OgdeveloperJdbcPluginTest {
         }
     }
 
+    private static final class ValidationProbeDriver implements Driver {
+        private final Connection connection;
+
+        private ValidationProbeDriver(Connection connection) {
+            this.connection = connection;
+        }
+
+        @Override
+        public Connection connect(String url, Properties info) throws SQLException {
+            if (!acceptsURL(url)) {
+                return null;
+            }
+            return connection;
+        }
+
+        @Override
+        public boolean acceptsURL(String url) {
+            return url != null && url.startsWith("jdbc:dbx-validation:");
+        }
+
+        @Override
+        public DriverPropertyInfo[] getPropertyInfo(String url, Properties info) {
+            return new DriverPropertyInfo[0];
+        }
+
+        @Override
+        public int getMajorVersion() {
+            return 1;
+        }
+
+        @Override
+        public int getMinorVersion() {
+            return 0;
+        }
+
+        @Override
+        public boolean jdbcCompliant() {
+            return false;
+        }
+
+        @Override
+        public java.util.logging.Logger getParentLogger() {
+            return java.util.logging.Logger.getGlobal();
+        }
+    }
+
+    /** Mimics pgjdbc right after the server terminated the session: the client
+     * has not processed the termination yet, so isClosed() is false while the
+     * isValid() round trip reports the dead connection. */
+    private static Connection serverKilledConnection() {
+        return (Connection) Proxy.newProxyInstance(
+            OgdeveloperJdbcPluginTest.class.getClassLoader(),
+            new Class<?>[] { Connection.class },
+            (proxy, method, args) -> switch (method.getName()) {
+                case "isClosed" -> false;
+                case "isValid" -> false;
+                case "close" -> null;
+                default -> defaultValue(method.getReturnType());
+            }
+        );
+    }
+
+    private static Connection isValidUnsupportedConnection() {
+        return (Connection) Proxy.newProxyInstance(
+            OgdeveloperJdbcPluginTest.class.getClassLoader(),
+            new Class<?>[] { Connection.class },
+            (proxy, method, args) -> switch (method.getName()) {
+                case "isClosed" -> false;
+                case "isValid" -> throw new SQLFeatureNotSupportedException("isValid not implemented");
+                case "close" -> null;
+                default -> defaultValue(method.getReturnType());
+            }
+        );
+    }
+
     private static Connection recordingConnection() {
         return (Connection) Proxy.newProxyInstance(
             OgdeveloperJdbcPluginTest.class.getClassLoader(),
@@ -2268,6 +2427,89 @@ final class OgdeveloperJdbcPluginTest {
                 case "isClosed" -> false;
                 case "isValid" -> true;
                 case "close" -> null;
+                default -> defaultValue(method.getReturnType());
+            }
+        );
+    }
+
+    private static final class CloseTrackingOpenGaussDriver implements Driver {
+        private final AtomicBoolean closed;
+
+        private CloseTrackingOpenGaussDriver(AtomicBoolean closed) {
+            this.closed = closed;
+        }
+
+        @Override
+        public Connection connect(String url, Properties info) throws SQLException {
+            if (!acceptsURL(url)) {
+                return null;
+            }
+            closed.set(false);
+            return closeTrackingConnection(closed);
+        }
+
+        @Override
+        public boolean acceptsURL(String url) {
+            return url != null && url.startsWith("jdbc:opengauss:");
+        }
+
+        @Override
+        public DriverPropertyInfo[] getPropertyInfo(String url, Properties info) {
+            return new DriverPropertyInfo[0];
+        }
+
+        @Override
+        public int getMajorVersion() {
+            return 1;
+        }
+
+        @Override
+        public int getMinorVersion() {
+            return 0;
+        }
+
+        @Override
+        public boolean jdbcCompliant() {
+            return false;
+        }
+
+        @Override
+        public java.util.logging.Logger getParentLogger() {
+            return java.util.logging.Logger.getGlobal();
+        }
+    }
+
+    private static Connection closeTrackingConnection(AtomicBoolean closed) {
+        return (Connection) Proxy.newProxyInstance(
+            OgdeveloperJdbcPluginTest.class.getClassLoader(),
+            new Class<?>[] { Connection.class },
+            (proxy, method, args) -> switch (method.getName()) {
+                case "createStatement" -> {
+                    // pgjdbc behavior: using a closed connection fails immediately.
+                    if (closed.get()) {
+                        throw new SQLException("This connection has been closed.");
+                    }
+                    yield closeTrackingStatement();
+                }
+                case "isClosed" -> closed.get();
+                case "close" -> {
+                    closed.set(true);
+                    yield null;
+                }
+                default -> defaultValue(method.getReturnType());
+            }
+        );
+    }
+
+    private static Statement closeTrackingStatement() {
+        return (Statement) Proxy.newProxyInstance(
+            OgdeveloperJdbcPluginTest.class.getClassLoader(),
+            new Class<?>[] { Statement.class },
+            (proxy, method, args) -> switch (method.getName()) {
+                case "execute" -> true;
+                case "getResultSet", "executeQuery" -> singleRowResultSet();
+                case "getUpdateCount" -> -1;
+                case "setMaxRows", "setFetchSize", "setQueryTimeout", "close" -> null;
                 default -> defaultValue(method.getReturnType());
             }
         );

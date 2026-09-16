@@ -657,3 +657,130 @@ Tab 切换下一个、Shift+Tab 返回上一个，最后一次 Tab 跳到右括�
 **块配对原因及修复**：原扫描器只有 BEGIN/END/CASE，主动跳过 END IF 和 END LOOP。现支持嵌套 IF/END IF、ELSIF/ELSEIF/ELSE、CASE/WHEN/END CASE 和 LOOP/END LOOP；FOR/WHILE 循环以 LOOP 为配对起点。点击复合结束标记或分支关键字会高亮所属结构。保留事务 BEGIN 排除，并忽略 IF(...)函数、注释、字符串中的伪关键字；美元引号包围的函数体作为代码处理。
 
 **验证**：11 个相关测试文件初次组合验证 133 例通过；补充 RETURNING INTO 后，3 个直接相关文件 25 例通过（覆盖用例合计 134）。包括截图对应的过程、嵌套分支以及真实 CodeMirror DOM 中第三方/自定义主题的样式验证。pnpm typecheck、改动文件 oxlint、oxfmt 与 git diff --check 通过。尚未进行桌面界面人工点击验收。
+
+---
+
+## 13. 引用与被引用只展示一层（2026-09-16）
+
+**评估**：循环依赖会让引用树重复出现相同对象，用户可不断手动展开，增加树深度与重复元数据请求。采用单层关系展示：原始对象保留引用/被引用组，结果对象保留参数、字段、属性等自身结构，但不再生成这两个组。
+
+**实现**：
+- 引用结果增加 isReferenceResult 标记，统一在引用组工厂拦截；包内成员、同义词目标继承来源，避免间接重新展开引用链。
+- 修复表、视图、物化视图、类型和同义词展开时误把 schema.name（说明）显示标签当真实名称的问题；函数/过程原本已使用 objectName，这也是此前不同对象表现不一致的原因。
+- 界面表节点展开统一走 store 加载，补齐类型节点路由；引用结果中的序列不显示空展开箭头。
+
+**验证**：4 个相关测试文件共 27 个用例通过，覆盖两种方向、参数保留、表/视图列查询真实名称、类型属性、同义词目标、包成员及重复展开。改动文件 oxlint、oxfmt 和 git diff --check 通过。未进行数据库真机与桌面手动验收。
+
+补充验证：pnpm typecheck 通过。
+
+---
+
+## 14. 桌面端“执行计划”报 This connection has been closed（2026-09-16，JDBC 插件 0.1.30 + core 兜底修复）
+
+**现象**：Windows 桌面端 openGauss JDBC 连接，任意简单 SQL 点「执行计划」必现
+`This connection has been closed.`；普通查询不受影响。
+
+**根因**（插件 `OgdeveloperJdbcPlugin.openGaussOutputSupported`，`fa83c01b9` 引入）：
+gms_output 包探测把 `openConnection()` 返回的**进程级共享连接**放进 try-with-resources，
+probe 结束将其 close；外层 `executeQuery` 持有的同一引用再 `createStatement()` 即被
+pgjdbc 拒绝。explain 每次使用独立 client session 池（新 JVM，probe 缓存必然未命中），
+所以每次点击都失败；普通查询走分页 `executeQueryPage` 不经过该 probe，故表现正常。
+
+**修复 A（插件，根因）**：probe 只把 Statement/ResultSet 放进 try-with-resources，连接保持
+共享不关。插件版本 0.1.29 → 0.1.30（`build.gradle`、`manifest.json`），重打包
+`src-tauri/resources/jdbc-plugin.zip`（桌面端启动时自动升级已安装旧插件）。
+
+**修复 B（core 兜底，同一排查中发现的两个缺陷）**：
+- `query.rs` 新增 `config_uses_external_driver`/`pool_uses_external_driver`：外部驱动判定
+  不再只看 `db_type == Jdbc`，openGauss-profile（db_type 为 OpenGauss）的 JDBC 池同样覆盖。
+  应用于单条查询（`do_execute_typed`/`do_execute_typed_with_retry`）、批量
+  （`execute_multi_*`）与事务（`execute_statements_in_transaction_*`）三条链路的
+  丢弃死池 + 新池重试判定；重试判定抽出 `should_retry_with_fresh_pool` 便于单测。
+- `rebuild_pool_after_connection_error` 增加 `client_session_id` 参数：session 作用域池
+  （如 explain 的 `tab:explain`）重建时落在同一个 `:session:` key 上，重试才找得到。
+  批量/事务路径按 base key 寻池，显式传 `None` 并注明原因。
+
+**验证**：
+- 插件单元回归 `openGaussOutputProbeKeepsSharedConnectionOpen`（fake Driver + 关闭即抛错的
+  代理连接模拟 pgjdbc）：修复前精确复现 `{"error":{"message":"This connection has been closed."}}`，
+  修复后通过；插件共 81 例全绿（`gradlew.bat --offline test bundleZip`）。
+- 新增真机回归 `crates/ogdeveloper-core/tests/live_opengauss_explain_jdbc.rs`，两个用例：
+  1. `live_explain_plan_over_jdbc_survives_output_probe_on_fresh_sessions`：复刻桌面 explain
+     请求形状。旧插件 0.1.29 真机复现原报错；staged 0.1.30 两轮全新 JVM 均返回真实计划。
+  2. `live_session_pool_retries_on_fresh_pool_after_server_side_termination`：
+     `pg_terminate_backend` 杀掉 session 池后端后，`SELECT 1` 经“丢死池 → 同 key 重建 → 重试”
+     透明成功。修复前 core 同场景报 `Connection not found`（反证：死池被删除后重建到了错误
+     的 base key）。
+- core `--lib` 1149 passed（含 4 个新增单测）；`api_contract_verification` 13 passed；
+  clippy/fmt 干净；`cargo check -p ogdeveloper-web --tests` 通过。
+
+真机运行方式（与第 1 节相同，另加隔离插件目录）：
+
+```powershell
+$env:DBX_TEST_OPENGAUSS_DATA_DIR = "$env:APPDATA\com.ogdeveloper.app"
+$env:DBX_TEST_OPENGAUSS_DATABASE = "test_b"
+$env:DBX_TEST_OPENGAUSS_PLUGIN_DIR = "D:\proj\og_developer\tmp\explain-live-plugins"
+cargo test -p ogdeveloper-core --no-default-features `
+  --test live_opengauss_explain_jdbc -- --ignored --nocapture
+```
+
+注意：plugins/jdbc 的两个 .java 源文件本轮由非落密进程写回（亿赛通策略下现为明文），
+gradle 构建与测试均正常；如有合规要求可关注其加密状态。
+
+---
+
+## 15. 空闲后首个请求报 FATAL: terminating connection due to administrator command（2026-09-16，JDBC 插件 0.1.31）
+
+**现象**：桌面端连接 tygl_pg（192.168.10.158:15400，opengauss-jdbc profile）空闲十几分钟后，
+第一次点侧栏加载表列表报错 `FATAL: terminating connection due to administrator command`；
+一秒后自动恢复。用户导出调试日志定位。
+
+**根因**（服务端行为，非本工具 bug）：该 openGauss 实例配了约 10 分钟级空闲会话清理
+（日志中 16:42:33 服务端发来 `WARNING: Session unused timeout.`，正好空闲 10 分钟整；
+插件 JVM 日志 `received packetType:69` 即 'E' ErrorResponse 报文，证明是服务端主动发
+FATAL 终止，而非网络设备掐断——后者只会是 socket IO 错误）。
+
+**工具侧的真实缺陷**：池复用前的活性探测失效。`remove_stale_connection_pool` 调插件
+`testConnection`，但插件只查 `isClosed()`（客户端标志位，服务端杀掉会话后它仍为 false）
+加离线元数据（`databaseInfo` 吞掉所有 SQLException），所以对被服务端终止的连接永远返回
+ok:true，死池被当成好池递给调用方，第一条语句才在死连接上爆炸。pgjdbc 要等我发报文
+才能读到服务端已送达的 FATAL 包。
+
+**修复**（插件 0.1.30 → 0.1.31，`connectionTestResult` 新增 `ensureConnectionAlive`）：
+用 JDBC 4.1 标准 `connection.isValid(5)` 做真实往返探活——服务端已杀的会话会在这里
+失败（错误信封）→ Rust 现有 `remove_stale_connection_pool` 判定 stale → 丢池重建 →
+调用方拿到新池。不实现 isValid 的老驱动（JDBC 4.1 前）回退到原有行为，不回归。
+纯插件侧修复即够：Rust 的探测-重建链路本来就存在，只是被假探测喂了假信号；
+因此未再给 schema/元数据路径加重试包装（探测在复用前跑，恢复对调用方透明）。
+
+**验证**：
+- 单元反证：`testConnectionDetectsServerTerminatedIdleSession`（isClosed=false 但
+  isValid=false 的代理连接，模拟 pgjdbc 被杀瞬间状态）在修复前返回 `{"ok":true}`（精确
+  复现探测盲区），修复后返回 error；`testConnectionToleratesDriversWithoutIsValidSupport`
+  守住老驱动回退。插件共 83 例全绿。
+- 真机反证：新增 live 用例
+  `live_metadata_listing_recovers_after_server_terminates_idle_pool_connection`
+  （base 池查 `pg_backend_pid()` → 另一 session 池 `pg_terminate_backend` 杀掉 →
+  `list_tables_core` 走 base 池）。0.1.30 快照跑精确复现用户报错
+  `FATAL: terminating connection due to administrator command`；staged 0.1.31 跑透明恢复。
+- 同文件三个 live 用例全绿；core `--lib` 1149 passed；api_contract 13 passed；
+  clippy/fmt 干净；`cargo check --workspace --tests` 通过。
+- `src-tauri/resources/jdbc-plugin.zip` 已更新为 0.1.31（启动自动升级已安装插件）。
+
+副作用说明：og/JDBC 连接的池复用探测从“离线元数据”变为“一次真实 SELECT 级往返”
+（局域网约 +1ms/次操作），换来服务端杀会话场景的透明自愈。
+DM8 等其他 JDBC 驱动走同一代码路径，isValid 为标准实现，风险低，未单独真机验证。
+
+---
+
+## 16. FROM 函数补全、子查询星号字段与完整 IF 折叠（2026-09-16）
+
+**FROM 函数候选**：PG/openGauss 的 FROM、JOIN、逗号连接及 LATERAL 位置允许函数候选，schema 限定按实际 schema 过滤；不混入过程，也不把当前正在输入的对象错误提示为别名。保留参数名占位符；UPDATE/INSERT/DELETE 目标位置仍排除函数。编辑器查询候选时按此上下文请求 function 元数据。
+
+**子查询 SELECT * 字段透传**：语义模型保留星号投影及内部源信息，编辑器本地、后台与异步加载统一查询真实源表，不将派生别名当物理表。由源表字段推导外层别名的列，支持限定星号、混合显式列、嵌套子查询、CTE 与列别名列表；外层候选不混入内部别名。显式 CTE 列无需额外数据库查询，递归 CTE 避免循环加载。混合投影在冷缓存时会等待缺失字段，不被已有显式列提前截断。
+
+**完整块折叠**：新增 CodeMirror foldService，复用 BEGIN/IF/CASE/LOOP 配对结果，优先于默认 SQL 按分号划分的折叠范围；外层 IF 折到对应 END IF（含分号），不在第一个 UPDATE 或内层 IF 处结束。普通查询仍用原语法折叠。按不可变文档缓存范围，编辑后重新计算。
+
+**验证**：13 个相关文件共 339 个测试通过，包括无缓存到加载源列、已有缓存、嵌套/CTE、schema 隔离、目标位置排除，以及实际 CodeMirror foldable/foldEffect 范围。改动文件 oxlint 与 oxfmt 通过；尚未进行桌面或数据库真机交互验收。
+
+补充验证：最后一轮 pnpm typecheck 通过。

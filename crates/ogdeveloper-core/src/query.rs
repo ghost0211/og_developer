@@ -245,6 +245,19 @@ async fn connection_database_type_for_pool_key(state: &AppState, pool_key: &str)
     crate::connection::config_for_pool_key(pool_key, &configs).map(|c| c.db_type)
 }
 
+/// Whether the connection config is served by an external driver plugin: a
+/// `DatabaseType::Jdbc` config, or an openGauss connection using the JDBC
+/// driver profile (whose `db_type` stays `OpenGauss`, so `db_type` alone
+/// cannot identify these pools).
+pub(crate) fn config_uses_external_driver(config: &ConnectionConfig) -> bool {
+    config.db_type == DatabaseType::Jdbc || crate::connection::opengauss_uses_jdbc_driver(config)
+}
+
+async fn pool_uses_external_driver(state: &AppState, pool_key: &str) -> bool {
+    let configs = state.configs.read().await;
+    crate::connection::config_for_pool_key(pool_key, &configs).is_some_and(config_uses_external_driver)
+}
+
 pub fn truncate_result(result: db::QueryResult) -> db::QueryResult {
     truncate_result_with_max_rows(result, Some(MAX_ROWS))
 }
@@ -574,6 +587,22 @@ pub async fn do_execute(
         .map_err(|e| e.into_legacy_string())
 }
 
+/// One fresh-pool retry is offered for connection-class failures: either the
+/// native-pool classifier (`pool_error_action`) flags it, or an external
+/// driver plugin reported a dead connection (e.g. pgjdbc's "This connection
+/// has been closed." after the server terminated the session). `db_type`
+/// alone cannot identify external driver pools — openGauss connections using
+/// the JDBC profile keep `DatabaseType::OpenGauss` — hence the separate
+/// `external_driver` flag.
+fn should_retry_with_fresh_pool(
+    db_type: Option<DatabaseType>,
+    external_driver: bool,
+    err: &QueryExecutionError,
+) -> bool {
+    matches!(query_execution_error_action(db_type, err), PoolErrorAction::ReconnectAndRetry)
+        || (external_driver && matches!(err, QueryExecutionError::Sql(e) if is_external_driver_connection_error(e)))
+}
+
 async fn do_execute_typed_with_retry(
     state: &AppState,
     pool_key: &str,
@@ -584,6 +613,7 @@ async fn do_execute_typed_with_retry(
     options: QueryExecutionOptions,
 ) -> Result<db::QueryResult, QueryExecutionError> {
     let db_type = connection_database_type_for_pool_key(state, pool_key).await;
+    let external_driver = pool_uses_external_driver(state, pool_key).await;
     let connection_id = pool_key.split(':').next().unwrap_or(pool_key).to_string();
     let write_statement = is_write_sql(sql);
     let mut result =
@@ -592,12 +622,17 @@ async fn do_execute_typed_with_retry(
         // Cancellation/timeout are never retried; connection-class errors on a
         // read-only statement get one fresh-pool attempt. Writes are not
         // replayed because the server may have already committed them.
-        let retryable = matches!(query_execution_error_action(db_type, err), PoolErrorAction::ReconnectAndRetry)
-            || (matches!(db_type, Some(DatabaseType::Jdbc))
-                && matches!(err, QueryExecutionError::Sql(e) if is_external_driver_connection_error(e)));
+        let retryable = should_retry_with_fresh_pool(db_type, external_driver, err);
         if retryable && !write_statement && !is_canceled(&cancel_token) {
             log::warn!("[query] retrying once on fresh pool after connection error: {err}");
-            rebuild_pool_after_connection_error(state, &connection_id, database, pool_key).await;
+            rebuild_pool_after_connection_error(
+                state,
+                &connection_id,
+                database,
+                pool_key,
+                options.client_session_id.as_deref(),
+            )
+            .await;
             result = do_execute_typed(state, pool_key, database, sql, schema, cancel_token, options).await;
         }
     }
@@ -606,15 +641,20 @@ async fn do_execute_typed_with_retry(
 
 /// The pool a failed attempt was served from may have been discarded by
 /// `discard_pool_after_error`; rebuild it under the same key before retrying.
+/// The client session id must be forwarded: session-scoped pools (e.g. the
+/// desktop Explain session) live under a `:session:`-suffixed key, and
+/// rebuilding without it would create a base-key pool the retry never
+/// looks up.
 async fn rebuild_pool_after_connection_error(
     state: &AppState,
     connection_id: &str,
     database: Option<&str>,
     pool_key: &str,
+    client_session_id: Option<&str>,
 ) {
     state.remove_pool_by_key(pool_key).await;
     let database = database.filter(|db| !db.trim().is_empty());
-    if let Err(err) = state.get_or_create_pool_for_session(connection_id, database, None).await {
+    if let Err(err) = state.get_or_create_pool_for_session(connection_id, database, client_session_id).await {
         log::warn!("[query] pool rebuild for '{pool_key}' failed: {err}");
     }
 }
@@ -655,6 +695,7 @@ async fn do_execute_typed(
         crate::query_execution_sql::check_read_only(sql, &name, database_type).map_err(QueryExecutionError::Sql)?;
     }
     let pool_db_type = connection_database_type_for_pool_key(state, pool_key).await;
+    let pool_external_driver = pool_uses_external_driver(state, pool_key).await;
     let connections = state.connections.read().await;
     let pool = connections
         .get(pool_key)
@@ -758,8 +799,8 @@ async fn do_execute_typed(
     match result {
         Ok(res) => Ok(res),
         Err(err) => {
-            if matches!(pool_db_type, Some(DatabaseType::Jdbc)) && is_external_driver_connection_error(&err) {
-                log::warn!("[query] discarding stale JDBC driver pool '{pool_key}' after connection error: {err}");
+            if pool_external_driver && is_external_driver_connection_error(&err) {
+                log::warn!("[query] discarding stale external driver pool '{pool_key}' after connection error: {err}");
                 state.remove_pool_by_key(pool_key).await;
             } else {
                 discard_pool_after_error(state, pool_key, pool_db_type, &err).await;
@@ -975,10 +1016,11 @@ pub async fn execute_multi_core_with_options_for_client_and_progress_typed(
         db_type,
     )
     .await;
+    let external_driver = pool_uses_external_driver(state, &pool_key).await;
     let (ref attempt_results, ref attempt_failure) = first_attempt;
     let is_connection_failure = attempt_failure.as_ref().is_some_and(|err| {
         matches!(pool_error_action(db_type, err), PoolErrorAction::ReconnectAndRetry)
-            || (matches!(db_type, Some(DatabaseType::Jdbc)) && is_external_driver_connection_error(err))
+            || (external_driver && is_external_driver_connection_error(err))
     });
     let retryable = is_connection_failure
         && attempt_results.iter().all(|item| item.error.is_none() && !item.execution_error)
@@ -987,7 +1029,10 @@ pub async fn execute_multi_core_with_options_for_client_and_progress_typed(
     if retryable {
         let err = attempt_failure.clone().unwrap_or_default();
         log::warn!("[query] retrying batch once on fresh pool after connection error: {err}");
-        rebuild_pool_after_connection_error(state, connection_id, Some(database), &pool_key).await;
+        // The batch path resolves pools by the base `{connection}:{database}`
+        // key and never by client session, so the rebuild must not be
+        // session-scoped either.
+        rebuild_pool_after_connection_error(state, connection_id, Some(database), &pool_key, None).await;
         let (results, _) = execute_multi_statements_once(
             state,
             connection_id,
@@ -1085,8 +1130,15 @@ async fn execute_multi_statements_once(
 
     match outcome {
         Ok((results, failure)) => {
-            if failure.is_some() {
-                discard_pool_after_error(state, &pool_key, pool_db_type, failure.as_deref().unwrap_or("")).await;
+            if let Some(err) = failure.as_deref() {
+                if pool_uses_external_driver(state, &pool_key).await && is_external_driver_connection_error(err) {
+                    log::warn!(
+                        "[query] discarding stale external driver pool '{pool_key}' after connection error: {err}"
+                    );
+                    state.remove_pool_by_key(&pool_key).await;
+                } else {
+                    discard_pool_after_error(state, &pool_key, pool_db_type, err).await;
+                }
             }
             (results, failure)
         }
@@ -1260,14 +1312,21 @@ pub async fn execute_statements_in_transaction_on_pool_typed(
     let mut result =
         execute_transaction_on_pool_once(state, pool_key, connection_id, database, statements, schema).await;
     if let Err(err) = &result {
-        let retryable = !is_write_sql_for_statements(statements)
-            && matches!(pool_error_action(db_type, &err.to_string()), PoolErrorAction::ReconnectAndRetry);
+        let err_text = err.to_string();
+        let external_driver = pool_uses_external_driver(state, pool_key).await;
+        let connection_failure = matches!(pool_error_action(db_type, &err_text), PoolErrorAction::ReconnectAndRetry)
+            || (external_driver && is_external_driver_connection_error(&err_text));
+        let retryable = connection_failure && !is_write_sql_for_statements(statements);
         if retryable {
             log::warn!("[query] retrying transaction once on fresh pool after connection error: {err}");
-            rebuild_pool_after_connection_error(state, connection_id, Some(database), pool_key).await;
+            // Transaction pools are addressed by the caller-supplied base key
+            // (`{connection}:{database}`), never by client session.
+            rebuild_pool_after_connection_error(state, connection_id, Some(database), pool_key, None).await;
             result =
                 execute_transaction_on_pool_once(state, pool_key, connection_id, database, statements, schema).await;
-        } else if should_discard_pool_after_error(db_type, &err.to_string()) {
+        } else if connection_failure || should_discard_pool_after_error(db_type, &err_text) {
+            // A dead external driver connection must not stay cached: the next
+            // statement on this pool would fail with the same stale-session error.
             state.remove_pool_by_key(pool_key).await;
         }
     }
@@ -1758,5 +1817,63 @@ mod tests {
         assert_eq!(params["connection"]["id"], "conn-1");
         assert_eq!(params["sessionId"], "session-123");
         assert_eq!(params["pageSize"], 500);
+    }
+
+    fn bare_config(db_type: &str, driver_profile: Option<&str>) -> ConnectionConfig {
+        let mut value = serde_json::json!({
+            "id": "conn-1",
+            "name": "Conn",
+            "db_type": db_type,
+            "host": "localhost",
+            "port": 5432,
+            "username": "user",
+            "password": "pwd"
+        });
+        if let Some(profile) = driver_profile {
+            value["driver_profile"] = serde_json::json!(profile);
+        }
+        serde_json::from_value(value).unwrap()
+    }
+
+    #[test]
+    fn config_uses_external_driver_covers_jdbc_configs_and_opengauss_jdbc_profile() {
+        assert!(config_uses_external_driver(&bare_config("jdbc", None)));
+        // The openGauss JDBC profile keeps db_type = opengauss: a db_type-only
+        // check misses it, which used to disable the fresh-pool retry.
+        assert!(config_uses_external_driver(&bare_config("opengauss", Some("opengauss-jdbc"))));
+        assert!(config_uses_external_driver(&bare_config("opengauss", Some("OpenGauss-JDBC"))));
+        assert!(!config_uses_external_driver(&bare_config("opengauss", None)));
+        assert!(!config_uses_external_driver(&bare_config("postgres", None)));
+    }
+
+    #[test]
+    fn pgjdbc_closed_connection_message_retries_only_for_external_driver_pools() {
+        // pgjdbc raises this when a statement runs on a closed connection, e.g.
+        // after the server terminated the session. The message deliberately
+        // does not feed the native-pool classifier (native pools never emit
+        // it), so the retry must come from the external-driver branch.
+        let err = QueryExecutionError::Sql("This connection has been closed.".to_string());
+        assert!(is_external_driver_connection_error("This connection has been closed."));
+        assert!(should_retry_with_fresh_pool(Some(DatabaseType::Opengauss), true, &err));
+        assert!(should_retry_with_fresh_pool(Some(DatabaseType::Jdbc), true, &err));
+        assert!(!should_retry_with_fresh_pool(Some(DatabaseType::Opengauss), false, &err));
+    }
+
+    #[test]
+    fn should_retry_with_fresh_pool_keeps_existing_classifications() {
+        // Native openGauss session termination (SQLSTATE 57P01) still retries.
+        let terminated = QueryExecutionError::Sql("terminating connection due to administrator command".to_string());
+        assert!(should_retry_with_fresh_pool(Some(DatabaseType::Opengauss), false, &terminated));
+        // Cancellation/timeout and ordinary SQL errors never retry.
+        let canceled = QueryExecutionError::Canceled { stage: "run".to_string(), operation_outcome: String::new() };
+        assert!(!should_retry_with_fresh_pool(Some(DatabaseType::Opengauss), true, &canceled));
+        assert!(!should_retry_with_fresh_pool(
+            Some(DatabaseType::Opengauss),
+            true,
+            &QueryExecutionError::Timeout("t".to_string())
+        ));
+        let syntax = QueryExecutionError::Sql("syntax error at or near \"SELEC\"".to_string());
+        assert!(!should_retry_with_fresh_pool(Some(DatabaseType::Opengauss), true, &syntax));
+        assert!(!should_retry_with_fresh_pool(Some(DatabaseType::Jdbc), true, &syntax));
     }
 }
