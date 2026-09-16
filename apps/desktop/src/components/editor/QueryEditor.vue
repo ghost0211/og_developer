@@ -2965,6 +2965,7 @@ function buildLocalSqlCompletionResult(completionContext: ReturnType<typeof getS
   const completionObjectScope = routineCompletionScopeForContext(completionContext, scope);
   const scopedCachedCompletionObjects = completionObjectsForScope(completionObjectScope);
   const completionObjects = shouldLoadObjects ? lookupLocalCompletionObjectsForContext(completionContext, scope) : scopedCachedCompletionObjects;
+  if (shouldLoadObjects) cachedCompletionObjectsByScope.set(completionObjectScopeKey(completionObjectScope), mergeCompletionObjects(scopedCachedCompletionObjects, completionObjects));
 
   const schemaNames =
     completionContext.suggestTables && !completionContext.insertTable
@@ -3836,7 +3837,11 @@ onMounted(async () => {
   };
   buildSqlSignatureExtension = () =>
     showTooltip.compute(["doc", "selection"], (currentState) => {
-      const signature = getSqlFunctionSignatureHelp(currentState.doc.toString(), currentState.selection.main.head, props.databaseType);
+      const sql = currentState.doc.toString();
+      const cursor = currentState.selection.main.head;
+      const databasePrefix = `${props.database ?? ""}:`.toLowerCase();
+      const objects = [...cachedCompletionObjectsByScope.entries()].filter(([key]) => key.startsWith(databasePrefix)).flatMap(([, entries]) => entries);
+      const signature = getSqlFunctionSignatureHelp(sql, cursor, props.databaseType, objects, props.schema);
       if (!signature) return null;
       return {
         pos: currentState.selection.main.head,

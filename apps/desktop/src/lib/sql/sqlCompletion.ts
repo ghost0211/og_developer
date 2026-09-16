@@ -1,3 +1,4 @@
+import { buildSqlRoutineCallSnippet, routineCallParameters } from "@/lib/sql/sqlRoutineParameters";
 import { PLSQL, PostgreSQL, StandardSQL } from "@codemirror/lang-sql";
 import type { CodeMirrorSqlDialectName } from "@/lib/editor/codemirrorSqlDialect";
 import type { DatabaseType, SqlSnippet } from "@/types/database";
@@ -1879,12 +1880,35 @@ export function getSqlCompletionResultValidFor(sql: string, cursor: number): Reg
   return undefined;
 }
 
-export function getSqlFunctionSignatureHelp(sql: string, cursor: number, databaseType?: DatabaseType): SqlFunctionSignatureHelp | null {
+export function getSqlFunctionSignatureHelp(sql: string, cursor: number, databaseType?: DatabaseType, objects: readonly SqlCompletionObject[] = [], currentSchema?: string): SqlFunctionSignatureHelp | null {
   const beforeCursor = sql.slice(0, cursor);
   const call = findActiveFunctionCall(beforeCursor);
   if (!call) return null;
 
   const observedParameter = countTopLevelCommas(call.groupText);
+  const nameParts = tokenizeSqlSemantic(call.name, "postgres").filter((token) => token.kind === "word" || token.kind === "quoted_identifier");
+  const matchesPart = (part: (typeof nameParts)[number] | undefined, value: string | undefined) => !!part && !!value && (part.kind === "quoted_identifier" ? part.text.slice(1, -1).replace(/""/g, '"').replace(/``/g, "`") === value : part.text.toLowerCase() === value.toLowerCase());
+  let routines = objects.filter((object) => {
+    if ((object.type !== "function" && object.type !== "procedure") || object.signature == null || !matchesPart(nameParts[nameParts.length - 1], object.name)) return false;
+    const qualification = object.parentName ? [object.parentSchema ?? object.schema, object.parentName] : [object.schema];
+    return nameParts
+      .slice(0, -1)
+      .reverse()
+      .every((part, index) => matchesPart(part, qualification[qualification.length - 1 - index]));
+  });
+  if (nameParts.length === 1 && currentSchema && routines.some((object) => object.schema === currentSchema)) {
+    routines = routines.filter((object) => object.schema === currentSchema);
+  }
+  if (routines.length) {
+    const unique = [...new Map(routines.map((object) => [`${object.schema}.${object.parentName ?? ""}.${object.name}(${object.signature})`, object])).values()];
+    const overloads = unique.map((object) => {
+      const parameters = routineCallParameters(object.signature, object.type).map((parameter) => parameter.declaration);
+      return { signature: `${call.name}(${parameters.join(", ")})`, parameterGroups: [parameters], activeGroup: 0, activeParameter: parameters.length ? Math.min(observedParameter, parameters.length - 1) : -1 };
+    });
+    return { name: call.name, overloads, activeOverload: 0 };
+  }
+  // A qualified routine must never pick an unrelated unqualified built-in signature.
+  if (nameParts.length > 1) return null;
   const lookupName = call.name.toUpperCase();
   const parameters = (databaseType ? DATABASE_FUNCTION_SIGNATURES[databaseType]?.get(lookupName) : undefined) ?? SQL_FUNCTION_SIGNATURES.get(lookupName);
   if (!parameters) return null;
@@ -3170,7 +3194,7 @@ function buildObjectItems(context: SqlCompletionContext, objects: SqlCompletionO
         type: "function" as const,
         detail,
         info: buildRoutineInfo(object),
-        apply: object.type === "trigger" || object.type === "package" ? applyName : buildRoutineApply(applyName, object.signature),
+        apply: object.type === "trigger" || object.type === "package" ? applyName : buildSqlRoutineCallSnippet(applyName, object.signature, object.type),
         boost: computeBoost(object.name, context.prefix) + typeBoost + schemaBoost,
         dedupeKey: signature ? `${baseDedupeKey ?? object.name}(${signature})` : baseDedupeKey,
         // Preserve exact routine matches before the capped candidate list is truncated.
@@ -3179,51 +3203,6 @@ function buildObjectItems(context: SqlCompletionContext, objects: SqlCompletionO
     })
     .sort(compareCompletionItems)
     .slice(0, MAX_TABLE_COMPLETION_ITEMS);
-}
-
-function buildRoutineApply(applyName: string, signature?: string): string {
-  const parameters = splitRoutineSignatureParameters(signature?.trim() ?? "");
-  if (parameters.length === 0) return `${applyName}()`;
-  return `${applyName}(${parameters.map((parameter, index) => `\${${index + 1}:${escapeSnippetFieldName(parameter)}}`).join(", ")})`;
-}
-
-function splitRoutineSignatureParameters(signature: string): string[] {
-  if (!signature) return [];
-  const parameters: string[] = [];
-  let start = 0;
-  let parenthesisDepth = 0;
-  let bracketDepth = 0;
-  let quoted = false;
-
-  for (let index = 0; index < signature.length; index++) {
-    const char = signature[index];
-    if (char === '"') {
-      if (quoted && signature[index + 1] === '"') {
-        index++;
-      } else {
-        quoted = !quoted;
-      }
-      continue;
-    }
-    if (quoted) continue;
-    if (char === "(") parenthesisDepth++;
-    else if (char === ")" && parenthesisDepth > 0) parenthesisDepth--;
-    else if (char === "[") bracketDepth++;
-    else if (char === "]" && bracketDepth > 0) bracketDepth--;
-    else if (char === "," && parenthesisDepth === 0 && bracketDepth === 0) {
-      const parameter = signature.slice(start, index).trim();
-      if (parameter) parameters.push(parameter);
-      start = index + 1;
-    }
-  }
-
-  const parameter = signature.slice(start).trim();
-  if (parameter) parameters.push(parameter);
-  return parameters;
-}
-
-function escapeSnippetFieldName(value: string): string {
-  return value.replace(/[{}]/g, "\\$&");
 }
 
 function buildRoutineInfo(object: SqlCompletionObject): string | undefined {
@@ -4595,7 +4574,8 @@ function findActiveFunctionCall(sqlBeforeCursor: string): ActiveFunctionCall | n
   if (activeOpenParen == null) return null;
 
   const beforeActiveGroup = sqlBeforeCursor.slice(0, activeOpenParen).trimEnd();
-  const ordinaryName = /([A-Za-z_][\w$]*)$/.exec(beforeActiveGroup)?.[1];
+  const identifier = '(?:[A-Za-z_][\\w$]*|"(?:[^"\\n]|"")*"|`(?:[^`\\n]|``)*`)';
+  const ordinaryName = new RegExp(`(${identifier}(?:\\s*\\.\\s*${identifier})*)$`).exec(beforeActiveGroup)?.[1];
   if (ordinaryName) {
     return {
       name: ordinaryName,
@@ -4641,55 +4621,15 @@ function findMatchingOpenParen(text: string, closeParenIndex: number): number | 
 }
 
 function findActiveFunctionOpenParen(sqlBeforeCursor: string): number | null {
-  let depth = 0;
-  let inSingleQuote = false;
-  let inDoubleQuote = false;
-
-  for (let i = sqlBeforeCursor.length - 1; i >= 0; i--) {
-    const ch = sqlBeforeCursor[i];
-    if (ch === "'" && !inDoubleQuote) {
-      inSingleQuote = !inSingleQuote;
-      continue;
-    }
-    if (ch === '"' && !inSingleQuote) {
-      inDoubleQuote = !inDoubleQuote;
-      continue;
-    }
-    if (inSingleQuote || inDoubleQuote) continue;
-
-    if (ch === ")") {
-      depth++;
-    } else if (ch === "(") {
-      if (depth === 0) return i;
-      depth--;
-    }
+  const stack: number[] = [];
+  for (const token of tokenizeSqlSemantic(sqlBeforeCursor, "postgres")) {
+    if (token.kind !== "punctuation") continue;
+    if (token.text === "(") stack.push(token.span.start);
+    else if (token.text === ")") stack.pop();
   }
-
-  return null;
+  return stack[stack.length - 1] ?? null;
 }
 
 function countTopLevelCommas(text: string): number {
-  let count = 0;
-  let depth = 0;
-  let inSingleQuote = false;
-  let inDoubleQuote = false;
-
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    if (ch === "'" && !inDoubleQuote) {
-      inSingleQuote = !inSingleQuote;
-      continue;
-    }
-    if (ch === '"' && !inSingleQuote) {
-      inDoubleQuote = !inDoubleQuote;
-      continue;
-    }
-    if (inSingleQuote || inDoubleQuote) continue;
-
-    if (ch === "(") depth++;
-    else if (ch === ")") depth = Math.max(0, depth - 1);
-    else if (ch === "," && depth === 0) count++;
-  }
-
-  return count;
+  return tokenizeSqlSemantic(text, "postgres").filter((token) => token.kind === "punctuation" && token.text === "," && token.depth === 0).length;
 }
