@@ -623,3 +623,37 @@ typecheck + oxlint 干净。
 **修复后各语境行为**：FROM/JOIN/UPDATE/INTO/DELETE `schema.` → 表/视图（原本可用）；
 SELECT/WHERE/SET/ORDER BY `schema.` → 该 schema 的表/视图 + 函数/过程；
 CALL/EXEC `schema.` → 仅过程。
+
+---
+
+## 11. 函数补全改为参数名占位符（2026-09-16）
+
+**需求与行为**：用户确认采用「参数名占位符 + Tab 切换」。例如补全后插入
+`app.get_user_menu_op(p_user_id, p_menu_id)`，自动选中第一个参数；输入实际值后，
+Tab 切换下一个、Shift+Tab 返回上一个，最后一次 Tab 跳到右括号之后。
+类型、参数模式和默认值不写入占位文字，完整声明保留在补全详情与签名提示中。
+无参数名的签名使用 `arg1`、`arg2`；无入参函数仅插入空括号。
+
+**实现**：
+- 新增 `sqlRoutineParameters.ts`，解析参数名、模式和默认值，避免类型修饰符、
+  字符串、数组及嵌套表达式中的逗号拆错参数；函数排除纯 OUT，过程保留 OUT。
+- 复用 CodeMirror snippet 导航，并增加括号后的退出位置。
+- 编辑器签名浮窗读取已有的例程补全缓存，保留 schema/重载区分并高亮当前参数。
+
+**验证**：4 个相关测试文件共 222 个用例通过，包含实际 CodeMirror 状态中的
+选中、替换、前后导航及退出位置；`pnpm typecheck` 与改动文件的 oxlint 通过。
+未进行桌面界面的人工交互验证。
+
+---
+
+## 12. 过程源码着色一致性与 IF 配对（2026-09-16）
+
+**着色原因及修复**：
+- 原表名扫描把 SELECT INTO 的首个接收变量当成表，逗号扫描也会跨分号追溯旧 FROM，误染后续 RAISE 参数。现在区分过程赋值、INSERT/MERGE 表目标及 RETURNING INTO 接收变量，并在过程和语句边界停止扫描。
+- 字符串在语法窗口中完全清空，导致 DISTINCT FROM 'CUSTOM' THEN 被误读为 FROM THEN。现在保留非标识符占位，并排除 DISTINCT FROM、EXTRACT 等表达式中的 FROM。
+- 部分第三方主题没有表色 CSS 变量，原 !important 覆盖使表名退回默认黑色。现在表名优先采用主题自带/自定义表色，否则用当前主题的类型色；切换主题会刷新装饰。schema、别名、字段及变量保持普通标识符配色，关键词、字符串、数字沿用主题规则。
+- 可视窗口从过程内部开始时保留完整文档的过程上下文；按语法树缓存上下文，避免滚动时重复全文分词。
+
+**块配对原因及修复**：原扫描器只有 BEGIN/END/CASE，主动跳过 END IF 和 END LOOP。现支持嵌套 IF/END IF、ELSIF/ELSEIF/ELSE、CASE/WHEN/END CASE 和 LOOP/END LOOP；FOR/WHILE 循环以 LOOP 为配对起点。点击复合结束标记或分支关键字会高亮所属结构。保留事务 BEGIN 排除，并忽略 IF(...)函数、注释、字符串中的伪关键字；美元引号包围的函数体作为代码处理。
+
+**验证**：11 个相关测试文件初次组合验证 133 例通过；补充 RETURNING INTO 后，3 个直接相关文件 25 例通过（覆盖用例合计 134）。包括截图对应的过程、嵌套分支以及真实 CodeMirror DOM 中第三方/自定义主题的样式验证。pnpm typecheck、改动文件 oxlint、oxfmt 与 git diff --check 通过。尚未进行桌面界面人工点击验收。
