@@ -69,7 +69,7 @@ export function sqlSemanticSelectStarIsOnlyProjection(model: SqlSemanticModel): 
 }
 
 export function sqlSemanticReferencedTables(model: SqlSemanticModel): SqlCompletionReferencedTable[] {
-  return model.rowSources
+  const references = model.rowSources
     .filter((source) => source.kind !== "unknown")
     .map((source) => {
       const identifierParts = source.qualifiedName?.parts ?? [];
@@ -81,9 +81,13 @@ export function sqlSemanticReferencedTables(model: SqlSemanticModel): SqlComplet
         schemaQuoted: source.qualifierParts.length > 0 ? !!identifierParts[identifierParts.length - 2]?.quote : undefined,
         alias: source.alias,
         columns: source.columns,
+        derivedQuery: source.derivedQuery,
         columnAliases: source.columnAliases,
       };
     });
+  // A CTE can appear both as a used row source and as a definition. Keep one
+  // reference per visible alias, otherwise the same field is counted twice.
+  return [...new Map(references.map((reference) => [JSON.stringify([reference.database, reference.schema, reference.name, reference.alias]), reference])).values()];
 }
 
 export function sqlSemanticLocalColumnsByTable(model: SqlSemanticModel): Map<string, SqlCompletionColumn[]> {
@@ -250,7 +254,7 @@ export function sqlCompletionContextFromSemantic(model: SqlSemanticModel, base: 
   const mutationSchema = mutationTarget?.qualifierParts[mutationTarget.qualifierParts.length - 1];
   const suggestTables = scope.kind === "table" || scope.kind === "schema" || scope.kind === "catalog";
   const suggestColumns = scope.kind === "columns";
-  const suggestRoutines = scope.kind === "routine" || (suggestColumns && base.suggestRoutines && !base.exclusiveColumnSuggestions);
+  const suggestRoutines = (suggestTables && base.tableFunctionContext === true) || scope.kind === "routine" || (suggestColumns && base.suggestRoutines && !base.exclusiveColumnSuggestions);
   const projectionAliases = sqlSemanticProjectionAliasColumns(model).map((column) => column.name);
 
   return {

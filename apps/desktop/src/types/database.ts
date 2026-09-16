@@ -881,6 +881,8 @@ export interface TreeNode {
   objectName?: string;
   /** Parent object name for hierarchical members (e.g. the package of a subprogram). */
   parentName?: string;
+  /** Object displayed inside a reference result; suppress further reference groups. */
+  isReferenceResult?: boolean;
   /** Reference direction for group-references / group-referenced-by nodes. */
   referenceDirection?: "references" | "referencedBy";
   /** Backend object_type of the object a reference group belongs to. */

@@ -4,6 +4,7 @@ import type {
   SqlSemanticBuildOptions,
   SqlSemanticClauseSpans,
   SqlSemanticCursorIntent,
+  SqlSemanticDerivedQuery,
   SqlSemanticIdentifierPart,
   SqlSemanticModel,
   SqlSemanticProjection,
@@ -263,6 +264,15 @@ function splitTopLevelByComma(tokens: readonly SqlSemanticToken[]): SqlSemanticT
 function projectionNameFromTokens(tokens: readonly SqlSemanticToken[], dialect: SqlSemanticDialectAdapter): SqlSemanticProjection | null {
   const useful = tokens.filter((item) => item.kind !== "comment");
   if (useful.length === 0) return null;
+  if (useful[0]?.normalized === "distinct" || useful[0]?.normalized === "all") useful.shift();
+  if (useful.length > 0 && useful[useful.length - 1]?.text === "*" && (useful.length === 1 || (useful.length % 2 === 1 && useful.slice(0, -1).every((token, index) => (index % 2 === 0 ? tokenIsIdentifier(token) : token.text === "."))))) {
+    return {
+      name: "*",
+      wildcardQualifier: useful.filter(tokenIsIdentifier).map((token) => identifierPart(token, dialect).name),
+      sourceExpression: useful.map((item) => item.text).join(" "),
+      span: { start: useful[0]!.span.start, end: useful[useful.length - 1]!.span.end },
+    };
+  }
   let asIndex = -1;
   for (let index = useful.length - 1; index >= 0; index -= 1) {
     if (useful[index]?.kind === "word" && useful[index]?.normalized === "as") {
@@ -301,12 +311,25 @@ function parseSelectProjections(tokens: readonly SqlSemanticToken[], dialect: Sq
   const projectionTokens = tokens.slice(selectIndex + 1, fromIndex);
   return splitTopLevelByComma(projectionTokens)
     .map((group) => projectionNameFromTokens(group, dialect))
-    .filter((projection): projection is SqlSemanticProjection => projection != null && projection.name !== "*");
+    .filter((projection): projection is SqlSemanticProjection => projection != null);
+}
+
+function parseDerivedQuery(state: ParseState, tokens: SqlSemanticToken[], cteSources = state.cteSources): SqlSemanticDerivedQuery {
+  const nestedState: ParseState = { ...state, tokens, statement: { ...state.statement, kind: "select" }, cteSources };
+  const localCtes = parseCteSources(nestedState);
+  nestedState.cteSources = [...localCtes, ...cteSources];
+  const depth = tokens.reduce((min, token) => Math.min(min, token.depth), Number.POSITIVE_INFINITY);
+  return { projections: parseSelectProjections(tokens, state.dialect), sources: parseRowSourcesAtDepth(nestedState, depth) };
+}
+
+function projectionColumnNames(query: SqlSemanticDerivedQuery): string[] {
+  return query.projections.filter((projection) => !projection.wildcardQualifier).map((projection) => projection.name);
 }
 
 function parseCteSources(state: ParseState): SqlSemanticRowSource[] {
   const tokens = state.tokens;
-  const first = tokens.findIndex((item) => item.kind === "word" && item.normalized === "with");
+  const depth = tokens.reduce((min, token) => Math.min(min, token.depth), Number.POSITIVE_INFINITY);
+  const first = tokens.findIndex((item) => item.depth === depth && item.kind === "word" && item.normalized === "with");
   if (first < 0) return [];
   const sources: SqlSemanticRowSource[] = [];
   let index = first + 1;
@@ -337,7 +360,9 @@ function parseCteSources(state: ParseState): SqlSemanticRowSource[] {
     const bodyClose = findMatchingParenToken(tokens, bodyOpen);
     const safeBodyClose = bodyClose < 0 ? tokens.length - 1 : bodyClose;
     const bodyTokens = tokens.slice(bodyOpen + 1, safeBodyClose);
-    const bodyColumns = explicitColumns.length > 0 ? explicitColumns : parseSelectProjections(bodyTokens, state.dialect).map((projection) => projection.name);
+    const selfSource: SqlSemanticRowSource = { id: `cte:self:${namePart.name}`, kind: "cte", name: namePart.name, qualifierParts: [], sourceSpan: nameToken.span, columns: explicitColumns };
+    const derivedQuery = parseDerivedQuery(state, bodyTokens, [...sources, selfSource, ...state.cteSources]);
+    const bodyColumns = explicitColumns.length > 0 ? explicitColumns : projectionColumnNames(derivedQuery);
     sources.push({
       id: `cte:${namePart.name}:${sources.length}`,
       kind: "cte",
@@ -345,6 +370,7 @@ function parseCteSources(state: ParseState): SqlSemanticRowSource[] {
       qualifierParts: [],
       sourceSpan: { start: nameToken.span.start, end: tokens[safeBodyClose]?.span.end ?? nameToken.span.end },
       columns: bodyColumns,
+      derivedQuery: explicitColumns.length > 0 ? undefined : derivedQuery,
     });
     index = safeBodyClose + 1;
 
@@ -399,10 +425,8 @@ function parseSubquerySource(state: ParseState, openIndex: number, introducer: s
   const alias = aliasAfter(state.tokens, close + 1, state.dialect);
   if (!alias.alias) return null;
   const bodyTokens = state.tokens.slice(openIndex + 1, close);
-  const columns = mergeColumnAliases(
-    parseSelectProjections(bodyTokens, state.dialect).map((projection) => projection.name),
-    alias.columns,
-  );
+  const derivedQuery = parseDerivedQuery(state, bodyTokens);
+  const columns = mergeColumnAliases(projectionColumnNames(derivedQuery), alias.columns);
   return {
     source: {
       id: `${introducer}:subquery:${sourceIndex}`,
@@ -413,6 +437,8 @@ function parseSubquerySource(state: ParseState, openIndex: number, introducer: s
       aliasSpan: alias.aliasSpan,
       sourceSpan: { start: state.tokens[openIndex]?.span.start ?? 0, end: state.tokens[alias.nextIndex - 1]?.span.end ?? alias.aliasSpan?.end ?? state.tokens[close]?.span.end ?? 0 },
       columns,
+      derivedQuery,
+      columnAliases: alias.columns,
     },
     nextIndex: alias.nextIndex,
   };
@@ -467,6 +493,7 @@ function parseTableSource(state: ParseState, nameIndex: number, introducer: stri
     sourceSpan: { start: qualified.name.span.start, end: state.tokens[nextIndex - 1]?.span.end ?? alias.aliasSpan?.end ?? qualified.name.span.end },
     columns: cte?.columns ? mergeColumnAliases(cte.columns, alias.columns) : undefined,
     columnAliases: alias.columns,
+    derivedQuery: cte?.derivedQuery,
     metadataTarget: {
       database: qualifierParts.length >= 2 ? qualifierParts[qualifierParts.length - 2] : undefined,
       schema: qualifierParts[qualifierParts.length - 1],
@@ -847,7 +874,7 @@ export function buildSqlSemanticModel(sql: string, cursor: number, options: SqlS
   const parseState: ParseState = { dialect, tokens, statement, cteSources: [] };
   parseState.cteSources = parseCteSources(parseState);
   const rowSources = parseRowSources(parseState, safeCursor);
-  const projections = parseSelectProjections(tokens, dialect);
+  const projections = parseSelectProjections(tokens, dialect).filter((projection) => !projection.wildcardQualifier);
   const cursorIntent = buildCursorIntent(tokens, safeCursor, rowSources, dialect, suppressed, kind);
   const scopes = [buildScope(statement, rowSources, projections, tokens)];
   return {

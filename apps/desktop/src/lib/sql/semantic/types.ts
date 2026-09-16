@@ -48,6 +48,12 @@ export interface SqlSemanticProjection {
   span: SqlSemanticSpan;
   alias?: string;
   aliasSpan?: SqlSemanticSpan;
+  wildcardQualifier?: string[];
+}
+
+export interface SqlSemanticDerivedQuery {
+  projections: SqlSemanticProjection[];
+  sources: SqlSemanticRowSource[];
 }
 
 export interface SqlSemanticRowSource {
@@ -60,6 +66,7 @@ export interface SqlSemanticRowSource {
   aliasSpan?: SqlSemanticSpan;
   sourceSpan: SqlSemanticSpan;
   columns?: string[];
+  derivedQuery?: SqlSemanticDerivedQuery;
   columnAliases?: string[];
   metadataTarget?: SqlSemanticMetadataTarget;
   unresolved?: boolean;

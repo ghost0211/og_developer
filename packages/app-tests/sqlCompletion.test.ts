@@ -111,9 +111,6 @@ test("suggests lower-case SQL keywords when configured", () => {
   );
 });
 
-
-
-
 test("keeps TRUNCATE as a statement keyword for Oracle-compatible databases", () => {
   for (const databaseType of ["oracle", "oceanbase-oracle"] as const) {
     const items = buildSqlCompletionItems("tru", 3, {
@@ -129,8 +126,6 @@ test("keeps TRUNCATE as a statement keyword for Oracle-compatible databases", ()
     );
   }
 });
-
-
 
 test("quotes PostgreSQL table identifiers when completion inserts them", () => {
   const sql = "select * from Order";
@@ -264,7 +259,6 @@ test("suggests SQL Server tables for unquoted Chinese prefixes", () => {
   assert.equal(shouldAutoOpenSqlCompletion(sql, sql.length), true);
 });
 
-
 test("preserves Unicode prefixes through the semantic completion context", () => {
   const sql = "select * from dbo.客户";
   const legacy = getSqlCompletionContext(sql, sql.length);
@@ -368,7 +362,10 @@ test("does not mix routines into an explicit table alias column completion", () 
   });
 
   assert.ok(items.some((item) => item.label === "name" && item.type === "column"));
-  assert.equal(items.some((item) => item.label === "name_formatter"), false);
+  assert.equal(
+    items.some((item) => item.label === "name_formatter"),
+    false,
+  );
 });
 
 test("suggests matching database functions alongside referenced columns", () => {
@@ -426,7 +423,7 @@ test("keeps an exact referenced column above an exact database function", () => 
   );
 });
 
-test("does not suggest database functions in exclusive table or column contexts", () => {
+test("suggests PostgreSQL FROM functions while keeping assignment columns exclusive", () => {
   const input = {
     tables: [{ name: "routes", schema: "public", type: "table" as const }],
     columnsByTable: new Map([["public.routes", [{ name: "start_sid", table: "routes", schema: "public" }]]]),
@@ -437,7 +434,7 @@ test("does not suggest database functions in exclusive table or column contexts"
   const tableSql = "SELECT * FROM st_";
   assert.equal(
     buildSqlCompletionItems(tableSql, tableSql.length, input).some((item) => item.label === "st_area"),
-    false,
+    true,
   );
 
   const updateSql = "UPDATE public.routes SET st_";
@@ -693,7 +690,6 @@ test("suggests compound JOIN keywords while typing a join modifier", () => {
   assert.equal(items[leftJoinIndex]?.apply, "LEFT JOIN ");
 });
 
-
 test("suggests JOIN after a join modifier", () => {
   const sql = "select * from users left ";
   const items = buildSqlCompletionItems(sql, sql.length, {
@@ -906,9 +902,6 @@ test("suggests SQL Server IIF and CHOOSE scalar functions", () => {
   );
 });
 
-
-
-
 test("suggests SQL Server data types in CREATE TABLE column definitions", () => {
   const sql = "CREATE TABLE dbo.jobs (id ";
   const items = buildSqlCompletionItems(sql, sql.length, {
@@ -1092,7 +1085,6 @@ test("extracts JOIN tables without explicit aliases", () => {
   );
 });
 
-
 test("extracts every table across consecutive JOINs", () => {
   const sql = "select * from db.a join db.b on 1=1 join db.c on 2=2";
   const context = getSqlCompletionContext(sql, sql.length);
@@ -1106,7 +1098,6 @@ test("extracts every table across consecutive JOINs", () => {
     ],
   );
 });
-
 
 test("keeps explicit table aliases across a JOIN", () => {
   const sql = "select * from db.a x join db.b y";
@@ -1169,10 +1160,7 @@ test("preserves an exact routine match before truncating candidates", () => {
   const sql = "select aaa";
   const items = buildSqlCompletionItems(sql, sql.length, {
     tables: [],
-    objects: [
-      ...Array.from({ length: 200 }, (_, index) => ({ name: `a_a_a_${index}`, type: "procedure" as const })),
-      { name: "aaa", type: "function" },
-    ],
+    objects: [...Array.from({ length: 200 }, (_, index) => ({ name: `a_a_a_${index}`, type: "procedure" as const })), { name: "aaa", type: "function" }],
     columnsByTable: new Map(),
   });
 
@@ -1372,7 +1360,6 @@ test("applies keyword case to built-in SQL snippets", () => {
   assert.equal(snippet.apply, "select *\nfrom ${table}\nlimit 100;");
 });
 
-
 test("preserves the canonical function case when requested", () => {
   const items = buildSqlCompletionItems("select row_", "select row_".length, {
     tables,
@@ -1528,8 +1515,6 @@ test("suggests user functions and triggers with fuzzy matching", () => {
   assert.ok(triggerItems.some((item) => item.label === "trg_users_audit" && item.detail === "trigger on users"));
 });
 
-
-
 test("suggests package members after package qualifier", () => {
   const items = buildSqlCompletionItems("begin PAYROLL.ca", "begin PAYROLL.ca".length, {
     tables,
@@ -1547,8 +1532,6 @@ test("suggests package members after package qualifier", () => {
   assert.equal(member.apply, "calculate_bonus()");
 });
 
-
-
 test("does not duplicate an Oracle schema qualifier when applying a scoped table", () => {
   const sql = "select * from COMM.DEPT_D";
   const items = buildSqlCompletionItems(sql, sql.length, {
@@ -1562,7 +1545,6 @@ test("does not duplicate an Oracle schema qualifier when applying a scoped table
   assert.ok(table);
   assert.equal(table.apply, "DEPT_DICT");
 });
-
 
 test("still deduplicates built-in and database routines outside Oracle metadata search", () => {
   const sql = "select DATE_FORMAT";
@@ -1677,7 +1659,6 @@ test("returns cast signature with AS syntax", () => {
   });
 });
 
-
 test("returns null signature help outside function calls", () => {
   assert.equal(getSqlFunctionSignatureHelp("select created_at from users", "select created_at".length), null);
 });
@@ -1748,8 +1729,6 @@ test("detects INSERT INTO column list with three-part qualified table", () => {
   assert.equal(context.insertDatabase, "analytics");
   assert.equal(context.insertSchema, "public");
 });
-
-
 
 test("suggests INSERT columns for a SQL Server three-part target", () => {
   const sql = "INSERT INTO [DatabaseB].[OUT].[orders] (";
@@ -3001,7 +2980,37 @@ test("recordCompletionSelection boosts future ranking", () => {
 
 test("openGauss keyword completion covers documented keywords", () => {
   const keywords = activeSqlKeywords("opengauss");
-  for (const word of ["TYPE", "FUNCTION", "PROCEDURE", "START", "CONNECT", "BY", "PRIOR", "LEVEL", "DECODE", "CONNECT BY", "START WITH", "PACKAGE", "PACKAGE BODY", "TYPE BODY", "TRIGGER", "NVL", "SYSDATE", "GMS_OUTPUT", "DBE_TASK", "BULK COLLECT", "EXECUTE IMMEDIATE", "MINUS", "ROWNUM", "%TYPE", "%ROWTYPE", "NUMBER", "VARCHAR2", "CLOB", "BLOB"]) {
+  for (const word of [
+    "TYPE",
+    "FUNCTION",
+    "PROCEDURE",
+    "START",
+    "CONNECT",
+    "BY",
+    "PRIOR",
+    "LEVEL",
+    "DECODE",
+    "CONNECT BY",
+    "START WITH",
+    "PACKAGE",
+    "PACKAGE BODY",
+    "TYPE BODY",
+    "TRIGGER",
+    "NVL",
+    "SYSDATE",
+    "GMS_OUTPUT",
+    "DBE_TASK",
+    "BULK COLLECT",
+    "EXECUTE IMMEDIATE",
+    "MINUS",
+    "ROWNUM",
+    "%TYPE",
+    "%ROWTYPE",
+    "NUMBER",
+    "VARCHAR2",
+    "CLOB",
+    "BLOB",
+  ]) {
     assert.ok(keywords.includes(word), `missing opengauss keyword: ${word}`);
   }
 });

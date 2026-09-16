@@ -526,7 +526,7 @@ async function toggle() {
     } else if (node.type === "schema" && node.connectionId && hasTreeNodeDatabaseContext(node) && node.schema) {
       await connectionStore.loadTables(node.connectionId, node.database, node.schema);
     } else if ((node.type === "table" || node.type === "view" || node.type === "materialized_view") && node.connectionId && hasTreeNodeDatabaseContext(node)) {
-      await connectionStore.loadTableGroups(node.connectionId, node.database, node.label, node.schema, node.id, node.catalog);
+      await connectionStore.loadTreeNodeChildren(node);
     } else if (node.type === "group-columns" && node.connectionId && hasTreeNodeDatabaseContext(node) && node.tableName) {
       await connectionStore.loadColumns(node.connectionId, node.database, node.tableName, node.schema, node.id, node.catalog);
     } else if (node.type === "group-indexes" && node.connectionId && hasTreeNodeDatabaseContext(node) && node.tableName) {
@@ -545,7 +545,7 @@ async function toggle() {
       await connectionStore.loadOpengaussPackageSubprograms(node.connectionId, node.database, node.objectName, node.schema, node.id);
     } else if (node.type === "group-extensions" && node.connectionId && hasTreeNodeDatabaseContext(node)) {
       await connectionStore.refreshTreeNode(node);
-    } else if ((node.type === "procedure" || node.type === "function" || node.type === "sequence" || node.type === "synonym") && node.connectionId && hasTreeNodeDatabaseContext(node)) {
+    } else if ((node.type === "procedure" || node.type === "function" || node.type === "sequence" || node.type === "synonym" || node.type === "type") && node.connectionId && hasTreeNodeDatabaseContext(node)) {
       // Routines/synonyms/sequences route through the store's loader, which
       // expands an openGauss routine/sequence into its reference groups
       // or package subprograms, and a synonym into its target entity's children.
@@ -2892,6 +2892,7 @@ function createView() {
 }
 
 const canExpand = computed(() => {
+  if (activeNode.value.isReferenceResult && activeNode.value.type === "sequence") return false;
   // 存储过程/函数（含包成员）可展开查看参数；包/包体展开为子程序。
   if (activeNode.value.type === "procedure" || activeNode.value.type === "function" || activeNode.value.type === "package" || activeNode.value.type === "package-body") {
     return true;

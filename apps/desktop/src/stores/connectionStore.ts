@@ -3650,7 +3650,7 @@ export const useConnectionStore = defineStore("connection", () => {
    * views, routines, packages and synonyms expose both sides.
    */
   function buildObjectReferenceGroupNodes(node: TreeNode, objectType: string, objectName: string, direction: "references" | "referencedBy", enabled: boolean): TreeNode[] {
-    if (!enabled || !node.connectionId || !node.database) return [];
+    if (!enabled || node.isReferenceResult || !node.connectionId || !node.database) return [];
     const labelKey = direction === "references" ? "tree.references" : "tree.referencedBy";
     const nodeType = direction === "references" ? ("group-references" as const) : ("group-referenced-by" as const);
     const resolvedName = node.parentName && !objectName.includes(".") ? `${node.parentName}.${objectName}` : objectName;
@@ -3725,6 +3725,7 @@ export const useConnectionStore = defineStore("connection", () => {
           targetKind: target.targetKind,
           isExpanded: false,
           comment: "synonym target",
+          isReferenceResult: node.isReferenceResult,
         });
       }
       setChildren(targetNode, children);
@@ -3888,6 +3889,7 @@ export const useConnectionStore = defineStore("connection", () => {
           id: `${node.id}:${ref.schema}:${ref.name}:${ref.objectType}`,
           label: `${ref.schema}.${ref.name}${ref.detail ? ` (${ref.detail})` : ""}`,
           type: referenceResultNodeType(ref.objectType),
+          isReferenceResult: true,
           connectionId: node.connectionId,
           database: node.database,
           schema: ref.schema,
@@ -3935,6 +3937,7 @@ export const useConnectionStore = defineStore("connection", () => {
           database,
           schema,
           parentName: packageName,
+          isReferenceResult: node.isReferenceResult,
           isExpanded: false,
         };
       });
@@ -4231,7 +4234,7 @@ export const useConnectionStore = defineStore("connection", () => {
     } else if (node.type === "schema" && node.connectionId && hasTreeNodeDatabaseContext(node) && node.schema) {
       await loadTables(node.connectionId, node.database, node.schema, options);
     } else if ((node.type === "table" || node.type === "view" || node.type === "materialized_view") && node.connectionId && hasTreeNodeDatabaseContext(node)) {
-      await loadTableGroups(node.connectionId, node.database, node.label, node.schema, node.id, node.catalog);
+      await loadTableGroups(node.connectionId, node.database, node.tableName ?? node.objectName ?? node.label, node.schema, node.id, node.catalog);
     } else if (node.type === "group-columns" && node.connectionId && hasTreeNodeDatabaseContext(node) && node.tableName) {
       await loadColumns(node.connectionId, node.database, node.tableName, node.schema, node.id, node.catalog);
     } else if (node.type === "group-indexes" && node.connectionId && hasTreeNodeDatabaseContext(node) && node.tableName) {
@@ -4257,9 +4260,9 @@ export const useConnectionStore = defineStore("connection", () => {
     } else if ((node.type === "group-references" || node.type === "group-referenced-by") && node.connectionId && hasTreeNodeDatabaseContext(node)) {
       await loadReferenceGroupChildren(node);
     } else if (node.type === "synonym" && node.connectionId && hasTreeNodeDatabaseContext(node)) {
-      await loadSynonymGroups(node.connectionId, node.database, node.label, node.schema, node);
+      await loadSynonymGroups(node.connectionId, node.database, node.objectName ?? node.label, node.schema, node);
     } else if (node.type === "type" && node.connectionId && hasTreeNodeDatabaseContext(node)) {
-      await loadTypeGroups(node.connectionId, node.database, node.label, node.schema, node);
+      await loadTypeGroups(node.connectionId, node.database, node.objectName ?? node.label, node.schema, node);
     } else if ((node.type === "sequence" || node.type === "function" || node.type === "procedure") && node.connectionId && hasTreeNodeDatabaseContext(node)) {
       await loadRoutineReferenceGroups(node, node.type, node.objectName || node.label);
     }

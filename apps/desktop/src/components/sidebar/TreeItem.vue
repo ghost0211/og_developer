@@ -501,6 +501,7 @@ async function cancelConnectionAttempt() {
 }
 
 const canExpand = computed(() => {
+  if (activeNode.value.isReferenceResult && activeNode.value.type === "sequence") return false;
   // On openGauss-family servers a sequence expands into its "Referenced by"
   // group (column defaults via nextval, etc); a synonym expands into its
   // target entity's children. Everywhere else both are leaves, so keep the

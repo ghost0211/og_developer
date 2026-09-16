@@ -43,6 +43,7 @@ import {
   extractCteDefinitions,
 } from "@/lib/sql/sqlCompletion";
 import { sqlCompletionContextFromSemantic, sqlSemanticSelectStarIsOnlyProjection, sqlSemanticSelectStarQualifierSql, sqlSemanticSelectStarTableSource } from "@/lib/sql/semantic/completion";
+import { getSqlCompletionColumnMetadataTables } from "@/lib/sql/sqlDerivedColumns";
 import { buildSqlSemanticModel } from "@/lib/sql/semantic/model";
 import { mergeSqlSemanticReferenceAnalysis, resolveSqlSemanticNavigationTarget } from "@/lib/sql/semantic/references";
 import { mergeSqlCompletionQualifierNames, resolveSqlCompletionRoutineLookupTarget, resolveSqlCompletionSchemaLookupDatabase, resolveSqlCompletionScope, resolveSqlCompletionTableLookupTarget, type SqlCompletionScope } from "@/lib/sql/sqlCompletionLookupTarget";
@@ -90,6 +91,7 @@ import { focusEditorView } from "@/lib/editor/queryEditorFocus";
 import { createDbxCodeMirrorSqlDialect, type CodeMirrorSqlDialectName } from "@/lib/editor/codemirrorSqlDialect";
 import { tags } from "@lezer/highlight";
 import { sqlSemanticTableNameSpansForSyntaxTree } from "@/lib/editor/codemirrorSqlSemanticHighlight";
+import { sqlBlockFolding } from "@/lib/editor/codemirrorSqlBlockFolding";
 import { sqlBlockMatching } from "@/lib/editor/codemirrorSqlBlockMatching";
 import { startsQueryEditorRectangularSelection, usesQueryEditorObjectNavigationModifier } from "@/lib/editor/queryEditorPointerSelection";
 import { LARGE_PASTE_HISTORY_USER_EVENT, normalizeQueryEditorPasteText, recoverableNativePasteSuffix, shouldRecoverLargeTauriPaste } from "@/lib/editor/queryEditorLargePaste";
@@ -2851,7 +2853,14 @@ async function provideSqlCompletions(context: CompletionContext) {
     if (localResult) {
       scheduleCompletionMetadataRefresh(completionContext, fullDoc, position, completionScope);
       const hasLocalColumnResult = localResult.options.some((option) => option.type === "column");
-      if ((!explicit || typedActivation) && (!shouldResolveColumnCompletion || hasLocalColumnResult)) return localResult;
+      const missingDerivedColumns =
+        completionContext.referencedTables.some((ref) => ref.derivedQuery) &&
+        getSqlCompletionColumnMetadataTables(completionContext).some((ref) => {
+          if (cachedColumnsByTable.has(completionCacheKey(ref, completionScope))) return false;
+          const target = completionMetadataTarget(ref, completionScope);
+          return !!target && connectionStore.lookupLocalCompletionColumns(props.connectionId!, target.database, ref.name, target.schema, target.catalog).length === 0;
+        });
+      if ((!explicit || typedActivation) && (!shouldResolveColumnCompletion || hasLocalColumnResult) && !missingDerivedColumns) return localResult;
     }
     if ((!explicit || typedActivation) && !shouldResolveAsyncCompletion) {
       scheduleCompletionMetadataRefresh(completionContext, fullDoc, position, completionScope);
@@ -3003,7 +3012,7 @@ function buildLocalSqlCompletionResult(completionContext: ReturnType<typeof getS
   }
 
   const cteDefs = extractCteDefinitions(fullDoc);
-  for (const refTable of completionContext.referencedTables) {
+  for (const refTable of getSqlCompletionColumnMetadataTables(completionContext)) {
     if (isVirtualCompletionTableReference(refTable)) continue;
     const cteDef = cteDefs.find((c) => c.name.toLowerCase() === refTable.name.toLowerCase());
     if (cteDef) {
@@ -3034,7 +3043,14 @@ function buildLocalSqlCompletionResult(completionContext: ReturnType<typeof getS
     }
   }
 
-  if (tables.length === 0 && completionObjects.length === 0 && schemaNames.length === 0 && columnsByTable.size === 0 && (completionContext.exclusiveTableSuggestions || completionContext.exclusiveColumnSuggestions || completionContext.exclusiveRoutineSuggestions)) {
+  if (
+    tables.length === 0 &&
+    completionObjects.length === 0 &&
+    schemaNames.length === 0 &&
+    columnsByTable.size === 0 &&
+    !completionContext.referencedTables.some((ref) => ref.columns?.length) &&
+    (completionContext.exclusiveTableSuggestions || completionContext.exclusiveColumnSuggestions || completionContext.exclusiveRoutineSuggestions)
+  ) {
     return null;
   }
 
@@ -3137,7 +3153,7 @@ function scheduleCompletionMetadataRefresh(completionContext: ReturnType<typeof 
     }
   }
   if (!onDemandOnlyColumns && !tableNameCompletion) {
-    for (const refTable of completionContext.referencedTables) {
+    for (const refTable of getSqlCompletionColumnMetadataTables(completionContext)) {
       if (isVirtualCompletionTableReference(refTable)) continue;
       if (refTable.columns && refTable.columns.length > 0) continue;
       const cacheKey = completionCacheKey(refTable, scope);
@@ -3231,6 +3247,7 @@ async function listCompletionObjectsForContext(completionContext: ReturnType<typ
 }
 
 function completionObjectKindsForContext(completionContext: ReturnType<typeof getSqlCompletionContext>): CompletionAssistantObjectKind[] {
+  if (completionContext.tableFunctionContext) return ["function"];
   if (completionContext.contextKind === "exec") return ["procedure"];
   if (completionContext.suggestColumns && completionContext.referencedTables.length > 0 && !completionContext.qualifier) return ["function"];
   return ["routine"];
@@ -3340,7 +3357,7 @@ async function performAsyncCompletionWithResult(epoch: number, completionContext
   }
 
   // Collect referenced tables — enrich with schema from filtered table lookup
-  let refs = completionContext.referencedTables.map((rt) => {
+  let refs = getSqlCompletionColumnMetadataTables(completionContext).map((rt) => {
     if (!rt.schema) {
       const cached = tables.find((t) => t.name.toLowerCase() === rt.name.toLowerCase());
       if (cached && cached.schema) {
@@ -3367,7 +3384,7 @@ async function performAsyncCompletionWithResult(epoch: number, completionContext
   }
 
   // If no referenced tables but qualifier exists, infer table from tables list
-  if (refs.length === 0 && completionContext.qualifier) {
+  if (refs.length === 0 && completionContext.referencedTables.length === 0 && completionContext.qualifier) {
     const q = completionContext.qualifier.toLowerCase();
     const matched = tables.filter((t) => t.name.toLowerCase() === q || t.name.toLowerCase().endsWith("." + q));
     refs = matched.map((t) => ({ name: t.name, schema: t.schema }));
@@ -3489,6 +3506,7 @@ async function performAsyncCompletionWithResult(epoch: number, completionContext
 }
 
 function isReferencedTableQualifier(completionContext: ReturnType<typeof getSqlCompletionContext>): boolean {
+  if (completionContext.tableFunctionContext) return false;
   if (!completionContext.qualifier) return false;
   const qualifier = completionContext.qualifier.toLowerCase();
   const qualifiedColumnTarget = completionQualifiedTableTarget(completionContext);
@@ -4086,6 +4104,7 @@ onMounted(async () => {
       codeMirrorTheme.of(theme),
       editorChromeTheme(EditorView),
       sqlBlockMatching(),
+      sqlBlockFolding(),
       closeBracketsComp.of(closeBracketsExtension(initialSettings.autoCloseBrackets)),
       bracketMatching(),
       // Fix: intercept quote characters to prevent closeBrackets from

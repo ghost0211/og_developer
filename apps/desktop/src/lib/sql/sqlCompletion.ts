@@ -1,3 +1,4 @@
+import { resolveSqlCompletionDerivedColumns } from "@/lib/sql/sqlDerivedColumns";
 import { buildSqlRoutineCallSnippet, routineCallParameters } from "@/lib/sql/sqlRoutineParameters";
 import { PLSQL, PostgreSQL, StandardSQL } from "@codemirror/lang-sql";
 import type { CodeMirrorSqlDialectName } from "@/lib/editor/codemirrorSqlDialect";
@@ -5,7 +6,7 @@ import type { DatabaseType, SqlSnippet } from "@/types/database";
 import type { SqlObjectNavigationType } from "@/lib/sql/sqlNavigation";
 import { sqlSemanticDialectFor } from "@/lib/sql/semantic/dialect";
 import { findActiveSqlStatementSpan, tokenizeSqlSemantic } from "@/lib/sql/semantic/tokens";
-import type { SqlSemanticBuildOptions, SqlSemanticSpan } from "@/lib/sql/semantic/types";
+import type { SqlSemanticBuildOptions, SqlSemanticDerivedQuery, SqlSemanticSpan } from "@/lib/sql/semantic/types";
 import { DEFAULT_SQL_SNIPPETS, resolveSqlSnippetBodyForDatabase } from "@/lib/sql/sqlSnippetTemplates";
 import { requiresPostgresIdentifierQuote } from "@/lib/sql/sqlIdentifier";
 import { containsHan, orderedSubsequenceSpan, pinyinFirstLetters } from "@/lib/common/pinyin";
@@ -1463,6 +1464,7 @@ export interface SqlCompletionReferencedTable {
   schemaQuoted?: boolean;
   alias?: string;
   columns?: string[];
+  derivedQuery?: SqlSemanticDerivedQuery;
   columnAliases?: string[];
 }
 
@@ -1499,6 +1501,7 @@ export interface SqlCompletionContext {
   updateTarget?: { table: string; schema?: string };
   deleteTarget?: { table: string; schema?: string };
   oracleTableFunctionContext?: boolean;
+  tableFunctionContext?: boolean;
   autoAliasTableCompletions: boolean;
   tableAliasAfterCursor?: boolean;
   openingParenAfterCursor: boolean;
@@ -1574,7 +1577,7 @@ export function buildSqlCompletionItems(
 }
 
 export function buildSqlCompletionItemsFromContext(context: SqlCompletionContext, input: SqlCompletionProviderInput): SqlCompletionItem[] {
-  return new SqlCompletionProvider(context, input).build();
+  return new SqlCompletionProvider(context, { ...input, columnsByTable: resolveSqlCompletionDerivedColumns(context, input.columnsByTable, input.currentSchema) }).build();
 }
 
 class SqlCompletionProvider {
@@ -1645,7 +1648,7 @@ class SqlCompletionProvider {
     }
 
     const emptyTableNameCompletion = !context.prefix && (context.suggestTables || context.exclusiveTableSuggestions);
-    if (!pendingJoinKeyword && !emptyTableNameCompletion && !context.tableAliasAfterCursor && context.referencedTables.length > 0 && !context.suggestColumns && !context.insertTable) {
+    if (!pendingJoinKeyword && !context.qualifier && !emptyTableNameCompletion && !context.tableAliasAfterCursor && context.referencedTables.length > 0 && !context.suggestColumns && !context.insertTable) {
       this.items.push(...buildAliasItems(context, this.databaseType, this.input.keywordCase));
     }
 
@@ -2043,8 +2046,9 @@ export function getSqlCompletionContext(sql: string, cursor: number, options: Sq
   const deleteInfo = detectDeleteCompletionContext(beforeCursor);
   const oracleTableFunctionContext = detectOracleTableFunctionContext(beforeCursor);
 
-  const afterTableTrigger = TABLE_TRIGGER_KEYWORDS.has(lastWord) || (JOIN_MODIFIERS.has(lastWord) && isFollowedByJoin(beforeToken)) || isInTableListContext(beforeToken);
-  const exclusiveTableSuggestions = EXCLUSIVE_TABLE_TRIGGER_KEYWORDS.has(lastWord) || (JOIN_MODIFIERS.has(lastWord) && isFollowedByJoin(beforeToken)) || isInTableListContext(beforeToken);
+  const tableFunctionContext = isTableFunctionCompletionContext(beforeToken, options);
+  const afterTableTrigger = tableFunctionContext || TABLE_TRIGGER_KEYWORDS.has(lastWord) || (JOIN_MODIFIERS.has(lastWord) && isFollowedByJoin(beforeToken)) || isInTableListContext(beforeToken);
+  const exclusiveTableSuggestions = tableFunctionContext || EXCLUSIVE_TABLE_TRIGGER_KEYWORDS.has(lastWord) || (JOIN_MODIFIERS.has(lastWord) && isFollowedByJoin(beforeToken)) || isInTableListContext(beforeToken);
   const tableAliasAfterCursor = hasTableAliasAfterCursor(sql, cursor);
   const autoAliasTableCompletions = (lastWord === "from" || lastWord === "join" || (JOIN_MODIFIERS.has(lastWord) && isFollowedByJoin(beforeToken)) || isInTableListContext(beforeToken)) && !tableAliasAfterCursor;
   const exclusiveColumnSuggestions = !!qualifier && !exclusiveTableSuggestions && !insertInfo;
@@ -2061,7 +2065,7 @@ export function getSqlCompletionContext(sql: string, cursor: number, options: Sq
   const inCallRoutineContext = isCallRoutineContext(beforeCursor);
   const inPotentialPackageMemberContext = !!qualifier && !exclusiveTableSuggestions && !insertInfo && !updateInfo?.inSetClause && !oracleTableFunctionContext;
   const suggestColumns = !!qualifier || !!updateInfo?.inSetClause || !!insertInfo || (inColumnContext && referencedTables.length > 0);
-  const suggestRoutines = inCallRoutineContext || oracleTableFunctionContext || inPotentialPackageMemberContext || (!exclusiveTableSuggestions && !exclusiveColumnSuggestions && !insertInfo && !updateInfo?.inSetClause && prefix.length >= 2);
+  const suggestRoutines = tableFunctionContext || inCallRoutineContext || oracleTableFunctionContext || inPotentialPackageMemberContext || (!exclusiveTableSuggestions && !exclusiveColumnSuggestions && !insertInfo && !updateInfo?.inSetClause && prefix.length >= 2);
 
   const statementKind = detectStatementKind(beforeCursor || fullStatement);
   const dataTypeContext = isCreateTableColumnTypeContext(beforeToken);
@@ -2110,12 +2114,30 @@ export function getSqlCompletionContext(sql: string, cursor: number, options: Sq
     updateTarget: updateInfo?.target,
     deleteTarget: deleteInfo?.target,
     oracleTableFunctionContext,
+    tableFunctionContext,
     autoAliasTableCompletions,
     tableAliasAfterCursor,
     openingParenAfterCursor: /^\s*\(/.test(sql.slice(cursor)),
     contextKind,
     dataTypeContext,
   };
+}
+
+function isTableFunctionCompletionContext(beforeToken: string, options: SqlSemanticBuildOptions): boolean {
+  if (options.dialect !== "postgres" && options.databaseType !== "postgres" && options.databaseType !== "opengauss") return false;
+  const tokens = tokenizeSqlSemantic(beforeToken, "postgres").filter((token) => token.kind !== "comment");
+  const last = tokens[tokens.length - 1];
+  if (!last) return false;
+  const currentDepth = last.depth;
+  const sameLevel = tokens.filter((token) => token.depth === currentDepth);
+  const tail = sameLevel[sameLevel.length - 1];
+  const previous = sameLevel[sameLevel.length - 2];
+  const afterFromOrJoin = tail?.kind === "word" && ["from", "join"].includes(tail.normalized);
+  const afterLateral = tail?.normalized === "lateral" && (previous?.normalized === "from" || previous?.normalized === "join" || previous?.text === ",");
+  if (!afterFromOrJoin && !afterLateral && !isInTableListContext(beforeToken)) return false;
+  // DELETE FROM names a mutation target, while an inner SELECT FROM can call functions.
+  const statement = [...sameLevel].reverse().find((token) => token.kind === "word" && ["select", "delete", "insert", "update"].includes(token.normalized));
+  return statement?.normalized !== "delete";
 }
 
 function isCreateTableColumnTypeContext(beforeToken: string): boolean {
@@ -3171,9 +3193,9 @@ function buildSchemaItems(prefix: string, schemas: string[], dialect?: CodeMirro
 }
 
 function buildObjectItems(context: SqlCompletionContext, objects: SqlCompletionObject[], dialect?: CodeMirrorSqlDialectName, currentSchema?: string): SqlCompletionItem[] {
-  if (completionQualifierIsReferencedTable(context)) return [];
+  if (!context.tableFunctionContext && completionQualifierIsReferencedTable(context)) return [];
   const onlyProcedures = context.contextKind === "exec";
-  const onlyFunctions = context.suggestColumns && context.referencedTables.length > 0 && !context.qualifier;
+  const onlyFunctions = !!context.tableFunctionContext || (context.suggestColumns && context.referencedTables.length > 0 && !context.qualifier);
   return objects
     .filter((object) => (!onlyProcedures || object.type === "procedure") && (!onlyFunctions || (object.type === "function" && object.name.toLowerCase().startsWith(context.prefix.toLowerCase()))) && objectMatchesCompletionContext(object, context))
     .map((object) => {
@@ -3245,6 +3267,7 @@ function objectMatchesCompletionContext(object: SqlCompletionObject, context: Sq
     if (object.parentName && qualifierPackage && object.parentName.toLowerCase() === qualifierPackage && (!qualifierSchema || !object.parentSchema || object.parentSchema.toLowerCase() === qualifierSchema)) return matchesPrefix(object.name, context.prefix);
     if (object.schema && object.schema.toLowerCase() === qualifier) return matchesPrefix(object.name, context.prefix);
     if (object.parentSchema && `${object.parentSchema}.${object.parentName ?? ""}`.toLowerCase() === qualifier) return matchesPrefix(object.name, context.prefix);
+    return false;
   }
   return matchesPrefix(object.name, context.prefix);
 }
