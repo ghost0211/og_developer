@@ -130,13 +130,61 @@ function updateIntroducesMutationTarget(tokens: readonly SqlSemanticToken[], upd
   return true;
 }
 
-function commaContinuesTableList(tokens: readonly SqlSemanticToken[], commaIndex: number): boolean {
+const PROCEDURAL_BOUNDARIES = new Set(["begin", "end", "then", "else", "elsif", "exception", "raise", "return", "loop"]);
+
+/** SELECT INTO creates a table in plain SQL, but assigns variables in a routine. */
+export function sqlHasProceduralContext(sql: string, options: SqlSemanticBuildOptions = {}): boolean {
+  const tokens = significantTokens(tokenizeSqlSemantic(sql, sqlSemanticDialectFor(options).id));
+  return tokens.some(
+    (item, index) =>
+      item.kind === "word" &&
+      ((item.normalized === "begin" && !["transaction", "work", ";"].includes(tokens[index + 1]?.normalized ?? "")) ||
+        item.normalized === "declare" ||
+        (["procedure", "function"].includes(item.normalized) && tokens.slice(Math.max(0, index - 3), index).some((previous) => previous.normalized === "create"))),
+  );
+}
+
+function introducesHighlightTable(tokens: readonly SqlSemanticToken[], index: number, procedural: boolean): boolean {
+  const item = tokens[index];
+  if (item?.kind !== "word" || !TABLE_INTRODUCERS.has(item.normalized)) return false;
+  if (item.normalized === "update") return updateIntroducesMutationTarget(tokens, index);
+  // IS [NOT] DISTINCT FROM is a comparison, never a relation introducer.
+  if (item.normalized === "from") {
+    if (tokens[index - 1]?.normalized === "distinct") return false;
+    // EXTRACT / SUBSTRING / TRIM / OVERLAY use FROM inside an expression.
+    for (let previous = index - 1; item.depth > 0 && previous >= 0; previous -= 1) {
+      const token = tokens[previous]!;
+      if (token.depth === item.depth && token.normalized === "select") break;
+      if (token.text === "(" && token.depth === item.depth - 1) {
+        if (["extract", "substring", "trim", "overlay"].includes(tokens[previous - 1]?.normalized ?? "")) return false;
+        break;
+      }
+    }
+  }
+  if (item.normalized !== "into" && item.normalized !== "using") return true;
+  for (let previous = index - 1; previous >= 0; previous -= 1) {
+    const token = tokens[previous]!;
+    if (token.depth !== item.depth) continue;
+    if (token.text === ";" || (token.kind === "word" && PROCEDURAL_BOUNDARIES.has(token.normalized))) break;
+    if (token.kind !== "word") continue;
+    if (item.normalized === "into" && ["returning", "return"].includes(token.normalized)) return false;
+    if (item.normalized === "into" && ["insert", "merge"].includes(token.normalized)) return true;
+    if (item.normalized === "using" && ["merge", "delete"].includes(token.normalized)) return true;
+    if (token.normalized === "select") return item.normalized === "into" && !procedural;
+  }
+  return false;
+}
+
+function commaContinuesTableList(tokens: readonly SqlSemanticToken[], commaIndex: number, procedural: boolean): boolean {
   const comma = tokens[commaIndex];
   if (comma?.text !== ",") return false;
   for (let index = commaIndex - 1; index >= 0; index -= 1) {
     const item = tokens[index];
-    if (!item || item.depth !== comma.depth || item.kind !== "word") continue;
-    if (item.normalized === "from") return true;
+    if (!item || item.depth !== comma.depth) continue;
+    if (item.text === ";") return false;
+    if (item.kind !== "word") continue;
+    if (PROCEDURAL_BOUNDARIES.has(item.normalized)) return false;
+    if (item.normalized === "from") return introducesHighlightTable(tokens, index, procedural);
     if (item.normalized === "select" || item.normalized === "join" || TABLE_INTRODUCERS.has(item.normalized) || CLAUSE_BOUNDARIES.has(item.normalized)) return false;
   }
   return false;
@@ -147,21 +195,22 @@ function commaContinuesTableList(tokens: readonly SqlSemanticToken[], commaIndex
  * metadata. Only the final identifier in a qualified name is returned, so
  * schemas/catalogs and aliases keep the regular identifier color.
  */
-export function sqlSemanticTableNameSpans(sql: string, options: SqlSemanticBuildOptions = {}): SqlSemanticSpan[] {
+export function sqlSemanticTableNameSpans(sql: string, options: SqlSemanticBuildOptions & { proceduralContext?: boolean } = {}): SqlSemanticSpan[] {
   const dialect = sqlSemanticDialectFor(options);
   const tokens = significantTokens(tokenizeSqlSemantic(sql, dialect.id));
+  const procedural = options.proceduralContext ?? sqlHasProceduralContext(sql, options);
   const spans: SqlSemanticSpan[] = [];
   const seen = new Set<string>();
 
   for (let index = 0; index < tokens.length; index += 1) {
     const item = tokens[index];
-    const introduced = item?.kind === "word" && TABLE_INTRODUCERS.has(item.normalized) && (item.normalized !== "update" || updateIntroducesMutationTarget(tokens, index));
-    if (!introduced && !commaContinuesTableList(tokens, index)) continue;
+    const introduced = introducesHighlightTable(tokens, index, procedural);
+    if (!introduced && !commaContinuesTableList(tokens, index, procedural)) continue;
 
     let target = index + 1;
     while (TABLE_TARGET_MODIFIERS.has(tokens[target]?.normalized ?? "")) target += 1;
     target = sqlServerMaintenanceTableTarget(tokens, target, item?.normalized ?? "", dialect);
-    if (tokens[target]?.text === "(") continue;
+    if (tokens[target]?.text === "(" || (tokens[target]?.kind === "word" && (PROCEDURAL_BOUNDARIES.has(tokens[target]!.normalized) || ALIAS_BLACKLIST.has(tokens[target]!.normalized)))) continue;
 
     const qualified = readQualifiedName(tokens, target, dialect);
     const followedByParenthesis = qualified && tokens[qualified.nextIndex]?.text === "(";

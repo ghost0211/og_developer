@@ -88,6 +88,7 @@ import { selectionMatchOccurrences } from "@/lib/editor/codemirrorSelectionMatch
 import { createInsertValueHintsExtension, requestInsertValueHintsRefresh } from "@/lib/editor/codemirrorInsertValueHints";
 import { focusEditorView } from "@/lib/editor/queryEditorFocus";
 import { createDbxCodeMirrorSqlDialect, type CodeMirrorSqlDialectName } from "@/lib/editor/codemirrorSqlDialect";
+import { tags } from "@lezer/highlight";
 import { sqlSemanticTableNameSpansForSyntaxTree } from "@/lib/editor/codemirrorSqlSemanticHighlight";
 import { sqlBlockMatching } from "@/lib/editor/codemirrorSqlBlockMatching";
 import { startsQueryEditorRectangularSelection, usesQueryEditorObjectNavigationModifier } from "@/lib/editor/queryEditorPointerSelection";
@@ -3588,7 +3589,7 @@ onMounted(async () => {
     langSql,
     { autocompletion, startCompletion, acceptCompletion, closeBrackets, closeBracketsKeymap, snippetCompletion, completionStatus, completionKeymap, insertCompletionText, nextSnippetField },
     { copyLineDown, copyLineUp, deleteLine, indentLess, indentMore, insertNewlineKeepIndent, moveLineDown, moveLineUp, redo, selectAll, undo, toggleLineComment, history, defaultKeymap, historyKeymap },
-    { bracketMatching, foldGutter, indentOnInput, indentUnit, syntaxHighlighting, defaultHighlightStyle, foldKeymap, toggleFold, ensureSyntaxTree },
+    { bracketMatching, foldGutter, indentOnInput, indentUnit, syntaxHighlighting, defaultHighlightStyle, foldKeymap, toggleFold, ensureSyntaxTree, highlightingFor },
     { searchKeymap },
   ] = await Promise.all([import("@codemirror/view"), import("@codemirror/state"), import("@codemirror/lang-sql"), import("@codemirror/autocomplete"), import("@codemirror/commands"), import("@codemirror/language"), import("@codemirror/search")]);
   editorViewModule = {
@@ -3869,7 +3870,7 @@ onMounted(async () => {
           this.decorations = this.buildDecorations(currentView);
         }
         update(update: import("@codemirror/view").ViewUpdate) {
-          if (update.docChanged || update.viewportChanged) this.decorations = this.buildDecorations(update.view);
+          if (update.docChanged || update.viewportChanged || update.transactions.some((transaction) => transaction.reconfigured)) this.decorations = this.buildDecorations(update.view);
         }
         buildDecorations(currentView: import("@codemirror/view").EditorView) {
           const sql = currentView.state.doc.toString();
@@ -3891,7 +3892,7 @@ onMounted(async () => {
           return Decoration.set(
             ranges.map((range) =>
               Decoration.mark({
-                class: "cm-sql-table-name",
+                class: ["cm-sql-table-name", highlightingFor(currentView.state, [tags.typeName])].filter(Boolean).join(" "),
                 attributes: {
                   "data-sql-token": "table",
                 },

@@ -24,9 +24,9 @@ export function createRunStatementButtonDom(ariaLabel = "Execute statement"): HT
 
 export function sqlSemanticHighlightTheme(EditorView: typeof import("@codemirror/view").EditorView): Extension {
   return EditorView.theme({
-    ".cm-sql-table-name, .cm-sql-table-name *": {
-      color: `var(${SQL_TABLE_COLOR_CSS_VAR}) !important`,
-    },
+    // Preserve the role color supplied by the active theme/highlight class.
+    // An undefined CSS variable here would reset third-party themes to foreground.
+    ".cm-sql-table-name *": { color: "inherit !important" },
   });
 }
 
@@ -95,6 +95,7 @@ function createCustomTheme(EditorView: typeof import("@codemirror/view").EditorV
         "--ogdeveloper-editor-bracket-background": c.matchingBracket,
         "--ogdeveloper-editor-bracket-glow": bracketGlow,
       },
+      ".cm-sql-table-name": { color: `var(${SQL_TABLE_COLOR_CSS_VAR}) !important` },
       ".cm-content": {
         caretColor: c.cursor,
       },
@@ -541,6 +542,7 @@ function createIdeEditorTheme(EditorView: typeof import("@codemirror/view").Edit
       ".cm-scroller": {
         backgroundColor: c.background,
       },
+      ".cm-sql-table-name": { color: `var(${SQL_TABLE_COLOR_CSS_VAR}) !important` },
       ".cm-content": {
         caretColor: c.cursor,
       },
