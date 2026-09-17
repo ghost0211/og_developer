@@ -529,6 +529,22 @@ pub async fn list_invalid_objects(
 }
 
 #[tauri::command]
+pub async fn list_routine_health_snapshot(
+    state: State<'_, Arc<AppState>>,
+    connection_id: String,
+    database: String,
+    schema: Option<String>,
+) -> Result<ogdeveloper_core::routine_health::RoutineHealthSnapshot, String> {
+    ogdeveloper_core::routine_health::list_routine_health_snapshot_core(
+        &state,
+        &connection_id,
+        &database,
+        schema.as_deref(),
+    )
+    .await
+}
+
+#[tauri::command]
 pub async fn recompile_object(
     state: State<'_, Arc<AppState>>,
     connection_id: String,

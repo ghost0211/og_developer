@@ -328,6 +328,7 @@ async fn main() {
         .route("/schema/type-attributes", get(routes::schema::list_type_attributes))
         .route("/schema/object-references", get(routes::schema::list_object_references))
         .route("/schema/invalid-objects", get(routes::schema::list_invalid_objects))
+        .route("/schema/routine-health-snapshot", get(routes::schema::list_routine_health_snapshot))
         .route("/schema/recompile-object", post(routes::schema::recompile_object))
         .route("/schema/opengauss-profiler-status", get(routes::schema::opengauss_profiler_status))
         .route("/schema/opengauss-profiler-run", post(routes::schema::opengauss_profiler_run))

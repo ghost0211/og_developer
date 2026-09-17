@@ -466,8 +466,8 @@ const shortcutClass = "ml-auto pl-5 text-[10px] font-mono text-muted-foreground/
           <span>{{ t("processList.title") }}</span>
         </DropdownMenuItem>
         <DropdownMenuItem :disabled="!hasConnections" :class="menuItemClass" @select="emit('open-invalid-objects')">
-          <RotateCcw :class="menuIconClass" class="text-destructive" />
-          <span>{{ t("invalidObjects.title") }}...</span>
+          <Activity :class="menuIconClass" class="text-primary" />
+          <span>{{ t("invalidObjects.title") }}</span>
         </DropdownMenuItem>
         <DropdownMenuItem :disabled="!hasConnections" :class="menuItemClass" @select="emit('open-table-import')">
           <Download :class="menuIconClass" />

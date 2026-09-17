@@ -1304,6 +1304,17 @@ export const useQueryStore = defineStore("query", () => {
     return id;
   }
 
+  function openRoutineHealth(options: { connectionId: string; database?: string; schema?: string }) {
+    const { connectionId, schema } = options;
+    const database = options.database ?? useConnectionStore().getConfig(connectionId)?.database ?? "";
+    const existing = tabs.value.find((tab) => tab.mode === "routine-health" && tab.connectionId === connectionId && tab.database === database && (tab.schema || "") === (schema || ""));
+    if (existing) {
+      switchTab(existing.id);
+      return existing.id;
+    }
+    return createTab(connectionId, database, i18n.global.t("invalidObjects.title"), "routine-health", schema);
+  }
+
   function openRoutineTest(options: { connectionId: string; database: string; schema?: string; routineName: string; routineKind?: "procedure" | "function"; signature?: string; catalog?: string }) {
     const { connectionId, database, schema, routineName, routineKind, signature, catalog } = options;
     const title = `Test - ${routineName}`;
@@ -4329,6 +4340,7 @@ export const useQueryStore = defineStore("query", () => {
     renameTab,
     openObjectBrowser,
     openRoutineTest,
+    openRoutineHealth,
     openRoutineDebug,
     openProgramWindow,
     openCommandWindow,

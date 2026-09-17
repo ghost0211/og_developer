@@ -40,6 +40,33 @@ describe("queryStore database open state", () => {
     expect(store.isDatabaseOpen("pg-1", "analytics")).toBe(false);
   }, 10_000);
 
+  it("reuses health analysis by connection, database and schema after opening routine source", async () => {
+    const { useQueryStore } = await import("@/stores/queryStore");
+    const store = useQueryStore();
+    const target = { connectionId: "pg-1", database: "app", schema: "public" };
+    const healthId = store.openRoutineHealth(target);
+    const healthTab = store.tabs.find((tab) => tab.id === healthId)!;
+    const programId = store.openProgramWindow({ ...target, name: "get_users", objectType: "functions" });
+
+    expect(store.activeTabId).toBe(programId);
+    expect(store.tabs.find((tab) => tab.id === healthId)).toBe(healthTab);
+    expect(store.openRoutineHealth(target)).toBe(healthId);
+    expect(store.activeTabId).toBe(healthId);
+    expect(store.tabs.filter((tab) => tab.mode === "routine-health")).toHaveLength(1);
+    expect(store.isTabDirty(healthTab)).toBe(false);
+  });
+
+  it("keeps health analysis scopes independent and normalizes the all-schema scope", async () => {
+    const { useQueryStore } = await import("@/stores/queryStore");
+    const store = useQueryStore();
+    const allSchemas = store.openRoutineHealth({ connectionId: "pg-1", database: "app" });
+    expect(store.openRoutineHealth({ connectionId: "pg-1", database: "app", schema: "" })).toBe(allSchemas);
+    const publicSchema = store.openRoutineHealth({ connectionId: "pg-1", database: "app", schema: "public" });
+    const otherDatabase = store.openRoutineHealth({ connectionId: "pg-1", database: "reporting" });
+    const otherConnection = store.openRoutineHealth({ connectionId: "og-1", database: "app" });
+    expect(new Set([allSchemas, publicSchema, otherDatabase, otherConnection]).size).toBe(4);
+  });
+
   it("keeps object browser viewport per tab and clears it on schema change", async () => {
     const { useQueryStore } = await import("@/stores/queryStore");
     const store = useQueryStore();

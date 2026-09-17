@@ -441,7 +441,7 @@ function tabColorStyle(tab: QueryTab) {
 
 function tabIconClass(tab: QueryTab) {
   if (tab.mode === "command") return "text-emerald-500";
-  if (tab.mode === "routine-test") return "text-primary";
+  if (tab.mode === "routine-test" || tab.mode === "routine-health") return "text-primary";
   if (tab.mode === "routine-debug") return "text-amber-500";
   if (tab.mode === "program-window") return "text-blue-500";
   if (tab.mode === "settings") return "text-muted-foreground";
@@ -465,6 +465,7 @@ function tabMenuIcon(tab: QueryTab) {
   if (tab.mode === "processlist") return Activity;
   if (tab.mode === "command") return Terminal;
   if (tab.mode === "routine-test") return TerminalSquare;
+  if (tab.mode === "routine-health") return Activity;
   if (tab.mode === "routine-debug") return Bug;
   if (tab.mode === "program-window") return FileCode;
   if (tab.mode === "settings") return Settings;
@@ -604,6 +605,7 @@ function onOverflowItemKeydown(event: KeyboardEvent, tabId: string, kind: "regul
                       <Activity v-else-if="tab.mode === 'processlist'" class="h-3.5 w-3.5" />
                       <Terminal v-else-if="tab.mode === 'command'" class="h-3.5 w-3.5 text-emerald-500" />
                       <TerminalSquare v-else-if="tab.mode === 'routine-test'" class="h-3.5 w-3.5 text-primary" />
+                      <Activity v-else-if="tab.mode === 'routine-health'" class="h-3.5 w-3.5 text-primary" />
                       <Bug v-else-if="tab.mode === 'routine-debug'" class="h-3.5 w-3.5 text-amber-500" />
                       <FileCode v-else-if="tab.mode === 'program-window'" class="h-3.5 w-3.5 text-blue-500" />
                       <Gauge v-else-if="tab.mode === 'postgres-dashboard'" class="h-3.5 w-3.5" />
@@ -767,6 +769,7 @@ function onOverflowItemKeydown(event: KeyboardEvent, tabId: string, kind: "regul
                       <Activity v-else-if="tab.mode === 'processlist'" class="h-3.5 w-3.5" />
                       <Terminal v-else-if="tab.mode === 'command'" class="h-3.5 w-3.5 text-emerald-500" />
                       <TerminalSquare v-else-if="tab.mode === 'routine-test'" class="h-3.5 w-3.5 text-primary" />
+                      <Activity v-else-if="tab.mode === 'routine-health'" class="h-3.5 w-3.5 text-primary" />
                       <Bug v-else-if="tab.mode === 'routine-debug'" class="h-3.5 w-3.5 text-amber-500" />
                       <FileCode v-else-if="tab.mode === 'program-window'" class="h-3.5 w-3.5 text-blue-500" />
                       <Gauge v-else-if="tab.mode === 'postgres-dashboard'" class="h-3.5 w-3.5" />

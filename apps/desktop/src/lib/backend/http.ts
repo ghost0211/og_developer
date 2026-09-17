@@ -822,6 +822,12 @@ export async function listInvalidObjects(connectionId: string, database: string,
   return get(`/api/schema/invalid-objects?${qs({ connection_id: connectionId, database, schema })}`);
 }
 
+export type { RoutineHealthRoutine, RoutineHealthRelation, RoutineHealthIndex, RoutineHealthSnapshot } from "./routineHealthTypes";
+
+export async function listRoutineHealthSnapshot(connectionId: string, database: string, schema?: string): Promise<import("./routineHealthTypes").RoutineHealthSnapshot> {
+  return get(`/api/schema/routine-health-snapshot?${qs({ connection_id: connectionId, database, schema })}`);
+}
+
 export async function recompileObject(connectionId: string, database: string, schema: string, objectName: string, objectType: string): Promise<RecompileObjectResult> {
   return post("/api/schema/recompile-object", { connection_id: connectionId, database, schema, object_name: objectName, object_type: objectType });
 }

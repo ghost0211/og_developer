@@ -1052,6 +1052,7 @@ export interface QueryTab {
     | "mysql-dashboard"
     | "postgres-dashboard"
     | "routine-test"
+    | "routine-health"
     | "routine-debug"
     | "program-window"
     | "command"

@@ -784,3 +784,23 @@ DM8 等其他 JDBC 驱动走同一代码路径，isValid 为标准实现，风�
 **验证**：13 个相关文件共 339 个测试通过，包括无缓存到加载源列、已有缓存、嵌套/CTE、schema 隔离、目标位置排除，以及实际 CodeMirror foldable/foldEffect 范围。改动文件 oxlint 与 oxfmt 通过；尚未进行桌面或数据库真机交互验收。
 
 补充验证：最后一轮 pnpm typecheck 通过。
+
+---
+
+## 17. 例程健康分析标签页（2026-09-17）
+
+**功能**：将工具菜单的“重编译无效对象”替换为“例程健康分析”，使用独立常驻标签页。跳转具体例程（含重载签名）、切换其他标签后，分析结果与筛选条件保留；关闭标签停止后续批量请求。恢复应用只恢复分析作用域，不持久化可能过期的分析结果。
+
+**只读目录与分析**：新增 `listRoutineHealthSnapshot`（Tauri/Web API 同步），支持 PostgreSQL/openGauss 原生与对应 JDBC 连接；读取例程源码及全目录表/字段、索引、例程身份、search_path。目录聚合成完整 JSON，避免 JDBC 行数上限造成假缺失；目录读取失败明确报错，编译记录不可用显示覆盖范围提示。默认扫描业务模式，显式选择时可查看系统模式。兼容 openGauss 的 record 形式 pg_get_functiondef 与 prokind/prosp 差异。
+
+静态检查覆盖表/视图、限定字段、简单投影、INSERT/UPDATE 目标列、可确认的条件字段、例程调用名称以及显式 DROP/ALTER/REINDEX INDEX 引用。复用 SQL 词法与查询作用域，处理注释、字符串、SELECT INTO 变量、CTE/派生表星号、嵌套 IF 和子查询作用域。动态 SQL、临时表、未知语言、不可解析 search_path、包/多级调用等显示未完整检查提示。调用只检查名称存在性，未验证重载参数类型；不会执行例程来探测错误。
+
+**编译记录**：保留 gs_source.status=false，单列为“编译记录”，不冒充当前对象 INVALID，也不按名字合并到任意重载。显示真实编译错误或“未获取到详情”；查看记录源码打开独立查询页。原重编译操作明确标为“重新执行创建语句”，仅编译记录可单独/批量执行。分析所得缺失依赖不会自动触发 DDL。IF EXISTS 索引不存在显示允许缺失说明。
+
+**验证**：本轮按用户要求调用 Pi 第三方 DeepSeek（commandcode / deepseek/deepseek-v4-flash），未继续创建 Codex 内置子代理。第三方补充 DOM 回归、条件字段检查、Rust 序列化修复及中英文文案，最后扩大到全量前端测试时触及 900 秒时限，没有完整汇总；全量测试不计入通过结果。主代理重新验证相关范围，并修复一个内层字段错误按外层表验证的误报。
+
+- 6 个前端专项文件合计 **80 passed**：分析器、健康页 DOM、标签创建/复用、标题、标签持久化及 AppTabBar。
+- `cargo test -p ogdeveloper-core --no-default-features routine_health --lib --offline`：**4 passed**。
+- `cargo check -p ogdeveloper-web --tests --offline`：通过。
+- `pnpm typecheck`、改动文件 oxlint/oxfmt、`git diff --check`：通过；详细结果见 `tmp/routine-health-verification.md`。
+- 未做桌面实际交互和真实数据库验收；没有调用例程、修改数据库数据或提交 Git。

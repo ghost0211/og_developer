@@ -185,6 +185,7 @@ export const resolveSynonymTarget = forward("resolveSynonymTarget");
 export const listTypeAttributes = forward("listTypeAttributes");
 export const listObjectReferences = forward("listObjectReferences");
 export const listInvalidObjects = forward("listInvalidObjects");
+export const listRoutineHealthSnapshot = forward("listRoutineHealthSnapshot");
 export const recompileObject = forward("recompileObject");
 export const opengaussProfilerStatus = forward("opengaussProfilerStatus");
 export const opengaussProfilerRun = forward("opengaussProfilerRun");
@@ -455,6 +456,10 @@ export type {
   AgentEvent,
   SqlFileEntry,
   InvalidObjectInfo,
+  RoutineHealthRoutine,
+  RoutineHealthRelation,
+  RoutineHealthIndex,
+  RoutineHealthSnapshot,
   RecompileObjectResult,
   ProfilerStatus,
   ProfilerLineData,

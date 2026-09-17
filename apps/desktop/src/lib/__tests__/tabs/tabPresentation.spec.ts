@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
 import { useConnectionStore } from "@/stores/connectionStore";
-import { connectionGroupDisplayName, executionSummaryItems, middleEllipsis, queryResultBaseSql, queryResultExecutionSql, resultSourceRange, statementExecutionMarkers, tabTooltipLines, tabularResultItems } from "@/lib/tabs/tabPresentation";
+import { connectionGroupDisplayName, executionSummaryItems, middleEllipsis, queryResultBaseSql, queryResultExecutionSql, resultSourceRange, statementExecutionMarkers, tabDisplayTitle, tabModeLabel, tabTooltipLines, tabularResultItems } from "@/lib/tabs/tabPresentation";
 import { sqlTextFingerprint } from "@/lib/sql/sqlTextFingerprint";
 import type { ConnectionConfig, QueryTab } from "@/types/database";
 
@@ -314,5 +314,15 @@ describe("statement execution markers", () => {
   it("invalidates every marker after the editor document changes", () => {
     const executedSql = "SELECT 1;\nSELECT 2;";
     expect(statementExecutionMarkers(`-- edited\n${executedSql}`, [{ columns: ["value"], rows: [[1]], affected_rows: 0, execution_time_ms: 1, statement_index: 0, sourceStatement: "SELECT 1" }], "mysql", "stale-editor-fingerprint", executedSql)).toEqual([]);
+  });
+});
+
+describe("routine health tab presentation", () => {
+  it("uses the localized health name and retains schema context", () => {
+    const tab = queryTab({ mode: "routine-health", schema: "app", title: "old locale title" });
+    const t = (key: string) => (key === "invalidObjects.title" ? "Routine health" : translate(key));
+    expect(tabDisplayTitle(tab, t)).toContain("Routine health");
+    expect(tabModeLabel(tab, t)).toBe("Routine health");
+    expect(tabTooltipLines(tab, t)).toContainEqual({ label: "tabs.tooltipSchema", value: "app" });
   });
 });

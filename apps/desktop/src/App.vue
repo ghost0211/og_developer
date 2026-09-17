@@ -140,6 +140,7 @@ const LoginPage = defineAsyncComponent(() => import("@/components/auth/LoginPage
 const QuickOpenDialog = defineAsyncComponent(() => import("@/components/quick-open/QuickOpenDialog.vue"));
 const ProjectDialog = defineAsyncComponent(() => import("@/components/projects/ProjectDialog.vue"));
 const MenuSearchDialog = defineAsyncComponent(() => import("@/components/search/MenuSearchDialog.vue"));
+const RoutineHealthPanel = defineAsyncComponent(() => import("@/components/maintenance/RoutineHealthPanel.vue"));
 const SessionsDialog = defineAsyncComponent(() => import("@/components/sessions/SessionsDialog.vue"));
 const QueryEditorDdlViewDialog = defineAsyncComponent(() => import("@/components/objects/DdlViewDialog.vue"));
 const QueryEditorObjectSourceDialog = defineAsyncComponent(() => import("@/components/objects/ObjectSourceDialog.vue"));
@@ -270,6 +271,7 @@ const pendingAppCloseAction = ref<AppCloseAction | null>(null);
 const pendingCloseActionChoice = ref(false);
 
 const activeTab = computed(() => queryStore.tabs.find((t) => t.id === queryStore.activeTabId));
+const routineHealthTabs = computed(() => queryStore.tabs.filter((tab) => tab.mode === "routine-health"));
 // Debug sessions must not be evicted by the normal four-tab ContentArea cache:
 // eviction unmounts the panel, stops the parked routine, and a later remount
 // would execute it again. While a debugger tab exists, retain every open tab.
@@ -1915,6 +1917,21 @@ function openCommandWindowFromMenu() {
   }
 }
 
+function openRoutineHealthFromMenu() {
+  const supportsHealth = (connectionId: string | null | undefined) => {
+    const type = connectionId ? effectiveDatabaseTypeForConnection(connectionStore.getConfig(connectionId)) : undefined;
+    return type === "postgres" || type === "opengauss";
+  };
+  const candidates = [activeTab.value?.connectionId, connectionStore.activeConnectionId, ...connectionStore.connectedIds, ...connectionStore.connections.map((connection) => connection.id)];
+  const connectionId = candidates.find((id) => supportsHealth(id));
+  if (!connectionId) {
+    toast(t("invalidObjects.noConnections"));
+    return;
+  }
+  const current = activeTab.value?.connectionId === connectionId ? activeTab.value : undefined;
+  queryStore.openRoutineHealth({ connectionId, database: current?.database, schema: current?.schema });
+}
+
 function closeActiveTab() {
   if (queryStore.activeTabId) queryStore.closeTab(queryStore.activeTabId);
 }
@@ -2451,7 +2468,7 @@ onUnmounted(() => {
               }
             }
           "
-          @open-invalid-objects="dialogs.showInvalidObjectsDialog.value = true"
+          @open-invalid-objects="openRoutineHealthFromMenu"
           @open-command-window="openCommandWindowFromMenu"
           @open-table-import="void openTableImportFromMenu()"
           @open-database-export="dialogs.showDatabaseExportDialog.value = true"
@@ -2534,8 +2551,11 @@ onUnmounted(() => {
                     @set-default-database="setActiveDatabaseAsDefault"
                     @clear-default-database="clearActiveDefaultDatabase"
                   />
+                  <!-- Health results stay mounted while navigating to routine source tabs. -->
+                  <RoutineHealthPanel v-for="healthTab in routineHealthTabs" v-show="activeTab.id === healthTab.id" :key="healthTab.id" :tab="healthTab" />
                   <KeepAlive :max="contentAreaKeepAliveMax">
                     <ContentArea
+                      v-if="activeTab.mode !== 'routine-health'"
                       ref="contentAreaRef"
                       :key="activeTab.id"
                       :active-tab="activeTab"

@@ -48,6 +48,7 @@ pub mod query_execution_sql;
 pub mod query_result_export;
 pub mod query_result_sql;
 pub mod risk_metrics;
+pub mod routine_health;
 pub mod saved_sql;
 pub mod schema;
 pub mod schema_diff;

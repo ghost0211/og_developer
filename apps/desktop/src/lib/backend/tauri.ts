@@ -1,4 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { RoutineHealthSnapshot } from "./routineHealthTypes";
+export type { RoutineHealthRoutine, RoutineHealthRelation, RoutineHealthIndex, RoutineHealthSnapshot } from "./routineHealthTypes";
 import { BackendErrorException, type BackendError } from "@/lib/backend/errorUtils";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
@@ -1607,6 +1609,10 @@ export async function listObjectReferences(connectionId: string, database: strin
 
 export async function listInvalidObjects(connectionId: string, database: string, schema?: string): Promise<InvalidObjectInfo[]> {
   return invoke("list_invalid_objects", { connectionId, database, schema });
+}
+
+export async function listRoutineHealthSnapshot(connectionId: string, database: string, schema?: string): Promise<RoutineHealthSnapshot> {
+  return invoke("list_routine_health_snapshot", { connectionId, database, schema });
 }
 
 export async function recompileObject(connectionId: string, database: string, schema: string, objectName: string, objectType: string): Promise<RecompileObjectResult> {

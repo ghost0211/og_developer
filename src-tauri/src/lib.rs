@@ -1226,6 +1226,7 @@ pub fn run() {
             commands::schema::list_type_attributes,
             commands::schema::list_object_references,
             commands::schema::list_invalid_objects,
+            commands::schema::list_routine_health_snapshot,
             commands::schema::recompile_object,
             commands::schema::opengauss_profiler_status,
             commands::schema::opengauss_profiler_run,

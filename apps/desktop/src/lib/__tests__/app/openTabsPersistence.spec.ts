@@ -96,3 +96,12 @@ describe("openTabsPersistence originalSql round-trip", () => {
     expect(restored.routineDebug?.restored).toBe(true);
   });
 });
+
+describe("routine health tab persistence", () => {
+  it("restores the analysis scope as a tool tab", () => {
+    const [restored] = roundTrip([queryTab({ mode: "routine-health", title: "Routine health", schema: "app", pinned: true })]);
+    expect(restored).toMatchObject({ mode: "routine-health", connectionId: "c1", database: "db", schema: "app", pinned: true });
+    expect(restored.originalSql).toBeUndefined();
+    expect(restored.isExecuting).toBe(false);
+  });
+});
