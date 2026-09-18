@@ -992,6 +992,18 @@ pub fn run() {
             };
             let state = Arc::new(state);
             app.manage(state.clone());
+            // Forward backend-initiated manual-transaction closures (idle
+            // reclaim) to the webview so commit/rollback buttons go dark
+            // immediately instead of failing on the next click.
+            {
+                let mut rx = state.manual_txn_events.subscribe();
+                let app_handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    while let Ok(event) = rx.recv().await {
+                        let _ = app_handle.emit("manual-txn-closed", &event);
+                    }
+                });
+            }
             // OG Developer: seed the bundled openGauss JDBC driver into the
             // driver store on first run, then check Maven Central for a newer
             // release in the background (best-effort, offline-safe).

@@ -93,6 +93,16 @@ export function useTauriEvents(deps: { openTableTarget: (target: NavigationTarge
             console.error("[ogdeveloper] dbx-open-connection-links error:", e);
           }
         }).then((unlisten) => unlistenHandles.push(unlisten));
+
+        // Backend reclaimed a manual transaction (idle timeout): drop the stale
+        // session id so commit/rollback buttons disable/hide right away.
+        listen<{ txn_session_id: string; connection_id: string; database: string; reason: string }>("manual-txn-closed", (event) => {
+          try {
+            queryStore.handleManualTxnClosed(event.payload);
+          } catch (e) {
+            console.error("[ogdeveloper] manual-txn-closed error:", e);
+          }
+        }).then((unlisten) => unlistenHandles.push(unlisten));
       })
       .catch(() => {});
   }

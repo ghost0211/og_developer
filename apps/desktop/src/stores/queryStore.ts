@@ -31,6 +31,7 @@ import { buildTabResultSnapshot, deleteTabResultSnapshot, pruneTabResultSnapshot
 import { estimateQueryResultsBytes, selectInactiveResultEvictions } from "@/lib/tabs/queryResultSize";
 import { queryResultBaseSql, queryResultExecutionSql } from "@/lib/tabs/tabPresentation";
 import { isQueryExecutionErrorResult } from "@/lib/query/queryResultError";
+import { isTerminalManualTxnError } from "@/lib/query/manualTxnErrors";
 import { decodeQueryResultArchive, encodeQueryResultArchive, type DecodedQueryResultArchive } from "@/lib/query/queryResultArchive";
 import * as api from "@/lib/backend/api";
 import { useConnectionStore } from "@/stores/connectionStore";
@@ -2325,6 +2326,18 @@ export const useQueryStore = defineStore("query", () => {
     }
   }
 
+  // The backend closed a manual transaction on its own (idle watcher reclaim).
+  // Drop the stale session id and surface the auto-rollback banner so the
+  // commit/rollback affordances track the real session state immediately.
+  function handleManualTxnClosed(payload: { txn_session_id: string }) {
+    for (const tab of tabs.value) {
+      if (tab.txnSessionId === payload.txn_session_id) {
+        tab.txnSessionId = undefined;
+        tab.txnAutoRolledBack = true;
+      }
+    }
+  }
+
   function updateEditorViewport(id: string, viewport: { scrollTop: number; scrollLeft: number }) {
     const tab = tabs.value.find((t) => t.id === id);
     if (!tab) return;
@@ -3545,10 +3558,12 @@ export const useQueryStore = defineStore("query", () => {
       // Sync connection state if the error indicates a lost connection
       useConnectionStore().recordConnectionLostError(tab.connectionId, e);
       // Handle manual transaction auto-rollback (e.g. deadlock detected by server,
-      // statement error inside a manual transaction, or idle timeout).
+      // statement error inside a manual transaction, or idle timeout). A missing
+      // backend session (idle watcher reclaim, backend restart) is equally
+      // terminal: keeping the stale id would fail every later statement.
       if (tab.autoCommit === false) {
         const errMsg: string = e?.message ?? String(e);
-        if (/rolled.?back/i.test(errMsg) || errMsg.includes("已自动回滚")) {
+        if (isTerminalManualTxnError(errMsg)) {
           tab.txnSessionId = undefined;
           tab.txnAutoRolledBack = true;
         }
@@ -4337,6 +4352,7 @@ export const useQueryStore = defineStore("query", () => {
     setAutoCommit,
     commitTransaction,
     rollbackTransaction,
+    handleManualTxnClosed,
     renameTab,
     openObjectBrowser,
     openRoutineTest,

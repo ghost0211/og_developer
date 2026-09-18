@@ -131,6 +131,10 @@ pub struct AppState {
     /// Used to reconstruct a TLS connector compatible with the original connection when cancelling.
     postgres_cancel_contexts: Arc<RwLock<HashMap<String, db::postgres::PostgresCancelContext>>>,
     pub transaction_sessions: Arc<RwLock<HashMap<String, TransactionSession>>>,
+    /// Broadcast when the backend closes a manual transaction session on its
+    /// own (idle reclaim). Shells forward this to the UI so commit/rollback
+    /// affordances track the real session state instead of a stale id.
+    pub manual_txn_events: tokio::sync::broadcast::Sender<crate::query::ManualTxnClosedEvent>,
     /// openGauss PL debugger sessions (dbe_pldebugger two-session model),
     /// keyed by debug session id.
     pub opengauss_debug_sessions: Arc<RwLock<HashMap<String, Arc<crate::opengauss_debug::OpenGaussDebugSession>>>>,
@@ -391,6 +395,7 @@ impl AppState {
             opengauss_native_metadata_pools: Arc::new(RwLock::new(HashMap::new())),
             postgres_notice_receivers: Arc::new(RwLock::new(HashMap::new())),
             transaction_sessions: Arc::new(RwLock::new(HashMap::new())),
+            manual_txn_events: tokio::sync::broadcast::channel(16).0,
             opengauss_debug_sessions: Arc::new(RwLock::new(HashMap::new())),
         }
     }

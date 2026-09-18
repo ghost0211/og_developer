@@ -1535,7 +1535,22 @@ pub async fn execute_in_manual_transaction(
             .map(|s| Arc::clone(&s.connection))
             .ok_or_else(|| "Transaction session not found".to_string())?
     };
+    // The session is in active use: refresh the idle marker so the watcher does
+    // not reap a live transaction five minutes after it was opened, and keep it
+    // busy so the watcher never rolls back mid-statement.
+    touch_transaction_session(state, txn_session_id, true).await;
+    let result = run_manual_txn_statements(state, &connection, txn_session_id, sql, max_rows).await;
+    touch_transaction_session(state, txn_session_id, false).await;
+    result
+}
 
+async fn run_manual_txn_statements(
+    state: &AppState,
+    connection: &Arc<tokio::sync::Mutex<TxnConnection>>,
+    txn_session_id: &str,
+    sql: &str,
+    max_rows: Option<usize>,
+) -> Result<Vec<db::QueryResult>, String> {
     let row_limit = max_rows.unwrap_or(MAX_ROWS).max(1);
     let mut conn = connection.lock().await;
     // Database-aware splitting keeps PL/SQL blocks (BEGIN...END) intact for
@@ -1617,27 +1632,78 @@ async fn rollback_manual_txn_connection(conn: &mut TxnConnection) -> Result<(), 
     Ok(())
 }
 
+/// Emitted when the backend closes a manual transaction session outside of an
+/// explicit commit/rollback (currently: idle watcher reclaim). The desktop
+/// shell forwards this to the webview so commit/rollback buttons track the
+/// real session state instead of a stale frontend id.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ManualTxnClosedEvent {
+    pub txn_session_id: String,
+    pub connection_id: String,
+    pub database: String,
+    pub reason: String,
+}
+
+const TXN_IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
+const TXN_IDLE_CHECK_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// A manual transaction session may be rolled back and removed only when it is
+/// idle (no statement in flight) AND has been unused for the whole timeout.
+fn txn_session_is_reapable(busy: bool, idle_for: std::time::Duration) -> bool {
+    !busy && idle_for >= TXN_IDLE_TIMEOUT
+}
+
 fn spawn_txn_idle_watcher(state: &AppState, txn_session_id: String) {
     let sessions = Arc::clone(&state.transaction_sessions);
+    let events = state.manual_txn_events.clone();
     tokio::spawn(async move {
-        const TXN_IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
-        tokio::time::sleep(TXN_IDLE_TIMEOUT).await;
+        // Poll instead of a single sleep: last_activity is refreshed on every
+        // statement, so a one-shot timer would kill actively-used transactions
+        // exactly five minutes after they began.
+        loop {
+            tokio::time::sleep(TXN_IDLE_CHECK_INTERVAL).await;
 
-        let removed: Option<TransactionSession> = {
-            let mut guard = sessions.write().await;
-            match guard.get(&txn_session_id) {
-                Some(session) if !session.busy && session.last_activity.elapsed() >= TXN_IDLE_TIMEOUT => {
-                    guard.remove(&txn_session_id)
+            let removed: Option<TransactionSession> = {
+                let mut guard = sessions.write().await;
+                match guard.get(&txn_session_id) {
+                    Some(session) if txn_session_is_reapable(session.busy, session.last_activity.elapsed()) => {
+                        guard.remove(&txn_session_id)
+                    }
+                    Some(_) => None,
+                    None => break,
                 }
-                _ => None,
-            }
-        };
+            };
 
-        if let Some(session) = removed {
-            let mut conn = session.connection.lock().await;
-            let _ = rollback_manual_txn_connection(&mut conn).await;
+            if let Some(session) = removed {
+                log::warn!(
+                    "[query] rolling back idle manual transaction {} ({}:{}) after {:?}",
+                    txn_session_id,
+                    session.connection_id,
+                    session.database,
+                    TXN_IDLE_TIMEOUT,
+                );
+                let mut conn = session.connection.lock().await;
+                let _ = rollback_manual_txn_connection(&mut conn).await;
+                let _ = events.send(ManualTxnClosedEvent {
+                    txn_session_id: txn_session_id.clone(),
+                    connection_id: session.connection_id.clone(),
+                    database: session.database.clone(),
+                    reason: "idle-timeout".to_string(),
+                });
+                break;
+            }
         }
     });
+}
+
+/// Marks a manual transaction session as (in)active and refreshes its idle
+/// marker. `busy` keeps the watcher from rolling back mid-statement.
+async fn touch_transaction_session(state: &AppState, txn_session_id: &str, busy: bool) {
+    let mut sessions = state.transaction_sessions.write().await;
+    if let Some(session) = sessions.get_mut(txn_session_id) {
+        session.last_activity = std::time::Instant::now();
+        session.busy = busy;
+    }
 }
 
 pub async fn commit_manual_transaction(state: &AppState, txn_session_id: &str) -> Result<db::QueryResult, String> {
@@ -1671,6 +1737,21 @@ pub async fn rollback_manual_transaction(state: &AppState, txn_session_id: &str)
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn txn_session_reapable_only_when_idle_past_timeout() {
+        use std::time::Duration;
+        // A busy session (statement in flight) must never be reclaimed, even
+        // beyond the timeout.
+        assert!(!txn_session_is_reapable(true, TXN_IDLE_TIMEOUT + Duration::from_secs(1)));
+        // Recent activity resets the idle window.
+        assert!(!txn_session_is_reapable(false, TXN_IDLE_TIMEOUT - Duration::from_secs(1)));
+        assert!(txn_session_is_reapable(false, TXN_IDLE_TIMEOUT));
+        assert!(txn_session_is_reapable(false, TXN_IDLE_TIMEOUT * 2));
+        // The watcher polls strictly faster than the timeout so a session that
+        // goes idle right after a check is still reclaimed near the boundary.
+        assert!(TXN_IDLE_CHECK_INTERVAL < TXN_IDLE_TIMEOUT);
+    }
 
     #[test]
     fn execution_error_results_preserve_message_in_rows_and_diagnostics() {

@@ -804,3 +804,55 @@ DM8 等其他 JDBC 驱动走同一代码路径，isValid 为标准实现，风�
 - `cargo check -p ogdeveloper-web --tests --offline`：通过。
 - `pnpm typecheck`、改动文件 oxlint/oxfmt、`git diff --check`：通过；详细结果见 `tmp/routine-health-verification.md`。
 - 未做桌面实际交互和真实数据库验收；没有调用例程、修改数据库数据或提交 Git。
+
+---
+
+## 18. 结果标签无限新增与手动事务卡死（2026-09-18）
+
+**问题 1：同一窗口重复执行同一 SQL，每次新增一个“执行 N”结果标签**
+非 bug：结果面板左上角的图钉是「自动保留查询结果」（`resultAutoSave`），开启后每次执行
+都保留为新结果标签（与“在新结果标签页中执行”快捷键是两回事）。该状态随标签页持久化
+（`openTabsPersistence.ts`），重开/刷新应用后仍然生效，用户不易察觉；新开编辑页默认关闭
+所以“换个页面就好了”。处理：图钉 tooltip 文案明确其后果（中英）；行为与持久化保持不变。
+
+**问题 2：关闭自动提交后点一次 rollback，之后任何查询都报错，刷新恢复**
+机制链（用户日志从刷新后才开始，事故窗口无日志，按代码确证）：
+- 缺陷 A（core）：`spawn_txn_idle_watcher` 在会话创建 300s 后**无条件**回滚并移除手动事务
+  会话——`last_activity` 只在创建时赋值、执行语句从不更新，且是一次性 sleep。前端无感知。
+- 缺陷 B（前端）：会话被（看门狗或服务端空闲杀会话）移除后，查询报 `Transaction session
+  not found`，但 queryStore 仅在错误匹配 `/rolled.?back/i` 时清空 `txnSessionId`，该消息
+  不匹配 → 标签页永久卡在死会话 ID 上，之后每条查询都报同一错误。`txnSessionId` 不持久化，
+  刷新即恢复——与现象完全吻合。
+
+**修复**：
+- core：执行事务语句前后经 `touch_transaction_session` 刷新 `last_activity` 并置/清 `busy`；
+  看门狗改为每 60s 巡检的循环，只有“非忙且空闲满 300s”才回收（`txn_session_is_reapable`
+  纯函数抽出并单测）；回收时打 warn 日志。
+- 前端：新增 `isTerminalManualTxnError`（`lib/query/manualTxnErrors.ts`），把
+  `Transaction session not found` 纳入终态判定——清空 `txnSessionId` 并显示“事务已自动回滚”
+  提示条，下一条查询自动开新事务。专项 spec 3 例。
+
+**验证**：core `--lib` 1154 passed（含新增 `txn_session_reapable_only_when_idle_past_timeout`）；
+clippy/fmt 干净；前端 `manualTxnErrors.spec.ts` 3/3、typecheck 通过。
+未做桌面交互验证；user 侧复现路径较长（需等 5 分钟看门狗），建议下个版本实际验证一次：
+关自动提交 → 执行 → 等 6 分钟 → 再执行，应看到“事务已自动回滚”提示条且后续查询自动恢复。
+
+**联动增强（同日）**：提交/回滚按钮的置灰与快捷图标显隐本已由 `tab.txnSessionId` 驱动，
+但后端回收会话后前端不知晓，按钮“假亮”。补齐主动通知：core 新增 `ManualTxnClosedEvent`
+（broadcast channel 挂在 `AppState.manual_txn_events`），看门狗回收时广播；src-tauri 启动时
+转发为 `manual-txn-closed` webview 事件；`useTauriEvents` 监听并调 `queryStore.handleManualTxnClosed`，
+精确清除匹配标签的 `txnSessionId` 并亮起“事务已自动回滚”提示条，按钮即刻熄灭。web 后端无此
+推送，退化到“下次查询自愈”路径，行为仍正确。spec：`queryStore.manualTxnClosed.spec.ts` 2 例；
+src-tauri 编译通过。
+
+---
+
+## 19. SQL 编辑器工具栏上下文选择器三合一（2026-09-18）
+
+工具栏原有的连接/数据库/模式三个下拉 + 清除/设默认按钮合并为单个上下文选择器
+（`EditorContextPicker.vue`）：面包屑式触发按钮（连接 / 数据库 / 模式），弹出层内一个搜索框
++ 分组列表（数据库→模式→连接），页脚保留“设为默认数据库/清除”操作。事件契约不变
+（changeConnection/changeDatabase/changeSchema/setDefaultDatabase/clearDefaultDatabase），
+App.vue 处理逻辑零改动；保留生产环境徽标、颜色条、长名称换行样式与数据库必选抖动提示。
+EditorToolbar.vue 净减约 230 行。验证：typecheck/build/oxlint 通过，editorContextPicker.spec.ts
+5 例 + searchableSelectLayout.spec.ts 更新后全绿。
