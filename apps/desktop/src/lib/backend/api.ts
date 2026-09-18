@@ -460,6 +460,7 @@ export type {
   RoutineHealthRelation,
   RoutineHealthIndex,
   RoutineHealthSnapshot,
+  RoutineHealthWarning,
   RecompileObjectResult,
   ProfilerStatus,
   ProfilerLineData,

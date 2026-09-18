@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { Activity, Code2, Loader2, RefreshCw, Search } from "@lucide/vue";
+import { Stethoscope, Code2, Loader2, RefreshCw, Search } from "@lucide/vue";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useConnectionStore } from "@/stores/connectionStore";
@@ -11,6 +11,7 @@ import type { RoutineHealthSnapshot } from "@/lib/backend/api";
 import type { ObjectSourceKind, QueryTab } from "@/types/database";
 import type { RoutineHealthFinding } from "@/lib/maintenance/routineHealthAnalysis";
 import { buildRoutineHealthReport, reportRowPriority, type RoutineHealthReportRow } from "@/lib/maintenance/routineHealthReport";
+import { routineHealthWarningText } from "@/lib/maintenance/routineHealthWarnings";
 
 const props = defineProps<{ tab: QueryTab }>();
 const { t, te } = useI18n();
@@ -193,7 +194,7 @@ onBeforeUnmount(() => {
   <section class="h-full min-h-0 flex flex-col bg-background text-foreground" data-testid="routine-health-panel">
     <header class="border-b px-4 py-3 shrink-0 space-y-2">
       <div class="flex flex-wrap items-center gap-2">
-        <Activity class="h-4 w-4 text-primary" />
+        <Stethoscope class="h-4 w-4 text-primary" />
         <h2 class="text-sm font-semibold">{{ t("invalidObjects.title") }}</h2>
         <span class="text-xs text-muted-foreground">{{ connectionName }} / {{ tab.database }}</span>
         <div class="ml-auto flex items-center gap-2">
@@ -236,7 +237,7 @@ onBeforeUnmount(() => {
       <div v-if="optionError" class="mx-4 my-2 text-xs text-amber-600">{{ t("routineHealth.schemaLoadFailed") }}: {{ optionError }}</div>
       <div v-if="snapshot?.warnings.length" class="m-4 rounded border border-amber-500/30 bg-amber-500/5 p-3 text-xs space-y-1" role="status">
         <p class="font-medium">{{ t("routineHealth.coverage") }}</p>
-        <p v-for="warning in snapshot.warnings" :key="warning" class="whitespace-pre-wrap">{{ warning }}</p>
+        <p v-for="warning in snapshot.warnings" :key="warning.code + (warning.detail ?? '')" class="whitespace-pre-wrap">{{ routineHealthWarningText(warning, te, t) }}</p>
       </div>
       <div v-if="operationMessages.length" class="m-4 rounded border p-3 text-xs whitespace-pre-wrap" role="status">
         <p v-for="(message, index) in operationMessages" :key="index">{{ message }}</p>

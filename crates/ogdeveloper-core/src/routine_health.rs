@@ -45,6 +45,25 @@ pub struct RoutineHealthIndex {
     pub table_name: String,
 }
 
+/// Coverage notes are emitted as stable codes so the UI can localize them;
+/// `detail` carries raw technical context (object name, server error).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RoutineHealthWarning {
+    pub code: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+}
+
+impl RoutineHealthWarning {
+    fn new(code: &str) -> Self {
+        Self { code: code.to_string(), detail: None }
+    }
+    fn with_detail(code: &str, detail: impl Into<String>) -> Self {
+        Self { code: code.to_string(), detail: Some(detail.into()) }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RoutineHealthSnapshot {
@@ -53,7 +72,7 @@ pub struct RoutineHealthSnapshot {
     pub indexes: Vec<RoutineHealthIndex>,
     pub search_path: Vec<String>,
     pub invalid_objects: Vec<InvalidObjectInfo>,
-    pub warnings: Vec<String>,
+    pub warnings: Vec<RoutineHealthWarning>,
 }
 
 #[derive(Deserialize)]
@@ -329,7 +348,7 @@ pub async fn list_routine_health_snapshot_core(
         .json(CAPABILITIES_SQL)
         .await
         .map_err(|e| format!("Cannot read routine-health catalog capabilities: {e}"))?;
-    let mut warnings = vec!["Routine calls are checked by name, not overload argument types. Unqualified names use the routine search_path when configured, otherwise the current metadata session search_path; results can differ in another execution session.".to_string()];
+    let mut warnings = vec![RoutineHealthWarning::new("call_scope")];
     let sources = if is_opengauss {
         ["(pg_catalog.pg_get_functiondef(p.oid)).definition", "pg_catalog.pg_get_functiondef(p.oid)", "p.prosrc::text"]
     } else {
@@ -342,7 +361,7 @@ pub async fn list_routine_health_snapshot_core(
         {
             Ok(rows) => {
                 if index == 2 {
-                    warnings.push(format!("Full routine definitions unavailable; analyzing stored bodies only (parameter/declaration context may be incomplete): {}", failures.join("; ")));
+                    warnings.push(RoutineHealthWarning::with_detail("source_fallback", failures.join("; ")));
                 }
                 raw_routines = Some(rows);
                 break;
@@ -360,9 +379,9 @@ pub async fn list_routine_health_snapshot_core(
             Err(error) => {
                 routine.search_path = Some(Vec::new());
                 if routine.source.is_some() {
-                    warnings.push(format!(
-                        "{}.{}: {error}; unqualified dependencies were not checked",
-                        routine.schema, routine.name
+                    warnings.push(RoutineHealthWarning::with_detail(
+                        "routine_search_path_unresolved",
+                        format!("{}.{}: {error}", routine.schema, routine.name),
                     ));
                 }
             }
@@ -376,20 +395,21 @@ pub async fn list_routine_health_snapshot_core(
     let indexes = session.json(&indexes_sql()).await.map_err(|e| format!("Cannot read complete index catalog: {e}"))?;
     let invalid_objects = if caps.has_source {
         if !caps.has_errors {
-            warnings.push("gs_errors is unavailable; compilation-failure records have no detailed diagnostics".into());
+            warnings.push(RoutineHealthWarning::new("gs_errors_unavailable"));
         }
         match session.json(&invalid_objects_sql(schema, caps.has_errors)).await {
             Ok(records) => records,
             Err(error) => {
-                warnings.push(format!(
-                    "Compilation-failure records could not be read (catalog support or permissions): {error}"
-                ));
+                warnings.push(RoutineHealthWarning::with_detail("compile_records_unreadable", error));
                 Vec::new()
             }
         }
     } else {
-        warnings.push(if is_opengauss { "gs_source is unavailable; compilation-failure status was not checked" }
-            else { "PostgreSQL does not provide openGauss gs_source compilation-failure records; only static dependency analysis is available" }.into());
+        warnings.push(RoutineHealthWarning::new(if is_opengauss {
+            "gs_source_unavailable"
+        } else {
+            "compile_records_unsupported"
+        }));
         Vec::new()
     };
     Ok(RoutineHealthSnapshot { routines, relations, indexes, search_path: caps.search_path, invalid_objects, warnings })

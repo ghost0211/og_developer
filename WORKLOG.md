@@ -884,3 +884,22 @@ openGauss 同义词在独立的 pg_synonym 目录。修复（core routine_health
 `dangling_synonym_decodes_null_columns_as_unknown`）；clippy/fmt/typecheck/oxlint 干净。
 **真实库实测**（tygl_biz@192.168.10.158）：pg_synonym 列名核实无误；UNION 全量查询
 执行成功，app.def_user→dbo.def_user 解析出 24 列、app_dict_item→18 列；hasSynonym=true。
+
+---
+
+## 21. 例程健康分析图标与覆盖范围提示汉化（2026-09-18）
+
+**问题 1：图标与进程列表相同**。例程健康分析的工具菜单项、页签图标、面板标题均复用
+`Activity`（脉冲线）。统一改为 `Stethoscope`（听诊器，@lucide/vue 1.17 内置），进程列表
+保持 `Activity` 不变。AppMenuBar/AppTabBar/RoutineHealthPanel 三处及 spec 的 lucide mock
+同步更新。
+
+**问题 2：覆盖范围提示框是英文**。快照 `warnings` 此前是后端硬编码的英文字符串。重构为
+结构化 `RoutineHealthWarning { code, detail? }`（7 个稳定 code：call_scope、source_fallback、
+routine_search_path_unresolved、gs_errors_unavailable、compile_records_unreadable、
+gs_source_unavailable、compile_records_unsupported），detail 只携带技术上下文（对象名、
+服务端错误原文）。前端 `routineHealthWarningText` 按 code 查 `routineHealth.warnings.*`
+i18n 词条（中英双全），未知 code 降级显示 detail 而不是漏出英文或空行。
+
+**验证**：maintenance 全部 spec 47/47（含新增 routineHealthWarnings.spec 3 例、panel spec
+同步结构化 warnings）；core 1156 例全绿；typecheck/oxlint/fmt 干净。

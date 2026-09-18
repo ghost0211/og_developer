@@ -2,7 +2,7 @@
 import { computed, ref, watch, nextTick, onUnmounted } from "vue";
 import type { CSSProperties } from "vue";
 import { useI18n } from "vue-i18n";
-import { X, Pin, ChevronDown, Table2, Code2, TableProperties, PencilRuler, Pencil, Lock, Copy, AlertTriangle, Minimize2, Maximize2, Activity, Gauge, Terminal, TerminalSquare, Bug, FileCode, Settings } from "@lucide/vue";
+import { X, Pin, ChevronDown, Table2, Code2, TableProperties, PencilRuler, Pencil, Lock, Copy, AlertTriangle, Minimize2, Maximize2, Activity, Gauge, Terminal, TerminalSquare, Bug, FileCode, Settings, Stethoscope } from "@lucide/vue";
 import CustomContextMenu, { type ContextMenuItem } from "@/components/ui/CustomContextMenu.vue";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -465,7 +465,7 @@ function tabMenuIcon(tab: QueryTab) {
   if (tab.mode === "processlist") return Activity;
   if (tab.mode === "command") return Terminal;
   if (tab.mode === "routine-test") return TerminalSquare;
-  if (tab.mode === "routine-health") return Activity;
+  if (tab.mode === "routine-health") return Stethoscope;
   if (tab.mode === "routine-debug") return Bug;
   if (tab.mode === "program-window") return FileCode;
   if (tab.mode === "settings") return Settings;
@@ -605,7 +605,7 @@ function onOverflowItemKeydown(event: KeyboardEvent, tabId: string, kind: "regul
                       <Activity v-else-if="tab.mode === 'processlist'" class="h-3.5 w-3.5" />
                       <Terminal v-else-if="tab.mode === 'command'" class="h-3.5 w-3.5 text-emerald-500" />
                       <TerminalSquare v-else-if="tab.mode === 'routine-test'" class="h-3.5 w-3.5 text-primary" />
-                      <Activity v-else-if="tab.mode === 'routine-health'" class="h-3.5 w-3.5 text-primary" />
+                      <Stethoscope v-else-if="tab.mode === 'routine-health'" class="h-3.5 w-3.5 text-primary" />
                       <Bug v-else-if="tab.mode === 'routine-debug'" class="h-3.5 w-3.5 text-amber-500" />
                       <FileCode v-else-if="tab.mode === 'program-window'" class="h-3.5 w-3.5 text-blue-500" />
                       <Gauge v-else-if="tab.mode === 'postgres-dashboard'" class="h-3.5 w-3.5" />
@@ -769,7 +769,7 @@ function onOverflowItemKeydown(event: KeyboardEvent, tabId: string, kind: "regul
                       <Activity v-else-if="tab.mode === 'processlist'" class="h-3.5 w-3.5" />
                       <Terminal v-else-if="tab.mode === 'command'" class="h-3.5 w-3.5 text-emerald-500" />
                       <TerminalSquare v-else-if="tab.mode === 'routine-test'" class="h-3.5 w-3.5 text-primary" />
-                      <Activity v-else-if="tab.mode === 'routine-health'" class="h-3.5 w-3.5 text-primary" />
+                      <Stethoscope v-else-if="tab.mode === 'routine-health'" class="h-3.5 w-3.5 text-primary" />
                       <Bug v-else-if="tab.mode === 'routine-debug'" class="h-3.5 w-3.5 text-amber-500" />
                       <FileCode v-else-if="tab.mode === 'program-window'" class="h-3.5 w-3.5 text-blue-500" />
                       <Gauge v-else-if="tab.mode === 'postgres-dashboard'" class="h-3.5 w-3.5" />

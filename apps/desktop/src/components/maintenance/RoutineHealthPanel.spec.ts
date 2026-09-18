@@ -64,7 +64,7 @@ vi.mock("@/components/ui/badge", async () => {
 vi.mock("@lucide/vue", async () => {
   const { defineComponent, h } = await import("vue");
   const Icon = defineComponent({ name: "IconStub", setup: () => () => h("i") });
-  return { Activity: Icon, Code2: Icon, Loader2: Icon, RefreshCw: Icon, Search: Icon };
+  return { Stethoscope: Icon, Code2: Icon, Loader2: Icon, RefreshCw: Icon, Search: Icon };
 });
 
 import RoutineHealthPanel from "@/components/maintenance/RoutineHealthPanel.vue";
@@ -81,7 +81,7 @@ function snapshot(overrides: Partial<RoutineHealthSnapshot> = {}): RoutineHealth
     indexes: [],
     searchPath: ["pg_catalog", "app"],
     invalidObjects: [{ schema: "app", name: "bad_fn", objectType: "FUNCTION", errorLine: 3, errorMessage: "syntax error", source: BAD_SOURCE }],
-    warnings: ["Routine calls are checked by name only."],
+    warnings: [{ code: "call_scope" }],
     ...overrides,
   };
 }

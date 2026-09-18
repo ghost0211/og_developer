@@ -263,6 +263,15 @@ export const zhCNMessages = {
       analysis_limit: "例程超出静态分析大小限制，未完成依赖检查。",
       partial_statement: "该语句的部分内容尚未完整分析。",
     },
+    warnings: {
+      call_scope: "例程调用按名称核对，不校验重载参数类型。未限定名称优先使用例程配置的 search_path，否则使用当前元数据会话的 search_path；在其他执行会话中结果可能不同。",
+      source_fallback: "无法获取完整例程定义，改为分析存储的例程体（参数/声明上下文可能不完整）：{detail}",
+      routine_search_path_unresolved: "{detail}；未限定的依赖未检查。",
+      gs_errors_unavailable: "gs_errors 不可用；编译失败记录缺少详细诊断信息。",
+      compile_records_unreadable: "无法读取编译失败记录（目录支持或权限问题）：{detail}",
+      gs_source_unavailable: "gs_source 不可用；未检查编译失败状态。",
+      compile_records_unsupported: "PostgreSQL 不提供 openGauss gs_source 编译失败记录；仅提供静态依赖分析。",
+    },
   },
   menus: {
     application: "应用菜单",

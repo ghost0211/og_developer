@@ -24,11 +24,16 @@ export interface RoutineHealthIndex {
   tableSchema: string;
   tableName: string;
 }
+/** Coverage notes arrive as stable codes so the panel can localize them; detail carries raw technical context. */
+export interface RoutineHealthWarning {
+  code: string;
+  detail?: string;
+}
 export interface RoutineHealthSnapshot {
   routines: RoutineHealthRoutine[];
   relations: RoutineHealthRelation[];
   indexes: RoutineHealthIndex[];
   searchPath: string[];
   invalidObjects: import("./tauri").InvalidObjectInfo[];
-  warnings: string[];
+  warnings: RoutineHealthWarning[];
 }

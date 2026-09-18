@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { RoutineHealthSnapshot } from "./routineHealthTypes";
-export type { RoutineHealthRoutine, RoutineHealthRelation, RoutineHealthIndex, RoutineHealthSnapshot } from "./routineHealthTypes";
+export type { RoutineHealthRoutine, RoutineHealthRelation, RoutineHealthIndex, RoutineHealthSnapshot, RoutineHealthWarning } from "./routineHealthTypes";
 import { BackendErrorException, type BackendError } from "@/lib/backend/errorUtils";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 

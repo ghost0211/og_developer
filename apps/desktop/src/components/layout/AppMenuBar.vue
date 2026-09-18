@@ -7,6 +7,7 @@ import {
   BookMarked,
   BookOpen,
   Bot,
+  Stethoscope,
   Check,
   Clipboard,
   ClipboardPaste,
@@ -466,7 +467,7 @@ const shortcutClass = "ml-auto pl-5 text-[10px] font-mono text-muted-foreground/
           <span>{{ t("processList.title") }}</span>
         </DropdownMenuItem>
         <DropdownMenuItem :disabled="!hasConnections" :class="menuItemClass" @select="emit('open-invalid-objects')">
-          <Activity :class="menuIconClass" class="text-primary" />
+          <Stethoscope :class="menuIconClass" class="text-primary" />
           <span>{{ t("invalidObjects.title") }}</span>
         </DropdownMenuItem>
         <DropdownMenuItem :disabled="!hasConnections" :class="menuItemClass" @select="emit('open-table-import')">

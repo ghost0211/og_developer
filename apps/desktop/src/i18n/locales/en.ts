@@ -257,6 +257,15 @@ export default {
       analysis_limit: "The routine exceeds the static analysis size limit; dependency checks were not completed.",
       partial_statement: "Part of this statement was not fully analyzed.",
     },
+    warnings: {
+      call_scope: "Routine calls are checked by name, not overload argument types. Unqualified names use the routine search_path when configured, otherwise the current metadata session search_path; results can differ in another execution session.",
+      source_fallback: "Full routine definitions unavailable; analyzing stored bodies only (parameter/declaration context may be incomplete): {detail}",
+      routine_search_path_unresolved: "{detail}; unqualified dependencies were not checked.",
+      gs_errors_unavailable: "gs_errors is unavailable; compilation-failure records have no detailed diagnostics.",
+      compile_records_unreadable: "Compilation-failure records could not be read (catalog support or permissions): {detail}",
+      gs_source_unavailable: "gs_source is unavailable; compilation-failure status was not checked.",
+      compile_records_unsupported: "PostgreSQL does not provide openGauss gs_source compilation-failure records; only static dependency analysis is available.",
+    },
   },
   menus: {
     application: "Application menu",
