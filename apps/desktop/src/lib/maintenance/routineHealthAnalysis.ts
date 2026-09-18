@@ -155,6 +155,14 @@ function analyzeRoutine(snapshot: RoutineHealthSnapshot, routine: RoutineHealthR
     }
   }
   const canResolve = (parts: string[]) => parts.length === 2 || (parts.length === 1 && pathKnown && !changesPath);
+  /** Relation lookup that also sees openGauss synonyms: schema synonyms live in
+   * the catalogue under their own schema, and PUBLIC synonyms are visible no
+   * matter what the search_path says. */
+  function resolveRelation(parts: string[]) {
+    const direct = resolve(snapshot.relations, parts);
+    if (direct || parts.length !== 1 || !canResolve(parts)) return direct;
+    return snapshot.relations.find((relation) => relation.kind === "synonym" && relation.schema === "public" && relation.name === parts[0]);
+  }
   const variables = new Set(["new", "old", "found", "sqlstate", "sqlerrm"]);
   for (const parameter of parseSqlRoutineParameters(routine.signature)) {
     if (parameter.name) variables.add(nameOf(tokenizeSqlSemantic(parameter.name, "postgres")[0]!));
@@ -232,7 +240,7 @@ function analyzeRoutine(snapshot: RoutineHealthSnapshot, routine: RoutineHealthR
         continue;
       }
       references.push({ parts: q.parts, token: tokens[i]! });
-      if (canResolve(q.parts) && !resolve(snapshot.relations, q.parts)) add("missing_relation", "error", `未找到表或视图 ${q.parts.join(".")}。`, tokens[i], "relation", q.parts.join("."));
+      if (canResolve(q.parts) && !resolveRelation(q.parts)) add("missing_relation", "error", `未找到表或视图 ${q.parts.join(".")}。`, tokens[i], "relation", q.parts.join("."));
     }
     // The generic completion model treats SELECT INTO as a relation. Mask only
     // the assignment clause before asking it for visible row sources.
@@ -287,7 +295,7 @@ function analyzeRoutine(snapshot: RoutineHealthSnapshot, routine: RoutineHealthR
         return result.map((name, i) => row.columnAliases?.[i] ?? name);
       }
       if (row.columns) return row.columns;
-      return resolve(snapshot.relations, [...row.qualifierParts, row.name])?.columns;
+      return resolveRelation([...row.qualifierParts, row.name])?.columns ?? undefined;
     }
     function checkColumn(t: Token, column: string, qualifier?: string) {
       if (variables.has(qualifier ?? column)) return;
@@ -309,13 +317,21 @@ function analyzeRoutine(snapshot: RoutineHealthSnapshot, routine: RoutineHealthR
       const q = qualified(tokens, i)!;
       const next = tokens[q.end];
       if (next?.text === "(") {
-        if (q.parts.length === 1 && (SPECIAL_CALLS.has(q.parts[0]!) || ctes.has(q.parts[0]!))) continue;
+        if (q.parts.length === 1 && (SPECIAL_CALLS.has(q.parts[0]!) || SQL_WORDS.has(q.parts[0]!) || ctes.has(q.parts[0]!))) continue;
+        if (q.parts.length === 1) {
+          // Keyword-parenthesized clauses (WHERE (…), FROM (…), ON (…)) and
+          // table-source alias column lists (FROM (…) u(a,b), FROM f() AS x(a),
+          // FROM t x(a)) are not routine calls.
+          const previous = tokens[i - 1];
+          if (previous?.normalized === "as" || previous?.text === ")") continue;
+          if (tokenIsIdentifier(previous) && !SQL_WORDS.has(previous.normalized) && !SPECIAL_CALLS.has(previous.normalized)) continue;
+        }
         if (["function", "procedure", "table", "type", "index"].includes(tokens[i - 1]?.normalized ?? "")) continue;
         if (q.parts.length > 2) {
           add("unresolved_package_call", "warning", "包或多级限定调用未完整检查。", t, "routine", q.parts.join("."));
           continue;
         }
-        if (canResolve(q.parts) && !resolve(snapshot.routines, q.parts) && !resolve(snapshot.relations, q.parts)) {
+        if (canResolve(q.parts) && !resolve(snapshot.routines, q.parts) && !resolveRelation(q.parts)) {
           add("missing_routine", "warning", `未找到同名例程 ${q.parts.join(".")}；需核实类型转换或扩展语法。`, t, "routine", q.parts.join("."));
         }
       } else if (q.parts.length >= 2 && q.parts.length <= 3) {
@@ -348,10 +364,11 @@ function analyzeRoutine(snapshot: RoutineHealthSnapshot, routine: RoutineHealthR
       if (tokens[at]?.normalized === "only") at++;
       const q = qualified(tokens, at);
       if (!q) continue;
-      const relation = resolve(snapshot.relations, q.parts);
-      if (!relation) continue;
+      const relation = resolveRelation(q.parts);
+      const targetColumns = relation?.columns;
+      if (!targetColumns) continue;
       const reportTarget = (column: Token) => {
-        if (!relation.columns.includes(nameOf(column))) add("missing_column", "error", `目标表 ${q.parts.join(".")} 缺少字段 ${nameOf(column)}。`, column, "column", `${q.parts.join(".")}.${nameOf(column)}`);
+        if (!targetColumns.includes(nameOf(column))) add("missing_column", "error", `目标表 ${q.parts.join(".")} 缺少字段 ${nameOf(column)}。`, column, "column", `${q.parts.join(".")}.${nameOf(column)}`);
       };
       if (t.normalized === "insert" && tokens[q.end]?.text === "(") {
         const depth = tokens[q.end]!.depth + 1;

@@ -31,7 +31,9 @@ pub struct RoutineHealthRelation {
     pub schema: String,
     pub name: String,
     pub kind: String,
-    pub columns: Vec<String>,
+    /// NULL for dangling synonyms: the reference exists (no missing-relation
+    /// error) but its columns stay unknown instead of failing every column check.
+    pub columns: Option<Vec<String>>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -61,6 +63,7 @@ struct Capabilities {
     has_prosp: bool,
     has_source: bool,
     has_errors: bool,
+    has_synonym: bool,
     search_path: Vec<String>,
 }
 
@@ -139,6 +142,8 @@ const CAPABILITIES_SQL: &str = r#"SELECT pg_catalog.row_to_json(x)::text FROM (
         WHERE n.nspname = 'dbe_pldeveloper' AND c.relname = 'gs_source') AS "hasSource",
       EXISTS (SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
         WHERE n.nspname = 'dbe_pldeveloper' AND c.relname = 'gs_errors') AS "hasErrors",
+      EXISTS (SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'pg_catalog' AND c.relname = 'pg_synonym') AS "hasSynonym",
       pg_catalog.current_schemas(true) AS "searchPath"
 ) x"#;
 
@@ -167,14 +172,28 @@ fn routines_sql(schema: Option<&str>, has_prokind: bool, has_prosp: bool, source
     ))
 }
 
-fn relations_sql() -> String {
-    aggregate_sql(
-        r#"SELECT n.nspname AS schema, c.relname AS name, c.relkind::text AS kind,
+fn relations_sql(has_synonym: bool) -> String {
+    let base = r#"SELECT n.nspname AS schema, c.relname AS name, c.relkind::text AS kind,
       ARRAY(SELECT a.attname::text FROM pg_catalog.pg_attribute a
         WHERE a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped ORDER BY a.attnum) AS columns
       FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
-      WHERE c.relkind IN ('r', 'v', 'm', 'f', 'p', 'S') ORDER BY n.nspname, c.relname"#,
-    )
+      WHERE c.relkind IN ('r', 'v', 'm', 'f', 'p', 'S')"#;
+    // openGauss synonyms are not pg_class rows, so reference checks must see
+    // them explicitly. Expose each synonym under its own schema with the
+    // target relation's columns; a dangling synonym keeps NULL columns so its
+    // reference counts as existing while its columns stay unknown.
+    let synonyms = r#" UNION ALL
+      SELECT n.nspname AS schema, s.synname AS name, 'synonym'::text AS kind,
+      CASE WHEN tc.oid IS NULL THEN NULL
+        ELSE ARRAY(SELECT a.attname::text FROM pg_catalog.pg_attribute a
+          WHERE a.attrelid = tc.oid AND a.attnum > 0 AND NOT a.attisdropped ORDER BY a.attnum)
+      END AS columns
+      FROM pg_catalog.pg_synonym s
+      JOIN pg_catalog.pg_namespace n ON n.oid = s.synnamespace
+      LEFT JOIN pg_catalog.pg_class tc ON tc.relname = s.synobjname
+        AND tc.relnamespace = (SELECT n2.oid FROM pg_catalog.pg_namespace n2 WHERE n2.nspname = s.synobjschema)"#;
+    let inner = if has_synonym { format!("{base}{synonyms}") } else { base.to_string() };
+    aggregate_sql(&format!("{inner} ORDER BY schema, name"))
 }
 
 fn indexes_sql() -> String {
@@ -351,7 +370,7 @@ pub async fn list_routine_health_snapshot_core(
         routines.push(routine);
     }
     let relations = session
-        .json(&relations_sql())
+        .json(&relations_sql(caps.has_synonym))
         .await
         .map_err(|e| format!("Cannot read complete relation/column catalog: {e}"))?;
     let indexes = session.json(&indexes_sql()).await.map_err(|e| format!("Cannot read complete index catalog: {e}"))?;
@@ -416,7 +435,28 @@ mod tests {
         assert!(decode_json_cell::<Vec<RawRoutine>>(Value::String(raw[..raw.len() - 1].into())).is_err());
         let relations: Vec<RoutineHealthRelation> =
             decode_json_cell(serde_json::json!([{"schema":"app","name":"t","kind":"r","columns":["a","b"]}])).unwrap();
-        assert_eq!(relations[0].columns, vec!["a", "b"]);
+        assert_eq!(relations[0].columns.as_deref(), Some(["a".to_string(), "b".to_string()].as_slice()));
+    }
+
+    #[test]
+    fn relations_sql_includes_synonyms_only_when_the_catalog_exists() {
+        // Vanilla PostgreSQL has no pg_synonym; the UNION arm must stay gated so
+        // the snapshot query keeps working there.
+        let with = relations_sql(true);
+        assert!(with.contains("pg_catalog.pg_synonym"));
+        assert!(with.contains("'synonym'"));
+        assert!(with.contains("synobjschema"));
+        assert!(!relations_sql(false).contains("pg_synonym"));
+    }
+
+    #[test]
+    fn dangling_synonym_decodes_null_columns_as_unknown() {
+        // A synonym whose target is gone must still parse: the reference exists
+        // (no missing-relation error) but its columns are unknown, not empty.
+        let relations: Vec<RoutineHealthRelation> =
+            decode_json_cell(serde_json::json!([{"schema":"app","name":"def_user","kind":"synonym","columns":null}]))
+                .unwrap();
+        assert!(relations[0].columns.is_none());
     }
 
     #[test]
@@ -427,7 +467,7 @@ mod tests {
         assert!(sql.contains("latest.status = false"));
         assert!(sql.contains("'db4ai'"));
         assert!(invalid_objects_sql(Some("db4ai"), true).contains("latest.schema_name = 'db4ai'"));
-        assert!(!relations_sql().contains("LIMIT"));
-        assert!(relations_sql().contains("NOT a.attisdropped"));
+        assert!(!relations_sql(false).contains("LIMIT"));
+        assert!(relations_sql(false).contains("NOT a.attisdropped"));
     }
 }

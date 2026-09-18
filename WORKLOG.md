@@ -856,3 +856,31 @@ src-tauri 编译通过。
 App.vue 处理逻辑零改动；保留生产环境徽标、颜色条、长名称换行样式与数据库必选抖动提示。
 EditorToolbar.vue 净减约 230 行。验证：typecheck/build/oxlint 通过，editorContextPicker.spec.ts
 5 例 + searchableSelectLayout.spec.ts 更新后全绿。
+
+---
+
+## 20. 例程健康分析误报修复：同义词解析与伪例程调用（2026-09-18）
+
+**问题 1：报“未找到引用的表或视图”的对象其实是同义词**（如 app.def_user、
+app.app_dict_item，实测指向 dbo 模式的表）。快照的 relations 目录只查 pg_class，
+openGauss 同义词在独立的 pg_synonym 目录。修复（core routine_health.rs）：
+`relations_sql(has_synonym)` 追加 UNION ALL 同义词臂（能力探测 hasSynonym 门控，
+原生 PG 无此目录），同义词以自身模式 + 目标表列暴露；目标缺失的悬挂同义词
+`columns` 为 NULL——引用视为存在（不报 missing_relation）但列未知（不做列检查）。
+前端分析器新增 `resolveRelation`：search_path 解析失败后再回落 public 同义词
+（openGauss PUBLIC 同义词不依赖 search_path）。DML 目标、列检查、例程调用回退
+全部改走 resolveRelation；`columns` 类型改为可空并做空值守卫。
+
+**问题 2：WHERE/FROM/别名被误报为“未找到同名例程”**。调用识别把“标识符 + (”
+都当例程调用：`WHERE (…)`、`FROM (…)` 命中关键字不在 SPECIAL_CALLS 白名单；
+`FROM (…) u(a,b)`、`FROM f() AS x(a)`、`FROM t x(a)` 这类**表源别名列清单**被当成
+调用 u/x/t。修复（routineHealthAnalysis.ts）：单名候选跳过 SQL_WORDS 全集；
+前驱为 `as`、`)` 或非关键字标识词时跳过；保留 `WHERE no_fn(…)` 等真实缺失调用的
+报告（新增测试钉住）。
+
+**验证**：前端 spec 30/30（新增 6 例：关键字括弧、三种别名列形式、真实缺失仍报、
+模式/public 同义词、悬挂同义词、同义词 DML）；core 1156 例（新增
+`relations_sql_includes_synonyms_only_when_the_catalog_exists`、
+`dangling_synonym_decodes_null_columns_as_unknown`）；clippy/fmt/typecheck/oxlint 干净。
+**真实库实测**（tygl_biz@192.168.10.158）：pg_synonym 列名核实无误；UNION 全量查询
+执行成功，app.def_user→dbo.def_user 解析出 24 列、app_dict_item→18 列；hasSynonym=true。

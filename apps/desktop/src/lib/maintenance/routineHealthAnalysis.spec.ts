@@ -123,6 +123,49 @@ describe("routine health dependency analysis", () => {
   it("does not classify standard PL/SQL constructs and aggregates as unknown functions", () => {
     expect(findings("BEGIN IF (p_id IN (1,2)) THEN SELECT count(*) FROM app.users; RAISE NOTICE '%', coalesce(p_id,0); END IF; END;")).toEqual([]);
   });
+  it("does not treat keyword-parenthesized clauses as routine calls", () => {
+    // Regression: WHERE (…), AND (…), OR (…), FROM (…), UNION (…) were flagged
+    // as missing routines named where/and/from.
+    const source = "BEGIN WITH RECURSIVE tree AS (SELECT m.* FROM app.users m WHERE (p_id IS NULL AND (m.id IS NULL OR m.id = 0)) OR (p_id IS NOT NULL AND m.id = p_id) UNION SELECT c.* FROM app.users c JOIN tree t ON c.id = t.id) SELECT t.id FROM tree t; END;";
+    const result = findings(source);
+    expect(result.filter((f) => f.code === "missing_routine")).toEqual([]);
+    expect(result.filter((f) => f.severity === "error")).toEqual([]);
+  });
+  it("does not treat table-source alias column lists as routine calls", () => {
+    // FROM (…) u(a,b), FROM f() AS x(a) and FROM t x(a) are aliases with column
+    // lists, not calls to routines named u/x/t.
+    const result = findings("BEGIN SELECT * FROM (SELECT id, name FROM app.users) u(a, b); SELECT * FROM app.existing_fn(1) AS x(v); SELECT * FROM app.users t(id2, name2); END;");
+    expect(result.filter((f) => f.code === "missing_routine")).toEqual([]);
+  });
+  it("still flags genuinely missing routines after clause keywords", () => {
+    const result = findings("BEGIN SELECT * FROM app.users WHERE no_fn(id) > 0; END;");
+    expect(result.filter((f) => f.code === "missing_routine")).toEqual([expect.objectContaining({ objectName: "no_fn" })]);
+  });
+  it("resolves schema and public synonyms instead of reporting missing relations", () => {
+    const schemaSynonym = fixture("BEGIN SELECT u.id FROM def_user u; END;");
+    schemaSynonym.relations.push({ schema: "app", name: "def_user", kind: "synonym", columns: ["id"] });
+    expect(analyzeRoutineHealth(schemaSynonym)[0]!.findings).toEqual([]);
+    // PUBLIC synonyms are visible regardless of the routine search_path.
+    const publicSynonym = fixture("BEGIN SELECT u.id FROM def_user u; END;");
+    publicSynonym.relations.push({ schema: "public", name: "def_user", kind: "synonym", columns: ["id"] });
+    publicSynonym.routines[0]!.searchPath = ["pg_catalog", "app"];
+    expect(analyzeRoutineHealth(publicSynonym)[0]!.findings).toEqual([]);
+  });
+  it("checks columns through synonyms and treats dangling synonyms as unknown", () => {
+    const known = fixture("BEGIN SELECT u.absent FROM def_user u; END;");
+    known.relations.push({ schema: "app", name: "def_user", kind: "synonym", columns: ["id"] });
+    expect(analyzeRoutineHealth(known)[0]!.findings).toEqual(expect.arrayContaining([expect.objectContaining({ code: "missing_column", objectName: "u.absent" })]));
+    // A dangling synonym (target gone) keeps the reference valid but its
+    // columns unknown: no missing-relation error and no per-column noise.
+    const dangling = fixture("BEGIN SELECT u.anything FROM def_user u; END;");
+    dangling.relations.push({ schema: "app", name: "def_user", kind: "synonym", columns: null });
+    expect(analyzeRoutineHealth(dangling)[0]!.findings.filter((f) => f.severity === "error")).toEqual([]);
+  });
+  it("checks DML targets through synonyms with known columns", () => {
+    const data = fixture("BEGIN UPDATE def_user SET absent = 1 WHERE id = 1; END;");
+    data.relations.push({ schema: "app", name: "def_user", kind: "synonym", columns: ["id"] });
+    expect(analyzeRoutineHealth(data)[0]!.findings).toEqual(expect.arrayContaining([expect.objectContaining({ code: "missing_column", objectName: "def_user.absent" })]));
+  });
   it("reports unsupported languages rather than claiming checked", () => {
     const data = fixture("return 1");
     data.routines[0]!.language = "plpythonu";

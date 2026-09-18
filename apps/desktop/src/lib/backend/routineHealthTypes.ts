@@ -13,8 +13,10 @@ export interface RoutineHealthRoutine {
 export interface RoutineHealthRelation {
   schema: string;
   name: string;
+  /** "synonym" marks openGauss synonyms; other values are pg_class relkinds. */
   kind: string;
-  columns: string[];
+  /** NULL for dangling synonyms: the reference exists but its columns are unknown. */
+  columns: string[] | null;
 }
 export interface RoutineHealthIndex {
   schema: string;
