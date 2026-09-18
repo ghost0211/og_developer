@@ -1,21 +1,11 @@
 <script setup lang="ts">
-import { computed, ref, watch, watchEffect } from "vue";
+import { computed } from "vue";
 import { useI18n } from "vue-i18n";
-import { Play, Loader2, Square, Database, Check, Table2, AlignLeft, GitBranch, Save, FolderOpen, Layers, X, Download, RotateCcw, AlertTriangle, ClipboardPaste, Minimize2 } from "@lucide/vue";
+import { Play, Loader2, Square, Check, Table2, AlignLeft, GitBranch, Save, FolderOpen, X, Download, RotateCcw, AlertTriangle, ClipboardPaste, Minimize2 } from "@lucide/vue";
 import { Button } from "@/components/ui/button";
-import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
-import TruncatedTextTooltip from "@/components/ui/TruncatedTextTooltip.vue";
-import DatabaseIcon from "@/components/icons/DatabaseIcon.vue";
-import ProductionContextBadge from "@/components/common/ProductionContextBadge.vue";
-import { useConnectionStore } from "@/stores/connectionStore";
-import { useDatabaseOptions } from "@/composables/useDatabaseOptions";
-import { useSchemaOptions } from "@/composables/useSchemaOptions";
-import { connectionIconType } from "@/lib/connection/connectionPresentation";
-import { formatDatabaseLabel, isDefaultDatabase } from "@/lib/database/defaultDatabase";
-import { connectionDisplayName } from "@/lib/tabs/tabPresentation";
-import { useConnectionGroupLabel } from "@/composables/useConnectionGroupLabel";
-import { isSingleDatabase, supportsClearableQuerySchema, supportsSqlInListPaste, supportsTransaction as supportsTransactionFeature } from "@/lib/database/databaseCapabilities";
+import EditorContextPicker from "@/components/layout/EditorContextPicker.vue";
+import { supportsSqlInListPaste, supportsTransaction as supportsTransactionFeature } from "@/lib/database/databaseCapabilities";
 import { effectiveDatabaseTypeForConnection } from "@/lib/database/jdbcDialect";
 import { hexToRgba } from "@/lib/common/color";
 import { productionContextForDatabase } from "@/lib/database/productionSafety";
@@ -57,35 +47,11 @@ const emit = defineEmits<{
 }>();
 
 const { t } = useI18n();
-const connectionStore = useConnectionStore();
-const { databaseOptions, loadingDatabaseOptions, loadDatabaseOptions } = useDatabaseOptions();
-const { loadSchemaOptions, getSchemaOptionsForDb, isLoadingSchemas, isSchemaAware } = useSchemaOptions();
 
-const activeDatabaseOptions = computed(() => {
-  const connection = props.activeConnection;
-  if (!connection) return [];
-  return databaseOptions.value[connection.id] ?? [];
-});
-const loadingActiveDatabaseOptions = computed(() => {
-  const connection = props.activeConnection;
-  if (!connection) return false;
-  return loadingDatabaseOptions.value[connection.id] ?? false;
-});
-
-const connectionOptionIds = computed(() => connectionStore.connections.map((connection) => connection.id));
-const { connectionGroupLabel } = useConnectionGroupLabel();
-const activeDatabaseValue = computed(() => props.activeTab.database || "");
 const activeProductionContext = computed(() => productionContextForDatabase(props.activeConnection, props.activeTab.database));
-const showConnectionProductionBadge = computed(() => activeProductionContext.value.reason === "connection");
-const showDatabaseProductionBadge = computed(() => activeProductionContext.value.reason === "database");
-const activeConnectionValue = computed(() => props.activeConnection?.id || "");
-const activeSchemaValue = computed(() => props.activeTab.schema || "");
 const supportsExplain = computed(() => !!props.activeConnection);
-const isSingleDb = computed(() => isSingleDatabase(props.activeConnection?.db_type));
 const supportsExPaste = computed(() => supportsSqlInListPaste(props.activeConnection?.db_type));
 const supportsTransaction = computed(() => supportsTransactionFeature(props.activeConnection?.db_type));
-const hasDefaultDatabaseOption = computed(() => activeDatabaseOptions.value.includes(""));
-const schemaDatabaseKey = computed(() => props.activeTab.database || (isSingleDb.value ? "_" : ""));
 const saveTooltip = computed(() => (props.activeTab.objectSource ? t("objects.saveSource") : t("toolbar.saveSql")));
 // Postgres/openGauss EXPLAIN ANALYZE executes the statement.
 const supportsExplainAnalyze = computed(() => {
@@ -110,40 +76,6 @@ const executeButtonClass = computed(() => {
 
 const isTransactionActive = computed(() => !!props.txnSessionId);
 
-const showSchemaSelector = computed(() => {
-  const connection = props.activeConnection;
-  return connection && isSchemaAware(connection.id) && (props.activeTab.database || isSingleDb.value || hasDefaultDatabaseOption.value);
-});
-
-const activeSchemaOptions = computed(() => {
-  const connection = props.activeConnection;
-  if (!connection) return [];
-  return getSchemaOptionsForDb(connection.id, schemaDatabaseKey.value);
-});
-const databaseRequiredVisible = ref(false);
-
-watch(
-  () => props.databaseRequiredSignal,
-  (signal) => {
-    if (!signal) return;
-    databaseRequiredVisible.value = false;
-    requestAnimationFrame(() => {
-      databaseRequiredVisible.value = true;
-    });
-  },
-);
-
-watch(activeDatabaseValue, (database) => {
-  if (database) databaseRequiredVisible.value = false;
-});
-
-watchEffect(() => {
-  const connection = props.activeConnection;
-  if (connection && showSchemaSelector.value) {
-    loadSchemaOptions(connection.id, schemaDatabaseKey.value).catch(() => {});
-  }
-});
-const isActiveDatabaseDefault = computed(() => isDefaultDatabase(props.activeConnection, activeDatabaseValue.value));
 const toolbarStyle = computed(() => {
   const color = props.activeConnection?.color;
   if (!color) return undefined;
@@ -152,22 +84,6 @@ const toolbarStyle = computed(() => {
     boxShadow: `inset 0 1px 0 ${hexToRgba(color, 0.18)}`,
   };
 });
-
-function databaseDisplayName(database: string): string {
-  return formatDatabaseLabel(props.activeConnection, database, {
-    defaultDatabase: t("editor.defaultDatabase"),
-    noDatabase: t("editor.noDatabase"),
-  });
-}
-
-function connectionById(connectionId: string): ConnectionConfig | undefined {
-  return connectionStore.getConfig(connectionId);
-}
-
-function databaseOptionIsProduction(database: string): boolean {
-  if (!database || props.activeConnection?.is_production) return false;
-  return productionContextForDatabase(props.activeConnection, database).reason === "database";
-}
 </script>
 
 <template>
@@ -325,120 +241,17 @@ function databaseOptionIsProduction(database: string): boolean {
       </Tooltip>
     </div>
     <span class="flex-1 min-w-0" />
-    <div class="flex items-center gap-2 shrink-0">
-      <div class="flex items-center gap-1">
-        <span v-if="activeConnection?.color" class="h-4 w-1 rounded-full shrink-0" :style="{ backgroundColor: activeConnection.color }" />
-        <SearchableSelect
-          :model-value="activeConnectionValue"
-          :options="connectionOptionIds"
-          :placeholder="t('editor.selectConnection')"
-          :search-placeholder="t('editor.searchConnection')"
-          :empty-text="t('grid.noSearchResults')"
-          :loading-text="t('common.loading')"
-          trigger-variant="ghost"
-          trigger-class="font-medium text-foreground"
-          trigger-icon-class="h-3 w-3"
-          :display-name="connectionDisplayName"
-          list-class="w-96 max-w-[calc(100vw-2rem)]"
-          item-class="min-h-9 h-auto py-1"
-          @update:model-value="(connectionId) => emit('changeConnection', connectionId)"
-        >
-          <template #trigger-label="{ label }">
-            <div v-if="activeConnection" class="flex min-w-0 items-center gap-1.5">
-              <DatabaseIcon :db-type="connectionIconType(activeConnection)" class="h-3.5 w-3.5 shrink-0" />
-              <span class="truncate">{{ label }}</span>
-              <ProductionContextBadge v-if="showConnectionProductionBadge" compact />
-            </div>
-            <span v-else class="truncate text-muted-foreground">{{ t("editor.selectConnection") }}</span>
-          </template>
-          <template #option-label="{ option, label }">
-            <div class="flex min-w-0 items-center gap-2">
-              <DatabaseIcon :db-type="connectionIconType(connectionById(option))" class="h-3.5 w-3.5 shrink-0" />
-              <div class="flex min-w-0 flex-1 items-center gap-2">
-                <span class="block min-w-0 max-w-48 shrink-0 whitespace-normal break-words rounded-sm bg-muted/70 px-1.5 py-0.5 text-[11px] leading-tight text-muted-foreground">
-                  {{ connectionGroupLabel(option) }}
-                </span>
-                <TruncatedTextTooltip :text="label" class="block min-w-[7rem] flex-1 text-sm font-medium" side="left" :side-offset="8" />
-              </div>
-            </div>
-          </template>
-        </SearchableSelect>
-      </div>
-      <div v-if="!isSingleDb" class="flex items-center gap-1" :class="{ 'database-required-prompt': databaseRequiredVisible }">
-        <SearchableSelect
-          :model-value="activeDatabaseValue"
-          :options="activeDatabaseOptions.length ? activeDatabaseOptions : activeDatabaseValue ? [activeDatabaseValue] : []"
-          :placeholder="t('editor.selectDatabase')"
-          :search-placeholder="t('editor.searchDatabase')"
-          :empty-text="t('grid.noSearchResults')"
-          :loading-text="t('common.loading')"
-          :loading="loadingActiveDatabaseOptions"
-          :display-name="databaseDisplayName"
-          trigger-variant="ghost"
-          trigger-class="gap-1.5"
-          trigger-icon-class="h-3 w-3"
-          @update:model-value="(database) => emit('changeDatabase', database)"
-          @update:open="
-            (open: boolean) => {
-              if (open && activeConnection) loadDatabaseOptions(activeConnection.id).catch(() => {});
-            }
-          "
-        >
-          <template #trigger-label="{ label, loading }">
-            <Database class="h-3.5 w-3.5 shrink-0" />
-            <span class="truncate">{{ loading ? t("common.loading") : label }}</span>
-            <ProductionContextBadge v-if="showDatabaseProductionBadge" compact />
-          </template>
-          <template #option-label="{ option, label }">
-            <div class="flex min-w-0 flex-1 items-center gap-1.5">
-              <TruncatedTextTooltip :text="label" class="min-w-0 flex-1" side="left" :side-offset="8" />
-              <ProductionContextBadge v-if="databaseOptionIsProduction(option)" compact />
-            </div>
-          </template>
-        </SearchableSelect>
-        <Tooltip v-if="activeDatabaseValue && !isSingleDb">
-          <TooltipTrigger as-child>
-            <Button variant="ghost" size="icon" class="h-6 w-6 text-muted-foreground hover:text-foreground" @click="emit('changeDatabase', '')">
-              <X class="h-3.5 w-3.5" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>{{ t("editor.clearDatabase") }}</TooltipContent>
-        </Tooltip>
-        <Button v-if="activeDatabaseValue" variant="ghost" size="sm" class="h-6 px-2 text-[11px]" @click="isActiveDatabaseDefault ? emit('clearDefaultDatabase') : emit('setDefaultDatabase')">
-          <Check v-if="isActiveDatabaseDefault" class="h-3 w-3" />
-          {{ isActiveDatabaseDefault ? t("editor.defaultDatabase") : t("editor.setDefaultDatabase") }}
-        </Button>
-      </div>
-      <div v-if="showSchemaSelector" class="flex items-center gap-1">
-        <SearchableSelect
-          :model-value="activeSchemaValue"
-          :options="activeSchemaOptions.length ? activeSchemaOptions : activeSchemaValue ? [activeSchemaValue] : []"
-          :placeholder="t('editor.selectSchema')"
-          :search-placeholder="t('editor.searchSchema')"
-          :empty-text="t('grid.noSearchResults')"
-          :loading-text="t('common.loading')"
-          :loading="!!activeConnection && isLoadingSchemas(activeConnection.id, schemaDatabaseKey)"
-          :clear-selected-option="supportsClearableQuerySchema(activeConnection?.db_type)"
-          trigger-variant="ghost"
-          trigger-class="gap-1.5"
-          trigger-icon-class="h-3 w-3"
-          @update:model-value="(schema) => emit('changeSchema', schema || undefined)"
-          @update:open="
-            (open: boolean) => {
-              if (open && activeConnection) loadSchemaOptions(activeConnection.id, schemaDatabaseKey).catch(() => {});
-            }
-          "
-        >
-          <template #trigger-label="{ label, loading }">
-            <Layers class="h-3.5 w-3.5 shrink-0" />
-            <span class="truncate">{{ loading ? t("common.loading") : label }}</span>
-          </template>
-          <template #option-label="{ label }">
-            <TruncatedTextTooltip :text="label" class="min-w-0 flex-1" side="left" :side-offset="8" />
-          </template>
-        </SearchableSelect>
-      </div>
-    </div>
+    <EditorContextPicker
+      class="shrink-0"
+      :active-tab="activeTab"
+      :active-connection="activeConnection"
+      :database-required-signal="databaseRequiredSignal"
+      @change-connection="(connectionId) => emit('changeConnection', connectionId)"
+      @change-database="(database) => emit('changeDatabase', database)"
+      @change-schema="(schema) => emit('changeSchema', schema)"
+      @set-default-database="emit('setDefaultDatabase')"
+      @clear-default-database="emit('clearDefaultDatabase')"
+    />
     <div v-if="activeTab.mode === 'data' && activeTab.tableMeta" class="ml-2 inline-flex shrink-0 items-center gap-1 rounded border border-border bg-muted/30 px-2 py-0.5 font-medium text-muted-foreground tabular-nums">
       <Table2 class="h-3.5 w-3.5 shrink-0" />
       <span class="truncate">{{ activeTab.tableMeta.columns.length }} {{ t("tree.columns") }}</span>
@@ -452,33 +265,3 @@ function databaseOptionIsProduction(database: string): boolean {
     </Button>
   </div>
 </template>
-
-<style scoped>
-.database-required-prompt {
-  color: var(--destructive);
-  animation: database-required-shake 420ms ease;
-}
-
-.database-required-prompt :deep(button) {
-  color: var(--destructive);
-  border-color: color-mix(in oklch, var(--destructive) 55%, transparent);
-  background: color-mix(in oklch, var(--destructive) 10%, transparent);
-}
-
-@keyframes database-required-shake {
-  0%,
-  100% {
-    transform: translateX(0);
-  }
-  12%,
-  36%,
-  60% {
-    transform: translateX(-3px);
-  }
-  24%,
-  48%,
-  72% {
-    transform: translateX(3px);
-  }
-}
-</style>

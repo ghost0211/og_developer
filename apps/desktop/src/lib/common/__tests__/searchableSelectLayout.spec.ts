@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 const searchableSelectSource = readFileSync(new URL("../../../components/ui/searchable-select/SearchableSelect.vue", import.meta.url), "utf8");
 const dataTransferDialogSource = readFileSync(new URL("../../../components/transfer/DataTransferDialog.vue", import.meta.url), "utf8");
-const editorToolbarSource = readFileSync(new URL("../../../components/layout/EditorToolbar.vue", import.meta.url), "utf8");
+const editorContextPickerSource = readFileSync(new URL("../../../components/layout/EditorContextPicker.vue", import.meta.url), "utf8");
 
 describe("SearchableSelect layout", () => {
   it("keeps slotted option labels inside a shrinkable overflow boundary", () => {
@@ -21,9 +21,9 @@ describe("SearchableSelect layout", () => {
   });
 
   it("wraps deep connection group paths without hiding connection names", () => {
-    expect(editorToolbarSource).toContain('item-class="min-h-9 h-auto py-1"');
-    expect(editorToolbarSource).toMatch(/<span class="[^"]*max-w-48[^"]*shrink-0[^"]*whitespace-normal[^"]*break-words[^"]*">\s*\{\{ connectionGroupLabel\(option\) \}\}\s*<\/span>/);
-    expect(editorToolbarSource).toContain('<TruncatedTextTooltip :text="label" class="block min-w-[7rem] flex-1 text-sm font-medium"');
-    expect(editorToolbarSource).not.toContain('<TruncatedTextTooltip :text="connectionGroupLabel(option)"');
+    expect(editorContextPickerSource).toContain("min-h-9 h-auto");
+    expect(editorContextPickerSource).toMatch(/<span class="[^"]*max-w-48[^"]*shrink-0[^"]*whitespace-normal[^"]*break-words[^"]*">\s*\{\{ connectionGroupLabel\(row\.value\) \}\}\s*<\/span>/);
+    expect(editorContextPickerSource).toContain('<TruncatedTextTooltip :text="row.label" class="block min-w-[7rem] flex-1 text-sm font-medium"');
+    expect(editorContextPickerSource).not.toContain('<TruncatedTextTooltip :text="connectionGroupLabel(row.value)"');
   });
 });
