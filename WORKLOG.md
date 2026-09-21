@@ -903,3 +903,24 @@ i18n 词条（中英双全），未知 code 降级显示 detail 而不是漏出�
 
 **验证**：maintenance 全部 spec 47/47（含新增 routineHealthWarnings.spec 3 例、panel spec
 同步结构化 warnings）；core 1156 例全绿；typecheck/oxlint/fmt 干净。
+
+---
+
+## 22. `schema.` 任意位置补全该 schema 的对象（2026-09-18）
+
+**问题**：`update ddd.ldm_datatype set row_uuid=public.g` 这类 UPDATE SET 赋值表达式位置，
+输入 `schema.` 完全不提示。探针实测该语境：qualifier=public、exclusiveColumnSuggestions=true、
+**suggestRoutines=false**。两重根因：
+1. QueryEditor 的 qualifierIsSchema 回退只在“该 schema 下按当前前缀查到表”时触发——
+   public 下没有匹配 g 的表 → 不重写；独占列语境里 qualifier 又不匹配被引用表 → 弹窗为空。
+2. 即使触发，重写也未打开 suggestRoutines → buildObjectItems 不执行 → 函数永不出现。
+
+**修复**（QueryEditor.vue）：回退在表查不到时新增 **schema 存在性校验**（先本地 schema 缓存、
+再远端 listCompletionSchemas），是真实 schema 名即按 schema 语境重写；重写补上
+`suggestRoutines: 原值 || !exclusiveTableSuggestions`（独占表语境如 DROP TABLE 不混入例程；
+CALL/EXEC 独占例程语境不混入表的原有约束保持不变）。例程元数据本就走
+resolveSqlCompletionRoutineLookupTarget（qualifier 即 schema 作用域），无需改动。
+
+**验证**：sqlCompletionSchemaQualifier.spec.ts 新增 2 例（UPDATE SET 语境重写后函数出现、
+独占表语境不混入例程），补全相关 523 例全绿；typecheck/oxlint 干净。待桌面实测：
+`update … set col=public.g` 应弹出 public 下 g 开头的函数。

@@ -95,4 +95,32 @@ describe("schema-qualified completion outside FROM", () => {
     expect(items.some((item) => item.label === "get_menu_tree")).toBe(true);
     expect(items.some((item) => item.label === "menu")).toBe(false);
   });
+
+  it("UPDATE SET expression `schema.` offers the schema's routines after the fallback rewrite", () => {
+    // 回归：`update ddd.t set col=app.g` 位置基础语境 suggestRoutines=false，
+    // 旧重写不开例程展示，函数完全不出现在补全里。
+    const sql = "update ddd.ldm_datatype set row_uuid=app.g";
+    const base = getSqlCompletionContext(sql, sql.length, { databaseType: "opengauss", dialect: "postgres" });
+    expect(base.qualifier).toBe("app");
+    expect(base.prefix).toBe("g");
+    expect(base.suggestRoutines).toBe(false);
+    expect(base.exclusiveColumnSuggestions).toBe(true);
+    // 与 QueryEditor 新的 qualifierIsSchema 重写一致（含 suggestRoutines 放开）
+    const rewritten = { ...base, suggestTables: true, suggestColumns: false, exclusiveColumnSuggestions: false, suggestRoutines: true };
+    const items = buildItems(rewritten);
+
+    const functionItem = items.find((item) => item.type === "function" && item.label === "get_menu_tree");
+    expect(functionItem).toBeDefined();
+    expect(functionItem!.apply).not.toContain("app.");
+    expect(items.some((item) => item.type === "table" && item.label === "menu")).toBe(false); // 前缀 g 仍过滤表名
+  });
+
+  it("exclusive-table contexts keep routines out of the rewritten schema popup", () => {
+    const sql = "SELECT app.";
+    const base = getSqlCompletionContext(sql, sql.length, { databaseType: "opengauss", dialect: "postgres" });
+    // exclusiveTable 语境（如 DROP TABLE）的重写不得混入例程
+    const rewritten = { ...base, exclusiveTableSuggestions: true, suggestTables: true, suggestColumns: false, exclusiveColumnSuggestions: false, suggestRoutines: false };
+    const items = buildItems(rewritten);
+    expect(items.some((item) => item.type === "function")).toBe(false);
+  });
 });

@@ -3342,6 +3342,20 @@ async function performAsyncCompletionWithResult(epoch: number, completionContext
 
   // If qualifier didn't match any table names, try it as a schema name
   let qualifierIsSchema = false;
+  // `schema.` 应在任何语句位置都提示该 schema 的对象：表查不到匹配时，只要
+  // qualifier 是真实存在的 schema 名，也按 schema 语境重写（例程等对象随后
+  // 由 effectiveContext.suggestRoutines 打开展示）。
+  const qualifierMatchesKnownSchema = async (qualifier: string): Promise<boolean> => {
+    const normalized = qualifier.toLowerCase();
+    const matches = (names: readonly string[]) => names.some((name) => name.toLowerCase() === normalized);
+    if (matches(connectionStore.lookupLocalCompletionSchemas(props.connectionId!, scope.database, "", MAX_COMPLETION_TABLES))) return true;
+    if (localOnlyMetadata) return false;
+    try {
+      return matches(await connectionStore.listCompletionSchemas(props.connectionId!, scope.database));
+    } catch {
+      return false;
+    }
+  };
   if (completionContext.qualifier && !schemaLookupDatabase && !tableLookupTarget.qualifierDatabase && !isReferencedTableQualifier(completionContext) && tables.length === 0 && (completionContext.suggestTables || completionContext.exclusiveColumnSuggestions)) {
     let schemaTables = connectionStore.lookupLocalCompletionTables(props.connectionId!, scope.database, completionContext.prefix, MAX_COMPLETION_TABLES, completionContext.qualifier, props.catalog);
     if (!localOnlyMetadata) {
@@ -3351,6 +3365,8 @@ async function performAsyncCompletionWithResult(epoch: number, completionContext
     }
     if (schemaTables.length > 0) {
       tables = schemaTables;
+      qualifierIsSchema = true;
+    } else if (await qualifierMatchesKnownSchema(completionContext.qualifier)) {
       qualifierIsSchema = true;
     }
     if (epoch !== completionEpoch) return null;
@@ -3483,6 +3499,9 @@ async function performAsyncCompletionWithResult(epoch: number, completionContext
         suggestTables: !completionContext.exclusiveRoutineSuggestions,
         suggestColumns: false,
         exclusiveColumnSuggestions: false,
+        // UPDATE SET 赋值表达式等语境原本 suggestRoutines=false，schema. 必须
+        // 能提示该 schema 的例程；exclusiveTable 语境（如 DROP TABLE）不混入例程。
+        suggestRoutines: completionContext.suggestRoutines || !completionContext.exclusiveTableSuggestions,
       }
     : completionContext;
 
