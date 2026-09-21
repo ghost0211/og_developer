@@ -2823,7 +2823,7 @@ async function provideSqlCompletions(context: CompletionContext) {
       currentSchema: props.schema,
       completionContext,
     });
-    completionContext = completionScope.completionContext;
+    completionContext = rewriteCompletionContextWhenQualifierIsSchema(completionScope.completionContext);
 
     const needsAsyncData =
       completionContext.suggestTables || completionContext.suggestRoutines || completionContext.exclusiveRoutineSuggestions || !!completionContext.qualifier || !!completionContext.insertTable || completionContext.exclusiveColumnSuggestions || completionContext.referencedTables.length > 0;
@@ -3530,6 +3530,29 @@ function isReferencedTableQualifier(completionContext: ReturnType<typeof getSqlC
   const qualifier = completionContext.qualifier.toLowerCase();
   const qualifiedColumnTarget = completionQualifiedTableTarget(completionContext);
   return completionContext.referencedTables.some((table) => table.alias?.toLowerCase() === qualifier || table.name.toLowerCase() === qualifier || (!!qualifiedColumnTarget && completionTablesMatch(table, qualifiedColumnTarget)));
+}
+
+// `schema.` 应在任何语句位置都提示该 schema 的对象（表/视图/例程）。这里在
+// 本地/异步分流之前用本地 schema 缓存同步判定并重写语境：本地快路径与异步
+// 路径行为一致，UPDATE SET 赋值表达式等 suggestRoutines=false 的位置也能提示
+// 函数。异步路径仍保留远端 schema 校验兜底（本地元数据尚未加载时）。
+function rewriteCompletionContextWhenQualifierIsSchema(completionContext: ReturnType<typeof getSqlCompletionContext>): ReturnType<typeof getSqlCompletionContext> {
+  const qualifier = completionContext.qualifier;
+  if (!qualifier || !props.connectionId || props.database == null) return completionContext;
+  if (isReferencedTableQualifier(completionContext)) return completionContext;
+  if (!completionContext.suggestTables && !completionContext.exclusiveColumnSuggestions && !completionContext.exclusiveTableSuggestions && !completionContext.exclusiveRoutineSuggestions) return completionContext;
+  const qualifierName = qualifier.toLowerCase();
+  const isSchema = connectionStore.lookupLocalCompletionSchemas(props.connectionId, props.database, "", MAX_COMPLETION_TABLES).some((name) => name.toLowerCase() === qualifierName);
+  if (!isSchema) return completionContext;
+  return {
+    ...completionContext,
+    // CALL/EXEC 语境（exclusiveRoutine）不混入表；exclusiveTable（如 DROP TABLE）
+    // 不混入例程。保留 qualifier 作为元数据作用域，避免 apply 双重限定。
+    suggestTables: !completionContext.exclusiveRoutineSuggestions,
+    suggestColumns: false,
+    exclusiveColumnSuggestions: false,
+    suggestRoutines: completionContext.suggestRoutines || !completionContext.exclusiveTableSuggestions,
+  };
 }
 
 function isTableNameCompletionContext(completionContext: ReturnType<typeof getSqlCompletionContext>): boolean {

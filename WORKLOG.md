@@ -924,3 +924,11 @@ resolveSqlCompletionRoutineLookupTarget（qualifier 即 schema 作用域），�
 **验证**：sqlCompletionSchemaQualifier.spec.ts 新增 2 例（UPDATE SET 语境重写后函数出现、
 独占表语境不混入例程），补全相关 523 例全绿；typecheck/oxlint 干净。待桌面实测：
 `update … set col=public.g` 应弹出 public 下 g 开头的函数。
+
+**追加修复（同日，0.2.18）**：用户实测 0.2.17 在 `update pdm_database t set t.row_uuid = public.g`
+仍不提示。探针确认语境与已测例完全一致（qualifier/exclusiveColumn 均正确），问题在于
+重写位于异步流程深处，而补全入口还有本地快路径（buildLocalSqlCompletionResult）不经过
+该重写。改为在 provideSqlCompletions 的本地/异步分流**之前**新增
+`rewriteCompletionContextWhenQualifierIsSchema`：用本地 schema 缓存（侧边栏树已加载即可用）
+同步判定 qualifier 是否为真实 schema 名并重写语境，两条路径行为一致；异步路径保留远端
+schema 校验兜底（本地元数据冷时）。editor 相关 189 例 + 补全 523 例全绿。
