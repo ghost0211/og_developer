@@ -3616,7 +3616,8 @@ function scheduleSignaturePrefetch(sql: string, cursor: number) {
 
 async function fetchRoutineSignatures(schema: string | undefined, name: string): Promise<SqlCompletionObject[]> {
   if (!props.connectionId || props.database == null) return [];
-  const schemas = [...new Set([schema, props.schema, "public"].filter((value): value is string => !!value && value.trim().length > 0))];
+  // pg_catalog 兜底：内置函数不在内置签名表里的（如 pg_get_function_arguments）也能提示
+  const schemas = [...new Set([schema, props.schema, "public", "pg_catalog"].filter((value): value is string => !!value && value.trim().length > 0))];
   if (schemas.length === 0) return [];
   const literal = (value: string) => `'${value.replace(/'/g, "''")}'`;
   const sql = [
