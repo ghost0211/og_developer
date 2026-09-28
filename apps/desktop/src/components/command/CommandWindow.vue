@@ -627,7 +627,7 @@ watch(
     </div>
 
     <!-- Terminal Output Log Stream -->
-    <div ref="terminalContainerRef" class="flex-1 min-h-0 overflow-y-auto p-4 space-y-4 bg-background font-mono leading-relaxed">
+    <div ref="terminalContainerRef" class="flex-1 min-h-0 overflow-y-auto p-4 space-y-4 bg-background command-terminal-font leading-relaxed">
       <div v-for="entry in logs" :key="entry.id" class="space-y-1">
         <!-- Command Header -->
         <div v-if="entry.command" class="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 font-semibold select-text">
@@ -640,7 +640,7 @@ watch(
           {{ entry.error }}
         </div>
 
-        <pre v-else-if="entry.textOutput" class="whitespace-pre overflow-x-auto text-foreground/90 py-0.5 font-mono text-[11.5px] leading-snug select-text">{{ entry.textOutput }}</pre>
+        <pre v-else-if="entry.textOutput" class="whitespace-pre overflow-x-auto text-foreground/90 py-0.5 command-terminal-font text-[11.5px] leading-snug select-text">{{ entry.textOutput }}</pre>
 
         <!-- Elapsed timing footer -->
         <div v-if="entry.elapsedMs != null && showTiming && entry.type !== 'info'" class="text-[10px] text-muted-foreground/60 select-none">{{ t("commandWindow.time", { ms: entry.elapsedMs }) }}</div>
@@ -659,7 +659,7 @@ watch(
 
     <!-- Input Footer Bar -->
     <div class="border-t bg-muted/20 p-2 flex items-start gap-2 shrink-0">
-      <div class="font-bold text-emerald-600 dark:text-emerald-400 select-none pl-1 shrink-0 py-1 leading-5">
+      <div class="font-bold text-emerald-600 dark:text-emerald-400 select-none pl-1 shrink-0 py-1 leading-5 command-terminal-font">
         {{ promptPrefix }}
       </div>
 
@@ -667,7 +667,7 @@ watch(
         ref="inputRef"
         v-model="currentInput"
         rows="1"
-        class="max-h-40 min-h-7 flex-1 resize-y bg-transparent border-0 outline-none text-foreground font-mono text-xs leading-5 py-1 placeholder:text-muted-foreground/40 shadow-none focus-visible:ring-0"
+        class="max-h-40 min-h-7 flex-1 resize-y bg-transparent border-0 outline-none text-foreground command-terminal-font text-xs leading-5 py-1 placeholder:text-muted-foreground/40 shadow-none focus-visible:ring-0"
         :placeholder="connecting ? t('commandWindow.connecting') : executing ? t('commandWindow.executing') : t('commandWindow.inputPlaceholder')"
         :disabled="connecting || executing"
         autofocus
@@ -681,3 +681,15 @@ watch(
     </div>
   </div>
 </template>
+
+<style scoped>
+/*
+ * 终端输出字体栈：优先使用 Latin+CJK 同一字体且严格 2:1 宽度（更纱黑体 / 新宋体 / 宋体），
+ * 保证含中文的 ASCII 表格边框像素级对齐。这些字体必须排在 Consolas 等纯拉丁等宽字体之前，
+ * 否则中文走回退字体后宽度比不再是 2:1（雅黑 1.0em vs Consolas 2×0.55em），边框仍会轻微错位。
+ * Windows 自带新宋体；无这些字体的平台回退到系统等宽字体（显示宽度补齐仍然生效，仅可能有亚字符级偏差）。
+ */
+.command-terminal-font {
+  font-family: "Sarasa Term SC", "Sarasa Mono SC", "NSimSun", "SimSun", "MS Gothic", "Consolas", monospace;
+}
+</style>

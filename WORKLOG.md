@@ -945,4 +945,4 @@ schema 校验兜底（本地元数据冷时）。editor 相关 189 例 + 补全 
 - 顺带修复同类问题：编辑器悬停表结构 `alignColumnRows`（hoverTableSql.ts，列注释含中文时同样错位）。
 
 **验证**：displayWidth 12 例单测（ASCII/CJK/混排/全角/组合字符/Emoji）；CommandWindow.spec 新增集成用例（含中文值的结果表，两侧边框落在同一显示列）；相关 49 例全绿，typecheck 干净。
-**已知边界**：若 CJK 回退字体（如微软雅黑）字形宽度相对主等宽字体不是严格 2:1，宽列可能仍有亚字符级视觉偏差；像素级完美需换严格 2:1 字体（NSimSun/更纱黑体），待用户反馈后决定。
+**已知边界与跟进（0.2.20）**：0.2.19 上线后用户实测仍有轻微不齐——确认为字体度量问题：font-mono 栈下 Latin 用 Consolas（0.55em/字符）、中文回退雅黑（1.0em/字符），1.0 ≠ 2×0.55。修复：命令窗口输出区/输入框/提示符改用 `command-terminal-font` 专用字体栈（Sarasa Term SC/Mono SC → NSimSun → SimSun → MS Gothic → Consolas → monospace），这些 CJK 字体自带 Latin 且严格 2:1，Windows 自带新宋体即可像素级对齐；无此字体的平台回退原行为。
