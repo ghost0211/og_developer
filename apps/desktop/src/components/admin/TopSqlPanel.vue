@@ -10,7 +10,23 @@ import { useToast } from "@/composables/useToast";
 import { copyToClipboard } from "@/lib/common/clipboard";
 import { effectiveDatabaseTypeForConnection } from "@/lib/database/jdbcDialect";
 import * as api from "@/lib/backend/api";
-import { buildTopSqlAvailabilitySql, buildTopSqlColumnsFallbackSql, buildTopSqlColumnsSql, buildTopSqlQuery, formatTopSqlCount, formatTopSqlDuration, mapTopSqlAvailability, mapTopSqlColumns, mapTopSqlRows, type TopSqlOrderBy, type TopSqlRow } from "@/lib/admin/topSql";
+import {
+  buildDbePerfTopSqlQuery,
+  buildTopSqlAvailabilitySql,
+  buildTopSqlColumnsFallbackSql,
+  buildTopSqlColumnsSql,
+  buildTopSqlQuery,
+  classifyDbePerfProbeError,
+  DBE_PERF_STATEMENT_PROBE_SQL,
+  formatTopSqlCount,
+  formatTopSqlDuration,
+  mapTopSqlAvailability,
+  mapTopSqlColumns,
+  mapTopSqlRows,
+  type TopSqlOrderBy,
+  type TopSqlRow,
+  type TopSqlSource,
+} from "@/lib/admin/topSql";
 
 const props = defineProps<{
   connectionId: string;
@@ -44,11 +60,23 @@ const rows = ref<TopSqlRow[]>([]);
 const loading = ref(false);
 const creatingExtension = ref(false);
 const loadError = ref("");
+/** Resolved statement-statistics source (pg_stat_statements or openGauss dbe_perf.statement). */
+const source = ref<TopSqlSource | null>(null);
 /** True when the pg_stat_statements view/extension could not be found. */
 const unavailable = ref(false);
 /** Whether the extension appears in pg_extension (drives the guidance text). */
 const extensionInstalled = ref(false);
 const lastRefreshedAt = ref("");
+
+/** Current connection dialect ("postgres" / "opengauss" / undefined). */
+const databaseType = computed(() => effectiveDatabaseTypeForConnection(connection.value));
+const canQuery = computed(() => supported.value && (source.value === "pg_stat_statements" || source.value === "dbe_perf"));
+const dbePerfDenied = computed(() => source.value === "dbe_perf_denied");
+/** Suggested MONADMIN grant for the dbe_perf permission-denied state. */
+const dbePerfGrantSql = computed(() => {
+  const user = connection.value?.username?.trim() || "<用户名>";
+  return `GRANT MONADMIN TO ${user};`;
+});
 
 let generation = 0;
 let disposed = false;
@@ -65,12 +93,12 @@ async function discoverColumns(): Promise<string[]> {
 
 /** Load the ranking rows for the current toolbar selection. */
 async function load() {
-  if (!supported.value || unavailable.value) return;
+  if (!canQuery.value) return;
   const request = ++generation;
   loading.value = true;
   loadError.value = "";
   try {
-    const sql = buildTopSqlQuery(columns.value, orderBy.value, limit.value);
+    const sql = source.value === "dbe_perf" ? buildDbePerfTopSqlQuery(orderBy.value, limit.value) : buildTopSqlQuery(columns.value, orderBy.value, limit.value);
     const result = await api.executeQuery(props.connectionId, props.database, sql, props.schema || undefined, undefined, { maxRows: limit.value });
     if (disposed || request !== generation) return;
     rows.value = mapTopSqlRows(result);
@@ -92,6 +120,7 @@ async function initialize() {
   loadError.value = "";
   unavailable.value = false;
   extensionInstalled.value = false;
+  source.value = null;
   rows.value = [];
   columns.value = [];
   lastRefreshedAt.value = "";
@@ -100,22 +129,49 @@ async function initialize() {
     const discovered = await discoverColumns();
     if (disposed || request !== generation) return;
     columns.value = discovered;
-    if (discovered.length === 0) {
-      // Distinguish "extension missing" from a plain permissions/query failure.
-      const availability = await api.executeQuery(props.connectionId, props.database, buildTopSqlAvailabilitySql(), props.schema || undefined, undefined, { maxRows: 1 });
+    // pg_stat_statements 不可用时，openGauss 回退到内置 dbe_perf.statement 视图。
+    if (discovered.length > 0) {
+      source.value = "pg_stat_statements";
+    } else if (databaseType.value === "opengauss") {
+      source.value = await probeDbePerf();
       if (disposed || request !== generation) return;
-      extensionInstalled.value = mapTopSqlAvailability(availability);
-      unavailable.value = true;
+    } else {
+      source.value = "unavailable";
+    }
+    if (canQuery.value) {
+      loading.value = false;
+      await load();
+      return;
+    }
+    if (dbePerfDenied.value) {
       loading.value = false;
       return;
     }
+    // Distinguish "extension missing" from a plain permissions/query failure.
+    const availability = await api.executeQuery(props.connectionId, props.database, buildTopSqlAvailabilitySql(), props.schema || undefined, undefined, { maxRows: 1 });
+    if (disposed || request !== generation) return;
+    extensionInstalled.value = mapTopSqlAvailability(availability);
+    unavailable.value = true;
     loading.value = false;
-    await load();
+    return;
   } catch (error) {
     if (disposed || request !== generation) return;
     rows.value = [];
     loadError.value = error instanceof Error ? error.message : String(error);
     loading.value = false;
+  }
+}
+
+/**
+ * Probe dbe_perf.statement: PostgreSQL checks relation ACLs even for zero-row
+ * queries, so "permission denied" reliably identifies the MONADMIN gap.
+ */
+async function probeDbePerf(): Promise<TopSqlSource> {
+  try {
+    await api.executeQuery(props.connectionId, props.database, DBE_PERF_STATEMENT_PROBE_SQL, props.schema || undefined, undefined, { maxRows: 1 });
+    return "dbe_perf";
+  } catch (error) {
+    return classifyDbePerfProbeError(error instanceof Error ? error.message : String(error)) === "denied" ? "dbe_perf_denied" : "unavailable";
   }
 }
 
@@ -160,7 +216,7 @@ watch(
 
 // Re-run when the toolbar selection changes (only after a successful probe).
 watch([orderBy, limit], () => {
-  if (!supported.value || unavailable.value || columns.value.length === 0) return;
+  if (!canQuery.value) return;
   void load();
 });
 
@@ -179,6 +235,7 @@ onBeforeUnmount(() => {
         <span class="font-semibold text-sm">{{ t("topSql.title") }}</span>
         <Badge variant="outline" class="h-5 px-2 text-[11px] font-mono">{{ connectionName }}</Badge>
         <span v-if="props.database" class="text-[11px] text-muted-foreground font-mono">{{ props.database }}</span>
+        <Badge v-if="source === 'dbe_perf'" variant="secondary" class="h-5 px-2 text-[11px]" :title="t('topSql.sourceDbePerfHint')">dbe_perf.statement · {{ t("topSql.sourceInstanceLevel") }}</Badge>
       </div>
 
       <div class="ml-auto flex flex-wrap items-center gap-2">
@@ -232,6 +289,21 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
+    <!-- openGauss dbe_perf.statement permission denied -->
+    <div v-else-if="dbePerfDenied" class="flex flex-1 items-center justify-center p-6">
+      <div class="max-w-xl space-y-3 text-center">
+        <AlertTriangle class="mx-auto h-8 w-8 text-amber-500" />
+        <p class="text-sm font-medium">{{ t("topSql.dbePerfDeniedTitle") }}</p>
+        <p class="text-xs text-muted-foreground">{{ t("topSql.dbePerfDeniedHint") }}</p>
+        <pre class="mx-auto max-w-md rounded-md border bg-muted/40 p-3 text-left text-[11px] leading-relaxed overflow-x-auto">{{ dbePerfGrantSql }}</pre>
+        <p class="text-[11px] text-muted-foreground">{{ t("topSql.dbePerfDeniedAltHint") }}</p>
+        <Button variant="outline" size="sm" class="h-7 gap-1.5 px-2.5 text-xs" @click="initialize">
+          <RefreshCcw class="h-3.5 w-3.5" />
+          <span>{{ t("topSql.retry") }}</span>
+        </Button>
+      </div>
+    </div>
+
     <!-- Extension unavailable guidance -->
     <div v-else-if="unavailable" class="flex flex-1 items-center justify-center p-6">
       <div class="max-w-xl space-y-3 text-center">
@@ -243,6 +315,7 @@ shared_preload_libraries = 'pg_stat_statements'
 CREATE EXTENSION IF NOT EXISTS pg_stat_statements;</pre
         >
         <p class="text-[11px] text-muted-foreground">{{ t("topSql.unavailableOpenGaussHint") }}</p>
+        <p v-if="databaseType === 'opengauss'" class="text-[11px] text-amber-600/90">{{ t("topSql.unavailableOpenGaussNoPackage") }}</p>
         <Button v-if="!extensionInstalled" variant="outline" size="sm" class="h-7 gap-1.5 px-2.5 text-xs" :disabled="creatingExtension" @click="createExtension">
           <Loader2 v-if="creatingExtension" class="h-3.5 w-3.5 animate-spin" />
           <Plus v-else class="h-3.5 w-3.5" />

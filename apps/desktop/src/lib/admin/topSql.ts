@@ -220,3 +220,61 @@ export function formatTopSqlCount(value: number | null | undefined): string {
     .toString()
     .replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }
+
+// ---------- openGauss 内置 dbe_perf.statement 数据源 ----------
+// 精简发行版的 openGauss 不随附 pg_stat_statements 扩展控制文件（pg_available_extensions
+// 里查不到），CREATE EXTENSION 会报 "could not open extension control file"。此时
+// 可回退到内置静态性能视图 dbe_perf.statement（需 enable_stmt_track=on，访问需要
+// MONADMIN 及以上权限）。该视图为实例级统计（无 db_name 列），时间列单位是微秒，
+// 统一换算成毫秒以对齐 pg_stat_statements 的列语义。
+
+/** Where the statement statistics for the Top SQL panel come from. */
+export type TopSqlSource = "pg_stat_statements" | "dbe_perf" | "dbe_perf_denied" | "unavailable";
+
+/**
+ * Probe whether dbe_perf.statement is queryable. PostgreSQL checks relation ACLs
+ * at parse/plan time, so a zero-row query still raises "permission denied" for
+ * users without MONADMIN — which is exactly what we want to detect.
+ */
+export const DBE_PERF_STATEMENT_PROBE_SQL = "SELECT 1 FROM dbe_perf.statement WHERE FALSE";
+
+export type DbePerfProbeResult = "ok" | "denied" | "missing" | "error";
+
+/** Classify the error thrown by {@link DBE_PERF_STATEMENT_PROBE_SQL}. */
+export function classifyDbePerfProbeError(message: string): Exclude<DbePerfProbeResult, "ok"> {
+  const text = message.toLowerCase();
+  if (text.includes("permission denied")) return "denied";
+  if (text.includes("does not exist") || (text.includes("relation") && text.includes("not"))) return "missing";
+  return "error";
+}
+
+/** ORDER BY aliases produced by {@link buildDbePerfTopSqlQuery}. */
+const DBE_PERF_SORT_COLUMNS: Record<TopSqlOrderBy, string> = {
+  total: "total_ms",
+  mean: "mean_ms",
+  calls: "calls",
+  rows: "rows_total",
+  read: "shared_blks_read",
+};
+
+/**
+ * Build the dbe_perf.statement ranking query with the same output aliases as
+ * {@link buildTopSqlQuery}, so results flow through the same mapping/display code.
+ */
+export function buildDbePerfTopSqlQuery(orderBy: TopSqlOrderBy, limit: number): string {
+  const orderColumn = DBE_PERF_SORT_COLUMNS[orderBy] ?? "total_ms";
+  const safeLimit = normalizeTopSqlLimit(limit);
+  return [
+    "SELECT",
+    "  s.query AS query",
+    "  , s.n_calls AS calls",
+    "  , s.total_elapse_time / 1000.0 AS total_ms",
+    "  , s.total_elapse_time / 1000.0 / NULLIF(s.n_calls, 0) AS mean_ms",
+    "  , s.n_returned_rows AS rows_total",
+    "  , s.n_blocks_fetched AS shared_blks_read",
+    "  , s.n_blocks_hit AS shared_blks_hit",
+    "FROM dbe_perf.statement s",
+    `ORDER BY ${orderColumn} DESC NULLS LAST`,
+    `LIMIT ${safeLimit}`,
+  ].join("\n");
+}

@@ -1,6 +1,21 @@
 import { describe, expect, it } from "vitest";
 import type { QueryResult } from "@/types/database";
-import { buildTopSqlAvailabilitySql, buildTopSqlColumnsFallbackSql, buildTopSqlColumnsSql, buildTopSqlQuery, formatTopSqlCount, formatTopSqlDuration, hasTopSqlColumn, mapTopSqlAvailability, mapTopSqlColumns, mapTopSqlRows, normalizeTopSqlLimit, resolveTopSqlOrderColumn } from "@/lib/admin/topSql";
+import {
+  buildDbePerfTopSqlQuery,
+  buildTopSqlAvailabilitySql,
+  buildTopSqlColumnsFallbackSql,
+  buildTopSqlColumnsSql,
+  buildTopSqlQuery,
+  classifyDbePerfProbeError,
+  formatTopSqlCount,
+  formatTopSqlDuration,
+  hasTopSqlColumn,
+  mapTopSqlAvailability,
+  mapTopSqlColumns,
+  mapTopSqlRows,
+  normalizeTopSqlLimit,
+  resolveTopSqlOrderColumn,
+} from "@/lib/admin/topSql";
 
 function result(columns: string[], rows: QueryResult["rows"]): QueryResult {
   return { columns, rows, affected_rows: 0, execution_time_ms: 0 };
@@ -165,5 +180,34 @@ describe("formatting helpers", () => {
     expect(formatTopSqlCount(1234567)).toBe("1,234,567");
     expect(formatTopSqlCount(999)).toBe("999");
     expect(formatTopSqlCount(null)).toBe("-");
+  });
+});
+
+describe("dbe_perf.statement fallback", () => {
+  it("builds the dbe_perf query with unified aliases and microsecond-to-millisecond conversion", () => {
+    const sql = buildDbePerfTopSqlQuery("total", 50);
+    expect(sql).toContain("FROM dbe_perf.statement");
+    expect(sql).toContain("s.total_elapse_time / 1000.0 AS total_ms");
+    expect(sql).toContain("NULLIF(s.n_calls, 0)");
+    expect(sql).toContain("s.n_blocks_fetched AS shared_blks_read");
+    expect(sql).toContain("ORDER BY total_ms DESC NULLS LAST");
+    expect(sql).toContain("LIMIT 50");
+  });
+
+  it("maps every sort key to a unified output alias", () => {
+    expect(buildDbePerfTopSqlQuery("mean", 10)).toContain("ORDER BY mean_ms DESC");
+    expect(buildDbePerfTopSqlQuery("calls", 10)).toContain("ORDER BY calls DESC");
+    expect(buildDbePerfTopSqlQuery("rows", 10)).toContain("ORDER BY rows_total DESC");
+    expect(buildDbePerfTopSqlQuery("read", 10)).toContain("ORDER BY shared_blks_read DESC");
+  });
+
+  it("clamps the limit", () => {
+    expect(buildDbePerfTopSqlQuery("total", 99999)).toContain("LIMIT 1000");
+  });
+
+  it("classifies probe errors", () => {
+    expect(classifyDbePerfProbeError("ERROR: permission denied for schema dbe_perf")).toBe("denied");
+    expect(classifyDbePerfProbeError('relation "statement" does not exist')).toBe("missing");
+    expect(classifyDbePerfProbeError("connection refused")).toBe("error");
   });
 });

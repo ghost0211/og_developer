@@ -3171,6 +3171,12 @@ export default {
     unsupportedTitle: "Top SQL is not supported for this connection",
     unsupportedHint: "Top SQL relies on pg_stat_statements and is available for PostgreSQL / openGauss connections only.",
     noConnections: "No connected PostgreSQL / openGauss data source found",
+    sourceInstanceLevel: "instance-wide",
+    sourceDbePerfHint: "Data source: openGauss built-in dbe_perf.statement view; instance-wide statistics (not per-database), requires enable_stmt_track=on.",
+    dbePerfDeniedTitle: "dbe_perf.statement exists but the current user cannot query it",
+    dbePerfDeniedHint: "Querying this view requires the MONADMIN role. Run the following grant as a SYSADMIN user, then refresh.",
+    dbePerfDeniedAltHint: "Alternatively grant only this view: GRANT USAGE ON SCHEMA dbe_perf TO <user>; GRANT SELECT ON dbe_perf.statement TO <user>;",
+    unavailableOpenGaussNoPackage: "Note: slim openGauss distributions do not ship the extension control file (CREATE EXTENSION fails with 'could not open extension control file'); install the full contrib package, or grant MONADMIN to use the built-in dbe_perf.statement view instead.",
   },
   serverDashboard: {
     title: "Server Dashboard",
