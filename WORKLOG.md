@@ -946,3 +946,13 @@ schema 校验兜底（本地元数据冷时）。editor 相关 189 例 + 补全 
 
 **验证**：displayWidth 12 例单测（ASCII/CJK/混排/全角/组合字符/Emoji）；CommandWindow.spec 新增集成用例（含中文值的结果表，两侧边框落在同一显示列）；相关 49 例全绿，typecheck 干净。
 **已知边界与跟进（0.2.20）**：0.2.19 上线后用户实测仍有轻微不齐——确认为字体度量问题：font-mono 栈下 Latin 用 Consolas（0.55em/字符）、中文回退雅黑（1.0em/字符），1.0 ≠ 2×0.55。修复：命令窗口输出区/输入框/提示符改用 `command-terminal-font` 专用字体栈（Sarasa Term SC/Mono SC → NSimSun → SimSun → MS Gothic → Consolas → monospace），这些 CJK 字体自带 Latin 且严格 2:1，Windows 自带新宋体即可像素级对齐；无此字体的平台回退原行为。
+
+## 24. 三大新功能：执行计划诊断 / 签名提示按需预取 / Top SQL 面板（2026-09-21）
+
+**执行计划诊断**：新增 `explainPlanDiagnosis.ts` 纯函数分析器，直接遍历 EXPLAIN (FORMAT JSON) 原始 JSON，检测 6 类反模式并按 critical/warning/info 分级：行数估算偏差（Actual×Loops vs Plan Rows，>=10x 告警 >=100x 严重，建议 ANALYZE）、大表 Seq Scan 高过滤（>=95%/99% 过滤比，建议建索引）、Sort 落盘（external merge/Disk，建议 work_mem）、Hash 分批落盘、Nested Loop 放大（子节点 loops>=10000）、物理读占比高。键名归一化处理 openGauss/PG 命名差异；纯 EXPLAIN 只跑保守规则。ExplainPlanViewer 底部新增诊断区块（lucide 严重级图标 + i18n 文案 + relation chip）。33 例单测。
+
+**函数参数提示增强**：探查发现签名提示（getSqlFunctionSignatureHelp + tooltip）早已存在，但数据只来自补全对象缓存——缓存冷时用户函数无提示。新增 `sqlSignaturePrefetch.ts`（带在途去重 + 命中 10 分钟/未命中 60 秒冷却）+ `getSqlSignatureCallContext` 导出；QueryEditor 加 StateField 刷新字段与 ViewPlugin：光标进入函数调用且缓存未命中时，用 `pg_get_function_arguments` 查 pg_proc（schema 限定名/当前 schema/public/pg_catalog），结果合并进补全缓存并触发 tooltip 重算。pg_catalog 兜底覆盖不在内置表里的系统函数。补首批签名提示测试（18 例）。实况验证：openGauss 上 job_submit 的默认值/OUT 参数签名拉取正常。
+
+**Top SQL 面板**：工具菜单新入口，pg_stat_statements 排行（总耗时/平均耗时/调用次数/行数/共享读排序，TOP 50/100/200）。列发现走 information_schema，自动适配 PG14+ total_exec_time 与 openGauss total_time 命名；缺列 NULL/0 占位。扩展缺失时给引导空态 + 一键 CREATE EXTENSION。行操作：复制 SQL / 在编辑器打开。纯前端（executeQuery 桥），tab 模式 top-sql 全链路接线（菜单/标签图标/store/路由/tabPresentation）。18 例单测。
+
+**验证**：三个功能各自 vitest 全绿；合计回归 388+532 例、typecheck/oxlint 干净、i18n 奇偶 85 例通过。测试库无 pg_stat_statements（面板走引导空态，探测 SQL 已验证不报错）。
