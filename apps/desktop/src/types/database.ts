@@ -1049,6 +1049,7 @@ export interface QueryTab {
     | "users"
     | "dameng-jobs"
     | "processlist"
+    | "top-sql"
     | "mysql-dashboard"
     | "postgres-dashboard"
     | "routine-test"

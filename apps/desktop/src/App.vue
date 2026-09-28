@@ -1932,6 +1932,21 @@ function openRoutineHealthFromMenu() {
   queryStore.openRoutineHealth({ connectionId, database: current?.database, schema: current?.schema });
 }
 
+function openTopSqlFromMenu() {
+  const supportsTopSql = (connectionId: string | null | undefined) => {
+    const type = connectionId ? effectiveDatabaseTypeForConnection(connectionStore.getConfig(connectionId)) : undefined;
+    return type === "postgres" || type === "opengauss";
+  };
+  const candidates = [activeTab.value?.connectionId, connectionStore.activeConnectionId, ...connectionStore.connectedIds, ...connectionStore.connections.map((connection) => connection.id)];
+  const connectionId = candidates.find((id) => supportsTopSql(id));
+  if (!connectionId) {
+    toast(t("topSql.noConnections"));
+    return;
+  }
+  const current = activeTab.value?.connectionId === connectionId ? activeTab.value : undefined;
+  queryStore.openTopSqlPanel({ connectionId, database: current?.database, schema: current?.schema });
+}
+
 function closeActiveTab() {
   if (queryStore.activeTabId) queryStore.closeTab(queryStore.activeTabId);
 }
@@ -2469,6 +2484,7 @@ onUnmounted(() => {
             }
           "
           @open-invalid-objects="openRoutineHealthFromMenu"
+          @open-top-sql="openTopSqlFromMenu"
           @open-command-window="openCommandWindowFromMenu"
           @open-table-import="void openTableImportFromMenu()"
           @open-database-export="dialogs.showDatabaseExportDialog.value = true"

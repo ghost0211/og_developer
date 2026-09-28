@@ -79,6 +79,7 @@ const TableStructureEditor = defineAsyncComponent(() => import("@/components/str
 const DatabaseUserAdmin = defineAsyncComponent(() => import("@/components/admin/DatabaseUserAdmin.vue"));
 const ProcessListPanel = defineAsyncComponent(() => import("@/components/admin/ProcessListPanel.vue"));
 const PostgresDashboard = defineAsyncComponent(() => import("@/components/admin/PostgresDashboard.vue"));
+const TopSqlPanel = defineAsyncComponent(() => import("@/components/admin/TopSqlPanel.vue"));
 const RoutineTestPanel = defineAsyncComponent(() => import("@/components/objects/RoutineTestPanel.vue"));
 const RoutineDebugPanel = defineAsyncComponent(() => import("@/components/debug/RoutineDebugPanel.vue"));
 const ProgramWindowPanel = defineAsyncComponent(() => import("@/components/objects/ProgramWindowPanel.vue"));
@@ -1852,6 +1853,12 @@ defineExpose({ focusSearch, refreshData, refreshQueryEditorCompletionCache, hand
     <template v-else-if="activeTab.mode === 'postgres-dashboard'">
       <div class="min-h-0 flex-1">
         <PostgresDashboard :key="activeTab.id" :connection-id="activeTab.connectionId" />
+      </div>
+    </template>
+
+    <template v-else-if="activeTab.mode === 'top-sql'">
+      <div class="min-h-0 flex-1">
+        <TopSqlPanel :key="activeTab.id" :connection-id="activeTab.connectionId" :database="activeTab.database" :schema="activeTab.schema" />
       </div>
     </template>
 

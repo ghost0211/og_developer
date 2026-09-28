@@ -69,6 +69,10 @@ export function tabDisplayTitle(tab: QueryTab, t: Translate): string {
     const title = t("invalidObjects.title");
     return compact ? title : `${title}@${database}${tab.schema ? `.${tab.schema}` : ""}`;
   }
+  if (tab.mode === "top-sql") {
+    const title = t("topSql.title");
+    return compact ? title : `${title}@${database}${tab.schema ? `.${tab.schema}` : ""}`;
+  }
   if (tab.mode === "data" && tab.tableMeta?.tableName) {
     if (compact) return tab.tableMeta.tableName;
     const suffix = tab.tableMeta.schema && tab.tableMeta.schema !== tab.database ? `@${database}.${tab.tableMeta.schema}` : `@${database}`;
@@ -110,6 +114,9 @@ export function tabTooltipLines(tab: QueryTab, t: Translate): { label: string; v
     lines.push({ label: t("tabs.tooltipSchema"), value: tab.objectBrowser.schema });
   }
   if (tab.mode === "routine-health" && tab.schema) {
+    lines.push({ label: t("tabs.tooltipSchema"), value: tab.schema });
+  }
+  if (tab.mode === "top-sql" && tab.schema) {
     lines.push({ label: t("tabs.tooltipSchema"), value: tab.schema });
   }
   if (tab.mode === "routine-test" && tab.routineTest?.routineName) {
@@ -365,6 +372,7 @@ export function tabModeLabel(tab: QueryTab, t: Translate): string {
   if (tab.mode === "objects") return t("tabs.objects");
   if (tab.mode === "users") return t("tabs.users");
   if (tab.mode === "routine-health") return t("invalidObjects.title");
+  if (tab.mode === "top-sql") return t("topSql.title");
   if (tab.mode === "routine-test") return t("contextMenu.executeProcedure");
   if (tab.mode === "routine-debug") return t("contextMenu.debugProcedure");
   if (tab.mode === "program-window") return t("contextMenu.viewSource");

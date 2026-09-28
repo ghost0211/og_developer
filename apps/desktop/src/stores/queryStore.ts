@@ -1609,6 +1609,36 @@ export const useQueryStore = defineStore("query", () => {
     return id;
   }
 
+  // Top SQL 面板：同一连接 + 库 + 模式只保留一个标签页。
+  function openTopSqlPanel(options: { connectionId: string; database?: string; schema?: string }) {
+    const { connectionId, schema } = options;
+    const conn = useConnectionStore().getConfig(connectionId);
+    const database = options.database ?? conn?.database ?? "";
+    const existing = tabs.value.find((tab) => tab.mode === "top-sql" && tab.connectionId === connectionId && tab.database === database && (tab.schema || "") === (schema || ""));
+    if (existing) {
+      switchTab(existing.id);
+      return existing.id;
+    }
+
+    const id = uuid();
+    const title = t("topSql.title");
+    const tab: QueryTab = {
+      id,
+      title: conn?.name ? `${conn.name} - ${title}` : title,
+      connectionId,
+      database,
+      schema,
+      sql: "",
+      isExecuting: false,
+      isCancelling: false,
+      isExplaining: false,
+      mode: "top-sql",
+    };
+    tabs.value.push(tab);
+    activeTabId.value = id;
+    return id;
+  }
+
   function applyTableStructureInitialTab(tab: QueryTab, initialTab?: TableInfoTab, initialTarget?: TableStructureEditorTarget) {
     if (!initialTab && !initialTarget?.name) return;
     if (initialTab) tab.structureInitialTab = initialTab;
@@ -4365,6 +4395,7 @@ export const useQueryStore = defineStore("query", () => {
     openSettingsTab,
     openUserAdmin,
     openProcessList,
+    openTopSqlPanel,
     openPostgresDashboard,
     openTableStructure,
     linkSavedSql,

@@ -441,7 +441,7 @@ function tabColorStyle(tab: QueryTab) {
 
 function tabIconClass(tab: QueryTab) {
   if (tab.mode === "command") return "text-emerald-500";
-  if (tab.mode === "routine-test" || tab.mode === "routine-health") return "text-primary";
+  if (tab.mode === "routine-test" || tab.mode === "routine-health" || tab.mode === "top-sql") return "text-primary";
   if (tab.mode === "routine-debug") return "text-amber-500";
   if (tab.mode === "program-window") return "text-blue-500";
   if (tab.mode === "settings") return "text-muted-foreground";
@@ -470,6 +470,7 @@ function tabMenuIcon(tab: QueryTab) {
   if (tab.mode === "program-window") return FileCode;
   if (tab.mode === "settings") return Settings;
   if (tab.mode === "postgres-dashboard") return Gauge;
+  if (tab.mode === "top-sql") return Gauge;
   return Code2;
 }
 
@@ -609,6 +610,7 @@ function onOverflowItemKeydown(event: KeyboardEvent, tabId: string, kind: "regul
                       <Bug v-else-if="tab.mode === 'routine-debug'" class="h-3.5 w-3.5 text-amber-500" />
                       <FileCode v-else-if="tab.mode === 'program-window'" class="h-3.5 w-3.5 text-blue-500" />
                       <Gauge v-else-if="tab.mode === 'postgres-dashboard'" class="h-3.5 w-3.5" />
+                      <Gauge v-else-if="tab.mode === 'top-sql'" class="h-3.5 w-3.5 text-primary" />
                       <Settings v-else-if="tab.mode === 'settings'" class="h-3.5 w-3.5 text-muted-foreground" />
                       <Code2 v-else class="h-3.5 w-3.5" />
                     </span>
@@ -773,6 +775,7 @@ function onOverflowItemKeydown(event: KeyboardEvent, tabId: string, kind: "regul
                       <Bug v-else-if="tab.mode === 'routine-debug'" class="h-3.5 w-3.5 text-amber-500" />
                       <FileCode v-else-if="tab.mode === 'program-window'" class="h-3.5 w-3.5 text-blue-500" />
                       <Gauge v-else-if="tab.mode === 'postgres-dashboard'" class="h-3.5 w-3.5" />
+                      <Gauge v-else-if="tab.mode === 'top-sql'" class="h-3.5 w-3.5 text-primary" />
                       <Settings v-else-if="tab.mode === 'settings'" class="h-3.5 w-3.5 text-muted-foreground" />
                       <Code2 v-else class="h-3.5 w-3.5" />
                     </span>
