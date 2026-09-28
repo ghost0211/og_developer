@@ -932,3 +932,17 @@ resolveSqlCompletionRoutineLookupTarget（qualifier 即 schema 作用域），�
 `rewriteCompletionContextWhenQualifierIsSchema`：用本地 schema 缓存（侧边栏树已加载即可用）
 同步判定 qualifier 是否为真实 schema 名并重写语境，两条路径行为一致；异步路径保留远端
 schema 校验兜底（本地元数据冷时）。editor 相关 189 例 + 补全 523 例全绿。
+
+## 23. 命令窗口 ASCII 表格中文对齐（2026-09-21）
+
+**问题**：命令窗口（psql 风格终端）的查询结果，纯英文内容边框对齐，含中文时边框错乱。
+
+**原因**：`formatAsciiTable`（CommandWindow.vue）用 `String.length`/`padEnd` 计算列宽，但中文等东亚宽字符在等宽字体下占 2 个显示列，按字符数补齐必然错位。
+
+**修复**：
+- 新增 `apps/desktop/src/lib/common/displayWidth.ts`：`displayWidth`/`padEndToWidth`/`truncateToWidth`，基于精简 wcwidth 码位表（CJK/假名/谚文/全角计 2 列，组合字符与控制字符计 0 列，代理对正确迭代）。
+- 命令窗口 `formatAsciiTable`：列宽计算、表头/单元格补齐、60 列截断全部改用显示宽度。
+- 顺带修复同类问题：编辑器悬停表结构 `alignColumnRows`（hoverTableSql.ts，列注释含中文时同样错位）。
+
+**验证**：displayWidth 12 例单测（ASCII/CJK/混排/全角/组合字符/Emoji）；CommandWindow.spec 新增集成用例（含中文值的结果表，两侧边框落在同一显示列）；相关 49 例全绿，typecheck 干净。
+**已知边界**：若 CJK 回退字体（如微软雅黑）字形宽度相对主等宽字体不是严格 2:1，宽列可能仍有亚字符级视觉偏差；像素级完美需换严格 2:1 字体（NSimSun/更纱黑体），待用户反馈后决定。

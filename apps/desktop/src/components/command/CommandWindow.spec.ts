@@ -164,6 +164,34 @@ describe("CommandWindow", () => {
     expect(panel.textContent).toContain("commandWindow.rowCount");
   });
 
+  it("aligns result table columns by display width when values contain CJK text", async () => {
+    state.api.executeQuery.mockResolvedValue({
+      columns: ["id", "dict_name"],
+      rows: [
+        [1, "鉴权方式"],
+        [2, "ACTIVE_STATUS"],
+      ],
+      affected_rows: null,
+    });
+
+    const panel = await mountCommand();
+    const textarea = panel.querySelector<HTMLTextAreaElement>("textarea");
+    if (!textarea) throw new Error("command input not found");
+
+    textarea.value = "SELECT * FROM cdm_dict";
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    await flushUi();
+    executeButton(panel).click();
+    await flushUi();
+
+    // 列宽由 "ACTIVE_STATUS"（13 显示列）决定；中文按 2 列计宽后补空格，
+    // 含中文的行与纯英文行的右侧边框应落在同一显示列上。
+    // （单元格右侧还有分隔符 " |" 自带的一个空格，所以共 6 个空格）
+    const text = panel.textContent ?? "";
+    expect(text).toContain("| 鉴权方式      |");
+    expect(text).toContain("| ACTIVE_STATUS |");
+  });
+
   it("submits single-line commands from the keyboard, recalls history, and switches databases", async () => {
     state.api.executeQuery.mockResolvedValue({ columns: [], rows: [], affected_rows: 1 });
 

@@ -8,6 +8,7 @@ import { useConnectionStore } from "@/stores/connectionStore";
 import { useQueryStore } from "@/stores/queryStore";
 import { useToast } from "@/composables/useToast";
 import { copyToClipboard } from "@/lib/common/clipboard";
+import { displayWidth, padEndToWidth, truncateToWidth } from "@/lib/common/displayWidth";
 import { databaseOptionsForConnection } from "@/composables/useDatabaseOptions";
 import type { DatabaseType, QueryResult } from "@/types/database";
 import * as api from "@/lib/backend/api";
@@ -91,18 +92,19 @@ function formatAsciiTable(result: QueryResult): string {
   const columns = result.columns;
   const rows = result.rows;
 
-  // Compute column widths
+  // 按显示宽度计算列宽：中文等东亚宽字符在等宽字体下占 2 列，
+  // 若按 String.length 补齐，含中文的行边框会错位。
   const colWidths = columns.map((col, cIdx) => {
-    let max = col.length;
+    let max = displayWidth(col);
     for (const r of rows) {
       const val = r[cIdx] == null ? t("commandWindow.nullValue") : String(r[cIdx]);
-      if (val.length > max) max = Math.min(60, val.length);
+      max = Math.max(max, Math.min(60, displayWidth(val)));
     }
     return max;
   });
 
   const sepLine = "+" + colWidths.map((w) => "-".repeat(w + 2)).join("+") + "+";
-  const headerLine = "| " + columns.map((col, i) => col.padEnd(colWidths[i])).join(" | ") + " |";
+  const headerLine = "| " + columns.map((col, i) => padEndToWidth(col, colWidths[i])).join(" | ") + " |";
 
   const lines: string[] = [sepLine, headerLine, sepLine];
 
@@ -112,8 +114,8 @@ function formatAsciiTable(result: QueryResult): string {
       r
         .map((cell, i) => {
           const str = cell == null ? t("commandWindow.nullValue") : String(cell);
-          const truncated = str.length > 60 ? str.slice(0, 57) + "..." : str;
-          return truncated.padEnd(colWidths[i]);
+          const truncated = displayWidth(str) > 60 ? truncateToWidth(str, 60) : str;
+          return padEndToWidth(truncated, colWidths[i]);
         })
         .join(" | ") +
       " |";

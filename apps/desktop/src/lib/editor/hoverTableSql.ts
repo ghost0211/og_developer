@@ -1,6 +1,7 @@
 import type { ColumnInfo, IndexInfo } from "@/types/database";
 import type { SqlCompletionTable } from "@/lib/sql/sqlCompletion";
 import { isSqlKeyword } from "@/lib/sql/sqlNavigation";
+import { displayWidth, padEndToWidth } from "@/lib/common/displayWidth";
 
 export interface HoverTableScope {
   catalog?: string;
@@ -135,21 +136,22 @@ interface ColumnFieldParts {
  * produce the same visual layout.
  */
 function alignColumnRows(rows: ColumnFieldParts[]): string[] {
-  const maxNameWidth = Math.max(...rows.map((r) => r.name.length));
-  const maxTypeWidth = Math.max(...rows.map((r) => r.type.length), 4);
+  // 用显示宽度对齐：列注释/extra 等字段可能含中文，按字符数补齐会错位。
+  const maxNameWidth = Math.max(...rows.map((r) => displayWidth(r.name)));
+  const maxTypeWidth = Math.max(...rows.map((r) => displayWidth(r.type)), 4);
   const hasExtra = rows.some((r) => r.extra);
   const hasDefault = rows.some((r) => r.defaultClause);
   const hasComment = rows.some((r) => r.commentClause);
-  const maxNullableWidth = Math.max(...rows.map((r) => r.nullable.length));
-  const maxExtraWidth = Math.max(...rows.map((r) => r.extra.length));
-  const maxDefaultWidth = Math.max(...rows.map((r) => r.defaultClause.length));
+  const maxNullableWidth = Math.max(...rows.map((r) => displayWidth(r.nullable)));
+  const maxExtraWidth = Math.max(...rows.map((r) => displayWidth(r.extra)));
+  const maxDefaultWidth = Math.max(...rows.map((r) => displayWidth(r.defaultClause)));
 
   // Field order: name → type → [extra] → [defaultClause] → nullable → [commentClause]
   return rows.map((r) => {
-    const parts: string[] = [r.name.padEnd(maxNameWidth), " ", r.type.padEnd(maxTypeWidth)];
-    if (hasExtra) parts.push(" ", r.extra.padEnd(maxExtraWidth));
-    if (hasDefault) parts.push(" ", r.defaultClause.padEnd(maxDefaultWidth));
-    parts.push(" ", r.nullable.padEnd(maxNullableWidth));
+    const parts: string[] = [padEndToWidth(r.name, maxNameWidth), " ", padEndToWidth(r.type, maxTypeWidth)];
+    if (hasExtra) parts.push(" ", padEndToWidth(r.extra, maxExtraWidth));
+    if (hasDefault) parts.push(" ", padEndToWidth(r.defaultClause, maxDefaultWidth));
+    parts.push(" ", padEndToWidth(r.nullable, maxNullableWidth));
     if (hasComment) parts.push(" ", r.commentClause);
     return parts.join("").trimEnd();
   });
