@@ -8,6 +8,7 @@ import { useConnectionStore } from "@/stores/connectionStore";
 import { useQueryStore } from "@/stores/queryStore";
 import { useToast } from "@/composables/useToast";
 import { copyToClipboard } from "@/lib/common/clipboard";
+import { effectiveDatabaseTypeForConnection } from "@/lib/database/jdbcDialect";
 import * as api from "@/lib/backend/api";
 import { buildTopSqlAvailabilitySql, buildTopSqlColumnsFallbackSql, buildTopSqlColumnsSql, buildTopSqlQuery, formatTopSqlCount, formatTopSqlDuration, mapTopSqlAvailability, mapTopSqlColumns, mapTopSqlRows, type TopSqlOrderBy, type TopSqlRow } from "@/lib/admin/topSql";
 
@@ -26,10 +27,12 @@ const TOP_LIMITS = [50, 100, 200] as const;
 
 // Driver manifest is deliberately avoided: only PostgreSQL / openGauss expose
 // pg_stat_statements, so the panel is gated on the live connection type.
+// 用 effectiveDatabaseTypeForConnection 与菜单入口的判定保持一致：JDBC 通道的
+// openGauss 连接（db_type=jdbc + driver_profile）经方言推断后同样视为支持。
 const connection = computed(() => connectionStore.getConfig(props.connectionId));
 const connectionName = computed(() => connection.value?.name || props.connectionId);
 const supported = computed(() => {
-  const type = connection.value?.db_type;
+  const type = effectiveDatabaseTypeForConnection(connection.value);
   return type === "postgres" || type === "opengauss";
 });
 

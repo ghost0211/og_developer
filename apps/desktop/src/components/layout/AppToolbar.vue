@@ -73,6 +73,7 @@ const emit = defineEmits<{
   "search-table-data": [];
   "open-sessions": [];
   "open-invalid-objects": [];
+  "open-top-sql": [];
   "open-command-window": [];
   "open-table-import": [];
   "open-database-export": [];
@@ -258,6 +259,7 @@ const toolbarStyle = computed(() => {
         @search-table-data="emit('search-table-data')"
         @open-sessions="emit('open-sessions')"
         @open-invalid-objects="emit('open-invalid-objects')"
+        @open-top-sql="emit('open-top-sql')"
         @open-command-window="emit('open-command-window')"
         @open-table-import="emit('open-table-import')"
         @open-database-export="emit('open-database-export')"

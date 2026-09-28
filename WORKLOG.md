@@ -956,3 +956,5 @@ schema 校验兜底（本地元数据冷时）。editor 相关 189 例 + 补全 
 **Top SQL 面板**：工具菜单新入口，pg_stat_statements 排行（总耗时/平均耗时/调用次数/行数/共享读排序，TOP 50/100/200）。列发现走 information_schema，自动适配 PG14+ total_exec_time 与 openGauss total_time 命名；缺列 NULL/0 占位。扩展缺失时给引导空态 + 一键 CREATE EXTENSION。行操作：复制 SQL / 在编辑器打开。纯前端（executeQuery 桥），tab 模式 top-sql 全链路接线（菜单/标签图标/store/路由/tabPresentation）。18 例单测。
 
 **验证**：三个功能各自 vitest 全绿；合计回归 388+532 例、typecheck/oxlint 干净、i18n 奇偶 85 例通过。测试库无 pg_stat_statements（面板走引导空态，探测 SQL 已验证不报错）。
+
+**Top SQL 菜单点击无反应修复（0.2.22）**：用户实测点击无标签页。日志复现：click 事件到达但无任何后续。根因：App.vue 的监听器挂在 `<AppToolbar>` 上，而菜单项在 `AppMenuBar` 里——AppToolbar 对每个事件都要显式 `emit` 转发，子代理漏了这一跳。修复 AppToolbar 声明+转发 `open-top-sql`；AppToolbar.spec 新增结构性回归测试（遍历 AppMenuBar 声明的全部事件，断言 AppToolbar 声明且转发，已验证缺转发时会失败）。顺带：TopSqlPanel 的支持判定改用 effectiveDatabaseTypeForConnection 与菜单入口一致（JDBC 通道的 openGauss 连接）。新增 queryStore.topSqlPanel.spec 3 例。
