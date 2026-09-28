@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { AlertCircle, Braces, GitBranch, Table2, FileText, Workflow } from "@lucide/vue";
+import { AlertCircle, AlertOctagon, AlertTriangle, Braces, GitBranch, Info, Stethoscope, Table2, FileText, Workflow } from "@lucide/vue";
 import type { ParsedExplainPlan, ExplainPlanNode } from "@/lib/diagram/explainPlan";
 import { flattenExplainPlanNodes } from "@/lib/diagram/explainPlan";
+import { analyzeExplainPlan } from "@/lib/diagram/explainPlanDiagnosis";
+import type { ExplainPlanFindingSeverity } from "@/lib/diagram/explainPlanDiagnosis";
 import { extractActualRows } from "@/lib/diagram/planCanvas";
 import { Button } from "@/components/ui/button";
 import type { QueryResult } from "@/types/database";
@@ -60,6 +62,23 @@ const measuredRowsLabel = computed(() => {
   if (!flattenExplainPlanNodes(props.plan!.nodes).some((node) => extractActualRows(node) !== undefined)) return undefined;
   return "ANALYZE";
 });
+
+// 诊断器直接读原始 JSON（解析后的节点丢失了 Sort Method、Hash Batches 等字段）。
+const findings = computed(() => {
+  if (!props.plan?.raw) return [];
+  try {
+    return analyzeExplainPlan(props.plan.raw);
+  } catch {
+    return [];
+  }
+});
+
+const severityIcons = { critical: AlertOctagon, warning: AlertTriangle, info: Info } as const;
+const severityClasses: Record<ExplainPlanFindingSeverity, string> = {
+  critical: "text-destructive",
+  warning: "text-amber-500",
+  info: "text-muted-foreground",
+};
 
 function tableCellText(value: unknown): string {
   if (value === null) return "NULL";
@@ -188,6 +207,24 @@ function tableCellText(value: unknown): string {
       </div>
 
       <pre v-else class="m-3 overflow-auto whitespace-pre rounded border bg-muted/30 p-3 font-mono text-xs leading-relaxed">{{ rawContent }}</pre>
+    </div>
+
+    <div v-if="plan && findings.length" class="shrink-0 border-t bg-muted/20">
+      <div class="flex items-center gap-1.5 px-3 py-1.5 text-xs">
+        <Stethoscope class="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
+        <span class="font-medium">{{ t("explainDiagnosis.title") }}</span>
+        <span class="rounded bg-muted px-1.5 py-0.5 text-muted-foreground">{{ t("explainDiagnosis.count", { count: findings.length }) }}</span>
+      </div>
+      <ul class="max-h-44 space-y-1 overflow-auto px-3 pb-2">
+        <li v-for="(finding, index) in findings" :key="`${finding.code}-${index}`" class="flex items-start gap-2 text-xs">
+          <component :is="severityIcons[finding.severity]" class="mt-0.5 h-3.5 w-3.5 shrink-0" :class="severityClasses[finding.severity]" aria-hidden="true" />
+          <span class="min-w-0">
+            <span v-if="finding.relation" class="mr-1 rounded bg-muted px-1 py-0.5 text-[11px] font-medium">{{ finding.relation }}</span>
+            <span class="font-medium text-foreground">{{ t(`explainDiagnosis.finding.${finding.code}`, finding.metrics) }}</span>
+            <span class="ml-1 text-muted-foreground">{{ t(`explainDiagnosis.suggestion.${finding.code}`) }}</span>
+          </span>
+        </li>
+      </ul>
     </div>
   </div>
 </template>
