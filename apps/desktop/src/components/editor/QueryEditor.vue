@@ -22,6 +22,7 @@ import { detectAndFormatStructured } from "@/lib/sql/autoFormat";
 import { enabledSqlParameterSyntaxes, resolveSqlVariableSyntaxToggles } from "@/lib/sql/sqlVariableSyntax";
 import { blankLineDeletionChanges, replaceSelectedEditorText } from "@/lib/editor/queryEditorTextEdits";
 import { createSqlSignatureTooltipDom } from "@/lib/editor/sqlSignatureTooltip";
+import { createSqlSignaturePrefetcher } from "@/lib/editor/sqlSignaturePrefetch";
 import { buildSqlInConditionFromPasteSource, insertTextForSqlInCondition } from "@/lib/sql/sqlInListPaste";
 import { resolveSqlSingleQuoteKeyAction } from "@/lib/sql/sqlQuoteCaret";
 import { convertSqlSelectionCase, type SqlSelectionCaseMode } from "@/lib/sql/sqlSelectionCase";
@@ -33,6 +34,7 @@ import {
   buildSelectStarExpansion,
   buildSqlCompletionItemsFromContext,
   getSqlFunctionSignatureHelp,
+  getSqlSignatureCallContext,
   getSqlCompletionContext,
   getSqlCompletionResultValidFor,
   isSqlCompletionSuppressedContext,
@@ -389,6 +391,7 @@ let codeMirrorVimImportPromise: Promise<typeof import("@replit/codemirror-vim")>
 let ogdeveloperVimCommandsConfigured = false;
 let buildSqlDiagnosticExtension: (() => import("@codemirror/state").Extension) | null = null;
 let buildSqlSignatureExtension: (() => import("@codemirror/state").Extension) | null = null;
+let signaturePrefetchEffect: import("@codemirror/state").StateEffectType<null> | null = null;
 let buildSqlCompletionExtension: (() => import("@codemirror/state").Extension) | null = null;
 let buildSqlLanguageExtension: (() => import("@codemirror/state").Extension) | null = null;
 let buildSqlSemanticHighlightExtension: (() => import("@codemirror/state").Extension) | null = null;
@@ -3583,6 +3586,81 @@ function completionObjectsForScope(scope: CompletionMetadataScope): SqlCompletio
   return cachedCompletionObjectsByScope.get(completionObjectScopeKey(scope)) ?? [];
 }
 
+// ── 函数签名提示的按需预取 ──────────────────────────────────────────────
+// 签名 tooltip 只读本地补全对象缓存；缓存冷时（未触发过对应 schema 的补全）
+// 用户函数不弹参数提示。这里在光标进入函数调用时检测缓存未命中，直接从
+// pg_proc 拉取参数签名并合并进同一缓存，随后触发 tooltip 重算。
+let sqlSignaturePrefetcher: ReturnType<typeof createSqlSignaturePrefetcher> | null = null;
+
+function scheduleSignaturePrefetch(sql: string, cursor: number) {
+  if (props.readOnly || !props.connectionId || props.database == null) return;
+  if (props.databaseType !== "opengauss" && props.databaseType !== "postgres") return;
+  const call = getSqlSignatureCallContext(sql, cursor);
+  if (!call) return;
+  // 本地缓存或内置函数签名已可解析时不预取
+  const databasePrefix = `${props.database}:`.toLowerCase();
+  const objects = [...cachedCompletionObjectsByScope.entries()].filter(([key]) => key.startsWith(databasePrefix)).flatMap(([, entries]) => entries);
+  if (getSqlFunctionSignatureHelp(sql, cursor, props.databaseType, objects, props.schema)) return;
+  sqlSignaturePrefetcher ??= createSqlSignaturePrefetcher({
+    fetch: fetchRoutineSignatures,
+    onObjects: (fetched) => {
+      mergeFetchedSignatureObjects(fetched);
+      const currentView = view.value;
+      if (currentView && signaturePrefetchEffect) {
+        currentView.dispatch({ effects: signaturePrefetchEffect.of(null) });
+      }
+    },
+  });
+  sqlSignaturePrefetcher.maybePrefetch(call.name);
+}
+
+async function fetchRoutineSignatures(schema: string | undefined, name: string): Promise<SqlCompletionObject[]> {
+  if (!props.connectionId || props.database == null) return [];
+  const schemas = [...new Set([schema, props.schema, "public"].filter((value): value is string => !!value && value.trim().length > 0))];
+  if (schemas.length === 0) return [];
+  const literal = (value: string) => `'${value.replace(/'/g, "''")}'`;
+  const sql = [
+    "SELECT n.nspname AS schema, p.proname AS name,",
+    "CASE p.prokind WHEN 'p' THEN 'procedure' ELSE 'function' END AS kind,",
+    "COALESCE(pg_catalog.pg_get_function_arguments(p.oid), '') AS args",
+    "FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace",
+    `WHERE (p.proname = ${literal(name)} OR lower(p.proname) = lower(${literal(name)}))`,
+    `AND n.nspname IN (${schemas.map(literal).join(", ")})`,
+    "LIMIT 16",
+  ].join(" ");
+  const result = await api.executeQuery(props.connectionId, props.database, sql, props.schema, undefined, { maxRows: 16 });
+  const objects: SqlCompletionObject[] = [];
+  for (const row of result.rows ?? []) {
+    const rowName = row[1] == null ? "" : String(row[1]);
+    if (!rowName) continue;
+    const rowSchema = row[0] == null ? "" : String(row[0]);
+    const kind = row[2] == null ? "function" : String(row[2]);
+    objects.push({
+      name: rowName,
+      schema: rowSchema || undefined,
+      type: kind === "procedure" ? "procedure" : "function",
+      signature: row[3] == null ? "" : String(row[3]),
+    });
+  }
+  return objects;
+}
+
+function mergeFetchedSignatureObjects(objects: SqlCompletionObject[]) {
+  const database = props.database;
+  if (!database) return;
+  const bySchema = new Map<string, SqlCompletionObject[]>();
+  for (const object of objects) {
+    const schema = object.schema ?? props.schema ?? "public";
+    const list = bySchema.get(schema) ?? [];
+    list.push(object);
+    bySchema.set(schema, list);
+  }
+  for (const [schema, scopedObjects] of bySchema) {
+    const scope: CompletionMetadataScope = { database, schema };
+    cachedCompletionObjectsByScope.set(completionObjectScopeKey(scope), mergeCompletionObjects(completionObjectsForScope(scope), scopedObjects));
+  }
+}
+
 function completionObjectIdentityKey(object: SqlCompletionObject): string {
   return `${object.type}:${object.schema ?? ""}:${object.name}:${object.parentName ?? ""}:${object.signature?.trim() ?? ""}`.toLowerCase();
 }
@@ -3679,6 +3757,7 @@ onMounted(async () => {
   previewRangeComp = new Compartment();
   indentComp = new Compartment();
   setSqlDiagnosticsEffect = StateEffect.define<SqlSemanticDiagnostic[]>();
+  signaturePrefetchEffect = StateEffect.define<null>();
   codeMirrorCompletionStatus = completionStatus;
   codeMirrorAcceptCompletion = acceptCompletion;
   codeMirrorStartCompletion = startCompletion;
@@ -3896,21 +3975,47 @@ onMounted(async () => {
     });
     return field;
   };
-  buildSqlSignatureExtension = () =>
-    showTooltip.compute(["doc", "selection"], (currentState) => {
-      const sql = currentState.doc.toString();
-      const cursor = currentState.selection.main.head;
-      const databasePrefix = `${props.database ?? ""}:`.toLowerCase();
-      const objects = [...cachedCompletionObjectsByScope.entries()].filter(([key]) => key.startsWith(databasePrefix)).flatMap(([, entries]) => entries);
-      const signature = getSqlFunctionSignatureHelp(sql, cursor, props.databaseType, objects, props.schema);
-      if (!signature) return null;
-      return {
-        pos: currentState.selection.main.head,
-        above: false,
-        clip: false,
-        create: () => ({ dom: createSqlSignatureTooltipDom(signature) }),
-      };
+  buildSqlSignatureExtension = () => {
+    // 预取的签名数据异步到达后，通过该字段触发 tooltip 重算（否则 tooltip 只在
+    // doc/selection 变化时重算，等不到异步结果）。
+    const refreshField = StateField.define<number>({
+      create: () => 0,
+      update: (value, tr) => {
+        let next = value;
+        for (const effect of tr.effects) {
+          if (signaturePrefetchEffect && effect.is(signaturePrefetchEffect)) next += 1;
+        }
+        return next;
+      },
     });
+    return [
+      refreshField,
+      showTooltip.compute(["doc", "selection", refreshField], (currentState) => {
+        const sql = currentState.doc.toString();
+        const cursor = currentState.selection.main.head;
+        const databasePrefix = `${props.database ?? ""}:`.toLowerCase();
+        const objects = [...cachedCompletionObjectsByScope.entries()].filter(([key]) => key.startsWith(databasePrefix)).flatMap(([, entries]) => entries);
+        const signature = getSqlFunctionSignatureHelp(sql, cursor, props.databaseType, objects, props.schema);
+        if (!signature) return null;
+        return {
+          pos: currentState.selection.main.head,
+          above: false,
+          clip: false,
+          create: () => ({ dom: createSqlSignatureTooltipDom(signature) }),
+        };
+      }),
+      // 光标进入函数调用且本地缓存无签名时按需预取（缓存冷启动场景：
+      // 打开编辑器直接敲函数名，还没触发过对应 schema 的补全）。
+      ViewPlugin.fromClass(
+        class {
+          update(update: import("@codemirror/view").ViewUpdate) {
+            if (!update.docChanged && !update.selectionSet) return;
+            scheduleSignaturePrefetch(update.view.state.doc.toString(), update.view.state.selection.main.head);
+          }
+        },
+      ),
+    ];
+  };
 
   buildSqlCompletionExtension = () =>
     autocompletion({

@@ -1883,6 +1883,23 @@ export function getSqlCompletionResultValidFor(sql: string, cursor: number): Reg
   return undefined;
 }
 
+export interface SqlSignatureCallContext {
+  /** 调用名（可能带 schema/package 限定，如 "public.gen_random_uuid"） */
+  name: string;
+  /** 光标处对应的参数下标（顶层逗号数） */
+  argumentIndex: number;
+}
+
+/**
+ * 轻量版调用语境探测：仅判断光标是否位于某个函数调用的括号内，返回调用名与当前参数下标。
+ * 供签名提示的按需预取使用——当本地缓存查不到签名时，据此去库里拉取。
+ */
+export function getSqlSignatureCallContext(sql: string, cursor: number): SqlSignatureCallContext | null {
+  const call = findActiveFunctionCall(sql.slice(0, cursor));
+  if (!call) return null;
+  return { name: call.name, argumentIndex: countTopLevelCommas(call.groupText) };
+}
+
 export function getSqlFunctionSignatureHelp(sql: string, cursor: number, databaseType?: DatabaseType, objects: readonly SqlCompletionObject[] = [], currentSchema?: string): SqlFunctionSignatureHelp | null {
   const beforeCursor = sql.slice(0, cursor);
   const call = findActiveFunctionCall(beforeCursor);
