@@ -200,6 +200,19 @@ export async function backendResponseError(response: Response): Promise<BackendE
       operationOutcome: "unknown",
       origin: { subsystem: "frontend", adapter: "http" },
     } satisfies BackendError;
+  } else if (!text.trim()) {
+    // An empty error body (e.g. 401 from the auth middleware, 405 for a route
+    // the web backend has not registered) would otherwise surface as a bare
+    // "Backend request failed". Attach the status and URL so it is actionable.
+    payload = {
+      version: 1,
+      code: "DBX-WEB-0002",
+      messageKey: "backendErrors.emptyErrorResponse",
+      messageParams: { status: response.status, url: response.url },
+      source: "webHttp",
+      operationOutcome: "unknown",
+      origin: { subsystem: "frontend", adapter: "http" },
+    } satisfies BackendError;
   } else {
     try {
       payload = JSON.parse(text);

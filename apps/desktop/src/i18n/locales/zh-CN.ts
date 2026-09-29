@@ -2039,6 +2039,7 @@ export const zhCNMessages = {
     },
     legacy: "后端返回了错误。",
     htmlResponse: "请求未到达后端 API（HTTP {status}）：服务器返回了前端 HTML 页面。通常是 Web 后端版本与前端不一致（缺少该接口），或反向代理未正确转发 /api 前缀。请求地址：{url}",
+    emptyErrorResponse: "后端返回了空错误响应（HTTP {status}）。若是 401：登录会话已过期，请刷新页面重新登录；若是 404/405：Web 后端缺少该接口（版本过旧）。请求地址：{url}",
     unknown: "发生了未预期的后端错误。",
   },
   common: {

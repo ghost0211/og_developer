@@ -28,11 +28,11 @@ describe("HTTP backend error parsing", () => {
     }
   });
 
-  test("uses a stable summary for an empty body", async () => {
+  test("attaches status and URL when the error body is empty", async () => {
     const error = await backendResponseError(new Response("", { status: 503 }));
-    expect(error.backendError.code).toBe("DBX-LEGACY-0001");
-    expect(error.backendError.detail).toBeUndefined();
-    expect(error.message).toBe("Backend request failed");
+    expect(error.backendError.code).toBe("DBX-WEB-0002");
+    expect(error.backendError.messageKey).toBe("backendErrors.emptyErrorResponse");
+    expect(error.backendError.messageParams.status).toBe(503);
   });
 
   // 回归：web 端版本不匹配/反代未转发 /api 时，API 请求会收到 index.html，

@@ -2034,6 +2034,7 @@ export default {
     },
     legacy: "Backend returned an error.",
     htmlResponse: "The request did not reach the backend API (HTTP {status}): the server returned the frontend HTML page. This usually means the web backend version does not match the frontend (missing API route) or the reverse proxy does not forward the /api prefix. Request URL: {url}",
+    emptyErrorResponse: "The backend returned an empty error response (HTTP {status}). 401 means the login session expired — refresh and sign in again; 404/405 means the web backend lacks this API route (outdated version). Request URL: {url}",
     unknown: "An unexpected backend error occurred.",
   },
   common: {
