@@ -3180,8 +3180,8 @@ export const zhCNMessages = {
     sourceInstanceLevel: "实例级",
     sourceDbePerfHint: "数据源为 openGauss 内置 dbe_perf.statement 视图：实例级统计（不按数据库区分），需 enable_stmt_track=on。",
     dbePerfDeniedTitle: "dbe_perf.statement 视图存在，但当前用户没有查询权限",
-    dbePerfDeniedHint: "访问该视图需要 MONADMIN 角色。请用 SYSADMIN 用户执行以下授权，然后点击刷新。",
-    dbePerfDeniedAltHint: "也可以只授予该视图的查询权限：GRANT USAGE ON SCHEMA dbe_perf TO <用户名>; GRANT SELECT ON dbe_perf.statement TO <用户名>;",
+    dbePerfDeniedHint: "访问该视图需要 MONADMIN 权限。请用 omm 等超级用户执行以下授权，然后点击刷新。（部分 openGauss 发行版未预置 monadmin 角色，此时请使用 ALTER USER ... MONADMIN 属性方式。）",
+    dbePerfDeniedAltHint: "或按最小权限只授予该视图（二选一即可）：",
     unavailableOpenGaussNoPackage: "提示：精简发行版的 openGauss 未随附该扩展的控制文件（CREATE EXTENSION 会报 could not open extension control file），需安装完整版扩展包；或授予 MONADMIN 后自动改用内置 dbe_perf.statement 视图。",
   },
   serverDashboard: {

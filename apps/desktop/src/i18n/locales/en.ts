@@ -3176,8 +3176,8 @@ export default {
     sourceInstanceLevel: "instance-wide",
     sourceDbePerfHint: "Data source: openGauss built-in dbe_perf.statement view; instance-wide statistics (not per-database), requires enable_stmt_track=on.",
     dbePerfDeniedTitle: "dbe_perf.statement exists but the current user cannot query it",
-    dbePerfDeniedHint: "Querying this view requires the MONADMIN role. Run the following grant as a SYSADMIN user, then refresh.",
-    dbePerfDeniedAltHint: "Alternatively grant only this view: GRANT USAGE ON SCHEMA dbe_perf TO <user>; GRANT SELECT ON dbe_perf.statement TO <user>;",
+    dbePerfDeniedHint: "Querying this view requires MONADMIN. Run the following as a superuser such as omm, then refresh. (Some openGauss distributions omit the predefined monadmin role — use the ALTER USER ... MONADMIN attribute form instead.)",
+    dbePerfDeniedAltHint: "Or grant the minimum privilege on this view only (either is fine):",
     unavailableOpenGaussNoPackage: "Note: slim openGauss distributions do not ship the extension control file (CREATE EXTENSION fails with 'could not open extension control file'); install the full contrib package, or grant MONADMIN to use the built-in dbe_perf.statement view instead.",
   },
   serverDashboard: {

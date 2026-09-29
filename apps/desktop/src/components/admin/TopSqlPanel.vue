@@ -72,10 +72,21 @@ const lastRefreshedAt = ref("");
 const databaseType = computed(() => effectiveDatabaseTypeForConnection(connection.value));
 const canQuery = computed(() => supported.value && (source.value === "pg_stat_statements" || source.value === "dbe_perf"));
 const dbePerfDenied = computed(() => source.value === "dbe_perf_denied");
-/** Suggested MONADMIN grant for the dbe_perf permission-denied state. */
+/** Whether the predefined monadmin ROLE exists (slim openGauss builds omit it). */
+const monadminRoleExists = ref<boolean | null>(null);
+/**
+ * Recommended grant for the dbe_perf permission-denied state. 发行版未预置
+ * monadmin 角色时 GRANT MONADMIN 会报 role does not exist——改用 MONADMIN
+ * 属性（ALTER USER），与 omm 的 rolmonitoradmin=True 一致。
+ */
 const dbePerfGrantSql = computed(() => {
   const user = connection.value?.username?.trim() || "<用户名>";
-  return `GRANT MONADMIN TO ${user};`;
+  return monadminRoleExists.value === false ? `ALTER USER ${user} MONADMIN;` : `GRANT MONADMIN TO ${user};`;
+});
+/** 最小权限替代方案：只对单视图授权。 */
+const dbePerfGrantAltSql = computed(() => {
+  const user = connection.value?.username?.trim() || "<用户名>";
+  return `GRANT USAGE ON SCHEMA dbe_perf TO ${user};\nGRANT SELECT ON dbe_perf.statement TO ${user};`;
 });
 
 let generation = 0;
@@ -121,6 +132,7 @@ async function initialize() {
   unavailable.value = false;
   extensionInstalled.value = false;
   source.value = null;
+  monadminRoleExists.value = null;
   rows.value = [];
   columns.value = [];
   lastRefreshedAt.value = "";
@@ -144,6 +156,15 @@ async function initialize() {
       return;
     }
     if (dbePerfDenied.value) {
+      // 探测预置 monadmin 角色是否存在，决定引导文案用 GRANT 角色还是 ALTER USER 属性。
+      try {
+        const probe = await api.executeQuery(props.connectionId, props.database, "SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'monadmin')", props.schema || undefined, undefined, { maxRows: 1 });
+        if (!disposed && request === generation) {
+          monadminRoleExists.value = mapTopSqlAvailability(probe);
+        }
+      } catch {
+        // 探测失败不阻塞引导：保持默认 GRANT 文案。
+      }
       loading.value = false;
       return;
     }
@@ -297,6 +318,7 @@ onBeforeUnmount(() => {
         <p class="text-xs text-muted-foreground">{{ t("topSql.dbePerfDeniedHint") }}</p>
         <pre class="mx-auto max-w-md rounded-md border bg-muted/40 p-3 text-left text-[11px] leading-relaxed overflow-x-auto">{{ dbePerfGrantSql }}</pre>
         <p class="text-[11px] text-muted-foreground">{{ t("topSql.dbePerfDeniedAltHint") }}</p>
+        <pre class="mx-auto max-w-md rounded-md border bg-muted/40 p-3 text-left text-[11px] leading-relaxed overflow-x-auto">{{ dbePerfGrantAltSql }}</pre>
         <Button variant="outline" size="sm" class="h-7 gap-1.5 px-2.5 text-xs" @click="initialize">
           <RefreshCcw class="h-3.5 w-3.5" />
           <span>{{ t("topSql.retry") }}</span>
