@@ -117,6 +117,7 @@ import { savedSqlDefaultTargetForWrite } from "@/lib/savedSql/savedSqlExecutionT
 import { menuSearchTableDdlTarget } from "@/lib/search/menuSearchObjectNavigation";
 import { initSavedSqlEditorPositions } from "@/lib/app/savedSqlEditorPosition";
 import { isSchemaAware, isSingleDatabase, usesTreeSchemaMode } from "@/lib/database/databaseFeatureSupport";
+import { pickToolConnection, type ToolConnectionKind } from "@/lib/database/toolTargets";
 import { codeMirrorSqlDialect, connectionUsesDatabaseObjectTreeMode, effectiveDatabaseTypeForConnection } from "@/lib/database/jdbcDialect";
 import { sqlFormatDialectForDbType } from "@/lib/sql/sqlFormatter";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -141,7 +142,6 @@ const QuickOpenDialog = defineAsyncComponent(() => import("@/components/quick-op
 const ProjectDialog = defineAsyncComponent(() => import("@/components/projects/ProjectDialog.vue"));
 const MenuSearchDialog = defineAsyncComponent(() => import("@/components/search/MenuSearchDialog.vue"));
 const RoutineHealthPanel = defineAsyncComponent(() => import("@/components/maintenance/RoutineHealthPanel.vue"));
-const ToolTargetPickerDialog = defineAsyncComponent(() => import("@/components/layout/ToolTargetPickerDialog.vue"));
 const QueryEditorDdlViewDialog = defineAsyncComponent(() => import("@/components/objects/DdlViewDialog.vue"));
 const QueryEditorObjectSourceDialog = defineAsyncComponent(() => import("@/components/objects/ObjectSourceDialog.vue"));
 
@@ -202,8 +202,6 @@ watch(
 );
 const projectDialog = ref<{ open: boolean; mode: "create" | "open" }>({ open: false, mode: "create" });
 const menuSearchDialog = ref<{ open: boolean; mode: MenuSearchMode }>({ open: false, mode: "files" });
-type ToolTargetKind = "processlist" | "routine-health" | "top-sql" | "command-window" | "table-import";
-const toolTargetPicker = ref<{ open: boolean; kind: ToolTargetKind }>({ open: false, kind: "processlist" });
 const showHistory = ref(safeLocalStorageGet("ogdeveloper-history-panel-open") === "true");
 const showAiPanel = ref(safeLocalStorageGet("ogdeveloper-ai-panel-open") === "true");
 const showSqlLibraryPanel = ref(safeLocalStorageGet("ogdeveloper-sql-library-open") === "true");
@@ -378,19 +376,22 @@ function requestActiveEditorExecuteCurrent() {
 const dialogs = useDialogSources();
 const { getDatabaseOptions } = useDatabaseOptions();
 
-async function openTableImportForTarget(connectionId: string, database: string) {
-  const connection = connectionStore.getConfig(connectionId);
+async function openTableImportFromMenu() {
+  const connection = defaultToolTarget("table-import");
   if (!connection) return;
+  const connectionId = connection.id;
 
   try {
-    if (!database.trim()) {
+    const current = activeTab.value?.connectionId === connectionId ? activeTab.value : undefined;
+    const databaseOptions = current?.database ? [] : await getDatabaseOptions(connectionId);
+    const database = (current?.database || resolveDefaultDatabase(connection, databaseOptions)).trim();
+    if (!database) {
       toast(t("editor.selectDatabaseRequired"), 2500);
       return;
     }
 
     await connectionStore.ensureConnected(connectionId);
-    const tab = activeTab.value?.connectionId === connectionId && activeTab.value.database === database ? activeTab.value : undefined;
-    let schema = tab?.schema?.trim() || "";
+    let schema = current?.schema?.trim() || "";
     if (!schema && isSchemaAware(effectiveDatabaseTypeForConnection(connection))) {
       const schemas = await api.listSchemas(connectionId, database);
       schema = schemas.includes("public") ? "public" : schemas[0] || "";
@@ -1907,30 +1908,41 @@ function dispatchBeforeTabSwitch(tabId: string) {
   window.dispatchEvent(new CustomEvent("ogdeveloper:before-tab-switch", { detail: { tabId, fromTabId: queryStore.activeTabId } }));
 }
 
-function openToolTargetPicker(kind: ToolTargetKind) {
-  toolTargetPicker.value = { open: true, kind };
+function defaultToolTarget(kind: ToolConnectionKind) {
+  return pickToolConnection(connectionStore.connections, kind, [activeTab.value?.connectionId, connectionStore.activeConnectionId]);
 }
 
-function confirmToolTarget(target: { kind: ToolTargetKind; connectionId: string; database?: string }) {
-  toolTargetPicker.value.open = false;
-  const current = activeTab.value?.connectionId === target.connectionId && activeTab.value.database === target.database ? activeTab.value : undefined;
-  switch (target.kind) {
-    case "processlist":
-      queryStore.openProcessList(target.connectionId);
-      break;
-    case "routine-health":
-      queryStore.openRoutineHealth({ connectionId: target.connectionId, database: target.database, schema: current?.schema });
-      break;
-    case "top-sql":
-      queryStore.openTopSqlPanel({ connectionId: target.connectionId, database: target.database, schema: current?.schema });
-      break;
-    case "command-window":
-      queryStore.openCommandWindow(target.connectionId, target.database, current?.schema);
-      break;
-    case "table-import":
-      void openTableImportForTarget(target.connectionId, target.database || "");
-      break;
+function openProcessListFromMenu() {
+  const connection = defaultToolTarget("processlist");
+  if (connection) queryStore.openProcessList(connection.id);
+  else toast(t("processList.noConnections"), 2500);
+}
+
+function openRoutineHealthFromMenu() {
+  const connection = defaultToolTarget("pg-stats");
+  if (!connection) {
+    toast(t("invalidObjects.noConnections"), 2500);
+    return;
   }
+  const current = activeTab.value?.connectionId === connection.id ? activeTab.value : undefined;
+  queryStore.openRoutineHealth({ connectionId: connection.id, database: current?.database || resolveDefaultDatabase(connection, []), schema: current?.schema });
+}
+
+function openTopSqlFromMenu() {
+  const connection = defaultToolTarget("pg-stats");
+  if (!connection) {
+    toast(t("topSql.noConnections"), 2500);
+    return;
+  }
+  const current = activeTab.value?.connectionId === connection.id ? activeTab.value : undefined;
+  queryStore.openTopSqlPanel({ connectionId: connection.id, database: current?.database || resolveDefaultDatabase(connection, []), schema: current?.schema });
+}
+
+function openCommandWindowFromMenu() {
+  const connection = defaultToolTarget("sql");
+  if (!connection) return;
+  const current = activeTab.value?.connectionId === connection.id ? activeTab.value : undefined;
+  queryStore.openCommandWindow(connection.id, current?.database || resolveDefaultDatabase(connection, []), current?.schema);
 }
 
 function closeActiveTab() {
@@ -2068,7 +2080,7 @@ function handleKeydown(e: KeyboardEvent) {
   if (isCommandWindowShortcut(e, shortcuts)) {
     e.preventDefault();
     e.stopPropagation();
-    openToolTargetPicker("command-window");
+    openCommandWindowFromMenu();
     return;
   }
   if (activeTab.value?.mode === "query" && isOpenSqlFileShortcut(e, shortcuts)) {
@@ -2459,11 +2471,11 @@ onUnmounted(() => {
           @search-objects="openMenuSearch('objects')"
           @quick-open="showQuickOpen = true"
           @search-table-data="openMenuSearch('data')"
-          @open-sessions="openToolTargetPicker('processlist')"
-          @open-invalid-objects="openToolTargetPicker('routine-health')"
-          @open-top-sql="openToolTargetPicker('top-sql')"
-          @open-command-window="openToolTargetPicker('command-window')"
-          @open-table-import="openToolTargetPicker('table-import')"
+          @open-sessions="openProcessListFromMenu"
+          @open-invalid-objects="openRoutineHealthFromMenu"
+          @open-top-sql="openTopSqlFromMenu"
+          @open-command-window="openCommandWindowFromMenu"
+          @open-table-import="void openTableImportFromMenu()"
           @open-database-export="dialogs.showDatabaseExportDialog.value = true"
           @open-transfer="dialogs.showTransferDialog.value = true"
           @open-sql-file="dialogs.showSqlFileDialog.value = true"
@@ -2764,14 +2776,6 @@ onUnmounted(() => {
         <GitDiffDialog />
         <QuickOpenDialog :open="showQuickOpen" @update:open="showQuickOpen = $event" @select="handleQuickOpenSelect" />
         <ProjectDialog :open="projectDialog.open" :mode="projectDialog.mode" @update:open="projectDialog.open = $event" @create="onCreateProject" @select="onMenuSelectProject" />
-        <ToolTargetPickerDialog
-          :open="toolTargetPicker.open"
-          :kind="toolTargetPicker.kind"
-          :initial-connection-id="activeTab?.connectionId || connectionStore.activeConnectionId || undefined"
-          :initial-database="activeTab?.database || undefined"
-          @update:open="toolTargetPicker.open = $event"
-          @confirm="confirmToolTarget"
-        />
         <MenuSearchDialog
           :open="menuSearchDialog.open"
           :mode="menuSearchDialog.mode"

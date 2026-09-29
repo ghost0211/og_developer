@@ -2,26 +2,42 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const app = readFileSync(new URL("../../../App.vue", import.meta.url), "utf8");
-const sqlFile = readFileSync(new URL("../../sql-file/SqlFileExecutionDialog.vue", import.meta.url), "utf8");
+const processList = readFileSync(new URL("../../admin/ProcessListPanel.vue", import.meta.url), "utf8");
+const topSql = readFileSync(new URL("../../admin/TopSqlPanel.vue", import.meta.url), "utf8");
+const routineHealth = readFileSync(new URL("../../maintenance/RoutineHealthPanel.vue", import.meta.url), "utf8");
+const commandWindow = readFileSync(new URL("../../command/CommandWindow.vue", import.meta.url), "utf8");
+const tableImport = readFileSync(new URL("../../import/TableImportDialog.vue", import.meta.url), "utf8");
 
 describe("Tools menu target selection", () => {
-  it("opens the shared picker instead of silently using an active or first connection", () => {
-    for (const [event, kind] of [
-      ["open-sessions", "processlist"],
-      ["open-invalid-objects", "routine-health"],
-      ["open-top-sql", "top-sql"],
-      ["open-command-window", "command-window"],
-      ["open-table-import", "table-import"],
-    ]) {
-      expect(app).toContain(`@${event}="openToolTargetPicker('${kind}')"`);
-    }
-    expect(app).toContain('@confirm="confirmToolTarget"');
-    expect(app).toContain('openTableImportForTarget(target.connectionId, target.database || "")');
-    expect(app).toContain('openToolTargetPicker("command-window")');
+  it("opens tools directly from the menu without a pre-selection dialog", () => {
+    expect(app).toContain('@open-sessions="openProcessListFromMenu"');
+    expect(app).toContain('@open-invalid-objects="openRoutineHealthFromMenu"');
+    expect(app).toContain('@open-top-sql="openTopSqlFromMenu"');
+    expect(app).toContain('@open-command-window="openCommandWindowFromMenu"');
+    expect(app).toContain('@open-table-import="void openTableImportFromMenu()"');
+    expect(app).not.toContain("ToolTargetPickerDialog");
+    expect(app).not.toContain("openToolTargetPicker");
   });
 
-  it("requires explicit connection selection for SQL-file execution without a context prefill", () => {
-    expect(sqlFile).toMatch(/function resolveInitialConnectionId\(\)[\s\S]*?return "";/);
-    expect(sqlFile).not.toContain('return sqlConnections.value[0]?.id ?? ""');
+  it("embeds a connection selector in the tool panel headers", () => {
+    expect(processList).toContain('kind="processlist"');
+    expect(topSql).toContain('kind="pg-stats"');
+    expect(routineHealth).toContain('kind="pg-stats"');
+    expect(tableImport).toContain('kind="table-import"');
+    for (const source of [processList, topSql, routineHealth, tableImport]) {
+      expect(source).toContain("ToolConnectionSelect");
+    }
+  });
+
+  it("keeps the command window's existing inline connection and database selectors", () => {
+    expect(commandWindow).toContain("retargetCommandTab");
+    expect(commandWindow).toContain("onDatabaseSelected");
+  });
+
+  it("retargets the tab through queryStore when the inline selector changes", () => {
+    expect(processList).toContain("queryStore.updateConnection(props.tabId, connectionId)");
+    expect(topSql).toContain("queryStore.updateConnection(props.tabId, connectionId");
+    expect(routineHealth).toContain("queryStore.updateConnection(props.tab.id, connectionId");
+    expect(routineHealth).toContain("queryStore.updateDatabase(props.tab.id, database)");
   });
 });

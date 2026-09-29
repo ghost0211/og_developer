@@ -9,6 +9,8 @@ import { useQueryStore } from "@/stores/queryStore";
 import { useToast } from "@/composables/useToast";
 import { copyToClipboard } from "@/lib/common/clipboard";
 import { effectiveDatabaseTypeForConnection } from "@/lib/database/jdbcDialect";
+import { resolveDefaultDatabase } from "@/lib/database/defaultDatabase";
+import ToolConnectionSelect from "@/components/common/ToolConnectionSelect.vue";
 import * as api from "@/lib/backend/api";
 import {
   buildDbePerfTopSqlQuery,
@@ -32,6 +34,7 @@ const props = defineProps<{
   connectionId: string;
   database: string;
   schema?: string;
+  tabId?: string;
 }>();
 
 const { t } = useI18n();
@@ -46,7 +49,12 @@ const TOP_LIMITS = [50, 100, 200] as const;
 // 用 effectiveDatabaseTypeForConnection 与菜单入口的判定保持一致：JDBC 通道的
 // openGauss 连接（db_type=jdbc + driver_profile）经方言推断后同样视为支持。
 const connection = computed(() => connectionStore.getConfig(props.connectionId));
-const connectionName = computed(() => connection.value?.name || props.connectionId);
+
+function onToolConnectionChange(connectionId: string) {
+  if (!props.tabId || connectionId === props.connectionId) return;
+  const config = connectionStore.getConfig(connectionId);
+  queryStore.updateConnection(props.tabId, connectionId, resolveDefaultDatabase(config ?? {}, []));
+}
 const supported = computed(() => {
   const type = effectiveDatabaseTypeForConnection(connection.value);
   return type === "postgres" || type === "opengauss";
@@ -254,7 +262,7 @@ onBeforeUnmount(() => {
       <div class="flex items-center gap-2">
         <Gauge class="h-4 w-4 text-primary" />
         <span class="font-semibold text-sm">{{ t("topSql.title") }}</span>
-        <Badge variant="outline" class="h-5 px-2 text-[11px] font-mono">{{ connectionName }}</Badge>
+        <ToolConnectionSelect :model-value="props.connectionId" kind="pg-stats" @update:model-value="onToolConnectionChange" />
         <span v-if="props.database" class="text-[11px] text-muted-foreground font-mono">{{ props.database }}</span>
         <Badge v-if="source === 'dbe_perf'" variant="secondary" class="h-5 px-2 text-[11px]" :title="t('topSql.sourceDbePerfHint')">dbe_perf.statement · {{ t("topSql.sourceInstanceLevel") }}</Badge>
       </div>

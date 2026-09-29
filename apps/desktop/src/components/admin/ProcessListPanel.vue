@@ -15,10 +15,12 @@ import * as api from "@/lib/backend/api";
 import { executeWithProductionSqlGuard } from "@/lib/database/productionExecutionGuard";
 import { clampInterval, createProcessListLoadCoordinator, DEFAULT_REFRESH_SECONDS, processListExecutionError } from "@/lib/database/processListDrivers";
 import { resolveProcessListDriverForConnection, type ProcessRow } from "@/lib/database/processListDrivers";
+import ToolConnectionSelect from "@/components/common/ToolConnectionSelect.vue";
 import type { BlockingLockRow, LockDetailRow } from "@/lib/database/postgresProcessList";
 
 const props = defineProps<{
   connection: ConnectionConfig;
+  tabId?: string;
 }>();
 
 const { t } = useI18n();
@@ -419,6 +421,11 @@ function onIntervalInput() {
   if (autoRefresh.value) restartTimer();
 }
 
+function onToolConnectionChange(connectionId: string) {
+  if (!props.tabId || connectionId === props.connection.id) return;
+  queryStore.updateConnection(props.tabId, connectionId);
+}
+
 watch(autoRefresh, restartTimer);
 watch(intervalSeconds, () => {
   if (autoRefresh.value) restartTimer();
@@ -454,7 +461,7 @@ onBeforeUnmount(stopTimer);
         <div class="flex items-center gap-2">
           <Activity class="h-4 w-4 text-primary" />
           <span class="font-semibold text-sm">{{ t("processList.title", "会话与锁监控") }}</span>
-          <Badge variant="outline" class="h-5 px-2 text-[11px] font-mono">{{ connection.name }}</Badge>
+          <ToolConnectionSelect :model-value="currentConnection.id" kind="processlist" @update:model-value="onToolConnectionChange" />
         </div>
 
         <!-- Mode Tabs -->

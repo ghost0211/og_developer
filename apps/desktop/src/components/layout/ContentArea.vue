@@ -1847,7 +1847,7 @@ defineExpose({ focusSearch, refreshData, refreshQueryEditorCompletionCache, hand
     </template>
 
     <template v-else-if="activeTab.mode === 'processlist' && activeConnection">
-      <ProcessListPanel :key="activeTab.id" :connection="activeConnection" />
+      <ProcessListPanel :key="activeTab.id" :connection="activeConnection" :tab-id="activeTab.id" />
     </template>
 
     <template v-else-if="activeTab.mode === 'postgres-dashboard'">
@@ -1858,7 +1858,7 @@ defineExpose({ focusSearch, refreshData, refreshQueryEditorCompletionCache, hand
 
     <template v-else-if="activeTab.mode === 'top-sql'">
       <div class="min-h-0 flex-1">
-        <TopSqlPanel :key="activeTab.id" :connection-id="activeTab.connectionId" :database="activeTab.database" :schema="activeTab.schema" />
+        <TopSqlPanel :key="activeTab.id" :connection-id="activeTab.connectionId" :database="activeTab.database" :schema="activeTab.schema" :tab-id="activeTab.id" />
       </div>
     </template>
 

@@ -967,6 +967,8 @@ schema 校验兜底（本地元数据冷时）。editor 相关 189 例 + 补全 
 
 **Top SQL 授权引导修复（0.2.26）**：用户实测 GRANT MONADMIN 报 role does not exist——该 openGauss 6.0.0 发行版未预置 monadmin 角色（pg_roles 仅有 omm/sysadmin/tygl_biz）。服务器探查：dbe_perf schema 无公共 ACL，omm 靠 rolmonitoradmin=True 属性通过，tygl_biz 虽有 SYSADMIN 但rolmonitoradmin=False 被拒。面板在无权限引导前探测 pg_roles 中 monadmin 角色是否存在：存在→GRANT MONADMIN；不存在→`ALTER USER <user> MONADMIN;`（属性方式）。同时新增最小权限备选块（GRANT USAGE ON SCHEMA dbe_perf + GRANT SELECT ON dbe_perf.statement）。
 
-## 25. 工具菜单多连接显式选目标（2026-09-29）
+## 25. 工具菜单多连接目标选择（0.2.27 弹窗版 → 0.2.28 内联版）
 
-进程列表、例程健康、Top SQL、命令窗口、数据导入菜单原本取当前/首个连接，可能对错库操作。新增 `ToolTargetPickerDialog.vue`，菜单点击先选连接，适用工具还需选数据库；按工具能力过滤连接，切换连接异步加载数据库且隔离旧请求、展示加载错误。进程列表只选实例连接；SQL 文件执行对话框已有选择器，菜单无预填时不再默认首个连接，编辑器预填仍有效；命令窗口快捷键也改为选择目标。明确选择的连接/数据库传至各面板，数据导入不再回退活动库；库连接同名时列表显示用户名及端点。验证：相关布局/SQL 文件/Top SQL 共 71 例定向测试通过，`pnpm typecheck`、`pnpm build`、`git diff --check` 通过。未操控用户桌面 UI。
+**0.2.27（弹窗版，已被 0.2.28 取代）**：进程列表、例程健康、Top SQL、命令窗口、数据导入菜单原本取当前/首个连接，可能对错库操作。新增 ToolTargetPickerDialog 弹窗先选连接/数据库，按工具能力过滤连接；SQL 文件执行对话框菜单无预填时不再默认首个连接。71 例定向测试通过。
+
+**0.2.28（内联版，当前行为）**：用户反馈弹窗繁琐。移除弹窗，菜单恢复直达（默认取当前标签连接→活动连接→首个支持该工具的连接），目标切换内嵌到各面板标题栏：新增 `toolTargets.ts`（按工具能力过滤连接：processlist 驱动/pg-stats/tableImport/queryExecution）与 `ToolConnectionSelect.vue` 紧凑下拉。进程列表、Top SQL 标题旁的静态连接 Badge 换成选择器（queryStore.updateConnection 重定向标签页，各面板原有 watcher 自动重载）；例程健康面板加连接+数据库选择器（schema/数据库列表随切换重载）；命令窗口本就有选择器，菜单/快捷键恢复直达；数据导入对话框目标栏改为连接/数据库/schema 可选（导入调用、元数据失效、批量导入全部改用可变目标 refs；偏离预填表时“导入到现有表”模式自动回退为新建表）。SQL 文件执行器保持对话框内选择器不变。验证：相关 154 例测试、typecheck、build、oxlint 通过。未操控用户桌面 UI。

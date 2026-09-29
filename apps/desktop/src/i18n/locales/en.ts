@@ -3052,6 +3052,7 @@ export default {
   },
   processList: {
     title: "Process List",
+    noConnections: "No connection supports the process list. Configure one first.",
     sessionCount: "{count} sessions",
     filter: "Filter sessions",
     autoRefresh: "Auto-refresh",
@@ -3135,28 +3136,6 @@ export default {
     lockWaiting: "Waiting",
     previewTruncationHint:
       "💡 Note: In openGauss / PostgreSQL, the recorded SQL length of active sessions is limited by the server parameter track_activity_query_size. If long statements get truncated, administrators can raise it via ALTER SYSTEM SET track_activity_query_size = 4096; (restart required).",
-  },
-  toolTargetPicker: {
-    title: {
-      processlist: "Select process-list connection",
-      routineHealth: "Select routine-health target",
-      topSql: "Select Top SQL target",
-      commandWindow: "Select command-window target",
-      tableImport: "Select import target",
-    },
-    description: {
-      processlist: "Choose the connection to monitor (processes are instance-wide).",
-      routineHealth: "Choose the connection and database to analyze.",
-      topSql: "Choose the connection and database for statement statistics.",
-      commandWindow: "Choose the connection and database for this command window.",
-      tableImport: "Import writes to the selected database. Confirm the connection and database.",
-    },
-    noConnections: "No connection supports this tool. Configure one first.",
-    connectionUnavailable: "This connection is no longer available. Choose another.",
-    loadFailed: "Could not load target: {message}",
-    loadingDatabases: "Loading databases...",
-    connecting: "Connecting...",
-    noDatabases: "No databases are available on this connection.",
   },
   topSql: {
     title: "Top SQL",

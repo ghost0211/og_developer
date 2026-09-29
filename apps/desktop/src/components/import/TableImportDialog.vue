@@ -26,7 +26,11 @@ import {
   type TableImportWizardStep,
 } from "@/lib/table/tableImport";
 import { getDataTypeOptions } from "@/lib/table/tableStructureEditorState";
-import { tableStructureDatabaseTypeForConnection } from "@/lib/database/jdbcDialect";
+import { effectiveDatabaseTypeForConnection, tableStructureDatabaseTypeForConnection } from "@/lib/database/jdbcDialect";
+import { isSchemaAware } from "@/lib/database/databaseFeatureSupport";
+import { resolveDefaultDatabase } from "@/lib/database/defaultDatabase";
+import { databaseOptionsForConnection } from "@/composables/useDatabaseOptions";
+import ToolConnectionSelect from "@/components/common/ToolConnectionSelect.vue";
 import type { ColumnInfo } from "@/types/database";
 import * as api from "@/lib/backend/api";
 
@@ -61,6 +65,14 @@ interface BatchImportTask {
 }
 
 const SKIP_VALUE = "__skip__";
+// The import target is editable inside the dialog: initialized from the
+// prefill (sidebar context / menu default), changeable via the target bar.
+const targetConnectionId = ref(props.prefillConnectionId || "");
+const targetDatabase = ref(props.prefillDatabase || "");
+const targetSchema = ref(props.prefillSchema || "");
+const targetDatabases = ref<string[]>([]);
+const targetSchemas = ref<string[]>([]);
+let targetOptionsRequestId = 0;
 const targetColumns = ref<ColumnInfo[]>([]);
 const targetMode = ref<ImportTargetMode>(props.prefillTable ? "existing" : "create");
 const newTableName = ref("");
@@ -126,10 +138,12 @@ const wizardSteps: Array<{ value: TableImportWizardStep; labelKey: string }> = [
   { value: "execution", labelKey: "tableImport.stepExecution" },
 ];
 
-const selectedConnection = computed(() => (props.prefillConnectionId ? store.getConfig(props.prefillConnectionId) : undefined));
+const selectedConnection = computed(() => (targetConnectionId.value ? store.getConfig(targetConnectionId.value) : undefined));
+const targetDatabaseType = computed(() => effectiveDatabaseTypeForConnection(selectedConnection.value));
+const targetSchemaAware = computed(() => isSchemaAware(targetDatabaseType.value));
 const structureDatabaseType = computed(() => tableStructureDatabaseTypeForConnection(selectedConnection.value));
 const dataTypeOptions = computed(() => mergeDataTypeOptions(dynamicDataTypeOptions.value, getDataTypeOptions(structureDatabaseType.value), Object.values(columnDataTypes.value)));
-const hasExistingTarget = computed(() => !!props.prefillTable);
+const hasExistingTarget = computed(() => !!props.prefillTable && targetConnectionId.value === (props.prefillConnectionId || "") && targetDatabase.value === (props.prefillDatabase || "") && targetSchema.value === (props.prefillSchema || ""));
 const targetTableName = computed(() => (targetMode.value === "create" ? newTableName.value.trim() : props.prefillTable || ""));
 const targetColumnNames = computed(() => targetColumns.value.map((column) => column.name));
 const mappedColumns = computed<api.TableImportColumnMapping[]>(() => {
@@ -156,7 +170,7 @@ const requiredUnmappedColumns = computed(() =>
 );
 const isBatchImport = computed(() => targetMode.value === "create" && batchTasks.value.length > 1);
 const canImport = computed(() => {
-  if (running.value || !props.prefillConnectionId) return false;
+  if (running.value || !targetConnectionId.value || !targetDatabase.value.trim()) return false;
   if (!isBatchImport.value) return !!preview.value && !!targetTableName.value && mappingValidation.value.valid;
   const tableNames = batchTasks.value.map((task) => task.tableName.trim().toLowerCase());
   if (new Set(tableNames).size !== tableNames.length) return false;
@@ -177,7 +191,7 @@ const progressPercentFloor = ref(0);
 const progressPercent = computed(() => Math.max(rawProgressPercent.value, progressPercentFloor.value));
 const currentStepIndex = computed(() => wizardSteps.findIndex((step) => step.value === wizardStep.value));
 const targetLabel = computed(() => {
-  const pieces = [selectedConnection.value?.name, props.prefillDatabase, props.prefillSchema, targetTableName.value].filter(Boolean);
+  const pieces = [selectedConnection.value?.name, targetDatabase.value, targetSchema.value, targetTableName.value].filter(Boolean);
   return pieces.join(" / ");
 });
 const selectedSourceName = computed(() => {
@@ -435,8 +449,8 @@ function handleDataTypePickerKeydown(event: KeyboardEvent, sourceColumn: string,
 
 async function loadDataTypeOptions() {
   const requestId = ++dataTypeOptionsRequestId;
-  const connectionId = props.prefillConnectionId;
-  const database = props.prefillDatabase || "";
+  const connectionId = targetConnectionId.value;
+  const database = targetDatabase.value || "";
   if (!connectionId || !database || targetMode.value !== "create") {
     dynamicDataTypeOptions.value = [];
     loadingDataTypeOptions.value = false;
@@ -460,18 +474,75 @@ async function loadDataTypeOptions() {
 }
 
 async function loadTargetColumns() {
-  if (targetMode.value !== "existing" || !props.prefillConnectionId || !props.prefillDatabase || !props.prefillTable) return;
+  if (targetMode.value !== "existing" || !hasExistingTarget.value || !props.prefillTable) return;
   loadingTarget.value = true;
   errorMessage.value = "";
   try {
-    await store.ensureConnected(props.prefillConnectionId);
-    targetColumns.value = await api.getColumns(props.prefillConnectionId, props.prefillDatabase, props.prefillSchema || props.prefillDatabase, props.prefillTable);
+    await store.ensureConnected(targetConnectionId.value);
+    targetColumns.value = await api.getColumns(targetConnectionId.value, targetDatabase.value, targetSchema.value || targetDatabase.value, props.prefillTable);
     applyAutoMapping();
   } catch (e: any) {
     errorMessage.value = String(e?.message || e);
   } finally {
     loadingTarget.value = false;
   }
+}
+
+async function loadTargetSchemas() {
+  const requestId = targetOptionsRequestId;
+  const connectionId = targetConnectionId.value;
+  if (!connectionId || !targetDatabase.value || !targetSchemaAware.value) {
+    targetSchemas.value = [];
+    return;
+  }
+  try {
+    const rows = await api.listSchemas(connectionId, targetDatabase.value);
+    if (requestId === targetOptionsRequestId) targetSchemas.value = rows;
+  } catch {
+    if (requestId === targetOptionsRequestId) targetSchemas.value = [];
+  }
+}
+
+async function loadTargetOptions(connectionId: string) {
+  const requestId = ++targetOptionsRequestId;
+  targetDatabases.value = [];
+  targetSchemas.value = [];
+  if (!connectionId) return;
+  try {
+    await store.ensureConnected(connectionId);
+    const rows = await api.listDatabases(connectionId);
+    if (requestId !== targetOptionsRequestId) return;
+    targetDatabases.value = databaseOptionsForConnection(
+      rows.map((row) => row.name),
+      store.getConfig(connectionId),
+    ).filter(Boolean);
+  } catch {
+    // Keep the current database as a fallback option even when the driver
+    // cannot enumerate databases.
+  }
+  if (requestId === targetOptionsRequestId) await loadTargetSchemas();
+}
+
+function onTargetConnectionChange(connectionId: string) {
+  if (!connectionId || connectionId === targetConnectionId.value) return;
+  targetConnectionId.value = connectionId;
+  targetDatabase.value = resolveDefaultDatabase(store.getConfig(connectionId) ?? {}, []);
+  targetSchema.value = "";
+  void loadTargetOptions(connectionId);
+  void loadDataTypeOptions();
+}
+
+function onTargetDatabaseChange(event: Event) {
+  const database = (event.target as HTMLSelectElement).value;
+  if (!database || database === targetDatabase.value) return;
+  targetDatabase.value = database;
+  targetSchema.value = "";
+  void loadTargetSchemas();
+  void loadDataTypeOptions();
+}
+
+function onTargetSchemaChange(event: Event) {
+  targetSchema.value = (event.target as HTMLSelectElement).value;
 }
 
 async function previewSelectedImportFile(fileOrPath: string | File) {
@@ -710,7 +781,7 @@ async function startImport() {
   }
   const currentPreview = preview.value;
   const tableName = targetTableName.value;
-  if (!canImport.value || !currentPreview || !props.prefillConnectionId || !tableName) return;
+  if (!canImport.value || !currentPreview || !targetConnectionId.value || !tableName) return;
   running.value = true;
   progressPercentFloor.value = 0;
   cancelling.value = false;
@@ -734,9 +805,9 @@ async function startImport() {
     const summary = await api.importTableFile(
       {
         importId: importId.value,
-        connectionId: props.prefillConnectionId,
-        database: props.prefillDatabase || "",
-        schema: props.prefillSchema || "",
+        connectionId: targetConnectionId.value,
+        database: targetDatabase.value || "",
+        schema: targetSchema.value || "",
         table: tableName,
         filePath: currentPreview.filePath,
         sourceRef: currentPreview.sourceRef || null,
@@ -756,9 +827,9 @@ async function startImport() {
     );
     progress.value = { importId: summary.importId, status: "done", rowsImported: summary.rowsImported, totalRows: summary.totalRows, elapsedMs: summary.elapsedMs };
     toast(t("tableImport.success", { count: summary.rowsImported }), 2500);
-    store.invalidateMetadataCache(props.prefillConnectionId, props.prefillDatabase || "", props.prefillSchema || undefined, tableName);
+    store.invalidateMetadataCache(targetConnectionId.value, targetDatabase.value || "", targetSchema.value || undefined, tableName);
     if (targetMode.value === "create") {
-      store.refreshObjectListTreeNode(props.prefillConnectionId, props.prefillDatabase || "", props.prefillSchema || undefined).catch((error) => {
+      store.refreshObjectListTreeNode(targetConnectionId.value, targetDatabase.value || "", targetSchema.value || undefined).catch((error) => {
         console.warn("[ogdeveloper][table-import:refresh-created-table-failed]", error);
       });
     }
@@ -782,7 +853,7 @@ async function startImport() {
 }
 
 async function startBatchImport() {
-  if (!props.prefillConnectionId || !batchTasks.value.length || running.value) return;
+  if (!targetConnectionId.value || !targetDatabase.value.trim() || !batchTasks.value.length || running.value) return;
   running.value = true;
   progressPercentFloor.value = 0;
   cancelling.value = false;
@@ -820,9 +891,9 @@ async function startBatchImport() {
       const summary = await api.importTableFile(
         {
           importId: importId.value,
-          connectionId: props.prefillConnectionId,
-          database: props.prefillDatabase || "",
-          schema: props.prefillSchema || "",
+          connectionId: targetConnectionId.value,
+          database: targetDatabase.value || "",
+          schema: targetSchema.value || "",
           table: task.tableName,
           filePath: task.preview.filePath,
           sourceRef: task.preview.sourceRef || null,
@@ -858,12 +929,12 @@ async function startBatchImport() {
       task.rowsImported = summary.rowsImported;
       completedRows += summary.rowsImported;
       completedBytes += task.preview.sizeBytes;
-      store.invalidateMetadataCache(props.prefillConnectionId, props.prefillDatabase || "", props.prefillSchema || undefined, task.tableName);
+      store.invalidateMetadataCache(targetConnectionId.value, targetDatabase.value || "", targetSchema.value || undefined, task.tableName);
     }
     refreshImportElapsedClock();
     progress.value = { importId: importId.value, status: "done", phase: "done", rowsImported: completedRows, totalRows: completedRows, totalRowsExact: true, bytesRead: totalBytes, totalBytes, elapsedMs: liveElapsedMs.value };
     toast(t("tableImport.success", { count: completedRows }), 2500);
-    store.refreshObjectListTreeNode(props.prefillConnectionId, props.prefillDatabase || "", props.prefillSchema || undefined).catch((error) => {
+    store.refreshObjectListTreeNode(targetConnectionId.value, targetDatabase.value || "", targetSchema.value || undefined).catch((error) => {
       console.warn("[ogdeveloper][table-import:refresh-created-table-failed]", error);
     });
   } catch (e: any) {
@@ -964,6 +1035,10 @@ watch(
   (value) => {
     if (value) {
       resetState();
+      targetConnectionId.value = props.prefillConnectionId || "";
+      targetDatabase.value = props.prefillDatabase || "";
+      targetSchema.value = props.prefillSchema || "";
+      void loadTargetOptions(targetConnectionId.value);
       void loadTargetColumns();
       void loadDataTypeOptions();
     } else if (!running.value) {
@@ -972,6 +1047,12 @@ watch(
   },
   { immediate: true },
 );
+
+// Switching the target away from the prefilled table invalidates the
+// "existing table" mode: its column metadata belongs to the prefill target.
+watch(hasExistingTarget, (hasTarget) => {
+  if (!hasTarget && targetMode.value === "existing") targetMode.value = "create";
+});
 
 watch([sourceFormat, delimiter, titleRow, dataStartRow, lastDataRow, trimValues, emptyStringAsNull, selectedSheet, jsonShape, previewLimit], schedulePreviewReload);
 watch(textEncoding, schedulePreviewReloadAfterEncodingChange);
@@ -1015,11 +1096,28 @@ watch(rawProgressPercent, (percent) => {
       <div class="min-h-0 flex-1 space-y-4 overflow-y-auto py-2 pr-1">
         <div class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
           <input ref="fileInput" type="file" accept=".csv,.tsv,.txt,.json,.xlsx,.xlsm,.xls" :multiple="targetMode === 'create'" class="hidden" @change="handleFileInputChange" />
-          <div class="flex h-10 min-w-0 items-center gap-2 rounded-md border bg-muted/20 px-3">
+          <div class="flex min-h-10 min-w-0 flex-wrap items-center gap-2 rounded-md border bg-muted/20 px-3 py-1.5">
             <span class="shrink-0 text-xs text-muted-foreground">{{ t("tableImport.target") }}</span>
-            <span class="min-w-0 truncate text-sm font-medium">
-              {{ targetLabel || t("editor.noDatabase") }}
-            </span>
+            <ToolConnectionSelect :model-value="targetConnectionId" kind="table-import" :disabled="running" @update:model-value="onTargetConnectionChange" />
+            <select :value="targetDatabase" class="h-6 max-w-[160px] rounded border bg-background px-1.5 text-xs outline-none focus:border-ring" :aria-label="t('editor.selectDatabase')" :disabled="running || !targetConnectionId" data-testid="import-target-database" @change="onTargetDatabaseChange">
+              <option value="" disabled>{{ t("editor.selectDatabase") }}</option>
+              <option v-for="name in targetDatabases" :key="name" :value="name">{{ name }}</option>
+              <option v-if="targetDatabase && !targetDatabases.includes(targetDatabase)" :value="targetDatabase">{{ targetDatabase }}</option>
+            </select>
+            <select
+              v-if="targetSchemaAware"
+              :value="targetSchema"
+              class="h-6 max-w-[140px] rounded border bg-background px-1.5 text-xs outline-none focus:border-ring"
+              :aria-label="t('statusBar.schema')"
+              :disabled="running || !targetDatabase"
+              data-testid="import-target-schema"
+              @change="onTargetSchemaChange"
+            >
+              <option value="">{{ t("statusBar.defaultSchema") }}</option>
+              <option v-for="name in targetSchemas" :key="name" :value="name">{{ name }}</option>
+              <option v-if="targetSchema && !targetSchemas.includes(targetSchema)" :value="targetSchema">{{ targetSchema }}</option>
+            </select>
+            <span v-if="targetTableName" class="min-w-0 truncate text-sm font-medium" :title="targetLabel">→ {{ targetTableName }}</span>
           </div>
           <Button variant="outline" class="h-10 px-3" :disabled="running || loadingPreview" @click="selectFile">
             <Loader2 v-if="loadingPreview" class="mr-1.5 h-3.5 w-3.5 animate-spin" />

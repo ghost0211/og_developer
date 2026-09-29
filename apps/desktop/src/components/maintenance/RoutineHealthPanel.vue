@@ -12,6 +12,9 @@ import type { ObjectSourceKind, QueryTab } from "@/types/database";
 import type { RoutineHealthFinding } from "@/lib/maintenance/routineHealthAnalysis";
 import { buildRoutineHealthReport, reportRowPriority, type RoutineHealthReportRow } from "@/lib/maintenance/routineHealthReport";
 import { routineHealthWarningText } from "@/lib/maintenance/routineHealthWarnings";
+import { databaseOptionsForConnection } from "@/composables/useDatabaseOptions";
+import { resolveDefaultDatabase } from "@/lib/database/defaultDatabase";
+import ToolConnectionSelect from "@/components/common/ToolConnectionSelect.vue";
 
 const props = defineProps<{ tab: QueryTab }>();
 const { t, te } = useI18n();
@@ -19,6 +22,7 @@ const connectionStore = useConnectionStore();
 const queryStore = useQueryStore();
 const schema = ref(props.tab.schema || "");
 const schemas = ref<string[]>([]);
+const databases = ref<string[]>([]);
 const rows = ref<RoutineHealthReportRow[]>([]);
 const snapshot = ref<RoutineHealthSnapshot | null>(null);
 const loading = ref(false);
@@ -35,7 +39,16 @@ let generation = 0;
 let operationGeneration = 0;
 let disposed = false;
 
-const connectionName = computed(() => connectionStore.getConfig(props.tab.connectionId)?.name || props.tab.connectionId);
+function onToolConnectionChange(connectionId: string) {
+  if (connectionId === props.tab.connectionId) return;
+  const config = connectionStore.getConfig(connectionId);
+  queryStore.updateConnection(props.tab.id, connectionId, resolveDefaultDatabase(config ?? {}, []));
+}
+
+function onToolDatabaseChange(event: Event) {
+  const database = (event.target as HTMLSelectElement).value;
+  if (database && database !== props.tab.database) queryStore.updateDatabase(props.tab.id, database);
+}
 const visibleRows = computed(() =>
   rows.value.filter((row) => {
     const priority = reportRowPriority(row);
@@ -109,8 +122,17 @@ async function initialize() {
   const request = generation;
   try {
     await connectionStore.ensureConnected(props.tab.connectionId);
-    const result = await api.listSchemas(props.tab.connectionId, props.tab.database);
-    if (!disposed && request === generation) schemas.value = result;
+    const config = connectionStore.getConfig(props.tab.connectionId);
+    const [schemaResult, databaseResult] = await Promise.allSettled([api.listSchemas(props.tab.connectionId, props.tab.database), api.listDatabases(props.tab.connectionId)]);
+    if (!disposed && request === generation) {
+      if (schemaResult.status === "fulfilled") schemas.value = schemaResult.value;
+      if (databaseResult.status === "fulfilled")
+        databases.value = databaseOptionsForConnection(
+          databaseResult.value.map((row) => row.name),
+          config,
+        ).filter(Boolean);
+    }
+    if (schemaResult.status === "rejected" && !disposed) optionError.value = String(schemaResult.reason);
   } catch (error) {
     if (!disposed) optionError.value = String(error);
   }
@@ -196,7 +218,11 @@ onBeforeUnmount(() => {
       <div class="flex flex-wrap items-center gap-2">
         <Stethoscope class="h-4 w-4 text-primary" />
         <h2 class="text-sm font-semibold">{{ t("invalidObjects.title") }}</h2>
-        <span class="text-xs text-muted-foreground">{{ connectionName }} / {{ tab.database }}</span>
+        <ToolConnectionSelect :model-value="tab.connectionId" kind="pg-stats" :disabled="loading || running" @update:model-value="onToolConnectionChange" />
+        <select :value="tab.database" class="h-6 max-w-[160px] rounded border bg-background px-1.5 text-xs outline-none focus:border-ring" :aria-label="t('editor.selectDatabase')" :disabled="loading || running" data-testid="routine-health-database" @change="onToolDatabaseChange">
+          <option v-for="name in databases" :key="name" :value="name">{{ name }}</option>
+          <option v-if="tab.database && !databases.includes(tab.database)" :value="tab.database">{{ tab.database }}</option>
+        </select>
         <div class="ml-auto flex items-center gap-2">
           <label class="text-xs flex items-center gap-1">
             {{ t("invalidObjects.schema") }}
