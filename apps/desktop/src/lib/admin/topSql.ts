@@ -278,3 +278,45 @@ export function buildDbePerfTopSqlQuery(orderBy: TopSqlOrderBy, limit: number): 
     `LIMIT ${safeLimit}`,
   ].join("\n");
 }
+
+// ---------- 服务端 SQL 文本长度上限（截断检测） ----------
+// 两种数据源都在服务端按字节上限截断语句文本，超出部分根本没有存储，任何
+// 客户端都无法取回：
+//  - dbe_perf.statement    → track_stmt_details_size（默认 4096，user 上下文，reload 生效）
+//  - pg_stat_statements    → track_activity_query_size（默认 1024，postmaster，需重启）
+
+/** GUC parameter that caps stored statement text for the given source. */
+export function topSqlTextCapParameter(source: "pg_stat_statements" | "dbe_perf"): string {
+  return source === "dbe_perf" ? "track_stmt_details_size" : "track_activity_query_size";
+}
+
+/** Read the current byte cap from pg_settings (world-readable). */
+export function buildTopSqlTextCapSql(source: "pg_stat_statements" | "dbe_perf"): string {
+  return `SELECT setting FROM pg_settings WHERE name = '${topSqlTextCapParameter(source)}'`;
+}
+
+/** Count statements whose stored text reached the byte cap (i.e. truncated). */
+export function buildTopSqlTruncatedCountSql(source: "pg_stat_statements" | "dbe_perf", bytes: number): string {
+  const table = source === "dbe_perf" ? "dbe_perf.statement" : "pg_stat_statements";
+  const safeBytes = Number.isFinite(bytes) ? Math.max(1, Math.floor(bytes)) : 0;
+  return `SELECT count(*) FROM ${table} WHERE octet_length(query) >= ${safeBytes}`;
+}
+
+/** Map a single-cell integer query result (cap setting / truncated count). */
+export function mapTopSqlSingleInteger(result: QueryResult | null | undefined): number {
+  const raw = result?.rows?.[0]?.[0];
+  if (raw === null || raw === undefined) return 0;
+  const parsed = typeof raw === "number" ? raw : Number(String(raw).trim());
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+/** Suggested fix SQL for a source at its current cap (target: 4x, at least 16 KiB). */
+export function buildTopSqlTextCapFixSql(source: "pg_stat_statements" | "dbe_perf", currentBytes: number): { alterSql: string; needsRestart: boolean } {
+  const parameter = topSqlTextCapParameter(source);
+  const target = Math.max(16384, currentBytes * 4);
+  return {
+    alterSql: `ALTER SYSTEM SET ${parameter} = ${target};`,
+    // track_activity_query_size is a postmaster parameter; track_stmt_details_size reloads.
+    needsRestart: source !== "dbe_perf",
+  };
+}

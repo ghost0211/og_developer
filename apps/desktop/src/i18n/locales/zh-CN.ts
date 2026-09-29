@@ -3183,6 +3183,10 @@ export const zhCNMessages = {
     dbePerfDeniedTitle: "dbe_perf.statement 视图存在，但当前用户没有查询权限",
     dbePerfDeniedHint: "访问该视图需要 MONADMIN 权限。请用 omm 等超级用户执行以下授权，然后点击刷新。（部分 openGauss 发行版未预置 monadmin 角色，此时请使用 ALTER USER ... MONADMIN 属性方式。）",
     dbePerfDeniedAltHint: "或按最小权限只授予该视图（二选一即可）：",
+    truncationHint: "有 {count} 条 SQL 文本因服务端参数 {parameter}（上限 {bytes} 字节）被截断——复制/打开只能获取服务端已存储的部分。",
+    truncationFixReloadHint: "可执行以下 SQL 并 reload 生效（仅对之后执行的语句生效）：",
+    truncationFixRestartHint: "可执行以下 SQL，重启数据库后生效（仅对之后执行的语句生效）：",
+    fixCopied: "已复制调整 SQL",
     unavailableOpenGaussNoPackage: "提示：精简发行版的 openGauss 未随附该扩展的控制文件（CREATE EXTENSION 会报 could not open extension control file），需安装完整版扩展包；或授予 MONADMIN 后自动改用内置 dbe_perf.statement 视图。",
   },
   serverDashboard: {

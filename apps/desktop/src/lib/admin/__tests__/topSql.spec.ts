@@ -6,6 +6,9 @@ import {
   buildTopSqlColumnsFallbackSql,
   buildTopSqlColumnsSql,
   buildTopSqlQuery,
+  buildTopSqlTextCapFixSql,
+  buildTopSqlTextCapSql,
+  buildTopSqlTruncatedCountSql,
   classifyDbePerfProbeError,
   formatTopSqlCount,
   formatTopSqlDuration,
@@ -13,8 +16,10 @@ import {
   mapTopSqlAvailability,
   mapTopSqlColumns,
   mapTopSqlRows,
+  mapTopSqlSingleInteger,
   normalizeTopSqlLimit,
   resolveTopSqlOrderColumn,
+  topSqlTextCapParameter,
 } from "@/lib/admin/topSql";
 
 function result(columns: string[], rows: QueryResult["rows"]): QueryResult {
@@ -209,5 +214,35 @@ describe("dbe_perf.statement fallback", () => {
     expect(classifyDbePerfProbeError("ERROR: permission denied for schema dbe_perf")).toBe("denied");
     expect(classifyDbePerfProbeError('relation "statement" does not exist')).toBe("missing");
     expect(classifyDbePerfProbeError("connection refused")).toBe("error");
+  });
+});
+
+describe("server-side statement text truncation detection", () => {
+  it("maps each source to its byte-cap GUC parameter", () => {
+    expect(topSqlTextCapParameter("dbe_perf")).toBe("track_stmt_details_size");
+    expect(topSqlTextCapParameter("pg_stat_statements")).toBe("track_activity_query_size");
+  });
+
+  it("builds cap and truncated-count queries per source", () => {
+    expect(buildTopSqlTextCapSql("dbe_perf")).toContain("pg_settings");
+    expect(buildTopSqlTextCapSql("dbe_perf")).toContain("track_stmt_details_size");
+    expect(buildTopSqlTruncatedCountSql("dbe_perf", 4096)).toBe("SELECT count(*) FROM dbe_perf.statement WHERE octet_length(query) >= 4096");
+    expect(buildTopSqlTruncatedCountSql("pg_stat_statements", 1024)).toBe("SELECT count(*) FROM pg_stat_statements WHERE octet_length(query) >= 1024");
+  });
+
+  it("maps single-integer results defensively", () => {
+    expect(mapTopSqlSingleInteger(result(["setting"], [["4096"]]))).toBe(4096);
+    expect(mapTopSqlSingleInteger(result(["count"], [[3]]))).toBe(3);
+    expect(mapTopSqlSingleInteger(result(["count"], [[null]]))).toBe(0);
+    expect(mapTopSqlSingleInteger(undefined)).toBe(0);
+  });
+
+  it("suggests a reload-able fix for dbe_perf and a restart fix for pg_stat_statements", () => {
+    const dbeFix = buildTopSqlTextCapFixSql("dbe_perf", 4096);
+    expect(dbeFix.alterSql).toBe("ALTER SYSTEM SET track_stmt_details_size = 16384;");
+    expect(dbeFix.needsRestart).toBe(false);
+    const pgFix = buildTopSqlTextCapFixSql("pg_stat_statements", 1024);
+    expect(pgFix.alterSql).toBe("ALTER SYSTEM SET track_activity_query_size = 16384;");
+    expect(pgFix.needsRestart).toBe(true);
   });
 });

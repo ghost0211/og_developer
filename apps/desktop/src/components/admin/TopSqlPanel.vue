@@ -18,6 +18,9 @@ import {
   buildTopSqlColumnsFallbackSql,
   buildTopSqlColumnsSql,
   buildTopSqlQuery,
+  buildTopSqlTextCapFixSql,
+  buildTopSqlTextCapSql,
+  buildTopSqlTruncatedCountSql,
   classifyDbePerfProbeError,
   DBE_PERF_STATEMENT_PROBE_SQL,
   formatTopSqlCount,
@@ -25,6 +28,8 @@ import {
   mapTopSqlAvailability,
   mapTopSqlColumns,
   mapTopSqlRows,
+  mapTopSqlSingleInteger,
+  topSqlTextCapParameter,
   type TopSqlOrderBy,
   type TopSqlRow,
   type TopSqlSource,
@@ -97,6 +102,45 @@ const dbePerfGrantAltSql = computed(() => {
   return `GRANT USAGE ON SCHEMA dbe_perf TO ${user};\nGRANT SELECT ON dbe_perf.statement TO ${user};`;
 });
 
+/** 服务端语句文本字节上限（0 = 未知/未检测）。 */
+const textCapBytes = ref(0);
+/** 达到上限（被截断）的语句条数。 */
+const truncatedCount = ref(0);
+const textCapFix = computed(() => {
+  const src = source.value;
+  if ((src !== "pg_stat_statements" && src !== "dbe_perf") || textCapBytes.value <= 0) return null;
+  return { parameter: topSqlTextCapParameter(src), ...buildTopSqlTextCapFixSql(src, textCapBytes.value) };
+});
+
+async function copyFixSql() {
+  if (!textCapFix.value) return;
+  await copyToClipboard(textCapFix.value.alterSql);
+  toast(t("topSql.fixCopied"), 2000);
+}
+
+/**
+ * Detect server-side statement-text truncation. 两种数据源都按字节上限截断
+ * 存储文本（dbe_perf→track_stmt_details_size，pg_stat_statements→
+ * track_activity_query_size），达到上限的语句复制/打开也只能拿到部分内容。
+ */
+async function detectTruncation(request: number) {
+  textCapBytes.value = 0;
+  truncatedCount.value = 0;
+  const src = source.value;
+  if (src !== "pg_stat_statements" && src !== "dbe_perf") return;
+  try {
+    const capResult = await api.executeQuery(props.connectionId, props.database, buildTopSqlTextCapSql(src), props.schema || undefined, undefined, { maxRows: 1 });
+    const bytes = mapTopSqlSingleInteger(capResult);
+    if (disposed || request !== generation || bytes <= 0) return;
+    const countResult = await api.executeQuery(props.connectionId, props.database, buildTopSqlTruncatedCountSql(src, bytes), props.schema || undefined, undefined, { maxRows: 1 });
+    if (disposed || request !== generation) return;
+    textCapBytes.value = bytes;
+    truncatedCount.value = mapTopSqlSingleInteger(countResult);
+  } catch {
+    // 检测失败不影响面板主流程。
+  }
+}
+
 let generation = 0;
 let disposed = false;
 
@@ -122,6 +166,7 @@ async function load() {
     if (disposed || request !== generation) return;
     rows.value = mapTopSqlRows(result);
     lastRefreshedAt.value = new Date().toLocaleTimeString();
+    void detectTruncation(request);
   } catch (error) {
     if (disposed || request !== generation) return;
     rows.value = [];
@@ -295,6 +340,19 @@ onBeforeUnmount(() => {
         <span v-if="lastRefreshedAt" class="text-[11px] text-muted-foreground whitespace-nowrap">{{ t("topSql.lastRefreshed", { time: lastRefreshedAt }) }}</span>
       </div>
     </header>
+
+    <!-- Server-side statement text truncation hint -->
+    <div v-if="truncatedCount > 0 && textCapFix" class="mx-3 mt-2 shrink-0 rounded border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs space-y-1" role="status" data-testid="top-sql-truncation-hint">
+      <p class="text-amber-700 dark:text-amber-400">{{ t("topSql.truncationHint", { count: truncatedCount, parameter: textCapFix.parameter, bytes: textCapBytes }) }}</p>
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="text-muted-foreground">{{ textCapFix.needsRestart ? t("topSql.truncationFixRestartHint") : t("topSql.truncationFixReloadHint") }}</span>
+        <code class="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">{{ textCapFix.alterSql }}</code>
+        <Button variant="ghost" size="sm" class="h-6 gap-1 px-1.5 text-[11px] text-muted-foreground hover:text-foreground" @click="copyFixSql">
+          <Copy class="h-3 w-3" />
+          <span>{{ t("topSql.copySqlShort") }}</span>
+        </Button>
+      </div>
+    </div>
 
     <!-- Unsupported connection type -->
     <div v-if="!supported" class="flex flex-1 items-center justify-center p-6">

@@ -3179,6 +3179,10 @@ export default {
     dbePerfDeniedTitle: "dbe_perf.statement exists but the current user cannot query it",
     dbePerfDeniedHint: "Querying this view requires MONADMIN. Run the following as a superuser such as omm, then refresh. (Some openGauss distributions omit the predefined monadmin role — use the ALTER USER ... MONADMIN attribute form instead.)",
     dbePerfDeniedAltHint: "Or grant the minimum privilege on this view only (either is fine):",
+    truncationHint: "{count} statement text(s) were truncated by the server (parameter {parameter}, cap {bytes} bytes) — copy/open can only retrieve what the server stored.",
+    truncationFixReloadHint: "Run the following SQL and reload to apply (affects statements executed afterwards):",
+    truncationFixRestartHint: "Run the following SQL, then restart the database to apply (affects statements executed afterwards):",
+    fixCopied: "Fix SQL copied",
     unavailableOpenGaussNoPackage: "Note: slim openGauss distributions do not ship the extension control file (CREATE EXTENSION fails with 'could not open extension control file'); install the full contrib package, or grant MONADMIN to use the built-in dbe_perf.statement view instead.",
   },
   serverDashboard: {

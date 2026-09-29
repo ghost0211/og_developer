@@ -972,3 +972,11 @@ schema 校验兜底（本地元数据冷时）。editor 相关 189 例 + 补全 
 **0.2.27（弹窗版，已被 0.2.28 取代）**：进程列表、例程健康、Top SQL、命令窗口、数据导入菜单原本取当前/首个连接，可能对错库操作。新增 ToolTargetPickerDialog 弹窗先选连接/数据库，按工具能力过滤连接；SQL 文件执行对话框菜单无预填时不再默认首个连接。71 例定向测试通过。
 
 **0.2.28（内联版，当前行为）**：用户反馈弹窗繁琐。移除弹窗，菜单恢复直达（默认取当前标签连接→活动连接→首个支持该工具的连接），目标切换内嵌到各面板标题栏：新增 `toolTargets.ts`（按工具能力过滤连接：processlist 驱动/pg-stats/tableImport/queryExecution）与 `ToolConnectionSelect.vue` 紧凑下拉。进程列表、Top SQL 标题旁的静态连接 Badge 换成选择器（queryStore.updateConnection 重定向标签页，各面板原有 watcher 自动重载）；例程健康面板加连接+数据库选择器（schema/数据库列表随切换重载）；命令窗口本就有选择器，菜单/快捷键恢复直达；数据导入对话框目标栏改为连接/数据库/schema 可选（导入调用、元数据失效、批量导入全部改用可变目标 refs；偏离预填表时“导入到现有表”模式自动回退为新建表）。SQL 文件执行器保持对话框内选择器不变。验证：相关 154 例测试、typecheck、build、oxlint 通过。未操控用户桌面 UI。
+
+**CI 修复（同日）**：frontend job 报 RoutineHealthPanel.spec 未处理 TypeError——新内嵌 ToolConnectionSelect 的 computed 用了该 spec 未 mock 的 `connectionStore.connections`。修复：组件加 `?? []` 防御；spec 补齐 connections/listDatabases/updateConnection/updateDatabase mock。CI run 129 全绿。另核实本地全量套件中 5 个无关文件失败（startupInputGuard 等）在 v0.2.27 worktree 同样失败，属本地环境既有问题，非本次引入。
+
+## 26. Top SQL 服务端文本截断提示（2026-09-29，0.2.29）
+
+用户报告 Top SQL 的长 SQL 复制/打开都不完整。**排查结论：非工具 bug**——面板查询/复制/打开均全量使用 `row.query`（topSql.ts 无截断），截断发生在服务端：openGauss `dbe_perf.statement` 按 `track_stmt_details_size`（默认 4096 字节，user 上下文）截断存储；`pg_stat_statements` 按 `track_activity_query_size`（默认 1024，postmaster，需重启）。超出部分服务端未存储，任何客户端无法取回（测试库实测两参数值/上下文已确认）。
+
+**改进**：面板加载成功后自动检测——读 pg_settings 取上限，再 `octet_length(query) >= 上限` 统计被截断条数；非零时显示琥珀色提示条：说明截断原因+给出调整 SQL（dbe_perf：ALTER SYSTEM SET track_stmt_details_size = 上限×4（≥16384），reload 生效；pg_stat_statements：ALTER SYSTEM SET track_activity_query_size，需重启），附一键复制。检测失败静默不影响主流程。新增 4 例纯函数测试。
