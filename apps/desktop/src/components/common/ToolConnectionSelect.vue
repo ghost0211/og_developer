@@ -17,7 +17,9 @@ const emit = defineEmits<{
 const { t } = useI18n();
 const connectionStore = useConnectionStore();
 
-const options = computed(() => toolConnections(connectionStore.connections, props.kind));
+// `?? []` keeps panel unit tests (partial connectionStore mocks) and any
+// transitional store state from crashing the computed.
+const options = computed(() => toolConnections(connectionStore.connections ?? [], props.kind));
 
 function titleFor(connectionId: string): string {
   const connection = options.value.find((candidate) => candidate.id === connectionId);

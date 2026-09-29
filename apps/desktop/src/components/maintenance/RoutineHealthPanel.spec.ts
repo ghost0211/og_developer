@@ -8,16 +8,20 @@ import type { RoutineHealthSnapshot } from "@/lib/backend/routineHealthTypes";
 const state = vi.hoisted(() => ({
   api: {
     listSchemas: vi.fn(),
+    listDatabases: vi.fn().mockResolvedValue([]),
     listRoutineHealthSnapshot: vi.fn(),
     recompileObject: vi.fn(),
   },
   connectionStore: {
+    connections: [] as Array<Record<string, unknown>>,
     getConfig: vi.fn(),
     ensureConnected: vi.fn(),
   },
   queryStore: {
     openProgramWindow: vi.fn(),
     createTab: vi.fn(),
+    updateConnection: vi.fn(),
+    updateDatabase: vi.fn(),
   },
 }));
 
