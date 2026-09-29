@@ -3140,6 +3140,28 @@ export const zhCNMessages = {
     lockWaiting: "等待中",
     previewTruncationHint: "💡 说明：在 openGauss / PostgreSQL 中，活动会话的 SQL 记录长度受服务端参数 track_activity_query_size 控制。若语句较长被服务端截断，管理员可通过 ALTER SYSTEM SET track_activity_query_size = 4096;（重启生效）增大记录长度。",
   },
+  toolTargetPicker: {
+    title: {
+      processlist: "选择进程列表连接",
+      routineHealth: "选择例程健康分析目标",
+      topSql: "选择 Top SQL 目标",
+      commandWindow: "选择命令窗口目标",
+      tableImport: "选择数据导入目标",
+    },
+    description: {
+      processlist: "选择要监控的数据库连接（进程列表为实例级）。",
+      routineHealth: "明确选择要分析的连接和数据库。",
+      topSql: "明确选择统计信息的连接和数据库。",
+      commandWindow: "明确选择命令窗口的连接和数据库。",
+      tableImport: "导入会写入所选数据库，请确认目标连接和数据库。",
+    },
+    noConnections: "没有支持此工具的连接，请先配置连接。",
+    connectionUnavailable: "连接已不可用，请重新选择。",
+    loadFailed: "读取目标失败：{message}",
+    loadingDatabases: "正在读取数据库...",
+    connecting: "正在连接...",
+    noDatabases: "该连接没有可选的数据库。",
+  },
   topSql: {
     title: "Top SQL",
     orderBy: "排序",

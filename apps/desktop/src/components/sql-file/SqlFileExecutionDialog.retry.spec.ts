@@ -115,7 +115,9 @@ function findButton(label: string): HTMLButtonElement {
 async function mountReadyDialog() {
   root = document.createElement("div");
   document.body.append(root);
-  app = createApp(SqlFileExecutionDialog, { open: true });
+  // These retry tests exercise a context-specific entry with an explicit
+  // prefill. The Tools-menu entry intentionally starts with no connection.
+  app = createApp(SqlFileExecutionDialog, { open: true, prefillConnectionId: "mysql-1" });
   app.mount(root);
 
   await vi.waitFor(() => expect(mocks.fetchSqlFileTargetOptions).toHaveBeenCalled());
@@ -178,6 +180,17 @@ afterEach(() => {
 });
 
 describe("SqlFileExecutionDialog retries", () => {
+  it("requires an explicit connection when opened from the Tools menu", async () => {
+    root = document.createElement("div");
+    document.body.append(root);
+    app = createApp(SqlFileExecutionDialog, { open: true });
+    app.mount(root);
+    await nextTick();
+    expect(mocks.fetchSqlFileTargetOptions).not.toHaveBeenCalled();
+    expect(mocks.ensureConnected).not.toHaveBeenCalled();
+    expect(findButton("sqlFile.execute").disabled).toBe(true);
+  });
+
   it("does not restore a completed run's file summary after an early retry failure", async () => {
     await mountReadyDialog();
     await completeFirstExecution();

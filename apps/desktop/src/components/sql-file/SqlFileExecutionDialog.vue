@@ -186,10 +186,13 @@ function statusLabel(status: SqlFileStatus | "idle") {
 }
 
 function resolveInitialConnectionId() {
+  // Only a context-specific invocation may preselect a target. From the Tools
+  // menu this dialog executes arbitrary SQL, so never silently use the first
+  // configured connection: the user must explicitly choose one.
   if (props.prefillConnectionId && sqlConnections.value.some((c) => c.id === props.prefillConnectionId)) {
     return props.prefillConnectionId;
   }
-  return sqlConnections.value[0]?.id ?? "";
+  return "";
 }
 
 function chooseDatabase(names: string[], id: string) {

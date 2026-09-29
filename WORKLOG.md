@@ -966,3 +966,7 @@ schema 校验兜底（本地元数据冷时）。editor 相关 189 例 + 补全 
 **web 端保存/测试连接报错根因修复（0.2.25）**：用户 Ubuntu 源码部署仍报错（内容变为空响应兜底）。深挖发现 ogdeveloper-web **完全没有注册 /api/agents/* 路由组**，而连接对话框在测试/保存前必经 `ensureRequiredAgentDriverInstalled → refreshLocalAgentDrivers`（GET /api/agents/installed-local）。桌面端这些 Tauri 命令是返回空数据的兼容 stub（driver store 已移除），web 端缺路由导致 405 空体。新增 `crates/ogdeveloper-web/src/routes/agents.rs` 完整镜像 19 个端点（runtime summary/stop/restart 委托 core 真实实现，其余按桌面 stub 语义返回空；progress/global SSE 返回保持连接的空流避免 EventSource 重连风暴），main.rs 注册。curl 实测三个端点恢复 200 JSON。另：`backendResponseError` 对空错误体补 `DBX-WEB-0002` 结构化诊断（状态码+URL+401/405 排查指引）；新增 `webRouteCoverage.spec.ts` 静态对齐 http.ts 全部 /api 路径与 main.rs 路由（防再犯，当前 0 缺口）。
 
 **Top SQL 授权引导修复（0.2.26）**：用户实测 GRANT MONADMIN 报 role does not exist——该 openGauss 6.0.0 发行版未预置 monadmin 角色（pg_roles 仅有 omm/sysadmin/tygl_biz）。服务器探查：dbe_perf schema 无公共 ACL，omm 靠 rolmonitoradmin=True 属性通过，tygl_biz 虽有 SYSADMIN 但rolmonitoradmin=False 被拒。面板在无权限引导前探测 pg_roles 中 monadmin 角色是否存在：存在→GRANT MONADMIN；不存在→`ALTER USER <user> MONADMIN;`（属性方式）。同时新增最小权限备选块（GRANT USAGE ON SCHEMA dbe_perf + GRANT SELECT ON dbe_perf.statement）。
+
+## 25. 工具菜单多连接显式选目标（2026-09-29）
+
+进程列表、例程健康、Top SQL、命令窗口、数据导入菜单原本取当前/首个连接，可能对错库操作。新增 `ToolTargetPickerDialog.vue`，菜单点击先选连接，适用工具还需选数据库；按工具能力过滤连接，切换连接异步加载数据库且隔离旧请求、展示加载错误。进程列表只选实例连接；SQL 文件执行对话框已有选择器，菜单无预填时不再默认首个连接，编辑器预填仍有效；命令窗口快捷键也改为选择目标。明确选择的连接/数据库传至各面板，数据导入不再回退活动库；库连接同名时列表显示用户名及端点。验证：相关布局/SQL 文件/Top SQL 共 71 例定向测试通过，`pnpm typecheck`、`pnpm build`、`git diff --check` 通过。未操控用户桌面 UI。
