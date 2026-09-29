@@ -43,6 +43,11 @@ describe("routine health dependency analysis", () => {
     const results = findings("BEGIN\n SELECT * FROM app.absent;\n SELECT * FROM absent2; END;");
     expect(results).toEqual(expect.arrayContaining([expect.objectContaining({ code: "missing_relation", objectName: "app.absent", line: 2 }), expect.objectContaining({ code: "missing_relation", objectName: "absent2", line: 3 })]));
   });
+  it("names the table behind an alias in missing-column messages", () => {
+    const found = errors("BEGIN SELECT fp.absent FROM app.users fp; END;");
+    expect(found).toEqual(expect.arrayContaining([expect.objectContaining({ code: "missing_column", objectName: "fp.absent" })]));
+    expect(found[0]!.message).toContain("fp 是 app.users 的别名");
+  });
   it("checks alias columns inside nested control flow", () => {
     expect(errors("BEGIN IF p_id > 0 THEN BEGIN SELECT u.absent INTO v FROM app.users u; END; END IF; END;")).toEqual(expect.arrayContaining([expect.objectContaining({ code: "missing_column", objectName: "u.absent" })]));
   });

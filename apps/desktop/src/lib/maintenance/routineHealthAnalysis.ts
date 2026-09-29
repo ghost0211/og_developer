@@ -305,7 +305,12 @@ function analyzeRoutine(snapshot: RoutineHealthSnapshot, routine: RoutineHealthR
       if (qualifier) {
         // The first visible alias is the innermost one (correlated queries may shadow it).
         const names = columns(matches[0]!);
-        if (names && !names.includes(column)) add("missing_column", "error", `未找到字段 ${qualifier}.${column}。`, t, "column", `${qualifier}.${column}`);
+        if (names && !names.includes(column)) {
+          // 指明别名指向的表，避免把「别名.字段」误读成无法解析的引用。
+          const targetName = [...matches[0]!.qualifierParts, matches[0]!.name].join(".");
+          const detail = qualifier !== targetName ? `未找到字段 ${qualifier}.${column}（${qualifier} 是 ${targetName} 的别名）。` : `未找到字段 ${qualifier}.${column}。`;
+          add("missing_column", "error", detail, t, "column", `${qualifier}.${column}`);
+        }
       } else if (matches.length === 1) {
         const names = columns(matches[0]!);
         if (names && !names.includes(column)) add("missing_column", "error", `未找到字段 ${column}（${matches[0]!.name}）。`, t, "column", column);

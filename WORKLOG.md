@@ -980,3 +980,9 @@ schema 校验兜底（本地元数据冷时）。editor 相关 189 例 + 补全 
 用户报告 Top SQL 的长 SQL 复制/打开都不完整。**排查结论：非工具 bug**——面板查询/复制/打开均全量使用 `row.query`（topSql.ts 无截断），截断发生在服务端：openGauss `dbe_perf.statement` 按 `track_stmt_details_size`（默认 4096 字节，user 上下文）截断存储；`pg_stat_statements` 按 `track_activity_query_size`（默认 1024，postmaster，需重启）。超出部分服务端未存储，任何客户端无法取回（测试库实测两参数值/上下文已确认）。
 
 **改进**：面板加载成功后自动检测——读 pg_settings 取上限，再 `octet_length(query) >= 上限` 统计被截断条数；非零时显示琥珀色提示条：说明截断原因+给出调整 SQL（dbe_perf：ALTER SYSTEM SET track_stmt_details_size = 上限×4（≥16384），reload 生效；pg_stat_statements：ALTER SYSTEM SET track_activity_query_size，需重启），附一键复制。检测失败静默不影响主流程。新增 4 例纯函数测试。
+
+## 27. 例程健康分析“别名误报”核查与文案改进（2026-09-29，0.2.30）
+
+用户认为 `app.list_field_policy` 的 6 条 missing_column 是误报（“fp/rfp 只是别名”）。**核查结论：分析器正确，函数确有运行时错误**。探针验证语义模型能正确解析 JOIN 别名（ur/rfp/fp 均成行源），且 `sqlSemanticTableNameSpans` 覆盖 JOIN 表名；测试库实证：`app.app_fieldperm` 17 列中无 field_action_dict/mask_pattern_txt/fieldperm_code/sort_order，`app.app_role_fieldperm` 的主键是 role_fieldperm_id 而非 fieldperm_id；直接调用 `SELECT * FROM app.list_field_policy(0,0,'x')` 服务器报 `column rfp.fieldperm_id does not exist`（SQL function during startup）——与分析器第 23 行发现完全一致。该函数引用的是旧版表结构字段，从未成功运行。
+
+**改进（消息文案）**：missing_column 消息原本只说“未找到字段 fp.x”，未说明别名指向，导致用户误读。改为“未找到字段 fp.x（fp 是 app.app_fieldperm 的别名）。”。新增 1 例断言别名指向的测试。
