@@ -2038,6 +2038,7 @@ export const zhCNMessages = {
       legacyFailure: "数据库 Agent 返回了未分类错误。",
     },
     legacy: "后端返回了错误。",
+    htmlResponse: "请求未到达后端 API（HTTP {status}）：服务器返回了前端 HTML 页面。通常是 Web 后端版本与前端不一致（缺少该接口），或反向代理未正确转发 /api 前缀。请求地址：{url}",
     unknown: "发生了未预期的后端错误。",
   },
   common: {

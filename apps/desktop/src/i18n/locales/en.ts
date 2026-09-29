@@ -2033,6 +2033,7 @@ export default {
       legacyFailure: "Database agent returned an unclassified error.",
     },
     legacy: "Backend returned an error.",
+    htmlResponse: "The request did not reach the backend API (HTTP {status}): the server returned the frontend HTML page. This usually means the web backend version does not match the frontend (missing API route) or the reverse proxy does not forward the /api prefix. Request URL: {url}",
     unknown: "An unexpected backend error occurred.",
   },
   common: {

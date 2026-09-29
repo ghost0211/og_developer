@@ -9,18 +9,36 @@ interface ClipboardNavigator {
   clipboard?: ClipboardApi;
 }
 
+interface ClipboardElementStyle {
+  position?: string;
+  top?: string;
+  left?: string;
+  opacity?: string;
+}
+
 interface ClipboardTextarea {
   value: string;
-  style: {
-    position?: string;
-    top?: string;
-    left?: string;
-    opacity?: string;
-  };
+  style: ClipboardElementStyle;
   setAttribute(name: string, value: string): void;
   focus?(): void;
   select(): void;
   setSelectionRange?(start: number, end: number): void;
+}
+
+/** Non-input element used by the focus-free selection copy path. */
+interface ClipboardPreElement {
+  textContent: string;
+  style: ClipboardElementStyle;
+  setAttribute(name: string, value: string): void;
+}
+
+interface ClipboardRange {
+  selectNodeContents(node: unknown): void;
+}
+
+interface ClipboardSelection {
+  removeAllRanges(): void;
+  addRange(range: ClipboardRange): void;
 }
 
 interface ClipboardDocument {
@@ -29,12 +47,16 @@ interface ClipboardDocument {
     removeChild(node: unknown): unknown;
   };
   createElement(tagName: "textarea"): ClipboardTextarea;
+  createElement(tagName: "pre"): ClipboardPreElement;
+  createRange?(): ClipboardRange;
   execCommand?(command: string): boolean;
 }
 
 export interface ClipboardEnvironment {
   navigator?: ClipboardNavigator;
   document?: ClipboardDocument;
+  /** Defaults to globalThis.getSelection; injectable for tests. */
+  getSelection?: () => ClipboardSelection | null;
 }
 
 export interface ClipboardShortcutEvent {
@@ -151,6 +173,37 @@ export async function copyToClipboard(text: string, env: ClipboardEnvironment = 
   const document = env.document;
   if (!document?.body || !document.execCommand) {
     throw new Error("Clipboard API is not available");
+  }
+
+  // 模态对话框（reka Dialog）的 focus trap 会把焦点从 textarea 立刻抢回对话框，
+  // 导致传统的 focus()+select() 路径 execCommand("copy") 静默复制不到内容
+  // （非安全上下文的 web 端只有 legacy 路径可走）。优先改用不触碰焦点的
+  // Range 选区复制。<pre> 保证换行在复制结果中原样保留。
+  const selection = env.getSelection?.() ?? globalThis.getSelection?.();
+  if (document.createRange && selection) {
+    const container = document.createElement("pre");
+    container.textContent = text;
+    container.setAttribute("aria-hidden", "true");
+    container.style.position = "fixed";
+    container.style.top = "0";
+    container.style.left = "-9999px";
+    container.style.opacity = "0";
+
+    document.body.appendChild(container);
+    try {
+      const range = document.createRange();
+      range.selectNodeContents(container);
+      selection.removeAllRanges();
+      selection.addRange(range);
+      if (!document.execCommand("copy")) {
+        throw new Error("Clipboard copy failed");
+      }
+      recordClipboardWrite();
+    } finally {
+      selection.removeAllRanges();
+      document.body.removeChild(container);
+    }
+    return;
   }
 
   const textarea = document.createElement("textarea");

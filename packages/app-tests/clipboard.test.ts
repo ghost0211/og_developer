@@ -1,5 +1,5 @@
 import { strict as assert } from "node:assert";
-import { test, vi } from "vitest";
+import { expect, test, vi } from "vitest";
 import { copyToClipboard, eventTargetAllowsAppClipboardShortcut, eventTargetAllowsNativeClipboard, eventTargetUsesNativeClipboard, hasNativeClipboardSelection, isPlainClipboardShortcut, readTextFromClipboard, shouldBlockAppNativeSelectAll, type ClipboardEnvironment } from "../../apps/desktop/src/lib/common/clipboard.ts";
 
 const tauriClipboardMock = vi.hoisted(() => ({
@@ -7,6 +7,73 @@ const tauriClipboardMock = vi.hoisted(() => ({
 }));
 
 vi.mock("@tauri-apps/plugin-clipboard-manager", () => tauriClipboardMock);
+
+test("copyToClipboard legacy path prefers selection-based copy without stealing focus", async () => {
+  // 模态对话框的 focus trap 会抢回焦点，textarea.focus()+select() 路径会静默失败；
+  // Range 选区复制不触碰焦点，是对话框里唯一可靠的方式。
+  const appended: unknown[] = [];
+  const removed: unknown[] = [];
+  const commands: string[] = [];
+  const selectedNodes: unknown[] = [];
+  let addRangeCalls = 0;
+  let clearSelectionCalls = 0;
+
+  const pre = {
+    textContent: "",
+    style: {} as Record<string, string>,
+    setAttribute: vi.fn(),
+    // 故意不提供 focus/select：走 Range 路径时不应调用它们。
+  };
+
+  const env = {
+    navigator: {},
+    getSelection: () => ({
+      removeAllRanges() {
+        clearSelectionCalls += 1;
+      },
+      addRange(range: { selectNodeContents(node: unknown): void }) {
+        addRangeCalls += 1;
+      },
+    }),
+    document: {
+      body: {
+        appendChild(node: unknown) {
+          appended.push(node);
+        },
+        removeChild(node: unknown) {
+          removed.push(node);
+        },
+      },
+      createElement(tagName: string) {
+        assert.equal(tagName, "pre");
+        return pre;
+      },
+      createRange() {
+        return {
+          selectNodeContents(node: unknown) {
+            selectedNodes.push(node);
+          },
+        };
+      },
+      execCommand(command: string) {
+        commands.push(command);
+        return true;
+      },
+    },
+  };
+
+  await copyToClipboard("line1\nline2", env as unknown as ClipboardEnvironment);
+
+  expect(pre.textContent).toBe("line1\nline2");
+  expect(selectedNodes.length).toBe(1);
+  expect(selectedNodes[0]).toBe(pre);
+  expect(addRangeCalls).toBe(1);
+  expect(commands).toEqual(["copy"]);
+  expect(appended[0]).toBe(pre);
+  expect(removed[0]).toBe(pre);
+  // 选择结束后清理选区（一次 addRange 前 + 一次 finally 后）。
+  expect(clearSelectionCalls).toBe(2);
+});
 
 test("copyToClipboard falls back when navigator clipboard is unavailable", async () => {
   const appended: unknown[] = [];

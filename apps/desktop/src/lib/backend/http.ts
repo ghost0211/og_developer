@@ -175,13 +175,37 @@ async function put<T>(url: string, body: unknown): Promise<T> {
   return res.json();
 }
 
+/**
+ * True when an API response body is an HTML document instead of JSON/text from
+ * the backend — i.e. the request hit the static-file server or a reverse proxy
+ * error page rather than an API route (version skew, missing /api forwarding).
+ */
+export function looksLikeHtmlErrorBody(text: string): boolean {
+  const head = text.slice(0, 256).trimStart().toLowerCase();
+  return head.startsWith("<!doctype html") || head.startsWith("<html");
+}
+
 export async function backendResponseError(response: Response): Promise<BackendErrorException> {
   const text = await response.text();
   let payload: unknown = text;
-  try {
-    payload = JSON.parse(text);
-  } catch {
-    // Preserve legacy plain-text responses at the same compatibility boundary.
+  if (looksLikeHtmlErrorBody(text)) {
+    // Never surface a whole HTML page as the error detail; convert it into a
+    // structured, translatable diagnostic pointing at the deployment issue.
+    payload = {
+      version: 1,
+      code: "DBX-WEB-0001",
+      messageKey: "backendErrors.htmlResponse",
+      messageParams: { status: response.status, url: response.url },
+      source: "webHttp",
+      operationOutcome: "unknown",
+      origin: { subsystem: "frontend", adapter: "http" },
+    } satisfies BackendError;
+  } else {
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      // Preserve legacy plain-text responses at the same compatibility boundary.
+    }
   }
   return new BackendErrorException(payload);
 }

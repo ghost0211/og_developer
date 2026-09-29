@@ -83,3 +83,6 @@ outputs/opengauss-docs/
 
 # AI session handoff notes (per-session scratch, not repository content)
 handoff.md
+
+# 本地 ogdeveloper-web 运行时数据目录（调试时生成）
+.og-developer-web/

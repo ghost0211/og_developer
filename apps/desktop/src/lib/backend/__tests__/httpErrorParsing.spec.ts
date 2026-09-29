@@ -35,6 +35,20 @@ describe("HTTP backend error parsing", () => {
     expect(error.message).toBe("Backend request failed");
   });
 
+  // 回归：web 端版本不匹配/反代未转发 /api 时，API 请求会收到 index.html，
+  // 不能把整个 HTML 页面当作错误详情展示，要转成可诊断的结构化错误。
+  test.each([
+    ["doctype", '<!doctype html>\n<html lang="zh-CN"><head><title>OG Developer</title></head></html>'],
+    ["html tag with leading whitespace", "\n  <html><head></head><body></body></html>"],
+  ])("converts an HTML %s body into a structured diagnostic instead of raw markup", async (_name, body) => {
+    const error = await backendResponseError(new Response(body, { status: 404 }));
+    expect(error.backendError.code).toBe("DBX-WEB-0001");
+    expect(error.backendError.messageKey).toBe("backendErrors.htmlResponse");
+    expect(error.backendError.messageParams.status).toBe(404);
+    expect(error.backendError.detail).toBeUndefined();
+    expect(error.message).not.toContain("<html");
+  });
+
   test("keeps a safe SQL diagnostic in a JSON envelope unchanged", async () => {
     const error = await backendResponseError(new Response(JSON.stringify(envelope), { status: 400 }));
     expect(error.backendError.detail).toBe("Incorrect syntax near SELECT");
