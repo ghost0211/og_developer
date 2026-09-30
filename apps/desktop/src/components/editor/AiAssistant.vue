@@ -2686,7 +2686,7 @@ async function openExternalUrl(url: string) {
                 <PopoverTrigger as-child>
                   <button
                     type="button"
-                    class="flex max-w-[180px] min-w-0 shrink-0 items-center gap-1.5 rounded-[6px] border px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
+                    class="flex max-w-[150px] min-w-0 shrink items-center gap-1.5 rounded-[6px] border px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
                     :title="t('ai.effort')"
                     :aria-label="`${t('ai.effort')}: ${effortSelectionLabel(settings.activeEffort)}`"
                   >

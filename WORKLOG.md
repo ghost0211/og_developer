@@ -1034,3 +1034,31 @@ i18n 复用既有 `searchModels`/`loadingModels`/`refreshModels`/`retry` 等键�
 
 **验证**：新增 6 项纯函数测试；设置相关 95 项既有测试回归通过；oxfmt/oxlint/typecheck/build 通过。
 未启动桌面 UI，交互以代码审查为准。
+
+---
+
+## 30. v0.2.33：Codex/Kimi 思考档位修复与聊天布局修正（2026-09-30）
+
+**问题**（用户实测反馈）：
+1. Kimi Code 订阅（k3-256k）聊天窗口无思考档位可选，只有自由文本；设置里配的「最高」实际从未发送。
+2. Codex 订阅聊天窗口提示「此模型不支持设置推理强度」。
+3. 聊天输入区模型按钮被压缩到只剩图标，看起来像图标偏右。
+
+**根因与修复**：
+- **Kimi 能力缺失**：Kimi 此前一律回退 FreeText（谨慎策略），`reasoning_effort` 枚举档被
+  `is_selection_supported` 拦截静默丢弃。依据官方文档（Kimi Code models 页 + platform.kimi.ai
+  reasoning-effort 指南）新增 `kimi_capability`：`k3`/`k3-256k`/`kimi-k3`/`kimi-for-coding` →
+  枚举 low/high/max（默认 Provider 默认，各变体上游默认不同）；`kimi-for-coding-highspeed`
+  思考固定开启 → 不支持调节；未知 Kimi 模型保持 FreeText。兼容网关路由同样给出谨慎建议选项。
+  修复后设置里的「最高」会真正以 `reasoning_effort: max` 发送。
+- **Codex 能力解析脆弱**：`resolve_model_effort_core` 只有在模型列表中找到该模型才给能力，
+  否则直接 Unsupported。发现失败/列表缺失/手输模型时一律回退静态 GPT 注册表（gpt-6.1-sol
+  已知 low/medium/high/xhigh/max）。
+- **Codex 模型目录对齐 codex-rs**（依据 codex-rs `openai_models.rs`/`manager.rs` 源码核实）：
+  只展示 `visibility=="list"` 的模型（缺省视为可见）、按 `priority` 升序稳定排序、
+  采用目录声明的 `default_reasoning_level` 作为档位默认值。账号目录中可见模型数量由上游决定。
+- **布局**：思考等级按钮由 `shrink-0` 改为可收缩（max-w 150px），与模型按钮按比例的摊压缩，
+  模型名不再被完全挤没。
+
+**验证**：核心测试 effort 28 项（+2 Kimi）、codex 7 项（+2）通过；前端 composer/sendGuard 10 项、
+typecheck、oxfmt/oxlint、cargo fmt、CI 同款 clippy 全部通过。未启动桌面 UI。

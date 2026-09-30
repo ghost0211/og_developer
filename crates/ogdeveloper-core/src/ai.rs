@@ -1500,9 +1500,15 @@ fn parse_codex_model_list(data: &serde_json::Value) -> Result<Vec<AiModelInfo>, 
         .or_else(|| data.as_array())
         .ok_or_else(|| "Codex model discovery returned an invalid catalog".to_string())?;
     let mut seen = HashSet::new();
-    Ok(items
+    let mut models: Vec<(i64, AiModelInfo)> = items
         .iter()
         .filter_map(|item| {
+            // The Codex picker only lists visibility=="list" models (codex-rs
+            // `show_in_picker`); entries without the field stay visible for robustness.
+            let visible = item["visibility"].as_str().map(|value| value.eq_ignore_ascii_case("list")).unwrap_or(true);
+            if !visible {
+                return None;
+            }
             let id = item["slug"].as_str().or_else(|| item["id"].as_str()).or_else(|| item["model"].as_str())?.trim();
             if id.is_empty() || !seen.insert(id.to_string()) {
                 return None;
@@ -1525,9 +1531,26 @@ fn parse_codex_model_list(data: &serde_json::Value) -> Result<Vec<AiModelInfo>, 
                 effort_values.iter().filter_map(|level| level.parse::<AiEffortLevel>().ok()).collect();
             model.effort_capability =
                 crate::ai_effort::dynamic_enum_capability(effort_values, AiCapabilitySource::ProviderApi);
-            Some(model)
+            // The catalog advertises a default reasoning level per model; honor it when it
+            // is one of the advertised options (codex-rs `default_reasoning_level`).
+            if let (Some(AiEffortCapability::Enum { options, default, .. }), Some(default_level)) = (
+                model.effort_capability.as_mut(),
+                item["default_reasoning_level"].as_str().map(str::trim).filter(|level| !level.is_empty()),
+            ) {
+                if let Some(selection) = options.iter().find_map(|option| match &option.selection {
+                    AiEffortSelection::Enum(value) if value == default_level => Some(option.selection.clone()),
+                    _ => None,
+                }) {
+                    *default = selection;
+                }
+            }
+            let priority = item["priority"].as_i64().unwrap_or(i64::MAX);
+            Some((priority, model))
         })
-        .collect())
+        .collect();
+    // Stable sort keeps the catalog order for ties; codex-rs sorts ascending by priority.
+    models.sort_by_key(|(priority, _)| *priority);
+    Ok(models.into_iter().map(|(_, model)| model).collect())
 }
 
 async fn list_codex_models(config: &AiConfig) -> Result<Vec<AiModelInfo>, String> {
@@ -1616,12 +1639,24 @@ pub async fn resolve_model_effort_core(config: &AiConfig, model_id: &str) -> Res
         return crate::ai_pi_agent_cli::resolve_pi_agent_model_effort(config, model_id).await;
     }
 
-    if matches!(config.provider, AiProvider::OpenaiCodex | AiProvider::CodexCli | AiProvider::ClaudeCodeCli) {
+    if matches!(config.provider, AiProvider::CodexCli | AiProvider::ClaudeCodeCli) {
         let models = list_models_core(config).await?;
         return Ok(models
             .into_iter()
             .find(|model| model.id == model_id)
             .and_then(|model| model.effort_capability)
+            .unwrap_or(AiEffortCapability::Unsupported));
+    }
+
+    if matches!(config.provider, AiProvider::OpenaiCodex) {
+        // Discovery can lag, fail, or omit manually entered/saved slugs; the static GPT
+        // registry still knows their levels, so degrade to it instead of "unsupported".
+        let models = list_models_core(config).await.unwrap_or_default();
+        return Ok(models
+            .into_iter()
+            .find(|model| model.id == model_id)
+            .and_then(|model| model.effort_capability)
+            .or_else(|| crate::ai_effort::static_effort_capability(config, model_id))
             .unwrap_or(AiEffortCapability::Unsupported));
     }
 
@@ -7234,6 +7269,21 @@ mod tests {
         assert_eq!(requests, 1, "max_retries=0 should mean exactly 1 request, got {requests}");
     }
 
+    #[tokio::test]
+    async fn codex_effort_resolution_falls_back_to_static_registry_when_discovery_misses() {
+        // An unusable account reference makes discovery fail; the static GPT registry must
+        // still provide levels for known Codex slugs instead of reporting "unsupported".
+        let mut config = test_config(AiProvider::OpenaiCodex);
+        config.model = "gpt-6.1-sol".to_string();
+        config.oauth_account_id = Some("not-a-uuid".to_string());
+
+        let capability = resolve_model_effort_core(&config, "gpt-6.1-sol").await.unwrap();
+        let AiEffortCapability::Enum { options, .. } = capability else {
+            panic!("expected static enum capability, got {capability:?}");
+        };
+        assert!(options.iter().any(|option| option.selection == AiEffortSelection::Enum("max".to_string())));
+    }
+
     fn codex_test_request() -> AiCompletionRequest {
         let mut config = test_config(AiProvider::OpenaiCodex);
         config.model = "model-discovered-from-catalog".to_string();
@@ -7322,6 +7372,29 @@ mod tests {
         assert_eq!(options[0].selection, super::AiEffortSelection::Enum("none".to_string()));
         assert!(parse_codex_model_list(&serde_json::json!({ "models": [] })).unwrap().is_empty());
         assert!(parse_codex_model_list(&serde_json::json!({ "unexpected": [] })).is_err());
+    }
+
+    #[test]
+    fn codex_catalog_respects_visibility_priority_and_advertised_default_level() {
+        let models = parse_codex_model_list(&serde_json::json!({
+            "models": [
+                { "slug": "hidden-legacy", "visibility": "hide", "priority": 0, "supported_reasoning_levels": [{"effort": "low"}] },
+                { "slug": "gone-model", "visibility": "none", "priority": 0 },
+                {
+                    "slug": "second-choice", "visibility": "list", "priority": 2,
+                    "supported_reasoning_levels": [{"effort": "low"}, {"effort": "high"}],
+                    "default_reasoning_level": "high"
+                },
+                { "slug": "first-choice", "visibility": "list", "priority": 1, "supported_reasoning_levels": [{"effort": "low"}] }
+            ]
+        }))
+        .unwrap();
+        let ids: Vec<&str> = models.iter().map(|model| model.id.as_str()).collect();
+        assert_eq!(ids, ["first-choice", "second-choice"]);
+        let super::AiEffortCapability::Enum { default, .. } = models[1].effort_capability.as_ref().unwrap() else {
+            panic!("expected enum capability");
+        };
+        assert_eq!(*default, super::AiEffortSelection::Enum("high".to_string()));
     }
 
     #[test]

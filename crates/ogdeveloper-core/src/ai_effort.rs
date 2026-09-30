@@ -101,9 +101,10 @@ pub fn static_effort_capability(config: &AiConfig, model_id: &str) -> Option<AiE
         AiProvider::Ollama => ollama_capability(&model, source),
         AiProvider::MiniMax if matches_family(&model, "minimax-m3") => Some(boolean_capability(source)),
         AiProvider::MiniMax => None,
-        AiProvider::AnthropicCompatible | AiProvider::Kimi | AiProvider::Glm | AiProvider::Doubao => {
+        AiProvider::AnthropicCompatible | AiProvider::Glm | AiProvider::Doubao => {
             Some(AiEffortCapability::FreeText { placeholder: None, source: AiCapabilitySource::Custom })
         }
+        AiProvider::Kimi => kimi_static_capability(&model, source),
         AiProvider::OpenaiCompatible | AiProvider::Custom => {
             if config.api_style == AiApiStyle::AnthropicMessages {
                 Some(AiEffortCapability::FreeText { placeholder: None, source: AiCapabilitySource::Custom })
@@ -144,6 +145,30 @@ fn openai_capability(model: &str, source: AiCapabilitySource) -> Option<AiEffort
         return Some(enum_capability(&["low", "medium", "high"], source));
     }
     None
+}
+
+/// Kimi Code (api.kimi.com/coding) and Moonshot platform K3 models accept top-level
+/// `reasoning_effort` with low/high/max per the official Kimi Code model docs and the
+/// platform reasoning-effort guide. Upstream defaults differ per variant (K3: high,
+/// K2.8 coding: max), so the enum defaults to the provider default.
+fn kimi_capability(model: &str, source: AiCapabilitySource) -> Option<AiEffortCapability> {
+    if matches_family(model, "k3") || matches_family(model, "kimi-k3") || matches_family(model, "kimi-for-coding") {
+        let mut capability = enum_capability(&["low", "high", "max"], source);
+        if let AiEffortCapability::Enum { default, .. } = &mut capability {
+            *default = AiEffortSelection::ProviderDefault;
+        }
+        return Some(capability);
+    }
+    None
+}
+
+fn kimi_static_capability(model: &str, source: AiCapabilitySource) -> Option<AiEffortCapability> {
+    // The highspeed coding variant has thinking fixed on with no adjustable levels.
+    if matches_family(model, "kimi-for-coding-highspeed") {
+        return None;
+    }
+    kimi_capability(model, source)
+        .or(Some(AiEffortCapability::FreeText { placeholder: None, source: AiCapabilitySource::Custom }))
 }
 
 fn gemini_capability(model: &str, source: AiCapabilitySource) -> Option<AiEffortCapability> {
@@ -210,6 +235,16 @@ fn compatible_routed_capability(model: &str) -> Option<AiEffortCapability> {
     if let Some(mut capability) = deepseek_capability(routed_model, AiCapabilitySource::Custom) {
         if let AiEffortCapability::Enum { options, default, .. } = &mut capability {
             *default = AiEffortSelection::ProviderDefault;
+            for option in options {
+                option.description =
+                    Some("Suggested for this routed model family; actual gateway support may differ.".to_string());
+            }
+        }
+        return Some(capability);
+    }
+
+    if let Some(mut capability) = kimi_capability(routed_model, AiCapabilitySource::Custom) {
+        if let AiEffortCapability::Enum { options, .. } = &mut capability {
             for option in options {
                 option.description =
                     Some("Suggested for this routed model family; actual gateway support may differ.".to_string());
@@ -783,6 +818,50 @@ mod tests {
         let mut body = json!({});
         apply_runtime_effort(&mut body, &config);
         assert_eq!(body["enable_thinking"], false);
+    }
+
+    #[test]
+    fn kimi_k3_family_exposes_documented_levels_and_maps_reasoning_effort() {
+        for model in ["k3", "k3-256k", "kimi-k3", "kimi-for-coding"] {
+            let capability = static_effort_capability(&config(AiProvider::Kimi, model), model)
+                .unwrap_or_else(|| panic!("expected capability for {model}"));
+            let AiEffortCapability::Enum { options, default, .. } = capability else {
+                panic!("expected enum capability for {model}");
+            };
+            let values: Vec<&str> = options
+                .iter()
+                .filter_map(|option| match &option.selection {
+                    AiEffortSelection::Enum(value) => Some(value.as_str()),
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(values, ["low", "high", "max"], "levels for {model}");
+            assert_eq!(default, AiEffortSelection::ProviderDefault, "default for {model}");
+        }
+
+        // The configured default reasoning level must actually reach the request body.
+        let mut configured = config(AiProvider::Kimi, "k3-256k");
+        configured.reasoning_level = AiReasoningLevel::Max;
+        let mut body = json!({});
+        apply_runtime_effort(&mut body, &configured);
+        assert_eq!(body["reasoning_effort"], "max");
+
+        let mut explicit = config(AiProvider::Kimi, "k3-256k");
+        explicit.runtime_effort = Some(AiEffortSelection::Enum("high".to_string()));
+        let mut body = json!({});
+        apply_runtime_effort(&mut body, &explicit);
+        assert_eq!(body["reasoning_effort"], "high");
+    }
+
+    #[test]
+    fn kimi_highspeed_has_no_adjustable_levels_and_unknown_models_stay_free_text() {
+        assert!(static_effort_capability(
+            &config(AiProvider::Kimi, "kimi-for-coding-highspeed"),
+            "kimi-for-coding-highspeed"
+        )
+        .is_none());
+        let unknown = static_effort_capability(&config(AiProvider::Kimi, "kimi-latest"), "kimi-latest").unwrap();
+        assert!(matches!(unknown, AiEffortCapability::FreeText { .. }));
     }
 
     #[test]
