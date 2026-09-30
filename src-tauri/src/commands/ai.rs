@@ -4,6 +4,41 @@ use tauri::{AppHandle, Emitter, State};
 
 use super::connection::AppState;
 pub use ogdeveloper_core::ai::*;
+use ogdeveloper_core::ai_codex_oauth;
+
+#[tauri::command]
+pub async fn ai_codex_auth_begin(config: AiConfig) -> Result<ai_codex_oauth::CodexAuthBeginResponse, String> {
+    ai_codex_oauth::begin(&config).await
+}
+
+#[tauri::command]
+pub async fn ai_codex_auth_poll(
+    state: State<'_, Arc<AppState>>,
+    session_id: String,
+) -> Result<ai_codex_oauth::CodexAuthPollResponse, String> {
+    ai_codex_oauth::poll(&state.storage, &session_id).await
+}
+
+#[tauri::command]
+pub async fn ai_codex_auth_cancel(state: State<'_, Arc<AppState>>, session_id: String) -> Result<bool, String> {
+    Ok(ai_codex_oauth::cancel(&state.storage, &session_id).await?.canceled)
+}
+
+#[tauri::command]
+pub async fn ai_codex_auth_status(
+    state: State<'_, Arc<AppState>>,
+    oauth_account_id: String,
+) -> Result<ai_codex_oauth::CodexAuthStatusResponse, String> {
+    ai_codex_oauth::status(&state.storage, &oauth_account_id).await
+}
+
+#[tauri::command]
+pub async fn ai_codex_auth_disconnect(
+    state: State<'_, Arc<AppState>>,
+    oauth_account_id: String,
+) -> Result<bool, String> {
+    Ok(ai_codex_oauth::disconnect(&state.storage, &oauth_account_id).await?.disconnected)
+}
 
 #[tauri::command]
 pub async fn ai_test_connection(
@@ -322,6 +357,7 @@ mod tests {
     fn test_ai_config(endpoint: &str, model: &str) -> AiConfig {
         AiConfig {
             provider: AiProvider::Claude,
+            oauth_account_id: None,
             api_key: "sk-test".to_string(),
             auth_method: AiAuthMethod::ApiKey,
             endpoint: endpoint.to_string(),

@@ -991,6 +991,7 @@ pub fn run() {
                 AppState::new_with_plugin_dir_and_app_version(storage, plugin_dir, env!("CARGO_PKG_VERSION"))
             };
             let state = Arc::new(state);
+            ogdeveloper_core::ai_codex_oauth::configure_storage(&state.storage);
             app.manage(state.clone());
             // Forward backend-initiated manual-transaction closures (idle
             // reclaim) to the webview so commit/rollback buttons go dark
@@ -1100,6 +1101,11 @@ pub fn run() {
             commands::ai::ai_stream,
             commands::ai::ai_agent_stream,
             commands::ai::ai_cancel_stream,
+            commands::ai::ai_codex_auth_begin,
+            commands::ai::ai_codex_auth_poll,
+            commands::ai::ai_codex_auth_cancel,
+            commands::ai::ai_codex_auth_status,
+            commands::ai::ai_codex_auth_disconnect,
             commands::ai::ai_test_connection,
             commands::ai::ai_list_models,
             commands::ai::ai_resolve_model_effort,

@@ -45,18 +45,41 @@ test("AI composer exposes mode and action as one compact selector", () => {
   assert.match(source, /function selectModeActionItem\(action: AiAction\) \{\s*\/\/ Vector databases[\s\S]*?if \(!showActionButtons\.value\) return;/);
 });
 
-test("AI effort control opens as a hoverable side submenu", () => {
+test("AI effort control is a direct composer popover beside the model selector", () => {
   const selectorStart = source.indexOf("<!-- Combined provider + model selector -->");
-  const selectorEnd = source.indexOf("</template>", source.indexOf("</Popover>", selectorStart));
-  const selector = source.slice(selectorStart, selectorEnd);
+  const effortStart = source.indexOf('<Popover v-if="settings.activeModel" v-model:open="effortMenuOpen">', selectorStart);
+  const effortEnd = source.indexOf("</Popover>", effortStart) + "</Popover>".length;
+  const effortPopover = source.slice(effortStart, effortEnd);
+  const providerSelector = source.slice(selectorStart, effortStart);
 
   assert.notEqual(selectorStart, -1, "the combined provider and model selector should exist");
-  assert.match(selector, /<Popover v-model:open="effortMenuOpen">/);
-  assert.match(selector, /<PopoverAnchor as-child>/);
-  assert.match(selector, /@mouseenter="openEffortMenu"/);
-  assert.match(selector, /@mouseleave="scheduleEffortMenuClose"/);
-  assert.match(selector, /<PopoverContent[\s\S]*?side="left"[\s\S]*?:side-offset="6"/);
-  assert.doesNotMatch(selector, /v-if="effortPanelOpen"/);
+  assert.notEqual(effortStart, -1, "the direct effort selector should follow the model selector");
+  assert.ok(effortStart > selectorStart);
+  assert.match(source.slice(effortStart - 80, effortStart), /<\/Popover>\s*$/);
+  assert.doesNotMatch(providerSelector, /effortMenuOpen|ai\.effort/);
+  assert.match(effortPopover, /<PopoverTrigger as-child>[\s\S]*?<button\s+type="button"/);
+  assert.match(effortPopover, /:title="t\('ai\.effort'\)"/);
+  assert.match(effortPopover, /focus-visible:ring-primary/);
+  assert.match(effortPopover, /effortSelectionLabel\(settings\.activeEffort\)/);
+  assert.match(effortPopover, /<PopoverContent[\s\S]*?side="top"[\s\S]*?align="end"[\s\S]*?:collision-padding="8"/);
+  assert.match(effortPopover, /@click="selectEffortOption\(option\)"/);
+  assert.doesNotMatch(effortPopover, /@mouseenter|@mouseleave|@focus=/);
+  assert.doesNotMatch(source, /effortMenuCloseTimer|scheduleEffortMenuClose|openEffortMenu/);
+});
+
+test("AI effort menu separates configuration default from provider default", () => {
+  const popoverStart = source.indexOf('<Popover v-if="settings.activeModel" v-model:open="effortMenuOpen">');
+  const popoverEnd = source.indexOf("</Popover>", popoverStart) + "</Popover>".length;
+  const effortPopover = source.slice(popoverStart, popoverEnd);
+  const labelStart = source.indexOf("function effortSelectionLabel");
+  const labelEnd = source.indexOf("function retryActiveEffort", labelStart);
+  const effortLabel = source.slice(labelStart, labelEnd);
+
+  assert.match(effortPopover, /:class="!settings\.activeEffort \? 'bg-accent text-accent-foreground' : ''"[\s\S]*?@click="selectEffort\(null\)"[\s\S]*?t\("ai\.configDefaultEffort"\)[\s\S]*?<Check v-if="!settings\.activeEffort"/);
+  assert.match(effortPopover, /:class="settings\.activeEffort\?\.kind === 'providerDefault' \? 'bg-accent text-accent-foreground' : ''"[\s\S]*?@click="selectEffort\(\{ kind: 'providerDefault' \}\)"[\s\S]*?<Check v-if="settings\.activeEffort\?\.kind === 'providerDefault'"/);
+  assert.match(source, /function selectEffort\(selection: AiEffortSelection \| null\)[\s\S]*?settings\.updateActiveEffort\(selection\)/);
+  assert.match(effortLabel, /if \(!selection\)[\s\S]*?configuredLevel[\s\S]*?return t\("ai\.configDefaultEffort"\)/);
+  assert.match(effortLabel, /if \(selection\.kind === "providerDefault"\) return t\("ai\.providerDefault"\);/);
 });
 
 test("AI model and effort menu refreshes do not persist effort settings", () => {

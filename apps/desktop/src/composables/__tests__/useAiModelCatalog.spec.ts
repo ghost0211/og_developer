@@ -64,6 +64,55 @@ describe("useAiModelCatalog", () => {
     expect(apiMock.aiResolveModelEffort).not.toHaveBeenCalled();
   });
 
+  it("keeps routed model levels from config as custom suggestions when the provider omits capabilities", async () => {
+    const configured: AiConfigItem = {
+      ...config(),
+      models: [{ name: "commandcode/deepseek/deepseek-v4.1-flash", supportedEffortLevels: ["high", "max", "high"] }],
+    };
+    apiMock.aiListModels.mockResolvedValue([{ id: "commandcode/deepseek/deepseek-v4.1-flash" }]);
+
+    await catalog.loadModels(configured);
+
+    const entry = catalog.effortCatalogs.get(catalog.effortKey(configured.id, "commandcode/deepseek/deepseek-v4.1-flash"));
+    expect(entry?.capability).toMatchObject({
+      kind: "enum",
+      source: "custom",
+      default: { kind: "providerDefault" },
+      options: [
+        { id: "high", selection: { kind: "enum", value: "high" } },
+        { id: "max", selection: { kind: "enum", value: "max" } },
+      ],
+    });
+  });
+
+  it("uses provider-reported legacy effort levels and labels configured fallback as custom", async () => {
+    apiMock.aiListModels.mockResolvedValue([{ id: "reported-model", supportedEffortLevels: ["low", "high"] }]);
+    await catalog.loadModels(config());
+    expect(catalog.effortCatalogs.get(catalog.effortKey("config-1", "reported-model"))?.capability).toMatchObject({
+      kind: "enum",
+      source: "providerApi",
+      default: { kind: "providerDefault" },
+    });
+
+    apiMock.aiResolveModelEffort.mockResolvedValue({ kind: "unsupported" });
+    const configured: AiConfigItem = { ...config(), models: [{ name: "manual-model", supportedEffortLevels: ["medium"] }] };
+    await expect(catalog.resolveEffort(configured, "manual-model")).resolves.toMatchObject({
+      kind: "enum",
+      source: "custom",
+      options: [{ id: "medium", selection: { kind: "enum", value: "medium" } }],
+    });
+    expect(apiMock.aiResolveModelEffort).not.toHaveBeenCalled();
+  });
+
+  it("invalidates configured effort suggestions when their saved levels change", async () => {
+    const low: AiConfigItem = { ...config(), models: [{ name: "manual-model", supportedEffortLevels: ["low"] }] };
+    const high: AiConfigItem = { ...config(), models: [{ name: "manual-model", supportedEffortLevels: ["high"] }] };
+
+    await expect(catalog.resolveEffort(low, "manual-model")).resolves.toMatchObject({ options: [{ id: "low" }] });
+    await expect(catalog.resolveEffort(high, "manual-model")).resolves.toMatchObject({ options: [{ id: "high" }] });
+    expect(apiMock.aiResolveModelEffort).not.toHaveBeenCalled();
+  });
+
   it("keeps a provider failure scoped and allows an explicit retry", async () => {
     apiMock.aiListModels.mockRejectedValueOnce(new Error("temporary failure")).mockResolvedValueOnce([{ id: "recovered" }]);
 
@@ -92,6 +141,23 @@ describe("useAiModelCatalog", () => {
 
     expect(apiMock.aiListModels).toHaveBeenCalledTimes(2);
     expect(apiMock.aiResolveModelEffort).toHaveBeenCalledTimes(2);
+  });
+
+  it("invalidates the model catalog when a Codex subscription account changes", async () => {
+    const initial: AiConfigItem = {
+      ...config(),
+      provider: "openai-codex",
+      apiKey: "",
+      endpoint: "https://chatgpt.com/backend-api/codex/responses",
+      oauthAccountId: "account-one",
+    };
+    const updated = { ...initial, oauthAccountId: "account-two" };
+    apiMock.aiListModels.mockResolvedValueOnce([{ id: "first-account-model" }]).mockResolvedValueOnce([{ id: "second-account-model" }]);
+
+    await expect(catalog.loadModels(initial)).resolves.toEqual([{ id: "first-account-model" }]);
+    await expect(catalog.loadModels(updated)).resolves.toEqual([{ id: "second-account-model" }]);
+
+    expect(apiMock.aiListModels).toHaveBeenCalledTimes(2);
   });
 
   it("does not let a stale request overwrite a newer provider catalog", async () => {

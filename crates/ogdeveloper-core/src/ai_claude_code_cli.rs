@@ -562,6 +562,7 @@ mod tests {
         AiConfig {
             provider: AiProvider::ClaudeCodeCli,
             api_key: String::new(),
+            oauth_account_id: None,
             auth_method: AiAuthMethod::Bearer,
             endpoint: String::new(),
             model: model.to_string(),

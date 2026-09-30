@@ -32,11 +32,7 @@ function scriptSetupContent(): string {
 function functionBody(script: string, signature: string): string {
   const sigIndex = script.indexOf(signature);
   assert.notEqual(sigIndex, -1, `expected to find ${signature}`);
-  assert.equal(
-    script.indexOf(signature, sigIndex + signature.length),
-    -1,
-    `${signature} should be unique`,
-  );
+  assert.equal(script.indexOf(signature, sigIndex + signature.length), -1, `${signature} should be unique`);
   const openBrace = script.indexOf("{", sigIndex + signature.length);
   assert.notEqual(openBrace, -1, "function body should open with a brace");
 
@@ -53,7 +49,7 @@ function functionBody(script: string, signature: string): string {
 }
 
 test("send() acquires the guard synchronously before the first await", () => {
-  const body = functionBody(scriptSetupContent(), "async function send()");
+  const body = functionBody(scriptSetupContent(), "async function send(options: AiInvocationOptions = {})");
 
   const entryCheck = body.search(/\|\|\s*isGenerating\.value\)\s*return/);
   const guardSet = body.indexOf("isGenerating.value = true");
@@ -77,7 +73,7 @@ test("send() acquires the guard synchronously before the first await", () => {
 });
 
 test("send() never leaks the guard on an early return after acquiring it", () => {
-  const body = functionBody(scriptSetupContent(), "async function send()");
+  const body = functionBody(scriptSetupContent(), "async function send(options: AiInvocationOptions = {})");
   const guardSet = body.indexOf("isGenerating.value = true");
 
   // Every `return` that appears after the guard is acquired must first reset the
@@ -90,15 +86,12 @@ test("send() never leaks the guard on an early return after acquiring it", () =>
 
   for (const match of returnsAfterGuard) {
     const preceding = tail.slice(0, match.index);
-    assert.ok(
-      preceding.includes("isGenerating.value = false"),
-      "any early return after the guard is acquired must reset isGenerating first",
-    );
+    assert.ok(preceding.includes("isGenerating.value = false"), "any early return after the guard is acquired must reset isGenerating first");
   }
 });
 
 test("send() snapshots custom prompts before deferred AI context loading", () => {
-  const body = functionBody(scriptSetupContent(), "async function send()");
+  const body = functionBody(scriptSetupContent(), "async function send(options: AiInvocationOptions = {})");
   const ensureLoadedAwait = body.indexOf("await promptTemplateStore.ensureLoaded()");
   const snapshot = body.indexOf("const customPromptContext: CustomPromptContext");
   const sqlFileLoad = body.indexOf("await loadReferencedSqlFiles");

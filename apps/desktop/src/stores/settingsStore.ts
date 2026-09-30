@@ -117,6 +117,16 @@ export const AI_PROVIDER_PRESETS: Record<AiProvider, AiProviderPreset> = {
     authMethod: "bearer",
     requiresApiKey: true,
   },
+  "openai-codex": {
+    label: "OpenAI Codex (ChatGPT)",
+    iconSlug: "openai",
+    provider: "openai-codex",
+    endpoint: "https://chatgpt.com/backend-api/codex/responses",
+    model: "gpt-5.4",
+    apiStyle: "responses",
+    authMethod: "bearer",
+    requiresApiKey: false,
+  },
   gemini: {
     label: "Gemini",
     iconSlug: "googlegemini",
@@ -289,9 +299,11 @@ export function normalizeAiConfig(config: Partial<AiConfig> | null | undefined):
     ...defaultConfigs[provider],
     ...config,
     provider,
-    apiKey: (config?.apiKey ?? "").trim(),
-    apiStyle: config?.apiStyle ?? defaultConfigs[provider].apiStyle,
-    authMethod: config?.authMethod ?? defaultConfigs[provider].authMethod,
+    apiKey: provider === "openai-codex" ? "" : (config?.apiKey ?? "").trim(),
+    oauthAccountId: provider === "openai-codex" ? config?.oauthAccountId?.trim() || undefined : undefined,
+    endpoint: provider === "openai-codex" ? defaultConfigs[provider].endpoint : (config?.endpoint ?? defaultConfigs[provider].endpoint),
+    apiStyle: provider === "openai-codex" ? "responses" : (config?.apiStyle ?? defaultConfigs[provider].apiStyle),
+    authMethod: provider === "openai-codex" ? "bearer" : (config?.authMethod ?? defaultConfigs[provider].authMethod),
     proxyEnabled: !!config?.proxyEnabled,
     proxyUrl: config?.proxyUrl ?? "",
     enableThinking: config?.enableThinking ?? true,
@@ -1324,6 +1336,7 @@ export const useSettingsStore = defineStore("settings", () => {
     const config = aiConfigs.value.find((c) => c.id === activeModel.value!.configId);
     if (!config) return false;
     const preset = AI_PROVIDER_PRESETS[config.provider];
+    if (config.provider === "openai-codex") return !!config.oauthAccountId && !!activeModel.value.modelId;
     if (config.provider === "codex-cli" || config.provider === "claude-code-cli" || config.provider === "pi-agent-cli") return true;
     return !!config.endpoint && !!activeModel.value!.modelId && (!preset.requiresApiKey || !!config.apiKey);
   });

@@ -172,6 +172,8 @@ async fn main() {
         ))
     };
 
+    ogdeveloper_core::ai_codex_oauth::configure_storage(&app_state.storage);
+
     // og developer: keep the bundled openGauss JDBC driver fresh (best-effort,
     // offline-safe). The desktop app additionally seeds the jar from its
     // bundled resource; the web server only syncs from Maven Central.
@@ -500,6 +502,11 @@ async fn main() {
         .route("/ai/stream", post(routes::ai::ai_stream))
         .route("/ai/agent-stream", post(routes::ai::ai_agent_stream))
         .route("/ai/cancel-stream", post(routes::ai::ai_cancel_stream))
+        .route("/ai/codex-auth/begin", post(routes::ai::ai_codex_auth_begin))
+        .route("/ai/codex-auth/poll", post(routes::ai::ai_codex_auth_poll))
+        .route("/ai/codex-auth/cancel", post(routes::ai::ai_codex_auth_cancel))
+        .route("/ai/codex-auth/status", post(routes::ai::ai_codex_auth_status))
+        .route("/ai/codex-auth/disconnect", post(routes::ai::ai_codex_auth_disconnect))
         .route("/ai/test-connection", post(routes::ai::ai_test_connection))
         .route("/ai/models", post(routes::ai::ai_list_models))
         .route("/ai/model-effort", post(routes::ai::ai_resolve_model_effort))

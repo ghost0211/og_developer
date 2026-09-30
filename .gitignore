@@ -74,6 +74,8 @@ ogdeveloper_*-portable.zip
 .ogdeveloper-web
 # Local devtest connections (contains credentials; do not commit)
 dbx-devtest-connections.json
+# Codex subscription vault key (may be created in a custom data directory)
+**/openai-codex-oauth.key
 .npmrc
 outputs/opengauss-docs/
 

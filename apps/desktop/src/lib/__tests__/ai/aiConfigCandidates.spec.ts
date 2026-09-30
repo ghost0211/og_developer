@@ -19,6 +19,11 @@ describe("isAiConfigModelCandidate", () => {
     expect(isAiConfigModelCandidate(config({ model: "", models: [{ name: "gpt-new" }] }), true)).toBe(true);
   });
 
+  it("requires an opaque account reference for Codex subscription configurations", () => {
+    expect(isAiConfigModelCandidate(config({ provider: "openai-codex", apiKey: "" }), false)).toBe(false);
+    expect(isAiConfigModelCandidate(config({ provider: "openai-codex", apiKey: "", oauthAccountId: "account-ref" }), false)).toBe(true);
+  });
+
   it("keeps endpoint and required API key validation", () => {
     expect(isAiConfigModelCandidate(config({ endpoint: "" }), true)).toBe(false);
     expect(isAiConfigModelCandidate(config({ apiKey: "" }), true)).toBe(false);

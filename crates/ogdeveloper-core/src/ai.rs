@@ -66,6 +66,8 @@ pub enum AiProvider {
     #[serde(rename = "anthropic-compatible")]
     AnthropicCompatible,
     Openai,
+    #[serde(rename = "openai-codex")]
+    OpenaiCodex,
     Gemini,
     Deepseek,
     Qwen,
@@ -94,6 +96,7 @@ impl AiProvider {
             AiProvider::Claude => "claude",
             AiProvider::AnthropicCompatible => "anthropic-compatible",
             AiProvider::Openai => "openai",
+            AiProvider::OpenaiCodex => "openai-codex",
             AiProvider::Gemini => "gemini",
             AiProvider::Deepseek => "deepseek",
             AiProvider::Qwen => "qwen",
@@ -341,6 +344,10 @@ pub struct AiConfig {
     pub provider: AiProvider,
     #[serde(default)]
     pub api_key: String,
+    /// Opaque ID for an encrypted backend-owned Codex subscription credential.
+    /// Contains no token material and is not valid outside this app's local vault.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub oauth_account_id: Option<String>,
     #[serde(default)]
     pub auth_method: AiAuthMethod,
     #[serde(default)]
@@ -578,6 +585,9 @@ fn ensure_anthropic_version_prefix(endpoint: &str) -> String {
 
 pub fn resolve_endpoint(config: &AiConfig) -> String {
     let ep = config.endpoint.trim().trim_end_matches('/');
+    if matches!(config.provider, AiProvider::OpenaiCodex) {
+        return crate::ai_codex_oauth::CODEX_RESPONSES_ENDPOINT.to_string();
+    }
     if matches!(config.provider, AiProvider::Gemini) {
         if ep.ends_with(":generateContent") || ep.ends_with(":streamGenerateContent") {
             return ep.to_string();
@@ -625,6 +635,7 @@ pub fn resolve_endpoint(config: &AiConfig) -> String {
         }
         AiProvider::Claude
         | AiProvider::AnthropicCompatible
+        | AiProvider::OpenaiCodex
         | AiProvider::CodexCli
         | AiProvider::ClaudeCodeCli
         | AiProvider::PiAgentCli
@@ -647,6 +658,9 @@ fn resolve_gemini_stream_endpoint(config: &AiConfig) -> String {
 }
 
 pub fn resolve_model_list_endpoint(config: &AiConfig) -> Result<String, String> {
+    if matches!(config.provider, AiProvider::OpenaiCodex) {
+        return Ok(crate::ai_codex_oauth::CODEX_RESPONSES_ENDPOINT.to_string());
+    }
     if matches!(config.provider, AiProvider::Gemini) {
         let ep = config.endpoint.trim().trim_end_matches('/');
         if ep.is_empty() {
@@ -1080,6 +1094,15 @@ fn normalized_api_key(config: &AiConfig) -> &str {
 
 fn validate_config(config: &AiConfig) -> Result<(), String> {
     crate::ai_effort::validate_runtime_effort(config)?;
+    if matches!(config.provider, AiProvider::OpenaiCodex) {
+        if config.model.trim().is_empty() {
+            return Err("Model is required".to_string());
+        }
+        if config.oauth_account_id.as_deref().is_none_or(str::is_empty) {
+            return Err("Sign in to ChatGPT to use the Codex subscription provider".to_string());
+        }
+        return Ok(());
+    }
     if matches!(config.provider, AiProvider::CodexCli | AiProvider::ClaudeCodeCli | AiProvider::PiAgentCli) {
         return Ok(());
     }
@@ -1470,7 +1493,79 @@ async fn retain_ollama_completion_models(
         .collect()
 }
 
+fn parse_codex_model_list(data: &serde_json::Value) -> Result<Vec<AiModelInfo>, String> {
+    let items = data["models"]
+        .as_array()
+        .or_else(|| data["data"].as_array())
+        .or_else(|| data.as_array())
+        .ok_or_else(|| "Codex model discovery returned an invalid catalog".to_string())?;
+    let mut seen = HashSet::new();
+    Ok(items
+        .iter()
+        .filter_map(|item| {
+            let id = item["slug"].as_str().or_else(|| item["id"].as_str()).or_else(|| item["model"].as_str())?.trim();
+            if id.is_empty() || !seen.insert(id.to_string()) {
+                return None;
+            }
+            let mut model = AiModelInfo::new(
+                id,
+                item["display_name"]
+                    .as_str()
+                    .or_else(|| item["name"].as_str())
+                    .or_else(|| item["title"].as_str())
+                    .map(ToString::to_string),
+            );
+            let effort_values: Vec<&str> = item["supported_reasoning_levels"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|level| level.as_str().or_else(|| level["effort"].as_str()))
+                .collect();
+            model.supported_effort_levels =
+                effort_values.iter().filter_map(|level| level.parse::<AiEffortLevel>().ok()).collect();
+            model.effort_capability =
+                crate::ai_effort::dynamic_enum_capability(effort_values, AiCapabilitySource::ProviderApi);
+            Some(model)
+        })
+        .collect())
+}
+
+async fn list_codex_models(config: &AiConfig) -> Result<Vec<AiModelInfo>, String> {
+    let client = crate::ai_codex_oauth::build_responses_client(config, 30)?;
+    let mut token = crate::ai_codex_oauth::access_token(config, None).await?;
+    let model_url = "https://chatgpt.com/backend-api/codex/models";
+    let send = |token: &crate::ai_codex_oauth::CodexAccessToken| -> Result<reqwest::RequestBuilder, String> {
+        let mut headers = codex_responses_headers(token)?;
+        headers.insert("accept", HeaderValue::from_static("application/json"));
+        Ok(client.get(model_url).query(&[("client_version", env!("CARGO_PKG_VERSION"))]).headers(headers))
+    };
+    let response = match send(&token)?.send().await {
+        Ok(response) if response.status() == reqwest::StatusCode::UNAUTHORIZED => {
+            token = crate::ai_codex_oauth::access_token(config, Some(&token.bearer)).await?;
+            send(&token)?
+                .send()
+                .await
+                .map_err(|error| format!("Codex model discovery transport failed: {}", error.without_url()))?
+        }
+        Ok(response) => response,
+        Err(error) => {
+            return Err(format!("Codex model discovery transport failed: {}", error.without_url()));
+        }
+    };
+    if !response.status().is_success() {
+        return Err(format!("Codex model discovery failed (HTTP {})", response.status().as_u16()));
+    }
+    let data: serde_json::Value =
+        response.json().await.map_err(|_| "Codex model discovery returned invalid JSON".to_string())?;
+    parse_codex_model_list(&data)
+}
+
 pub async fn list_models_core(config: &AiConfig) -> Result<Vec<AiModelInfo>, String> {
+    if matches!(config.provider, AiProvider::OpenaiCodex) {
+        let mut models = list_codex_models(config).await?;
+        decorate_model_capabilities(config, &mut models);
+        return Ok(models);
+    }
     let mut models = match config.provider {
         AiProvider::CodexCli => crate::ai_codex_cli::list_codex_models(config).await?,
         AiProvider::ClaudeCodeCli => crate::ai_claude_code_cli::list_claude_code_models(config).await?,
@@ -1500,7 +1595,9 @@ pub async fn list_models_core(config: &AiConfig) -> Result<Vec<AiModelInfo>, Str
                         list_openai_compatible_models(&client, config).await?
                     }
                 }
-                AiProvider::CodexCli | AiProvider::ClaudeCodeCli | AiProvider::PiAgentCli => unreachable!(),
+                AiProvider::OpenaiCodex | AiProvider::CodexCli | AiProvider::ClaudeCodeCli | AiProvider::PiAgentCli => {
+                    unreachable!()
+                }
             }
         }
     };
@@ -1519,7 +1616,7 @@ pub async fn resolve_model_effort_core(config: &AiConfig, model_id: &str) -> Res
         return crate::ai_pi_agent_cli::resolve_pi_agent_model_effort(config, model_id).await;
     }
 
-    if matches!(config.provider, AiProvider::CodexCli | AiProvider::ClaudeCodeCli) {
+    if matches!(config.provider, AiProvider::OpenaiCodex | AiProvider::CodexCli | AiProvider::ClaudeCodeCli) {
         let models = list_models_core(config).await?;
         return Ok(models
             .into_iter()
@@ -2037,6 +2134,45 @@ fn claude_system_prompt(system_prompt: &str) -> &str {
     }
 }
 
+async fn test_codex_connection(config: &AiConfig) -> Result<AiTestConnectionResult, String> {
+    let client = crate::ai_codex_oauth::build_responses_client(config, 30)?;
+    let request = AiCompletionRequest {
+        config: config.clone(),
+        system_prompt: "Reply with a single short word.".to_string(),
+        messages: vec![AiMessage {
+            role: "user".to_string(),
+            content: TEST_PROMPT.to_string(),
+            tool_call_id: None,
+            tool_calls: Vec::new(),
+        }],
+        task_contract: None,
+        max_tokens: Some(16),
+    };
+    let started = std::time::Instant::now();
+    let first_chunk_ms = Arc::new(std::sync::Mutex::new(None));
+    let first_chunk_ref = first_chunk_ms.clone();
+    stream_codex_responses(&client, "codex-connection-test", &request, &[], &Notify::new(), &|event| {
+        if let StreamToolEvent::Chunk(chunk) = event {
+            if !chunk.delta.is_empty() || chunk.reasoning_delta.as_deref().is_some_and(|text| !text.is_empty()) {
+                if let Ok(mut first_chunk) = first_chunk_ref.lock() {
+                    if first_chunk.is_none() {
+                        *first_chunk = Some(started.elapsed().as_millis() as u64);
+                    }
+                }
+            }
+        }
+    })
+    .await?;
+    let latency_ms = first_chunk_ms.lock().ok().and_then(|latency| *latency);
+    Ok(AiTestConnectionResult {
+        success: true,
+        message: "Codex subscription connection successful".to_string(),
+        latency_ms,
+        model_used: config.model.clone(),
+        error_category: None,
+    })
+}
+
 pub async fn test_connection_core(config: &AiConfig) -> Result<AiTestConnectionResult, String> {
     if matches!(config.provider, AiProvider::CodexCli) {
         return crate::ai_codex_cli::test_codex_connection(config).await;
@@ -2061,6 +2197,9 @@ pub async fn test_connection_core(config: &AiConfig) -> Result<AiTestConnectionR
     }
     let config = &resolved_config;
     validate_config(config)?;
+    if matches!(config.provider, AiProvider::OpenaiCodex) {
+        return test_codex_connection(config).await;
+    }
 
     let client = build_ai_http_client(config, 15)?;
     let model = config.model.clone();
@@ -2125,7 +2264,7 @@ pub async fn test_connection_core(config: &AiConfig) -> Result<AiTestConnectionR
                         }
                         res.bytes_stream()
                     }
-                    AiProvider::Claude | AiProvider::AnthropicCompatible => unreachable!(),
+                    AiProvider::Claude | AiProvider::AnthropicCompatible | AiProvider::OpenaiCodex => unreachable!(),
                     _ => {
                         let mut body_obj = if api_style == AiApiStyle::Responses {
                             json!({
@@ -2376,8 +2515,9 @@ where
             // Yield to cancellation during back-off so Stop is responsive.
             if let Some(cancelled) = cancelled {
                 tokio::select! {
-                    _ = tokio::time::sleep(delay) => {},
+                    biased;
                     _ = cancelled.notified() => return Err(AGENT_CANCELLED_ERROR.to_string()),
+                    _ = tokio::time::sleep(delay) => {},
                 }
             } else {
                 tokio::time::sleep(delay).await;
@@ -2401,6 +2541,9 @@ where
 
 pub async fn complete(request: &AiCompletionRequest) -> Result<String, String> {
     validate_config(&request.config)?;
+    if matches!(request.config.provider, AiProvider::OpenaiCodex) {
+        return complete_codex_responses(request).await;
+    }
 
     if matches!(request.config.provider, AiProvider::CodexCli | AiProvider::ClaudeCodeCli | AiProvider::PiAgentCli) {
         return Err("CLI providers are only supported in DBX AI agent mode".to_string());
@@ -2419,7 +2562,9 @@ pub async fn complete(request: &AiCompletionRequest) -> Result<String, String> {
 
             match request.config.provider {
                 AiProvider::Gemini => call_gemini(&client, request).await,
-                AiProvider::CodexCli | AiProvider::ClaudeCodeCli | AiProvider::PiAgentCli => unreachable!(),
+                AiProvider::OpenaiCodex | AiProvider::CodexCli | AiProvider::ClaudeCodeCli | AiProvider::PiAgentCli => {
+                    unreachable!()
+                }
                 AiProvider::Openai
                 | AiProvider::Deepseek
                 | AiProvider::Qwen
@@ -2460,6 +2605,11 @@ pub async fn stream(
     on_chunk: impl Fn(AiStreamChunk),
 ) -> Result<(), String> {
     validate_config(&request.config)?;
+    if matches!(request.config.provider, AiProvider::OpenaiCodex) {
+        let timeout = if runtime_thinking_enabled(&request.config) { 600 } else { 120 };
+        let client = crate::ai_codex_oauth::build_responses_client(&request.config, timeout)?;
+        return stream_codex_responses_api(&client, session_id, request, cancelled, &on_chunk).await;
+    }
 
     if matches!(request.config.provider, AiProvider::CodexCli | AiProvider::ClaudeCodeCli | AiProvider::PiAgentCli) {
         return Err("CLI providers are only supported in DBX AI agent mode".to_string());
@@ -2474,7 +2624,9 @@ pub async fn stream(
 
     match request.config.provider {
         AiProvider::Gemini => stream_gemini(&client, session_id, request, cancelled, &on_chunk).await,
-        AiProvider::CodexCli | AiProvider::ClaudeCodeCli | AiProvider::PiAgentCli => unreachable!(),
+        AiProvider::OpenaiCodex | AiProvider::CodexCli | AiProvider::ClaudeCodeCli | AiProvider::PiAgentCli => {
+            unreachable!()
+        }
         AiProvider::Openai
         | AiProvider::Deepseek
         | AiProvider::Qwen
@@ -2802,6 +2954,288 @@ async fn stream_responses_api(
         }
     })
     .await
+}
+
+fn codex_responses_headers(token: &crate::ai_codex_oauth::CodexAccessToken) -> Result<HeaderMap, String> {
+    let workspace_id = token
+        .chatgpt_account_id
+        .as_deref()
+        .filter(|id| !id.trim().is_empty())
+        .ok_or_else(|| "Codex authorization did not include a ChatGPT workspace ID; sign in again".to_string())?;
+    let mut headers = HeaderMap::new();
+    headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+    headers.insert("accept", HeaderValue::from_static("text/event-stream"));
+    headers.insert("originator", HeaderValue::from_static("codex_cli_rs"));
+    headers.insert("openai-beta", HeaderValue::from_static("responses=experimental"));
+    let mut authorization = HeaderValue::from_str(&format!("Bearer {}", token.bearer))
+        .map_err(|_| "Invalid Codex authorization state".to_string())?;
+    authorization.set_sensitive(true);
+    headers.insert(AUTHORIZATION, authorization);
+    headers.insert(
+        "chatgpt-account-id",
+        HeaderValue::from_str(workspace_id).map_err(|_| "Invalid ChatGPT workspace identifier".to_string())?,
+    );
+    Ok(headers)
+}
+
+fn build_codex_responses_body(
+    request: &AiCompletionRequest,
+    tools: &[crate::agent_events::ToolDefinition],
+) -> serde_json::Value {
+    let instructions = if request.system_prompt.trim().is_empty() {
+        "You are a helpful assistant."
+    } else {
+        request.system_prompt.as_str()
+    };
+    let mut body = json!({
+        "model": request.config.model,
+        "instructions": instructions,
+        "input": build_responses_input_with_tools("", &request.messages),
+        "store": false,
+        "stream": true,
+    });
+    if !tools.is_empty() {
+        body["tools"] = json!(tools.iter().map(responses_function_tool).collect::<Vec<_>>());
+        body["tool_choice"] = json!("auto");
+    }
+    // Subscription requests always use Responses, even if a caller sent a legacy API style.
+    let mut effort_config = request.config.clone();
+    effort_config.api_style = AiApiStyle::Responses;
+    crate::ai_effort::apply_runtime_effort(&mut body, &effort_config);
+    body
+}
+
+async fn send_codex_responses_request(
+    client: &reqwest::Client,
+    config: &AiConfig,
+    body: &serde_json::Value,
+) -> Result<reqwest::Response, String> {
+    let mut token = crate::ai_codex_oauth::access_token(config, None).await?;
+    let mut headers = codex_responses_headers(&token)?;
+    let mut response = client
+        .post(crate::ai_codex_oauth::CODEX_RESPONSES_ENDPOINT)
+        .headers(headers.clone())
+        .json(body)
+        .send()
+        .await
+        .map_err(|error| format!("Codex Responses transport failed: {}", error.without_url()))?;
+    if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+        token = crate::ai_codex_oauth::access_token(config, Some(&token.bearer)).await?;
+        headers = codex_responses_headers(&token)?;
+        response = client
+            .post(crate::ai_codex_oauth::CODEX_RESPONSES_ENDPOINT)
+            .headers(headers)
+            .json(body)
+            .send()
+            .await
+            .map_err(|error| format!("Codex Responses transport failed: {}", error.without_url()))?;
+    }
+    if !response.status().is_success() {
+        return Err(format!("Codex Responses request failed (HTTP {})", response.status().as_u16()));
+    }
+    Ok(response)
+}
+
+fn codex_event_terminal(event: &serde_json::Value) -> Result<bool, String> {
+    match event["type"].as_str().unwrap_or_default() {
+        "error" | "response.failed" | "response.incomplete" => {
+            Err("Codex Responses API reported a request failure".to_string())
+        }
+        "response.completed" | "response.done" => Ok(true),
+        _ => Ok(false),
+    }
+}
+
+fn codex_reasoning_delta(event: &serde_json::Value) -> Option<&str> {
+    matches!(event["type"].as_str(), Some("response.reasoning_summary_text.delta" | "response.reasoning_text.delta"))
+        .then(|| event["delta"].as_str())
+        .flatten()
+        .filter(|text| !text.is_empty())
+}
+
+fn finish_codex_sse_buffer(buffer: &mut Vec<u8>) {
+    if !buffer.is_empty() {
+        buffer.push(b'\n');
+    }
+}
+
+async fn stream_codex_responses(
+    client: &reqwest::Client,
+    session_id: &str,
+    request: &AiCompletionRequest,
+    tools: &[crate::agent_events::ToolDefinition],
+    cancelled: &Notify,
+    on_event: &impl Fn(StreamToolEvent),
+) -> Result<Option<TokenUsage>, String> {
+    let body = build_codex_responses_body(request, tools);
+    let config = request.config.clone();
+    let emitted = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let session_id = session_id.to_string();
+    let has_tools = !tools.is_empty();
+    with_stream_retry(&config, &emitted, Some(cancelled), || {
+        let config = config.clone();
+        let body = body.clone();
+        let session_id = session_id.clone();
+        let emitted = emitted.clone();
+        async move {
+            let response = tokio::select! {
+                biased;
+                _ = cancelled.notified() => return Err(AGENT_CANCELLED_ERROR.to_string()),
+                response = send_codex_responses_request(client, &config, &body) => response?,
+            };
+            let mut byte_stream = response.bytes_stream();
+            let mut buffer = Vec::new();
+            let mut item_indices: HashMap<String, u32> = HashMap::new();
+            let mut started_indices: HashSet<u32> = HashSet::new();
+            let mut argument_indices: HashSet<u32> = HashSet::new();
+            let mut next_index = 0;
+            let mut token_usage = None;
+            let mut terminal_completed = false;
+
+            loop {
+                tokio::select! {
+                    biased;
+                    chunk = byte_stream.next() => {
+                        let chunk = match chunk {
+                            Some(chunk) => chunk.map_err(|error| format!("Codex Responses stream failed: {}", error.without_url()))?,
+                            None if !buffer.is_empty() => {
+                                // The final SSE event is allowed to omit its trailing newline.
+                                finish_codex_sse_buffer(&mut buffer);
+                                bytes::Bytes::new()
+                            }
+                            None => break,
+                        };
+                        buffer.extend_from_slice(&chunk);
+                        let mut finished = false;
+                        while let Some(line) = drain_next_stream_line(&mut buffer)? {
+                            let Some(data) = stream_data_payload(&line) else { continue };
+                            if data == "[DONE]" {
+                                terminal_completed = true;
+                                finished = true;
+                                break;
+                            }
+                            let Ok(event) = serde_json::from_str::<serde_json::Value>(data) else { continue };
+                            let event_type = event["type"].as_str().unwrap_or_default();
+                            if let Some(usage) = responses_token_usage(&event) {
+                                token_usage = Some(usage);
+                            }
+                            if codex_event_terminal(&event)? {
+                                terminal_completed = true;
+                                finished = true;
+                                break;
+                            }
+                            if let Some(reasoning) = codex_reasoning_delta(&event) {
+                                emitted.store(true, std::sync::atomic::Ordering::Relaxed);
+                                on_event(StreamToolEvent::Chunk(AiStreamChunk {
+                                    session_id: session_id.clone(),
+                                    delta: String::new(),
+                                    reasoning_delta: Some(reasoning.to_string()),
+                                    done: false,
+                                }));
+                            } else if let Some(text) = responses_stream_text(&event) {
+                                emitted.store(true, std::sync::atomic::Ordering::Relaxed);
+                                on_event(StreamToolEvent::Chunk(AiStreamChunk {
+                                    session_id: session_id.clone(),
+                                    delta: text.to_string(),
+                                    reasoning_delta: None,
+                                    done: false,
+                                }));
+                            }
+                            if has_tools {
+                                match event_type {
+                                    "response.output_item.added" => {
+                                        emitted.store(true, std::sync::atomic::Ordering::Relaxed);
+                                        emit_responses_function_call_item(
+                                            &event, &mut item_indices, &mut started_indices,
+                                            &mut argument_indices, &mut next_index, on_event,
+                                        );
+                                    }
+                                    "response.output_item.done" => {
+                                        emitted.store(true, std::sync::atomic::Ordering::Relaxed);
+                                        if let Some(index) = emit_responses_function_call_item(
+                                            &event, &mut item_indices, &mut started_indices,
+                                            &mut argument_indices, &mut next_index, on_event,
+                                        ) {
+                                            on_event(StreamToolEvent::ToolCallComplete { index });
+                                        }
+                                    }
+                                    "response.function_call_arguments.delta" => {
+                                        let index = event["item_id"]
+                                            .as_str()
+                                            .and_then(|id| item_indices.get(id).copied())
+                                            .or_else(|| event["output_index"].as_u64().map(|i| i as u32))
+                                            .unwrap_or(0);
+                                        if let Some(fragment) = event["delta"].as_str() {
+                                            argument_indices.insert(index);
+                                            emitted.store(true, std::sync::atomic::Ordering::Relaxed);
+                                            on_event(StreamToolEvent::ToolCallDelta { index, fragment: fragment.to_string() });
+                                        }
+                                    }
+                                    "response.function_call_arguments.done" => {
+                                        let index = event["item_id"]
+                                            .as_str()
+                                            .and_then(|id| item_indices.get(id).copied())
+                                            .or_else(|| event["output_index"].as_u64().map(|i| i as u32))
+                                            .unwrap_or(0);
+                                        on_event(StreamToolEvent::ToolCallComplete { index });
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                        if finished { break; }
+                    }
+                    _ = cancelled.notified() => return Err(AGENT_CANCELLED_ERROR.to_string()),
+                }
+            }
+            if !terminal_completed {
+                return Err("Codex Responses stream ended before terminal completion".to_string());
+            }
+            Ok(token_usage)
+        }
+    }).await
+}
+
+async fn stream_codex_responses_api(
+    client: &reqwest::Client,
+    session_id: &str,
+    request: &AiCompletionRequest,
+    cancelled: &Notify,
+    on_chunk: &impl Fn(AiStreamChunk),
+) -> Result<(), String> {
+    let result = stream_codex_responses(client, session_id, request, &[], cancelled, &|event| {
+        if let StreamToolEvent::Chunk(chunk) = event {
+            on_chunk(chunk);
+        }
+    })
+    .await;
+    on_chunk(AiStreamChunk {
+        session_id: session_id.to_string(),
+        delta: String::new(),
+        reasoning_delta: None,
+        done: true,
+    });
+    result.map(|_| ())
+}
+
+async fn complete_codex_responses(request: &AiCompletionRequest) -> Result<String, String> {
+    validate_config(&request.config)?;
+    let client = crate::ai_codex_oauth::build_responses_client(&request.config, 600)?;
+    let cancelled = Notify::new();
+    let output = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+    let output_ref = output.clone();
+    let mut completion = request.clone();
+    completion.system_prompt = request.system_prompt.clone();
+    stream_codex_responses(&client, "codex-complete", &completion, &[], &cancelled, &|event| {
+        if let StreamToolEvent::Chunk(chunk) = event {
+            if let Ok(mut output) = output_ref.lock() {
+                output.push_str(&chunk.delta);
+            }
+        }
+    })
+    .await?;
+    let value = output.lock().map_err(|_| "Codex response buffer unavailable".to_string())?.clone();
+    Ok(value)
 }
 
 async fn stream_gemini(
@@ -3766,11 +4200,20 @@ pub async fn stream_with_tools(
     }
 
     let stream_timeout = if runtime_thinking_enabled(config) { 600 } else { 120 };
-    let client = build_ai_http_client(config, stream_timeout)?;
+    let client = if matches!(config.provider, AiProvider::OpenaiCodex) {
+        crate::ai_codex_oauth::build_responses_client(config, stream_timeout)?
+    } else {
+        build_ai_http_client(config, stream_timeout)?
+    };
 
     let accumulator = Arc::new(std::sync::Mutex::new(StreamingToolCallAccumulator::new()));
 
-    let token_usage = if uses_anthropic_messages_api(config) {
+    let token_usage = if matches!(config.provider, AiProvider::OpenaiCodex) {
+        stream_codex_responses(&client, session_id, request, tools, cancelled, &|event| {
+            accumulator.lock().unwrap().process(event, &on_chunk);
+        })
+        .await?
+    } else if uses_anthropic_messages_api(config) {
         stream_claude_with_tools(&client, session_id, request, tools, cancelled, &|event| {
             accumulator.lock().unwrap().process(event, &on_chunk);
         })
@@ -3866,22 +4309,24 @@ mod tests {
     use tokio::sync::Notify;
 
     use super::{
-        append_gemini_model_parts, apply_chat_completion_thinking_toggle, build_ai_http_client, build_gemini_contents,
-        build_responses_input_with_tools, call_claude, classify_error, claude_headers, claude_system_prompt, complete,
-        drain_next_stream_line, emit_gemini_tool_call_parts, emit_responses_function_call_item, format_transport_error,
-        gemini_text, is_kimi_model, is_retryable_error, list_models_core, maybe_bearer_headers, maybe_tag_retry_after,
-        measure_first_stream_chunk, merge_global_max_retries, ollama_selected_model_tool_support, openai_response_text,
-        openai_stream_reasoning, openai_stream_text, parse_dynamic_effort_capability, parse_gemini_model_list_response,
+        append_gemini_model_parts, apply_chat_completion_thinking_toggle, build_ai_http_client,
+        build_codex_responses_body, build_gemini_contents, build_responses_input_with_tools, call_claude,
+        classify_error, claude_headers, claude_system_prompt, codex_event_terminal, codex_reasoning_delta,
+        codex_responses_headers, complete, drain_next_stream_line, emit_gemini_tool_call_parts,
+        emit_responses_function_call_item, finish_codex_sse_buffer, format_transport_error, gemini_text, is_kimi_model,
+        is_retryable_error, list_models_core, maybe_bearer_headers, maybe_tag_retry_after, measure_first_stream_chunk,
+        merge_global_max_retries, ollama_selected_model_tool_support, openai_response_text, openai_stream_reasoning,
+        openai_stream_text, parse_codex_model_list, parse_dynamic_effort_capability, parse_gemini_model_list_response,
         parse_model_list_response, parse_retry_after, parse_retry_after_secs, provider_requires_api_key,
         resolve_endpoint, resolve_gemini_stream_endpoint, resolve_model_effort_core, resolve_model_list_endpoint,
         resolve_ollama_show_endpoint, responses_function_tool, responses_max_output_tokens, responses_stream_text,
         responses_text, responses_token_usage, retain_ollama_completion_models, retry_after_secs,
-        set_chat_completion_token_limit, stream, stream_claude, stream_claude_with_tools, stream_data_payload,
-        stream_error, stream_openai_with_tools, stream_with_tools, test_connection_core, uses_anthropic_messages_api,
-        validate_config, validate_model_list_config, with_retry, with_stream_retry, AiApiStyle, AiAuthMethod,
-        AiCapabilitySource, AiCompletionRequest, AiConfig, AiEffortCapability, AiEffortOption, AiEffortSelection,
-        AiMessage, AiModelInfo, AiProvider, AiReasoningLevel, StreamToolEvent, StreamingToolCallAccumulator,
-        ToolCallRef, AUTHORIZATION, CLAUDE_DEFAULT_SYSTEM, TEST_PROMPT,
+        set_chat_completion_token_limit, stream, stream_claude, stream_claude_with_tools, stream_codex_responses,
+        stream_data_payload, stream_error, stream_openai_with_tools, stream_with_tools, test_connection_core,
+        uses_anthropic_messages_api, validate_config, validate_model_list_config, with_retry, with_stream_retry,
+        AiApiStyle, AiAuthMethod, AiCapabilitySource, AiCompletionRequest, AiConfig, AiEffortCapability,
+        AiEffortOption, AiEffortSelection, AiMessage, AiModelInfo, AiProvider, AiReasoningLevel, StreamToolEvent,
+        StreamingToolCallAccumulator, ToolCallRef, AUTHORIZATION, CLAUDE_DEFAULT_SYSTEM, TEST_PROMPT,
     };
     struct CapturedJsonRequest {
         headers: String,
@@ -4093,6 +4538,7 @@ mod tests {
         AiCompletionRequest {
             config: AiConfig {
                 provider: AiProvider::Claude,
+                oauth_account_id: None,
                 api_key: "secret".to_string(),
                 auth_method: AiAuthMethod::ApiKey,
                 endpoint,
@@ -4700,6 +5146,7 @@ mod tests {
     fn ai_http_client_rejects_invalid_proxy_url() {
         let config = AiConfig {
             provider: AiProvider::Openai,
+            oauth_account_id: None,
             api_key: "key".to_string(),
             auth_method: AiAuthMethod::Bearer,
             endpoint: "https://api.openai.com/v1/chat/completions".to_string(),
@@ -4731,6 +5178,7 @@ mod tests {
     fn ai_http_client_accepts_proxy_host_port_without_scheme() {
         let config = AiConfig {
             provider: AiProvider::Openai,
+            oauth_account_id: None,
             api_key: "key".to_string(),
             auth_method: AiAuthMethod::Bearer,
             endpoint: "https://api.openai.com/v1/chat/completions".to_string(),
@@ -4760,6 +5208,7 @@ mod tests {
     fn ai_http_client_bypasses_proxy_for_loopback_endpoint() {
         let config = AiConfig {
             provider: AiProvider::OpenaiCompatible,
+            oauth_account_id: None,
             api_key: "key".to_string(),
             auth_method: AiAuthMethod::Bearer,
             endpoint: "http://127.0.0.1:3456/v1".to_string(),
@@ -4789,6 +5238,7 @@ mod tests {
     fn resolves_gemini_and_ollama_endpoints() {
         let gemini = AiConfig {
             provider: AiProvider::Gemini,
+            oauth_account_id: None,
             api_key: "key".to_string(),
             auth_method: AiAuthMethod::ApiKey,
             endpoint: "https://generativelanguage.googleapis.com".to_string(),
@@ -4822,6 +5272,7 @@ mod tests {
 
         let ollama = AiConfig {
             provider: AiProvider::Ollama,
+            oauth_account_id: None,
             api_key: String::new(),
             auth_method: AiAuthMethod::Bearer,
             endpoint: "http://localhost:11434/v1".to_string(),
@@ -4852,6 +5303,7 @@ mod tests {
     fn allows_empty_api_keys_only_for_self_hosted_providers() {
         let base = AiConfig {
             provider: AiProvider::OpenaiCompatible,
+            oauth_account_id: None,
             api_key: String::new(),
             auth_method: AiAuthMethod::Bearer,
             endpoint: "http://localhost:8080/v1".to_string(),
@@ -4901,6 +5353,7 @@ mod tests {
     fn resolves_model_list_endpoints_from_base_and_completion_urls() {
         let openai = AiConfig {
             provider: AiProvider::Openai,
+            oauth_account_id: None,
             api_key: "key".to_string(),
             auth_method: AiAuthMethod::Bearer,
             endpoint: "https://api.openai.com/v1/chat/completions".to_string(),
@@ -4926,6 +5379,7 @@ mod tests {
 
         let claude = AiConfig {
             provider: AiProvider::Claude,
+            oauth_account_id: None,
             api_key: "key".to_string(),
             auth_method: AiAuthMethod::ApiKey,
             endpoint: "https://api.anthropic.com/v1/messages".to_string(),
@@ -4954,6 +5408,7 @@ mod tests {
     fn custom_anthropic_messages_style_uses_claude_endpoints() {
         let config = AiConfig {
             provider: AiProvider::Custom,
+            oauth_account_id: None,
             api_key: "key".to_string(),
             auth_method: AiAuthMethod::ApiKey,
             endpoint: "https://gateway.example.com/anthropic/v1".to_string(),
@@ -5034,6 +5489,7 @@ mod tests {
     fn minimax_provider_uses_openai_compatible_endpoints_and_round_trips() {
         let config = AiConfig {
             provider: AiProvider::MiniMax,
+            oauth_account_id: None,
             api_key: "key".to_string(),
             auth_method: AiAuthMethod::Bearer,
             endpoint: "https://api.minimax.io/v1".to_string(),
@@ -5074,6 +5530,7 @@ mod tests {
         // Endpoint without /v1 — auto add
         let config = AiConfig {
             provider: AiProvider::OpenaiCompatible,
+            oauth_account_id: None,
             api_key: "key".to_string(),
             auth_method: AiAuthMethod::Bearer,
             endpoint: "https://api.example.com".to_string(),
@@ -5138,6 +5595,7 @@ mod tests {
     fn official_openai_endpoint_tracks_api_style() {
         let config = AiConfig {
             provider: AiProvider::Openai,
+            oauth_account_id: None,
             api_key: "key".to_string(),
             auth_method: AiAuthMethod::Bearer,
             endpoint: "https://api.openai.com/v1/chat/completions".to_string(),
@@ -5174,6 +5632,7 @@ mod tests {
     fn claude_headers_support_api_key_and_bearer_auth() {
         let mut config = AiConfig {
             provider: AiProvider::Claude,
+            oauth_account_id: None,
             api_key: " \tsecret\r\n".to_string(),
             auth_method: AiAuthMethod::ApiKey,
             endpoint: "https://api.anthropic.com/v1/messages".to_string(),
@@ -5290,6 +5749,7 @@ mod tests {
     fn resolves_ollama_native_show_endpoint_from_openai_compatibility_url() {
         let config = AiConfig {
             provider: AiProvider::Ollama,
+            oauth_account_id: None,
             api_key: String::new(),
             auth_method: AiAuthMethod::Bearer,
             endpoint: "http://localhost:11434/v1/chat/completions".to_string(),
@@ -5323,6 +5783,7 @@ mod tests {
             spawn_json_capture_server("application/json", r#"{"capabilities":["completion","tools"]}"#).await;
         let config = AiConfig {
             provider: AiProvider::Ollama,
+            oauth_account_id: None,
             api_key: String::new(),
             auth_method: AiAuthMethod::Bearer,
             endpoint,
@@ -5405,6 +5866,7 @@ mod tests {
 
         let config = AiConfig {
             provider: AiProvider::Ollama,
+            oauth_account_id: None,
             api_key: String::new(),
             auth_method: AiAuthMethod::Bearer,
             endpoint: format!("http://{address}/v1"),
@@ -5667,6 +6129,7 @@ mod tests {
     fn uses_max_completion_tokens_for_openai_reasoning_chat_completions() {
         let mut config = AiConfig {
             provider: AiProvider::Openai,
+            oauth_account_id: None,
             api_key: "key".to_string(),
             auth_method: AiAuthMethod::Bearer,
             endpoint: "https://api.openai.com/v1/chat/completions".to_string(),
@@ -5879,6 +6342,7 @@ mod tests {
     fn omits_extra_body_for_kimi_test_connection_body() {
         let config = AiConfig {
             provider: AiProvider::OpenaiCompatible,
+            oauth_account_id: None,
             api_key: "key".to_string(),
             auth_method: AiAuthMethod::Bearer,
             endpoint: "https://api.moonshot.cn/v1".to_string(),
@@ -5917,6 +6381,7 @@ mod tests {
     fn omits_thinking_toggle_for_openai_requests() {
         let mut config = AiConfig {
             provider: AiProvider::Openai,
+            oauth_account_id: None,
             api_key: "key".to_string(),
             auth_method: AiAuthMethod::Bearer,
             endpoint: "https://api.openai.com/v1/chat/completions".to_string(),
@@ -5961,6 +6426,7 @@ mod tests {
     fn keeps_extra_body_thinking_toggle_for_other_compatible_providers() {
         let config = AiConfig {
             provider: AiProvider::OpenaiCompatible,
+            oauth_account_id: None,
             api_key: "key".to_string(),
             auth_method: AiAuthMethod::Bearer,
             endpoint: "https://example.com/v1".to_string(),
@@ -5999,6 +6465,7 @@ mod tests {
     fn minimax_uses_native_thinking_toggle() {
         let config = AiConfig {
             provider: AiProvider::MiniMax,
+            oauth_account_id: None,
             api_key: "key".to_string(),
             auth_method: AiAuthMethod::Bearer,
             endpoint: "https://api.minimax.io/v1".to_string(),
@@ -6033,6 +6500,7 @@ mod tests {
     fn runtime_provider_default_suppresses_legacy_thinking_toggle() {
         let mut config = AiConfig {
             provider: AiProvider::OpenaiCompatible,
+            oauth_account_id: None,
             api_key: "key".to_string(),
             auth_method: AiAuthMethod::Bearer,
             endpoint: "https://example.com/v1".to_string(),
@@ -6098,6 +6566,7 @@ mod tests {
 
         let config = AiConfig {
             provider: AiProvider::OpenaiCompatible,
+            oauth_account_id: None,
             api_key: "lm-studio".to_string(),
             auth_method: AiAuthMethod::Bearer,
             endpoint: format!("http://{address}/v1"),
@@ -6157,6 +6626,7 @@ mod tests {
     fn uses_reasoning_effort_to_disable_ollama_thinking() {
         let config = AiConfig {
             provider: AiProvider::Ollama,
+            oauth_account_id: None,
             api_key: String::new(),
             auth_method: AiAuthMethod::Bearer,
             endpoint: "http://localhost:11434/v1".to_string(),
@@ -6762,5 +7232,129 @@ mod tests {
         server.abort();
         let requests = count.load(std::sync::atomic::Ordering::SeqCst);
         assert_eq!(requests, 1, "max_retries=0 should mean exactly 1 request, got {requests}");
+    }
+
+    fn codex_test_request() -> AiCompletionRequest {
+        let mut config = test_config(AiProvider::OpenaiCodex);
+        config.model = "model-discovered-from-catalog".to_string();
+        config.oauth_account_id = Some("opaque-local-account-id".to_string());
+        AiCompletionRequest {
+            config,
+            system_prompt: "Developer instruction".to_string(),
+            messages: vec![AiMessage {
+                role: "user".to_string(),
+                content: "Hello".to_string(),
+                tool_call_id: None,
+                tool_calls: Vec::new(),
+            }],
+            task_contract: None,
+            max_tokens: Some(64),
+        }
+    }
+
+    #[test]
+    fn codex_responses_use_selected_model_and_supported_wire_fields_only() {
+        let request = codex_test_request();
+        let body = build_codex_responses_body(&request, &[]);
+        assert_eq!(body["model"], "model-discovered-from-catalog");
+        assert_eq!(body["instructions"], "Developer instruction");
+        assert_eq!(body["input"][0]["role"], "user");
+        assert_eq!(body["store"], false);
+        assert_eq!(body["stream"], true);
+        assert!(body.get("max_tokens").is_none());
+        assert!(body.get("max_output_tokens").is_none());
+        assert!(body.get("temperature").is_none());
+        let mut legacy_style = request;
+        legacy_style.config.api_style = AiApiStyle::Completions;
+        legacy_style.config.runtime_effort = Some(super::AiEffortSelection::Enum("high".to_string()));
+        let legacy_body = build_codex_responses_body(&legacy_style, &[]);
+        assert_eq!(legacy_body["reasoning"]["effort"], "high");
+        assert!(legacy_body.get("reasoning_effort").is_none());
+    }
+
+    #[test]
+    fn codex_account_header_uses_jwt_workspace_id_not_opaque_account_id() {
+        let opaque_account_id = "opaque-local-account-id";
+        let token = crate::ai_codex_oauth::CodexAccessToken {
+            bearer: "access-token-secret".to_string(),
+            chatgpt_account_id: Some("workspace-from-jwt-claim".to_string()),
+        };
+        let headers = codex_responses_headers(&token).unwrap();
+        assert_eq!(headers["chatgpt-account-id"], "workspace-from-jwt-claim");
+        assert_ne!(headers["chatgpt-account-id"], opaque_account_id);
+        assert_eq!(headers[AUTHORIZATION], "Bearer access-token-secret");
+        assert!(headers[AUTHORIZATION].is_sensitive());
+        assert!(!format!("{headers:?}").contains("access-token-secret"));
+        assert!(codex_responses_headers(&crate::ai_codex_oauth::CodexAccessToken {
+            bearer: "access-token-secret".to_string(),
+            chatgpt_account_id: None,
+        })
+        .is_err());
+    }
+
+    #[test]
+    fn codex_catalog_is_dynamic_and_never_falls_back_to_built_in_models() {
+        let models = parse_codex_model_list(&serde_json::json!({
+            "models": [{
+                "slug": "catalog-only-model",
+                "display_name": "Catalog model",
+                "supported_reasoning_levels": ["low", "high"]
+            }]
+        }))
+        .unwrap();
+        assert_eq!(models.len(), 1);
+        assert_eq!(models[0].id, "catalog-only-model");
+        assert_eq!(models[0].display_name.as_deref(), Some("Catalog model"));
+        assert_eq!(models[0].supported_effort_levels.len(), 2);
+        let objects = parse_codex_model_list(&serde_json::json!({
+            "models": [{ "slug": "future-codex-model", "supported_reasoning_levels": [
+                { "effort": "none", "description": "No reasoning" },
+                { "effort": "high", "description": "More reasoning" }
+            ] }]
+        }))
+        .unwrap();
+        let super::AiEffortCapability::Enum { options, source, .. } = objects[0].effort_capability.as_ref().unwrap()
+        else {
+            panic!("expected provider-reported effort choices");
+        };
+        assert_eq!(*source, super::AiCapabilitySource::ProviderApi);
+        assert_eq!(options.len(), 2);
+        assert_eq!(options[0].selection, super::AiEffortSelection::Enum("none".to_string()));
+        assert!(parse_codex_model_list(&serde_json::json!({ "models": [] })).unwrap().is_empty());
+        assert!(parse_codex_model_list(&serde_json::json!({ "unexpected": [] })).is_err());
+    }
+
+    #[test]
+    fn codex_terminal_events_reasoning_summary_and_unterminated_final_sse_line_are_handled() {
+        assert!(codex_event_terminal(&serde_json::json!({ "type": "response.completed" })).unwrap());
+        assert!(codex_event_terminal(&serde_json::json!({ "type": "response.done" })).unwrap());
+        assert!(codex_event_terminal(&serde_json::json!({ "type": "response.incomplete" })).is_err());
+        assert_eq!(
+            codex_reasoning_delta(&serde_json::json!({
+                "type": "response.reasoning_summary_text.delta",
+                "delta": "thinking"
+            })),
+            Some("thinking")
+        );
+
+        let mut buffer = br#"data: {"type":"response.completed"}"#.to_vec();
+        finish_codex_sse_buffer(&mut buffer);
+        let line = drain_next_stream_line(&mut buffer).unwrap().unwrap();
+        let payload = super::stream_data_payload(&line).unwrap();
+        assert!(codex_event_terminal(&serde_json::from_str(payload).unwrap()).unwrap());
+        assert!(buffer.is_empty());
+    }
+
+    #[tokio::test]
+    async fn codex_stream_cancel_before_initial_request_never_starts_auth_or_network() {
+        let request = codex_test_request();
+        let client = reqwest::Client::new();
+        let cancelled = Notify::new();
+        cancelled.notify_one();
+        let result = stream_codex_responses(&client, "codex-cancel-test", &request, &[], &cancelled, &|_| {
+            panic!("cancelled Codex request must not emit stream events");
+        })
+        .await;
+        assert_eq!(result.unwrap_err(), super::AGENT_CANCELLED_ERROR);
     }
 }

@@ -1,14 +1,15 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { AlertCircle, AlertOctagon, AlertTriangle, Braces, GitBranch, Info, Stethoscope, Table2, FileText, Workflow } from "@lucide/vue";
+import { AlertCircle, AlertOctagon, AlertTriangle, Bot, Braces, GitBranch, Info, Stethoscope, Table2, FileText, Workflow } from "@lucide/vue";
 import type { ParsedExplainPlan, ExplainPlanNode } from "@/lib/diagram/explainPlan";
 import { flattenExplainPlanNodes } from "@/lib/diagram/explainPlan";
 import { analyzeExplainPlan } from "@/lib/diagram/explainPlanDiagnosis";
 import type { ExplainPlanFindingSeverity } from "@/lib/diagram/explainPlanDiagnosis";
 import { extractActualRows } from "@/lib/diagram/planCanvas";
+import { buildExplainPlanAiPrompt } from "@/lib/diagram/explainPlanAiAnalysis";
 import { Button } from "@/components/ui/button";
-import type { QueryResult } from "@/types/database";
+import type { ConnectionConfig, QueryResult } from "@/types/database";
 import ExplainPlanNodeTree from "./ExplainPlanNodeTree.vue";
 import ExplainPlanDiagram from "./ExplainPlanDiagram.vue";
 
@@ -18,11 +19,17 @@ const props = defineProps<{
   loading?: boolean;
   sourceSql?: string;
   explainSql?: string;
+  connection?: ConnectionConfig;
+  database?: string;
+  schema?: string;
   tableResult?: QueryResult;
   tableError?: string;
 }>();
 
 const { t } = useI18n();
+const emit = defineEmits<{
+  analyzeAi: [prompt: string];
+}>();
 const activeView = ref<"canvas" | "tree" | "summary" | "raw" | "table">("canvas");
 const hasTableView = computed(() => !!props.tableResult || !!props.tableError);
 
@@ -84,6 +91,39 @@ function tableCellText(value: unknown): string {
   if (value === null) return "NULL";
   return value === undefined ? "" : String(value);
 }
+
+function analyzeWithAi() {
+  const plan = props.plan;
+  const sourceSql = props.sourceSql;
+  if (!plan || !sourceSql?.trim()) return;
+
+  const connection = props.connection;
+  emit(
+    "analyzeAi",
+    buildExplainPlanAiPrompt({
+      sourceSql,
+      plan,
+      connection: connection
+        ? {
+            name: connection.name,
+            databaseType: connection.db_type,
+            host: connection.host,
+            port: connection.port,
+            database: props.database,
+            schema: props.schema,
+            productName: connection.database_info?.productName,
+            productVersion: connection.database_info?.productVersion,
+            sqlCompatibility: connection.database_info?.sqlCompatibility,
+          }
+        : undefined,
+      diagnoses: findings.value.map((finding) => ({
+        ...finding,
+        summary: t(`explainDiagnosis.finding.${finding.code}`, finding.metrics),
+        suggestion: t(`explainDiagnosis.suggestion.${finding.code}`),
+      })),
+    }),
+  );
+}
 </script>
 
 <template>
@@ -98,6 +138,10 @@ function tableCellText(value: unknown): string {
       </span>
       <span v-if="measuredRowsLabel" class="ml-1 inline-flex items-center gap-1 rounded bg-green-100 px-1.5 py-0.5 font-semibold text-green-700 dark:bg-green-900/30 dark:text-green-300" style="font-size: 10px">{{ measuredRowsLabel }}</span>
       <span class="flex-1" />
+      <Button v-if="plan && sourceSql?.trim()" size="sm" variant="outline" class="h-7 gap-1.5 px-2 text-xs" :title="t('history.analyzeWithAi')" :aria-label="t('history.analyzeWithAi')" @click="analyzeWithAi">
+        <Bot class="h-3.5 w-3.5" aria-hidden="true" />
+        {{ t("history.analyzeWithAi") }}
+      </Button>
       <div v-if="plan || hasTableView" class="inline-flex rounded-md border bg-muted/40 p-0.5">
         <Button v-if="plan" size="sm" :variant="activeView === 'canvas' ? 'secondary' : 'ghost'" class="h-6 px-2 text-xs gap-1" @click="activeView = 'canvas'">
           <Workflow class="h-3.5 w-3.5" />

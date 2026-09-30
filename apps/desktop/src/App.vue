@@ -126,6 +126,7 @@ import { Input } from "@/components/ui/input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import type { HistoryEntry } from "@/lib/backend/tauri";
 import type { AiAction } from "@/lib/ai/ai";
+import type { AiInvocationOptions } from "@/lib/ai/aiInvocationRouting";
 
 const AiAssistant = defineAsyncComponent(() => import("@/components/editor/AiAssistant.vue"));
 const QueryHistory = defineAsyncComponent(() => import("@/components/editor/QueryHistory.vue"));
@@ -146,7 +147,7 @@ const QueryEditorDdlViewDialog = defineAsyncComponent(() => import("@/components
 const QueryEditorObjectSourceDialog = defineAsyncComponent(() => import("@/components/objects/ObjectSourceDialog.vue"));
 
 type AiAssistantHandle = {
-  triggerAction: (action: AiAction, instruction?: string) => void;
+  triggerAction: (action: AiAction, instruction?: string, options?: AiInvocationOptions) => void;
   setPrompt: (text: string) => void;
 };
 
@@ -659,7 +660,12 @@ function invokeWhenAiReady(invoke: (handle: AiAssistantHandle) => void) {
 
 function fixWithAi(errorMessage: string) {
   openToolPanel("ai");
-  invokeWhenAiReady((handle) => handle.triggerAction("fix", errorMessage));
+  invokeWhenAiReady((handle) => handle.triggerAction("fix", errorMessage, { modelSource: "settings-default" }));
+}
+
+function analyzeExplainPlanWithAi(prompt: string) {
+  openToolPanel("ai");
+  invokeWhenAiReady((handle) => handle.triggerAction("explain", prompt, { modelSource: "settings-default" }));
 }
 
 function sendSelectionToAi(sql: string) {
@@ -671,7 +677,7 @@ function openAiPanel() {
   openToolPanel("ai");
 }
 
-function analyzeHistoryWithAi(entry: HistoryEntry) {
+async function analyzeHistoryWithAi(entry: HistoryEntry) {
   const connectionId = entry.connection_id || activeTab.value?.connectionId;
   if (!connectionId) {
     toast(t("history.aiAnalyzeNoConnection"), 5000);
@@ -689,7 +695,9 @@ function analyzeHistoryWithAi(entry: HistoryEntry) {
   const title = t("history.aiAnalysisTab");
   const tabId = queryStore.createTab(connectionId, database || "", title, "query");
   queryStore.updateSql(tabId, entry.sql);
-  invokeWhenAiReady((handle) => handle.triggerAction("explain", buildHistoryAiAnalysisPrompt(entry)));
+  // Let AiAssistant receive the new tab's connection/database before it snapshots context.
+  await nextTick();
+  invokeWhenAiReady((handle) => handle.triggerAction("explain", buildHistoryAiAnalysisPrompt(entry), { modelSource: "settings-default" }));
 }
 
 function formatActiveSql() {
@@ -2578,6 +2586,7 @@ onUnmounted(() => {
                       @update:active-output-view="activeOutputView = $event"
                       @fix-with-ai="fixWithAi"
                       @send-selection-to-ai="sendSelectionToAi"
+                      @explain-plan-analyze-with-ai="analyzeExplainPlanWithAi"
                       @execute="tryExecute($event)"
                       @execute-in-new-result-tab="tryExecuteInNewResultTab($event)"
                       @cancel="cancelActiveExecution()"

@@ -1,4 +1,4 @@
-export type AiProvider = "claude" | "openai" | "gemini" | "deepseek" | "qwen" | "minimax" | "kimi" | "glm" | "doubao" | "ollama" | "anthropic-compatible" | "openai-compatible" | "claude-code-cli" | "pi-agent-cli" | "codex-cli" | "custom";
+export type AiProvider = "claude" | "openai" | "openai-codex" | "gemini" | "deepseek" | "qwen" | "minimax" | "kimi" | "glm" | "doubao" | "ollama" | "anthropic-compatible" | "openai-compatible" | "claude-code-cli" | "pi-agent-cli" | "codex-cli" | "custom";
 export type AiApiStyle = "completions" | "responses" | "anthropic-messages";
 /** Permission level for the AI agent's database access. Production databases always degrade to "readonly". */
 export type AiAgentPermissionLevel = "readonly" | "data" | "full";
@@ -32,6 +32,8 @@ export interface AiConfiguredModel {
 export interface AiConfig {
   provider: AiProvider;
   apiKey: string;
+  /** Opaque reference to backend-only encrypted subscription credentials. */
+  oauthAccountId?: string;
   authMethod: AiAuthMethod;
   endpoint: string;
   model: string;

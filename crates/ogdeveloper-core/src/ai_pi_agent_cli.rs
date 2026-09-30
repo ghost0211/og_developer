@@ -737,6 +737,7 @@ mod tests {
         AiConfig {
             provider: AiProvider::PiAgentCli,
             api_key: String::new(),
+            oauth_account_id: None,
             auth_method: AiAuthMethod::Bearer,
             endpoint: String::new(),
             model: "openai-codex/gpt-5.4".to_string(),

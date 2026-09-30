@@ -986,3 +986,22 @@ schema 校验兜底（本地元数据冷时）。editor 相关 189 例 + 补全 
 用户认为 `app.list_field_policy` 的 6 条 missing_column 是误报（“fp/rfp 只是别名”）。**核查结论：分析器正确，函数确有运行时错误**。探针验证语义模型能正确解析 JOIN 别名（ur/rfp/fp 均成行源），且 `sqlSemanticTableNameSpans` 覆盖 JOIN 表名；测试库实证：`app.app_fieldperm` 17 列中无 field_action_dict/mask_pattern_txt/fieldperm_code/sort_order，`app.app_role_fieldperm` 的主键是 role_fieldperm_id 而非 fieldperm_id；直接调用 `SELECT * FROM app.list_field_policy(0,0,'x')` 服务器报 `column rfp.fieldperm_id does not exist`（SQL function during startup）——与分析器第 23 行发现完全一致。该函数引用的是旧版表结构字段，从未成功运行。
 
 **改进（消息文案）**：missing_column 消息原本只说“未找到字段 fp.x”，未说明别名指向，导致用户误读。改为“未找到字段 fp.x（fp 是 app.app_fieldperm 的别名）。”。新增 1 例断言别名指向的测试。
+
+## 28. v0.2.31：执行计划 AI 解读、默认模型路由与 Codex 订阅认证（2026-09-30）
+
+**执行计划入口**：ExplainPlanViewer 增加「用 AI 分析」，发送该次执行计划对应的原 SQL、解析树、原始结果、规则诊断及去掉凭据的数据库上下文；Ask 模式分析现有证据，不自动执行 SQL 或 EXPLAIN ANALYZE。错误修复、历史记录分析及计划解读统一按设置默认配置的默认模型发起，不使用聊天临时模型/推理偏好，不改写聊天模型选择。默认模型缺失时给明确设置指引。连接识别原先已按默认配置调用。
+
+**思考等级**：配置页增加默认思考等级；聊天输入区增加独立思考按钮，去除模型菜单底部的嵌套悬停子菜单。区分「配置默认」（清除临时偏好）与「提供方默认」（不发推理参数），优先采用服务商能力元数据；可识别的兼容网关模型提供标注来源的建议选项，未知型号保留自由输入。补齐配置模型能力的缓存/请求验证；按官方资料修正 GPT-5.2/5.4/5.5 的 none/minimal 差异及 GPT-6 家族选项。
+
+**订阅认证**：新增独立 `openai-codex` 提供商，不恢复缺 MCP 桥接的 CLI 提供商。OpenAI 设备码授权由用户自行点击链接完成；前端仅保存不透明账号 ID，令牌在后端加密保存并自动刷新；加密密钥独立置于数据目录的 `openai-codex-oauth.key`（Unix 0600，Windows 依赖应用目录 ACL，不宣称 DPAPI）。刷新与断开互斥，请求头与凭据 Debug 脱敏；固定认证/Responses 地址且禁止重定向。订阅请求固定 `store:false`，使用真实 ChatGPT workspace ID，识别完成/失败/提前 EOF，支持初始请求与轮询读取取消。模型列表及思考选项来自服务商，不伪造硬编码列表。桌面命令与 Web 受保护路由覆盖 begin/poll/cancel/status/disconnect；取消和断开账号不取消上游订阅。Web 仅适用于可信私有部署。开发验证不读取用户 Codex 登录缓存，不进行真实账号授权。
+
+**流式错误处理**：Web 普通 AI 流不再吞掉失败、把 done 后的错误视为成功；等待响应关闭，检查终态并释放 reader。Codex 请求错误仅返回安全诊断。
+
+使用说明：`docs/ai-context-actions.md`。
+
+**最终验证**：
+- 前端 format、oxlint、typecheck、build 通过；全量 `pnpm check` 已执行的 **5260 项测试全部通过**，但 5 个既有本地套件因 `Error: No such built-in module: node:` 无法加载，整体 check 非全绿。此问题此前已在 v0.2.27 基线复现。
+- 核心 AI 模块 99 项、思考等级 26 项、订阅授权/保险库 9 项通过（134 项）；Web AI 路由 5 项通过。桌面及 Web 的 `cargo check --tests`、`cargo fmt --all --check` 通过。
+- 桌面 AI 单测编译成功，但程序启动被本机 `0xc0000139 / STATUS_ENTRYPOINT_NOT_FOUND` 阻断，未执行测试，不记为通过，也未认定为既有问题。未为排查启动应用或操作桌面。
+- 未读取用户 Codex 凭据、未进行真实账号登录、未打开或自动化桌面；真实设备授权和订阅请求端到端验证仍需用户自行登录完成。
+- 主应用四处版本同步至 `0.2.31`；账号可用性仍受套餐、服务权限及设备授权策略限制。

@@ -69,6 +69,7 @@ import type { DatabaseType, SqlSnippet } from "@/types/database";
 import { uuid } from "@/lib/common/utils";
 import { DEFAULT_SQL_SNIPPETS } from "@/lib/sql/sqlCompletion";
 import AiProviderLogo from "@/components/icons/AiProviderLogo.vue";
+import CodexAccountAuth from "@/components/editor/CodexAccountAuth.vue";
 import SqlFormatterSettingsPanel from "./SqlFormatterSettingsPanel.vue";
 import { APP_THEME_PALETTES, type AppCornerStyle, type AppThemeAppearance, type AppThemeMode, type AppThemePalette } from "@/lib/app/appTheme";
 import { editorSettingsDraftChanged, editorSettingsDraftFromSettings, editorSettingsPatchFromDraft, normalizeTableOpenPageSizeDraft, type EditorSettingsDraft } from "@/lib/settings/editorSettingsDraft";
@@ -1783,6 +1784,8 @@ const selectedAiProviderPreset = computed(() => AI_PROVIDER_PRESETS[aiEditProvid
 
 const aiEditProvider = ref<AiProvider>("claude");
 const aiEditApiKey = ref("");
+const aiEditOauthAccountId = ref<string | undefined>();
+const aiIsCodexSubscription = computed(() => aiEditProvider.value === "openai-codex");
 const aiEditAuthMethod = ref<AiAuthMethod>("api-key");
 const aiEditEndpoint = ref("");
 const aiEditModel = ref("");
@@ -1948,7 +1951,8 @@ function removeCliEnvRow(id: string) {
 function currentAiEditConfig() {
   return {
     provider: aiEditProvider.value,
-    apiKey: aiEditApiKey.value.trim(),
+    apiKey: aiIsCodexSubscription.value ? "" : aiEditApiKey.value.trim(),
+    oauthAccountId: aiIsCodexSubscription.value ? aiEditOauthAccountId.value : undefined,
     authMethod: aiEditAuthMethod.value,
     endpoint: aiEditEndpoint.value,
     model: aiEditModel.value,
@@ -1987,9 +1991,10 @@ function aiSelectProvider(provider: AiProvider) {
   const preset = AI_PROVIDER_PRESETS[provider];
   aiEditProvider.value = provider;
   aiEditApiKey.value = "";
+  aiEditOauthAccountId.value = undefined;
   aiEditAuthMethod.value = preset.authMethod;
   aiEditEndpoint.value = preset.endpoint;
-  aiEditModel.value = "";
+  aiEditModel.value = provider === "openai-codex" ? preset.model : "";
   aiEditLegacyModels.value = [];
   aiEditApiStyle.value = preset.apiStyle;
   aiEditEnableThinking.value = true;
@@ -2019,6 +2024,7 @@ function aiEnterEditMode(configId?: string) {
       aiEditConfigName.value = config.name;
       aiEditProvider.value = config.provider;
       aiEditApiKey.value = config.apiKey;
+      aiEditOauthAccountId.value = config.oauthAccountId;
       aiEditAuthMethod.value = config.authMethod;
       aiEditEndpoint.value = config.endpoint;
       aiEditModel.value = config.model;
@@ -2044,6 +2050,7 @@ function aiEnterEditMode(configId?: string) {
     aiEditConfigName.value = "";
     aiEditProvider.value = "claude";
     aiEditApiKey.value = "";
+    aiEditOauthAccountId.value = undefined;
     aiEditAuthMethod.value = AI_PROVIDER_PRESETS["claude"].authMethod;
     aiEditEndpoint.value = AI_PROVIDER_PRESETS["claude"].endpoint;
     aiEditModel.value = "";
@@ -2126,7 +2133,7 @@ async function aiSetDefaultConfig(id: string) {
 }
 
 async function aiTestConn() {
-  if ((aiRequiresApiKey.value && !aiEditApiKey.value.trim()) || (!aiIsCliProvider.value && !aiEditEndpoint.value.trim())) return;
+  if ((aiRequiresApiKey.value && !aiEditApiKey.value.trim()) || (aiIsCodexSubscription.value && !aiEditOauthAccountId.value) || (!aiIsCliProvider.value && !aiEditEndpoint.value.trim())) return;
   if (aiCliValidationError.value) {
     aiTestResult.value = "error";
     aiTestError.value = aiCliValidationError.value;
@@ -4382,14 +4389,20 @@ onUnmounted(() => {
                   </Select>
                 </div>
 
+                <!-- Subscription credentials remain on the backend. -->
+                <div v-if="aiIsCodexSubscription" class="grid grid-cols-3 items-start gap-3">
+                  <Label class="pt-2 text-right text-xs">{{ t("ai.codexAccountAuth") }}</Label>
+                  <CodexAccountAuth v-model:account-id="aiEditOauthAccountId" :config="currentAiEditConfig()" class="col-span-2" />
+                </div>
+
                 <!-- API Key -->
-                <div v-if="!aiIsCliProvider" class="grid grid-cols-3 items-center gap-3">
+                <div v-if="!aiIsCliProvider && !aiIsCodexSubscription" class="grid grid-cols-3 items-center gap-3">
                   <Label class="text-right text-xs">{{ aiCredentialLabel }}</Label>
                   <PasswordInput v-model="aiEditApiKey" autocomplete="off" class="col-span-2" inputClass="h-8 text-xs" :placeholder="aiCredentialPlaceholder" />
                 </div>
 
                 <!-- Endpoint -->
-                <div v-if="!aiIsCliProvider" class="grid grid-cols-3 items-start gap-3">
+                <div v-if="!aiIsCliProvider && !aiIsCodexSubscription" class="grid grid-cols-3 items-start gap-3">
                   <Label class="pt-2 text-right text-xs">Endpoint</Label>
                   <div class="col-span-2 space-y-1.5">
                     <Input v-model="aiEditEndpoint" :placeholder="aiEndpointPlaceholder" autocomplete="off" class="h-8 text-xs" />
@@ -4486,6 +4499,28 @@ onUnmounted(() => {
                 <div v-if="!aiIsCliProvider" class="grid grid-cols-3 items-center gap-3">
                   <Label class="text-right text-xs">{{ t("ai.defaultModel") }}</Label>
                   <Input v-model="aiEditModel" autocomplete="off" class="col-span-2 h-8 text-xs" :placeholder="t('ai.manualModelPlaceholder')" />
+                </div>
+
+                <!-- Default reasoning level -->
+                <div class="grid grid-cols-3 items-start gap-3">
+                  <Label class="pt-1.5 text-right text-xs">{{ t("ai.defaultReasoningLevel") }}</Label>
+                  <div class="col-span-2 space-y-1.5">
+                    <Select v-model="aiEditReasoningLevel">
+                      <SelectTrigger class="h-8 w-full text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="default">{{ t("ai.reasoningLevelDefault") }}</SelectItem>
+                        <SelectItem value="minimal">{{ t("ai.reasoningLevelMinimal") }}</SelectItem>
+                        <SelectItem value="low">{{ t("ai.reasoningLevelLow") }}</SelectItem>
+                        <SelectItem value="medium">{{ t("ai.reasoningLevelMedium") }}</SelectItem>
+                        <SelectItem value="high">{{ t("ai.reasoningLevelHigh") }}</SelectItem>
+                        <SelectItem value="xhigh">{{ t("ai.reasoningLevelXhigh") }}</SelectItem>
+                        <SelectItem value="max">{{ t("ai.reasoningLevelMax") }}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p class="text-xs text-muted-foreground">{{ t("ai.defaultReasoningLevelHint") }}</p>
+                  </div>
                 </div>
 
                 <!-- Context Window -->
@@ -4595,7 +4630,7 @@ onUnmounted(() => {
             </template>
             <template v-else>
               <div class="flex min-w-0 flex-1 items-center gap-2">
-                <Button size="sm" variant="outline" :disabled="aiTesting || !!aiCliValidationError || (aiRequiresApiKey && !aiEditApiKey?.trim()) || (!aiIsCliProvider && !aiEditEndpoint?.trim())" @click="aiTestConn">
+                <Button size="sm" variant="outline" :disabled="aiTesting || !!aiCliValidationError || (aiRequiresApiKey && !aiEditApiKey?.trim()) || (aiIsCodexSubscription && !aiEditOauthAccountId) || (!aiIsCliProvider && !aiEditEndpoint?.trim())" @click="aiTestConn">
                   <Loader2 v-if="aiTesting" class="h-3 w-3 animate-spin mr-1" />
                   {{ t("connection.test") }}
                 </Button>

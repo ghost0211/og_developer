@@ -334,6 +334,18 @@ describe("settingsStore AI API key normalization", () => {
     expect(store.aiConfigs[0].apiKey).toBe("secret");
   });
 
+  it("normalizes subscription credentials to an opaque reference with a fixed endpoint", () => {
+    expect(normalizeAiConfig({ provider: "openai-codex", apiKey: "must-not-be-used", oauthAccountId: " account-ref ", endpoint: "https://attacker.example", apiStyle: "completions" })).toMatchObject({
+      provider: "openai-codex",
+      apiKey: "",
+      oauthAccountId: "account-ref",
+      endpoint: "https://chatgpt.com/backend-api/codex/responses",
+      apiStyle: "responses",
+      authMethod: "bearer",
+    });
+    expect(normalizeAiConfig({ provider: "openai", oauthAccountId: "account-ref" }).oauthAccountId).toBeUndefined();
+  });
+
   it("trims API keys when normalizing loaded configurations", () => {
     expect(normalizeAiConfig({ provider: "openai", apiKey: "  secret  " }).apiKey).toBe("secret");
   });

@@ -11,7 +11,6 @@ import { describe, expect, it } from "vitest";
  * HTTP client can call with the routes registered in the axum main router.
  */
 
-const repoRoot = new URL("../../../../../../", import.meta.url);
 const httpSource = readFileSync(new URL("../http.ts", import.meta.url), "utf8");
 const gitHttpSource = readFileSync(new URL("../git-http.ts", import.meta.url), "utf8");
 const mainRsSource = readFileSync(new URL("../../../../../../crates/ogdeveloper-web/src/main.rs", import.meta.url), "utf8");
@@ -73,6 +72,12 @@ function pathCovered(clientPath: string, serverRoutes: Set<string>): boolean {
 }
 
 describe("web API route coverage", () => {
+  it("registers all Codex account authorization routes", () => {
+    const routes = extractServerRoutes(mainRsSource);
+    for (const action of ["begin", "poll", "cancel", "status", "disconnect"]) {
+      expect(routes.has(`/ai/codex-auth/${action}`)).toBe(true);
+    }
+  });
   it("reports the full gap list (kept informative on failure)", () => {
     const serverRoutes = extractServerRoutes(mainRsSource);
     expect(serverRoutes.size).toBeGreaterThan(50);

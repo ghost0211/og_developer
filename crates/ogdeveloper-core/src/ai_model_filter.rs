@@ -89,6 +89,7 @@ pub(crate) fn model_is_assistant_compatible(provider: &AiProvider, model_id: &st
         AiProvider::Gemini => !is_gemini_non_assistant_model(&model),
         AiProvider::Qwen => !is_qwen_non_assistant_model(&model),
         AiProvider::Claude
+        | AiProvider::OpenaiCodex
         | AiProvider::AnthropicCompatible
         | AiProvider::Deepseek
         | AiProvider::Ollama

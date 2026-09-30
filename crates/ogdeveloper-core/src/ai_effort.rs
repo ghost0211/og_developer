@@ -1,5 +1,6 @@
 use crate::ai::{
     AiApiStyle, AiCapabilitySource, AiConfig, AiEffortCapability, AiEffortOption, AiEffortSelection, AiProvider,
+    AiReasoningLevel,
 };
 use serde_json::{json, Map, Value};
 
@@ -71,27 +72,59 @@ pub fn static_effort_capability(config: &AiConfig, model_id: &str) -> Option<AiE
     let model = normalized_model_id(model_id);
     let source = AiCapabilitySource::OfficialRegistry;
 
+    // Explicit user-configured gateway levels must be honored by request validation
+    // as well as by the frontend catalog; otherwise selectable options fail locally.
+    if matches!(config.provider, AiProvider::OpenaiCompatible | AiProvider::Custom)
+        && config.api_style != AiApiStyle::AnthropicMessages
+    {
+        if let Some(saved) = config.models.iter().find(|saved| saved.name.trim() == model_id.trim()) {
+            if let Some(capability) = dynamic_enum_capability(
+                saved.supported_effort_levels.iter().map(|level| match level {
+                    crate::ai::AiEffortLevel::Low => "low",
+                    crate::ai::AiEffortLevel::Medium => "medium",
+                    crate::ai::AiEffortLevel::High => "high",
+                    crate::ai::AiEffortLevel::Xhigh => "xhigh",
+                    crate::ai::AiEffortLevel::Max => "max",
+                }),
+                AiCapabilitySource::Custom,
+            ) {
+                return Some(capability);
+            }
+        }
+    }
+
     match config.provider {
-        AiProvider::Openai => openai_capability(&model, source),
+        AiProvider::Openai | AiProvider::OpenaiCodex => openai_capability(&model, source),
         AiProvider::Gemini => gemini_capability(&model, source),
         AiProvider::Deepseek => deepseek_capability(&model, source),
         AiProvider::Qwen => qwen_capability(&model, source),
         AiProvider::Ollama => ollama_capability(&model, source),
         AiProvider::MiniMax if matches_family(&model, "minimax-m3") => Some(boolean_capability(source)),
         AiProvider::MiniMax => None,
-        AiProvider::AnthropicCompatible
-        | AiProvider::OpenaiCompatible
-        | AiProvider::Custom
-        | AiProvider::Kimi
-        | AiProvider::Glm
-        | AiProvider::Doubao => {
+        AiProvider::AnthropicCompatible | AiProvider::Kimi | AiProvider::Glm | AiProvider::Doubao => {
             Some(AiEffortCapability::FreeText { placeholder: None, source: AiCapabilitySource::Custom })
+        }
+        AiProvider::OpenaiCompatible | AiProvider::Custom => {
+            if config.api_style == AiApiStyle::AnthropicMessages {
+                Some(AiEffortCapability::FreeText { placeholder: None, source: AiCapabilitySource::Custom })
+            } else {
+                compatible_routed_capability(&model).or_else(|| {
+                    Some(AiEffortCapability::FreeText { placeholder: None, source: AiCapabilitySource::Custom })
+                })
+            }
         }
         AiProvider::Claude | AiProvider::CodexCli | AiProvider::ClaudeCodeCli | AiProvider::PiAgentCli => None,
     }
 }
 
 fn openai_capability(model: &str, source: AiCapabilitySource) -> Option<AiEffortCapability> {
+    // Distinct GPT-6 families have different support for disabling reasoning.
+    if matches_family(model, "gpt-6-astra") || matches_family(model, "gpt-6.1-sol") {
+        return Some(enum_capability(&["low", "medium", "high", "xhigh", "max"], source));
+    }
+    if matches_family(model, "gpt-6-luna") || matches_family(model, "gpt-6-sol") {
+        return Some(enum_capability(&["none", "low", "medium", "high", "xhigh", "max"], source));
+    }
     if matches_family(model, "gpt-5-pro") {
         return Some(enum_capability(&["high"], source));
     }
@@ -101,8 +134,12 @@ fn openai_capability(model: &str, source: AiCapabilitySource) -> Option<AiEffort
     if matches_family(model, "gpt-5.1") {
         return Some(enum_capability(&["none", "low", "medium", "high"], source));
     }
-    if matches_family(model, "gpt-5") || matches_family(model, "gpt-5.2") || matches_family(model, "gpt-5.4") {
-        return Some(enum_capability(&["minimal", "low", "medium", "high", "xhigh"], source));
+    // GPT-5.4/5.5 expose `none`, not the legacy GPT-5 `minimal` effort.
+    if matches_family(model, "gpt-5.2") || matches_family(model, "gpt-5.4") || matches_family(model, "gpt-5.5") {
+        return Some(enum_capability(&["none", "low", "medium", "high", "xhigh"], source));
+    }
+    if matches_family(model, "gpt-5") {
+        return Some(enum_capability(&["minimal", "low", "medium", "high"], source));
     }
     if ["o1", "o3", "o3-mini", "o4-mini"].iter().any(|family| matches_family(model, family)) {
         return Some(enum_capability(&["low", "medium", "high"], source));
@@ -153,6 +190,46 @@ fn deepseek_capability(model: &str, source: AiCapabilitySource) -> Option<AiEffo
     None
 }
 
+/// Resolve a small, explicit allow-list of model families exposed through
+/// OpenAI-compatible routes. The custom source intentionally marks these as
+/// gateway-dependent suggestions rather than verified endpoint capabilities.
+fn compatible_routed_capability(model: &str) -> Option<AiEffortCapability> {
+    let routed_model = model.rsplit('/').next().unwrap_or(model);
+    if matches_family(routed_model, "deepseek-v4.1") {
+        let mut capability = enum_capability(&["high", "max"], AiCapabilitySource::Custom);
+        if let AiEffortCapability::Enum { options, default, .. } = &mut capability {
+            options.insert(0, option("off", "Off", AiEffortSelection::Disabled));
+            *default = AiEffortSelection::ProviderDefault;
+            for option in options {
+                option.description =
+                    Some("Suggested for this routed model family; actual gateway support may differ.".to_string());
+            }
+        }
+        return Some(capability);
+    }
+
+    if let Some(mut capability) = deepseek_capability(routed_model, AiCapabilitySource::Custom) {
+        if let AiEffortCapability::Enum { options, default, .. } = &mut capability {
+            *default = AiEffortSelection::ProviderDefault;
+            for option in options {
+                option.description =
+                    Some("Suggested for this routed model family; actual gateway support may differ.".to_string());
+            }
+        }
+        return Some(capability);
+    }
+
+    let mut capability = openai_capability(routed_model, AiCapabilitySource::Custom)?;
+    if let AiEffortCapability::Enum { options, default, .. } = &mut capability {
+        *default = AiEffortSelection::ProviderDefault;
+        for option in options {
+            option.description =
+                Some("Suggested for this routed model family; actual gateway support may differ.".to_string());
+        }
+    }
+    Some(capability)
+}
+
 fn qwen_capability(model: &str, source: AiCapabilitySource) -> Option<AiEffortCapability> {
     if matches_family(model, "qwen3.8-max-preview") {
         return Some(enum_capability(&["low", "medium", "xhigh"], source));
@@ -180,7 +257,7 @@ fn ollama_capability(model: &str, source: AiCapabilitySource) -> Option<AiEffort
 
 pub fn registry_source_url(provider: &AiProvider) -> Option<&'static str> {
     match provider {
-        AiProvider::Openai => Some(OPENAI_REASONING_DOCS),
+        AiProvider::Openai | AiProvider::OpenaiCodex => Some(OPENAI_REASONING_DOCS),
         AiProvider::Gemini => Some(GEMINI_THINKING_DOCS),
         AiProvider::Deepseek => Some(DEEPSEEK_THINKING_DOCS),
         AiProvider::Qwen => Some(QWEN_THINKING_DOCS),
@@ -209,7 +286,11 @@ pub fn validate_runtime_effort(config: &AiConfig) -> Result<(), String> {
 
     if matches!(
         config.provider,
-        AiProvider::Claude | AiProvider::CodexCli | AiProvider::ClaudeCodeCli | AiProvider::PiAgentCli
+        AiProvider::Claude
+            | AiProvider::OpenaiCodex
+            | AiProvider::CodexCli
+            | AiProvider::ClaudeCodeCli
+            | AiProvider::PiAgentCli
     ) {
         return match selection {
             AiEffortSelection::Enum(value) if !value.trim().is_empty() => Ok(()),
@@ -218,11 +299,17 @@ pub fn validate_runtime_effort(config: &AiConfig) -> Result<(), String> {
     }
 
     let capability = static_effort_capability(config, &config.model).unwrap_or(AiEffortCapability::Unsupported);
-    let valid = match capability {
+    is_selection_supported(&capability, selection)
+        .then_some(())
+        .ok_or_else(|| format!("Invalid effort selection for model '{}'", config.model))
+}
+
+fn is_selection_supported(capability: &AiEffortCapability, selection: &AiEffortSelection) -> bool {
+    match capability {
         AiEffortCapability::Enum { options, .. } => options.iter().any(|option| option.selection == *selection),
         AiEffortCapability::Integer { min, max, step, special_values, .. } => {
             special_values.iter().any(|option| option.selection == *selection)
-                || matches!(selection, AiEffortSelection::Integer(value) if *value >= min && *value <= max && (*value - min) % step == 0)
+                || matches!(selection, AiEffortSelection::Integer(value) if *value >= *min && *value <= *max && (*value - *min) % *step == 0)
         }
         AiEffortCapability::Boolean { .. } => {
             matches!(selection, AiEffortSelection::Boolean(_) | AiEffortSelection::Disabled)
@@ -231,37 +318,59 @@ pub fn validate_runtime_effort(config: &AiConfig) -> Result<(), String> {
             matches!(selection, AiEffortSelection::Text(value) if valid_custom_effort(value))
         }
         AiEffortCapability::Unsupported => false,
-    };
+    }
+}
 
-    valid.then_some(()).ok_or_else(|| format!("Invalid effort selection for model '{}'", config.model))
+fn configured_reasoning_effort(level: &AiReasoningLevel) -> Option<AiEffortSelection> {
+    let value = match level {
+        AiReasoningLevel::Default => return None,
+        AiReasoningLevel::Minimal => "minimal",
+        AiReasoningLevel::Low => "low",
+        AiReasoningLevel::Medium => "medium",
+        AiReasoningLevel::High => "high",
+        AiReasoningLevel::Xhigh => "xhigh",
+        AiReasoningLevel::Max => "max",
+    };
+    Some(AiEffortSelection::Enum(value.to_string()))
 }
 
 pub fn apply_runtime_effort(body: &mut Value, config: &AiConfig) {
-    let Some(selection) = config.runtime_effort.as_ref() else {
-        return;
+    let selection = match config.runtime_effort.as_ref() {
+        Some(AiEffortSelection::ProviderDefault) => return,
+        Some(selection) => selection.clone(),
+        None => {
+            let Some(selection) = configured_reasoning_effort(&config.reasoning_level) else {
+                return;
+            };
+            let capability = static_effort_capability(config, &config.model).unwrap_or(AiEffortCapability::Unsupported);
+            if !is_selection_supported(&capability, &selection) {
+                return;
+            }
+            selection
+        }
     };
-    if matches!(selection, AiEffortSelection::ProviderDefault) {
-        return;
-    }
     let Some(object) = body.as_object_mut() else {
         return;
     };
 
     match config.provider {
-        AiProvider::Claude | AiProvider::AnthropicCompatible => apply_claude_effort(object, selection),
-        AiProvider::Gemini => apply_gemini_effort(object, &config.model, selection),
-        AiProvider::Deepseek => apply_deepseek_effort(object, selection),
-        AiProvider::Qwen => apply_qwen_effort(object, selection),
-        AiProvider::Ollama => apply_openai_effort(object, &config.api_style, selection),
-        AiProvider::MiniMax => apply_minimax_effort(object, selection),
-        AiProvider::Openai | AiProvider::OpenaiCompatible | AiProvider::Kimi | AiProvider::Glm | AiProvider::Doubao => {
-            apply_openai_effort(object, &config.api_style, selection)
-        }
+        AiProvider::Claude | AiProvider::AnthropicCompatible => apply_claude_effort(object, &selection),
+        AiProvider::Gemini => apply_gemini_effort(object, &config.model, &selection),
+        AiProvider::Deepseek => apply_deepseek_effort(object, &selection),
+        AiProvider::Qwen => apply_qwen_effort(object, &selection),
+        AiProvider::Ollama => apply_openai_effort(object, &config.api_style, &selection),
+        AiProvider::MiniMax => apply_minimax_effort(object, &selection),
+        AiProvider::Openai
+        | AiProvider::OpenaiCodex
+        | AiProvider::OpenaiCompatible
+        | AiProvider::Kimi
+        | AiProvider::Glm
+        | AiProvider::Doubao => apply_openai_effort(object, &config.api_style, &selection),
         AiProvider::Custom => {
             if config.api_style == AiApiStyle::AnthropicMessages {
-                apply_claude_effort(object, selection);
+                apply_claude_effort(object, &selection);
             } else {
-                apply_openai_effort(object, &config.api_style, selection);
+                apply_openai_effort(object, &config.api_style, &selection);
             }
         }
         AiProvider::CodexCli | AiProvider::ClaudeCodeCli | AiProvider::PiAgentCli => {}
@@ -386,8 +495,8 @@ fn title_case_effort(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_runtime_effort, dynamic_enum_capability, registry_source_url, static_effort_capability,
-        validate_runtime_effort, MINIMAX_THINKING_DOCS,
+        apply_runtime_effort, dynamic_enum_capability, is_selection_supported, registry_source_url,
+        static_effort_capability, validate_runtime_effort, MINIMAX_THINKING_DOCS,
     };
     use crate::ai::{
         AiApiStyle, AiAuthMethod, AiCapabilitySource, AiConfig, AiEffortCapability, AiEffortSelection, AiProvider,
@@ -399,6 +508,7 @@ mod tests {
     fn config(provider: AiProvider, model: &str) -> AiConfig {
         AiConfig {
             provider,
+            oauth_account_id: None,
             api_key: String::new(),
             auth_method: AiAuthMethod::ApiKey,
             endpoint: String::new(),
@@ -524,6 +634,114 @@ mod tests {
     }
 
     #[test]
+    fn routed_deepseek_family_exposes_cautious_custom_suggestions_and_openai_fields() {
+        let model = "commandcode/deepseek/deepseek-v4.1-flash";
+        let mut config = config(AiProvider::OpenaiCompatible, model);
+        let capability = static_effort_capability(&config, model).unwrap();
+        let AiEffortCapability::Enum { options, default, source } = capability else {
+            panic!("expected routed enum capability");
+        };
+        assert_eq!(source, AiCapabilitySource::Custom);
+        assert_eq!(default, AiEffortSelection::ProviderDefault);
+        assert_eq!(options.iter().map(|option| option.id.as_str()).collect::<Vec<_>>(), ["off", "high", "max"]);
+        assert!(options.iter().all(|option| option
+            .description
+            .as_deref()
+            .unwrap()
+            .contains("gateway support may differ")));
+
+        config.runtime_effort = Some(AiEffortSelection::Enum("high".to_string()));
+        assert!(validate_runtime_effort(&config).is_ok());
+        let mut completions = json!({});
+        apply_runtime_effort(&mut completions, &config);
+        assert_eq!(completions["reasoning_effort"], "high");
+        assert!(completions.get("reasoning").is_none());
+
+        config.api_style = AiApiStyle::Responses;
+        config.runtime_effort = Some(AiEffortSelection::Enum("max".to_string()));
+        let mut responses = json!({});
+        apply_runtime_effort(&mut responses, &config);
+        assert_eq!(responses["reasoning"]["effort"], "max");
+        assert!(responses.get("reasoning_effort").is_none());
+    }
+
+    #[test]
+    fn gpt_6_family_levels_match_official_disable_support() {
+        for (model, allows_none) in
+            [("gpt-6-luna", true), ("gpt-6-sol", true), ("gpt-6-astra", false), ("gpt-6.1-sol", false)]
+        {
+            let capability = static_effort_capability(&config(AiProvider::OpenaiCodex, model), model).unwrap();
+            assert_eq!(is_selection_supported(&capability, &AiEffortSelection::Enum("none".to_string())), allows_none);
+            assert!(is_selection_supported(&capability, &AiEffortSelection::Enum("max".to_string())));
+        }
+    }
+
+    #[test]
+    fn gpt_54_and_55_do_not_offer_unsupported_minimal_effort() {
+        for model in ["gpt-5.2", "gpt-5.4", "gpt-5.5"] {
+            let capability = static_effort_capability(&config(AiProvider::OpenaiCodex, model), model).unwrap();
+            assert!(is_selection_supported(&capability, &AiEffortSelection::Enum("none".to_string())));
+            assert!(!is_selection_supported(&capability, &AiEffortSelection::Enum("minimal".to_string())));
+        }
+    }
+
+    #[test]
+    fn openai_codex_uses_openai_registry_capabilities_and_configured_default_in_both_api_styles() {
+        let mut config = config(AiProvider::OpenaiCodex, "gpt-5.6");
+        config.reasoning_level = AiReasoningLevel::High;
+        let capability = static_effort_capability(&config, "gpt-5.6").unwrap();
+        let AiEffortCapability::Enum { source, .. } = capability else {
+            panic!("expected OpenAI effort capability");
+        };
+        assert_eq!(source, AiCapabilitySource::OfficialRegistry);
+
+        let mut completions = json!({});
+        apply_runtime_effort(&mut completions, &config);
+        assert_eq!(completions["reasoning_effort"], "high");
+        assert!(completions.get("reasoning").is_none());
+
+        config.api_style = AiApiStyle::Responses;
+        let mut responses = json!({});
+        apply_runtime_effort(&mut responses, &config);
+        assert_eq!(responses["reasoning"]["effort"], "high");
+        assert!(responses.get("reasoning_effort").is_none());
+    }
+
+    #[test]
+    fn explicitly_configured_gateway_levels_validate_and_apply() {
+        let mut config = config(AiProvider::OpenaiCompatible, "vendor/custom-model");
+        config.models.push(crate::ai::AiModelListItem {
+            name: config.model.clone(),
+            label: None,
+            supported_effort_levels: vec![crate::ai::AiEffortLevel::High, crate::ai::AiEffortLevel::Max],
+        });
+        config.reasoning_level = AiReasoningLevel::High;
+        let mut body = json!({});
+        apply_runtime_effort(&mut body, &config);
+        assert_eq!(body["reasoning_effort"], "high");
+        config.runtime_effort = Some(AiEffortSelection::Enum("max".to_string()));
+        assert!(validate_runtime_effort(&config).is_ok());
+        apply_runtime_effort(&mut body, &config);
+        assert_eq!(body["reasoning_effort"], "max");
+    }
+
+    #[test]
+    fn unknown_compatible_models_keep_free_text_and_do_not_assume_configured_levels() {
+        let mut config = config(AiProvider::OpenaiCompatible, "commandcode/vendor/future-model");
+        config.reasoning_level = AiReasoningLevel::High;
+        let capability = static_effort_capability(&config, &config.model).unwrap();
+        assert!(matches!(capability, AiEffortCapability::FreeText { source: AiCapabilitySource::Custom, .. }));
+
+        let mut body = json!({});
+        apply_runtime_effort(&mut body, &config);
+        assert_eq!(body, json!({}));
+
+        config.runtime_effort = Some(AiEffortSelection::Text("gateway-level".to_string()));
+        apply_runtime_effort(&mut body, &config);
+        assert_eq!(body["reasoning_effort"], "gateway-level");
+    }
+
+    #[test]
     fn enum_capability_defaults_to_lowest_registered_level() {
         let capability = static_effort_capability(&config(AiProvider::Openai, "gpt-5.6"), "gpt-5.6").unwrap();
         let AiEffortCapability::Enum { default, .. } = capability else {
@@ -633,12 +851,14 @@ mod tests {
     #[test]
     fn provider_default_does_not_change_existing_request_fields() {
         let mut config = config(AiProvider::Openai, "gpt-5.6");
+        config.reasoning_level = AiReasoningLevel::High;
         config.runtime_effort = Some(AiEffortSelection::ProviderDefault);
         let mut body = json!({ "reasoning_effort": "existing" });
 
         apply_runtime_effort(&mut body, &config);
 
         assert_eq!(body["reasoning_effort"], "existing");
+        assert!(body.get("reasoning").is_none());
     }
 
     #[test]

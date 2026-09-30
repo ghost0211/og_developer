@@ -1303,37 +1303,69 @@ export async function aiStream(sessionId: string, request: AiCompletionRequest, 
   });
   if (!res.ok) throw await backendResponseError(res);
 
-  const reader = res.body!.getReader();
+  if (!res.body) throw new Error("AI stream response body is missing");
+  const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-
-    const lines = buffer.split("\n");
-    buffer = lines.pop() || "";
-
-    for (const line of lines) {
-      if (line.startsWith("data:")) {
-        const data = line.slice(5).trim();
-        if (data && data !== "[DONE]") {
-          try {
-            const chunk: AiStreamChunk = JSON.parse(data);
-            onChunk(chunk);
-            if (chunk.done) return;
-          } catch {
-            // skip malformed JSON
-          }
-        }
-      }
+  let terminal = false;
+  function consumeLine(line: string) {
+    if (!line.startsWith("data:")) return;
+    const data = line.slice(5).trim();
+    if (!data) return;
+    if (data === "[DONE]") {
+      terminal = true;
+      return;
     }
+    let chunk: AiStreamChunk;
+    try {
+      chunk = JSON.parse(data);
+    } catch {
+      return; // Ignore malformed JSON, not callback or upstream errors.
+    }
+    if (chunk.error) throw new Error(chunk.error);
+    onChunk(chunk);
+    if (chunk.done) terminal = true;
+    // A terminal error may follow core's done chunk; wait for the SSE body to close.
+  }
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        buffer += decoder.decode();
+        if (buffer.trim()) consumeLine(buffer.trim());
+        if (!terminal) throw new Error("AI stream stopped before completion");
+        break;
+      }
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+      for (const line of lines) consumeLine(line);
+    }
+  } finally {
+    reader.releaseLock();
   }
 }
 
 export async function aiCancelStream(sessionId: string): Promise<boolean> {
   return post("/api/ai/cancel-stream", { sessionId });
+}
+
+export async function aiCodexAuthBegin(config: AiConfig): Promise<import("./aiCodexAuthTypes").AiCodexAuthSession> {
+  return post("/api/ai/codex-auth/begin", { config });
+}
+export async function aiCodexAuthPoll(sessionId: string): Promise<import("./aiCodexAuthTypes").AiCodexAuthPollResult> {
+  return post("/api/ai/codex-auth/poll", { sessionId });
+}
+export async function aiCodexAuthCancel(sessionId: string): Promise<boolean> {
+  const result = await post<{ canceled: boolean }>("/api/ai/codex-auth/cancel", { sessionId });
+  return result.canceled;
+}
+export async function aiCodexAuthStatus(oauthAccountId: string): Promise<import("./aiCodexAuthTypes").AiCodexAuthStatus> {
+  return post("/api/ai/codex-auth/status", { oauthAccountId });
+}
+export async function aiCodexAuthDisconnect(oauthAccountId: string): Promise<boolean> {
+  const result = await post<{ disconnected: boolean }>("/api/ai/codex-auth/disconnect", { oauthAccountId });
+  return result.disconnected;
 }
 
 export async function aiTestConnection(config: AiConfig): Promise<AiTestConnectionResult> {

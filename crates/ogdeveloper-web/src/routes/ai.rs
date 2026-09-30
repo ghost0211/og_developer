@@ -13,6 +13,7 @@ use ogdeveloper_core::ai::{
     AiChatSelectionState, AiCompletionRequest, AiConfig, AiConfigItem, AiConversation, AiEffortCapability, AiModelInfo,
     AiProvider, AiStreamChunk, AiTestConnectionResult,
 };
+use ogdeveloper_core::ai_codex_oauth;
 use ogdeveloper_core::models::connection::DatabaseType;
 
 use crate::error::AppError;
@@ -111,6 +112,46 @@ pub struct AiAgentStreamRequest {
     pub confirmed_database: Option<String>,
     #[serde(default)]
     pub confirmed_schema: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiCodexAccountRequest {
+    pub oauth_account_id: String,
+}
+
+pub async fn ai_codex_auth_begin(
+    Json(body): Json<AiTestConnectionRequest>,
+) -> Result<Json<ai_codex_oauth::CodexAuthBeginResponse>, AppError> {
+    Ok(Json(ai_codex_oauth::begin(&body.config).await.map_err(AppError::from)?))
+}
+
+pub async fn ai_codex_auth_poll(
+    State(state): State<Arc<WebState>>,
+    Json(body): Json<AiCancelStreamRequest>,
+) -> Result<Json<ai_codex_oauth::CodexAuthPollResponse>, AppError> {
+    Ok(Json(ai_codex_oauth::poll(&state.app.storage, &body.session_id).await.map_err(AppError::from)?))
+}
+
+pub async fn ai_codex_auth_cancel(
+    State(state): State<Arc<WebState>>,
+    Json(body): Json<AiCancelStreamRequest>,
+) -> Result<Json<ai_codex_oauth::CodexAuthActionResponse>, AppError> {
+    Ok(Json(ai_codex_oauth::cancel(&state.app.storage, &body.session_id).await.map_err(AppError::from)?))
+}
+
+pub async fn ai_codex_auth_status(
+    State(state): State<Arc<WebState>>,
+    Json(body): Json<AiCodexAccountRequest>,
+) -> Result<Json<ai_codex_oauth::CodexAuthStatusResponse>, AppError> {
+    Ok(Json(ai_codex_oauth::status(&state.app.storage, &body.oauth_account_id).await.map_err(AppError::from)?))
+}
+
+pub async fn ai_codex_auth_disconnect(
+    State(state): State<Arc<WebState>>,
+    Json(body): Json<AiCodexAccountRequest>,
+) -> Result<Json<ai_codex_oauth::CodexAuthActionResponse>, AppError> {
+    Ok(Json(ai_codex_oauth::disconnect(&state.app.storage, &body.oauth_account_id).await.map_err(AppError::from)?))
 }
 
 fn default_agent_mode() -> String {
@@ -370,10 +411,21 @@ pub async fn ai_stream(
         })
         .await;
 
-        if let Err(_e) = result {
-            let error_chunk =
-                AiStreamChunk { session_id: sid.clone(), delta: String::new(), reasoning_delta: None, done: true };
-            let _ = tx.send(serde_json::to_string(&error_chunk).unwrap_or_default());
+        if let Err(error) = result {
+            // Codex errors are sanitized in core; never silently turn a failed stream
+            // into a successful empty response. Avoid exposing arbitrary upstream bodies.
+            let safe_error = if matches!(request.config.provider, AiProvider::OpenaiCodex) {
+                error
+            } else {
+                "AI stream stopped before completion; check provider authorization and retry".to_string()
+            };
+            let error_chunk = serde_json::json!({
+                "session_id": sid,
+                "delta": "",
+                "done": true,
+                "error": safe_error,
+            });
+            let _ = tx.send(error_chunk.to_string());
         }
 
         ogdeveloper_core::ai::unregister_stream(&sid).await;
@@ -503,12 +555,28 @@ pub async fn ai_agent_stream(
 
 #[cfg(test)]
 mod tests {
-    use super::reject_web_unsupported_ai_provider;
+    use super::{reject_web_unsupported_ai_provider, AiCancelStreamRequest, AiCodexAccountRequest};
     use ogdeveloper_core::ai::{AiApiStyle, AiAuthMethod, AiConfig, AiProvider, AiReasoningLevel};
+
+    #[test]
+    fn codex_auth_request_fields_match_frontend_camel_case_contract() {
+        let account: AiCodexAccountRequest =
+            serde_json::from_value(serde_json::json!({"oauthAccountId": "opaque-id"})).unwrap();
+        let session: AiCancelStreamRequest =
+            serde_json::from_value(serde_json::json!({"sessionId": "short-lived-session"})).unwrap();
+        assert_eq!(account.oauth_account_id, "opaque-id");
+        assert_eq!(session.session_id, "short-lived-session");
+    }
+
+    #[test]
+    fn codex_subscription_is_not_a_cli_provider_and_is_allowed_on_web() {
+        assert!(reject_web_unsupported_ai_provider(&make_config(AiProvider::OpenaiCodex)).is_ok());
+    }
 
     fn make_config(provider: AiProvider) -> AiConfig {
         AiConfig {
             provider,
+            oauth_account_id: None,
             api_key: String::new(),
             auth_method: AiAuthMethod::Bearer,
             endpoint: "https://example.com".to_string(),
@@ -597,6 +665,7 @@ mod tests {
 
         let config = AiConfig {
             provider: AiProvider::Claude,
+            oauth_account_id: None,
             api_key: "sk-test".to_string(),
             auth_method: AiAuthMethod::ApiKey,
             endpoint: url.clone(),

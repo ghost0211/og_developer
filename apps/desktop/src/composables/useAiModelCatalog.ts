@@ -1,7 +1,7 @@
 import { reactive } from "vue";
 import * as api from "@/lib/backend/api";
 import type { AiModelInfo } from "@/lib/backend/tauri";
-import type { AiConfigItem, AiEffortCapability } from "@/types/ai";
+import type { AiCapabilitySource, AiConfigItem, AiEffortCapability, AiEffortLevel } from "@/types/ai";
 
 const CATALOG_TTL_MS = 5 * 60 * 1000;
 
@@ -54,12 +54,17 @@ function configSignature(config: AiConfigItem): string {
     apiStyle: config.apiStyle,
     proxyEnabled: config.proxyEnabled ?? false,
     contextWindow: config.contextWindow ?? null,
+    configuredModelEffort: (config.models ?? []).map((model) => ({
+      name: model.name.trim(),
+      supportedEffortLevels: [...(model.supportedEffortLevels ?? [])],
+    })),
     codexCliPath: config.codexCliPath ?? null,
     claudeCodeCliPath: config.claudeCodeCliPath ?? null,
     piAgentCliPath: config.piAgentCliPath ?? null,
     connectionFingerprint: fingerprint(
       JSON.stringify({
         apiKey: config.apiKey,
+        oauthAccountId: config.oauthAccountId ?? "",
         endpoint: config.endpoint,
         proxyUrl: config.proxyUrl ?? "",
         codexCliEnv: sortedRecord(config.codexCliEnv),
@@ -76,6 +81,31 @@ function fresh(loadedAt: number | undefined): boolean {
 
 function configPayload(config: AiConfigItem, modelId = config.model): AiConfigItem {
   return { ...config, model: modelId, runtimeEffort: null };
+}
+
+const EFFORT_LABELS: Record<AiEffortLevel, string> = {
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  xhigh: "Extra high",
+  max: "Maximum",
+};
+
+function enumCapability(levels: readonly AiEffortLevel[], source: AiCapabilitySource): AiEffortCapability | undefined {
+  const seen = new Set<AiEffortLevel>();
+  const options = levels
+    .filter((level) => {
+      if (!(level in EFFORT_LABELS) || seen.has(level)) return false;
+      seen.add(level);
+      return true;
+    })
+    .map((level) => ({ id: level, label: EFFORT_LABELS[level], selection: { kind: "enum" as const, value: level } }));
+  return options.length ? { kind: "enum", options, default: { kind: "providerDefault" }, source } : undefined;
+}
+
+function configuredCapabilityForModel(config: AiConfigItem, modelId: string): AiEffortCapability | undefined {
+  const model = config.models?.find((item) => item.name.trim().toLowerCase() === modelId.trim().toLowerCase());
+  return model?.supportedEffortLevels?.length ? enumCapability(model.supportedEffortLevels, "custom") : undefined;
 }
 
 async function loadModels(config: AiConfigItem, force = false): Promise<AiModelInfo[]> {
@@ -104,10 +134,11 @@ async function loadModels(config: AiConfigItem, force = false): Promise<AiModelI
       if (catalogs.get(config.id)?.signature !== signature) return uniqueModels;
       catalogs.set(config.id, { status: "ready", models: uniqueModels, signature, loadedAt: Date.now() });
       for (const model of uniqueModels) {
-        if (model.effortCapability) {
+        const capability = model.effortCapability ?? (model.supportedEffortLevels?.length ? enumCapability(model.supportedEffortLevels, "providerApi") : undefined) ?? configuredCapabilityForModel(config, model.id);
+        if (capability) {
           effortCatalogs.set(effortKey(config.id, model.id), {
             status: "ready",
-            capability: model.effortCapability,
+            capability,
             signature,
             loadedAt: Date.now(),
           });
@@ -136,6 +167,13 @@ async function resolveEffort(config: AiConfigItem, modelId: string, force = fals
   const current = effortCatalogs.get(key);
   if (!force && current?.status === "ready" && current.signature === signature && current.capability && fresh(current.loadedAt)) {
     return current.capability;
+  }
+  if (!force) {
+    const configuredCapability = configuredCapabilityForModel(config, modelId);
+    if (configuredCapability) {
+      effortCatalogs.set(key, { status: "ready", capability: configuredCapability, signature, loadedAt: Date.now() });
+      return configuredCapability;
+    }
   }
 
   const requestKey = JSON.stringify([key, signature]);

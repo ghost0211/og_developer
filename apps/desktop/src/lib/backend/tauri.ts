@@ -308,6 +308,8 @@ export interface AiStreamChunk {
   session_id: string;
   delta: string;
   reasoning_delta?: string;
+  /** Web streams may report a sanitized terminal error after the final chunk. */
+  error?: string;
   done: boolean;
 }
 
@@ -408,6 +410,22 @@ export async function saveAiProviderConfig(provider: string, config: AiConfig): 
 
 export async function loadAiProviderConfigs(): Promise<Record<string, AiConfig>> {
   return invoke("load_ai_provider_configs");
+}
+
+export async function aiCodexAuthBegin(config: AiConfig): Promise<import("./aiCodexAuthTypes").AiCodexAuthSession> {
+  return invoke("ai_codex_auth_begin", { config });
+}
+export async function aiCodexAuthPoll(sessionId: string): Promise<import("./aiCodexAuthTypes").AiCodexAuthPollResult> {
+  return invoke("ai_codex_auth_poll", { sessionId });
+}
+export async function aiCodexAuthCancel(sessionId: string): Promise<boolean> {
+  return invoke("ai_codex_auth_cancel", { sessionId });
+}
+export async function aiCodexAuthStatus(oauthAccountId: string): Promise<import("./aiCodexAuthTypes").AiCodexAuthStatus> {
+  return invoke("ai_codex_auth_status", { oauthAccountId });
+}
+export async function aiCodexAuthDisconnect(oauthAccountId: string): Promise<boolean> {
+  return invoke("ai_codex_auth_disconnect", { oauthAccountId });
 }
 
 export async function aiTestConnection(config: AiConfig): Promise<AiTestConnectionResult> {

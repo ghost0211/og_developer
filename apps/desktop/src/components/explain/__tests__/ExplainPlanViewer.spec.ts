@@ -25,4 +25,12 @@ describe("ExplainPlanViewer canvas view", () => {
     const tabOrder = [...viewerSource.matchAll(/@click="activeView = '(\w+)'"/g)].map((match) => match[1]);
     expect(tabOrder).toEqual(["canvas", "tree", "summary", "raw", "table"]);
   });
+
+  it("offers AI analysis only when the displayed plan has its source SQL", () => {
+    expect(viewerSource).toContain('v-if="plan && sourceSql?.trim()"');
+    expect(viewerSource).toContain("buildExplainPlanAiPrompt({");
+    expect(viewerSource).toContain('"analyzeAi",');
+    expect(viewerSource).toContain("sourceSql,");
+    expect(viewerSource).toContain("diagnoses: findings.value.map");
+  });
 });

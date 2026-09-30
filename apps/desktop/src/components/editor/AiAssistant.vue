@@ -13,7 +13,6 @@ import {
   Bot,
   Bug,
   Check,
-  ChevronLeft,
   ChevronRight,
   CircleSlash,
   Code2,
@@ -45,7 +44,7 @@ import {
 } from "@lucide/vue";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useTheme } from "@/composables/useTheme";
 import { useSettingsStore, AI_PROVIDER_PRESETS, normalizeAiConfig } from "@/stores/settingsStore";
@@ -62,6 +61,7 @@ import { useNavigationTargets } from "@/composables/useNavigationTargets";
 import { buildAiContext, resolveAiDatabaseTarget, resolveAiNamespaceSelection, runAgentStream, isValidActionForMode, defaultActionForMode, type AiAction, type AiAssistantMode, type AiSqlFileContext, type CustomPromptContext } from "@/lib/ai/ai";
 import { formatOpengaussDocHits, searchOpengaussDocs } from "@/lib/ai/opengaussDocs";
 import { isAiConfigModelCandidate } from "@/lib/ai/aiConfigCandidates";
+import { resolveAiInvocationConfig, type AiInvocationOptions } from "@/lib/ai/aiInvocationRouting";
 import { addConfiguredAiModel, aiModelOptions } from "@/lib/ai/aiConfigList";
 import { orderAiConfigsForDisplay } from "@/lib/ai/aiConfigOrdering";
 import { effortSelectionEquals, runtimeEffortFromPreference } from "@/lib/ai/aiEffortPreference";
@@ -327,7 +327,6 @@ const manualModelConfigId = ref("");
 const manualModelId = ref("");
 const effortTextValue = ref("");
 const effortIntegerValue = ref(0);
-let effortMenuCloseTimer: ReturnType<typeof setTimeout> | null = null;
 const { catalogs: modelCatalogs, effortCatalogs, loadModels, resolveEffort, effortKey } = useAiModelCatalog();
 
 // Configured providers for quick switching - get from aiConfigs
@@ -402,7 +401,6 @@ watch(providerSelectorOpen, (open) => {
     void loadConfiguredModelCatalogs();
   } else {
     modelSearchQuery.value = "";
-    closeEffortMenu();
     manualModelConfigId.value = "";
     manualModelId.value = "";
   }
@@ -454,6 +452,16 @@ const activeEffortEntry = computed(() => {
 });
 
 const activeEffortCapability = computed(() => activeEffortEntry.value?.capability);
+const EFFORT_SOURCE_LABEL_KEYS = {
+  providerApi: "ai.effortSourceProviderApi",
+  localCli: "ai.effortSourceLocalCli",
+  officialRegistry: "ai.effortSourceOfficialRegistry",
+  custom: "ai.effortSourceCustom",
+} as const;
+const activeEffortSourceLabel = computed(() => {
+  const capability = activeEffortCapability.value;
+  return !capability || capability.kind === "unsupported" ? "" : t(EFFORT_SOURCE_LABEL_KEYS[capability.source]);
+});
 
 function syncEffortInputs(capability = activeEffortCapability.value) {
   const selection = settings.activeEffort;
@@ -465,28 +473,8 @@ function syncEffortInputs(capability = activeEffortCapability.value) {
   }
 }
 
-function clearEffortMenuCloseTimer() {
-  if (!effortMenuCloseTimer) return;
-  clearTimeout(effortMenuCloseTimer);
-  effortMenuCloseTimer = null;
-}
-
-function openEffortMenu() {
-  clearEffortMenuCloseTimer();
-  if (settings.activeModel) effortMenuOpen.value = true;
-}
-
 function closeEffortMenu() {
-  clearEffortMenuCloseTimer();
   effortMenuOpen.value = false;
-}
-
-function scheduleEffortMenuClose() {
-  clearEffortMenuCloseTimer();
-  effortMenuCloseTimer = setTimeout(() => {
-    effortMenuOpen.value = false;
-    effortMenuCloseTimer = null;
-  }, 120);
 }
 
 watch(effortMenuOpen, (open) => {
@@ -496,7 +484,7 @@ watch(effortMenuOpen, (open) => {
   if (config) void ensureModelEffort(config, active.modelId);
 });
 
-function selectEffort(selection: AiEffortSelection) {
+function selectEffort(selection: AiEffortSelection | null) {
   settings.updateActiveEffort(selection);
   syncEffortInputs();
 }
@@ -518,7 +506,16 @@ function commitTextEffort() {
 }
 
 function effortSelectionLabel(selection: AiEffortSelection | null): string {
-  if (!selection || selection.kind === "providerDefault") return t("ai.providerDefault");
+  if (!selection) {
+    const configuredLevel = activeFullConfig.value?.reasoningLevel;
+    const capability = activeEffortCapability.value;
+    if (configuredLevel && configuredLevel !== "default" && capability?.kind === "enum") {
+      const matchingOption = capability.options.find((option) => option.selection.kind === "enum" && option.selection.value === configuredLevel);
+      if (matchingOption) return matchingOption.label;
+    }
+    return t("ai.configDefaultEffort");
+  }
+  if (selection.kind === "providerDefault") return t("ai.providerDefault");
   const capability = activeEffortCapability.value;
   const options = capability?.kind === "enum" ? capability.options : capability?.kind === "integer" ? capability.specialValues : undefined;
   const matchingOption = options?.find((option) => effortSelectionEquals(selection, option.selection));
@@ -1649,21 +1646,25 @@ async function loadReferencedSqlFiles(mentions: AiSqlFileMention[]): Promise<AiS
   return results;
 }
 
-async function send() {
+async function send(options: AiInvocationOptions = {}) {
   const text = prompt.value.trim();
   if ((!text && !selectedMentions.value.length && !selectedSqlFileMentions.value.length) || isGenerating.value) return;
 
-  // Snapshot the target connection/database before any async work so that
-  // suspension points during context loading cannot cause a TOCTOU target switch.
+  // Snapshot the target connection/database/model before any async work so that
+  // suspension points cannot switch an external action back to the chat-selected model.
   const connection = props.connection;
   const tab = props.tab;
   if (!connection || !tab) {
     clearPendingWriteGrant();
     return;
   }
-  if (!settings.isConfigured) {
+  const modelSource = options.modelSource ?? "chat";
+  const settingsDefaultItem = settings.aiConfigs.find((config) => config.isDefault) ?? settings.aiConfigs[0];
+  const invocationConfig = resolveAiInvocationConfig(settings.aiConfigs, activeFullConfig.value, modelSource);
+  const invocationConfigured = modelSource === "chat" ? settings.isConfigured : !!settingsDefaultItem?.model.trim() && isAiConfigModelCandidate(settingsDefaultItem, AI_PROVIDER_PRESETS[settingsDefaultItem.provider].requiresApiKey);
+  if (!invocationConfigured || !invocationConfig) {
     clearPendingWriteGrant();
-    toast(t("ai.noConfig"));
+    toast(t(modelSource === "settings-default" && settingsDefaultItem && !settingsDefaultItem.model.trim() ? "ai.defaultModelNotConfigured" : "ai.noConfig"));
     return;
   }
   // Acquire the send guard before the first async operation so two rapid
@@ -1751,7 +1752,7 @@ async function send() {
   // The configured permission level (readonly/data/full) raises the ceiling: data/full
   // levels authorize writes for this run without a per-statement confirmation, while
   // readonly keeps the explicit confirmation flow. Production always stays read-only.
-  const permissionLevel = activeFullConfig.value?.agentPermissionLevel ?? "readonly";
+  const permissionLevel = invocationConfig.agentPermissionLevel ?? "readonly";
   const levelGrantsWrites = permissionLevel === "data" || permissionLevel === "full";
   const allowWriteSql = requestedMode === "agent" && !productionContext.value.active && (levelGrantsWrites || allowWriteSqlForNextRun);
   const confirmedWriteSql = allowWriteSql ? confirmedWriteSqlText : undefined;
@@ -1789,7 +1790,7 @@ async function send() {
     const history: AiMessage[] = messagesForAgentHistory(messages.value.slice(0, -2));
     await runAgentStream(
       {
-        config: activeFullConfig.value!,
+        config: invocationConfig,
         action: requestedAction,
         mode: requestedMode,
         instruction: modelInstruction,
@@ -2082,7 +2083,6 @@ function stopResize() {
 onUnmounted(() => {
   if (assistantDeltaFrame !== null) cancelAnimationFrame(assistantDeltaFrame);
   clearTimeout(mentionTimer);
-  clearEffortMenuCloseTimer();
   cancelStream();
   detachMessageScrollListener();
   // 清理拖拽事件监听，防止内存泄漏
@@ -2095,7 +2095,7 @@ onUnmounted(() => {
   promptPanelResizeObserver?.disconnect();
 });
 
-function triggerAction(action: AiAction, instruction?: string) {
+function triggerAction(action: AiAction, instruction?: string, options: AiInvocationOptions = {}) {
   // External Ask-style entry points (Fix with AI, Explain history) produce/analyze SQL text.
   // If the assistant is currently in Agent mode where those actions aren't offered, switch to
   // Ask mode so the action is valid and the menu reflects what actually runs.
@@ -2107,7 +2107,7 @@ function triggerAction(action: AiAction, instruction?: string) {
   }
   activeAction.value = action;
   if (instruction) prompt.value = instruction;
-  send();
+  send(options);
 }
 
 function setPrompt(text: string) {
@@ -2680,123 +2680,106 @@ async function openExternalUrl(url: string) {
                       <div class="my-1 border-t" />
                     </template>
                   </div>
-                  <div v-if="settings.activeModel" class="border-t pt-1">
-                    <Popover v-model:open="effortMenuOpen">
-                      <PopoverAnchor as-child>
-                        <button
-                          type="button"
-                          class="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-xs hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
-                          :aria-expanded="effortMenuOpen"
-                          aria-haspopup="menu"
-                          @mouseenter="openEffortMenu"
-                          @mouseleave="scheduleEffortMenuClose"
-                          @focus="openEffortMenu"
-                          @click.stop="openEffortMenu"
-                        >
-                          <ChevronLeft class="h-3.5 w-3.5 shrink-0" />
-                          <span>{{ t("ai.effort") }}</span>
-                          <span class="ml-auto max-w-[160px] truncate text-muted-foreground">{{ effortSelectionLabel(settings.activeEffort) }}</span>
-                        </button>
-                      </PopoverAnchor>
-                      <PopoverContent
-                        side="left"
-                        align="end"
-                        :side-offset="6"
-                        :collision-padding="8"
-                        class="max-h-(--reka-popover-content-available-height) w-72 gap-1 overflow-y-auto p-2"
-                        @mouseenter="openEffortMenu"
-                        @mouseleave="scheduleEffortMenuClose"
-                        @open-auto-focus.prevent
-                        @close-auto-focus.prevent
-                        @pointerdown.stop
+                </PopoverContent>
+              </Popover>
+              <Popover v-if="settings.activeModel" v-model:open="effortMenuOpen">
+                <PopoverTrigger as-child>
+                  <button
+                    type="button"
+                    class="flex max-w-[180px] min-w-0 shrink-0 items-center gap-1.5 rounded-[6px] border px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
+                    :title="t('ai.effort')"
+                    :aria-label="`${t('ai.effort')}: ${effortSelectionLabel(settings.activeEffort)}`"
+                  >
+                    <span class="shrink-0">{{ t("ai.effort") }}</span>
+                    <span class="min-w-0 truncate text-foreground/80">{{ effortSelectionLabel(settings.activeEffort) }}</span>
+                    <svg class="h-3 w-3 shrink-0 opacity-60" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6" /></svg>
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent side="top" align="end" :side-offset="6" :collision-padding="8" class="max-h-(--reka-popover-content-available-height) w-72 max-w-[calc(100vw-1rem)] gap-1 overflow-y-auto p-2" @pointerdown.stop @click.stop @keydown.stop>
+                  <div v-if="activeEffortSourceLabel" class="px-2 pb-1 text-[10px] leading-4 text-muted-foreground">
+                    {{ activeEffortSourceLabel }}
+                  </div>
+                  <button type="button" class="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs hover:bg-accent" :class="!settings.activeEffort ? 'bg-accent text-accent-foreground' : ''" @click="selectEffort(null)">
+                    <span class="flex-1">{{ t("ai.configDefaultEffort") }}</span>
+                    <Check v-if="!settings.activeEffort" class="h-3.5 w-3.5 text-primary" />
+                  </button>
+                  <button type="button" class="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs hover:bg-accent" :class="settings.activeEffort?.kind === 'providerDefault' ? 'bg-accent text-accent-foreground' : ''" @click="selectEffort({ kind: 'providerDefault' })">
+                    <span class="flex-1">{{ t("ai.providerDefault") }}</span>
+                    <Check v-if="settings.activeEffort?.kind === 'providerDefault'" class="h-3.5 w-3.5 text-primary" />
+                  </button>
+                  <div v-if="activeEffortEntry?.status === 'loading'" class="flex items-center gap-2 py-2 text-xs text-muted-foreground">
+                    <Loader2 class="h-3.5 w-3.5 animate-spin" />
+                    {{ t("ai.loadingEffort") }}
+                  </div>
+                  <div v-else-if="activeEffortEntry?.status === 'error'" class="flex items-center justify-between gap-2 py-2 text-xs text-muted-foreground">
+                    <span class="truncate" :title="activeEffortEntry.error">{{ t("ai.effortLoadFailed") }}</span>
+                    <button type="button" class="shrink-0 text-primary hover:underline" @click="retryActiveEffort">
+                      {{ t("ai.retry") }}
+                    </button>
+                  </div>
+                  <template v-else-if="activeEffortCapability?.kind === 'enum'">
+                    <button
+                      v-for="option in activeEffortCapability.options"
+                      :key="option.id"
+                      type="button"
+                      class="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs hover:bg-accent"
+                      :class="effortSelectionEquals(settings.activeEffort, option.selection) ? 'bg-accent text-accent-foreground' : ''"
+                      @click="selectEffortOption(option)"
+                    >
+                      <span class="flex-1">{{ option.label }}</span>
+                      <Check v-if="effortSelectionEquals(settings.activeEffort, option.selection)" class="h-3.5 w-3.5 text-primary" />
+                    </button>
+                  </template>
+                  <template v-else-if="activeEffortCapability?.kind === 'integer'">
+                    <button
+                      v-for="option in activeEffortCapability.specialValues"
+                      :key="option.id"
+                      type="button"
+                      class="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs hover:bg-accent"
+                      :class="effortSelectionEquals(settings.activeEffort, option.selection) ? 'bg-accent text-accent-foreground' : ''"
+                      @click="selectEffortOption(option)"
+                    >
+                      <span class="flex-1">{{ option.label }}</span>
+                      <Check v-if="effortSelectionEquals(settings.activeEffort, option.selection)" class="h-3.5 w-3.5 text-primary" />
+                    </button>
+                    <div class="flex items-center gap-2 py-1">
+                      <input v-model.number="effortIntegerValue" type="range" class="min-w-0 flex-1" :min="activeEffortCapability.min" :max="activeEffortCapability.max" :step="activeEffortCapability.step" @change="commitIntegerEffort(activeEffortCapability)" />
+                      <input
+                        v-model.number="effortIntegerValue"
+                        type="number"
+                        class="w-20 rounded-sm border bg-background px-2 py-1 text-xs"
+                        :min="activeEffortCapability.min"
+                        :max="activeEffortCapability.max"
+                        :step="activeEffortCapability.step"
+                        @change="commitIntegerEffort(activeEffortCapability)"
                         @click.stop
-                        @keydown.stop
-                      >
-                        <button
-                          type="button"
-                          class="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs hover:bg-accent"
-                          :class="!settings.activeEffort || settings.activeEffort.kind === 'providerDefault' ? 'bg-accent text-accent-foreground' : ''"
-                          @click="selectEffort({ kind: 'providerDefault' })"
-                        >
-                          <span class="flex-1">{{ t("ai.providerDefault") }}</span>
-                          <Check v-if="!settings.activeEffort || settings.activeEffort.kind === 'providerDefault'" class="h-3.5 w-3.5 text-primary" />
-                        </button>
-                        <div v-if="activeEffortEntry?.status === 'loading'" class="flex items-center gap-2 py-2 text-xs text-muted-foreground">
-                          <Loader2 class="h-3.5 w-3.5 animate-spin" />
-                          {{ t("ai.loadingEffort") }}
-                        </div>
-                        <div v-else-if="activeEffortEntry?.status === 'error'" class="flex items-center justify-between gap-2 py-2 text-xs text-muted-foreground">
-                          <span class="truncate" :title="activeEffortEntry.error">{{ t("ai.effortLoadFailed") }}</span>
-                          <button type="button" class="shrink-0 text-primary hover:underline" @click="retryActiveEffort">
-                            {{ t("ai.retry") }}
-                          </button>
-                        </div>
-                        <template v-else-if="activeEffortCapability?.kind === 'enum'">
-                          <button
-                            v-for="option in activeEffortCapability.options"
-                            :key="option.id"
-                            type="button"
-                            class="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs hover:bg-accent"
-                            :class="effortSelectionEquals(settings.activeEffort, option.selection) ? 'bg-accent text-accent-foreground' : ''"
-                            @click="selectEffortOption(option)"
-                          >
-                            <span class="flex-1">{{ option.label }}</span>
-                            <Check v-if="effortSelectionEquals(settings.activeEffort, option.selection)" class="h-3.5 w-3.5 text-primary" />
-                          </button>
-                        </template>
-                        <template v-else-if="activeEffortCapability?.kind === 'integer'">
-                          <button
-                            v-for="option in activeEffortCapability.specialValues"
-                            :key="option.id"
-                            type="button"
-                            class="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs hover:bg-accent"
-                            :class="effortSelectionEquals(settings.activeEffort, option.selection) ? 'bg-accent text-accent-foreground' : ''"
-                            @click="selectEffortOption(option)"
-                          >
-                            <span class="flex-1">{{ option.label }}</span>
-                            <Check v-if="effortSelectionEquals(settings.activeEffort, option.selection)" class="h-3.5 w-3.5 text-primary" />
-                          </button>
-                          <div class="flex items-center gap-2 py-1">
-                            <input v-model.number="effortIntegerValue" type="range" class="min-w-0 flex-1" :min="activeEffortCapability.min" :max="activeEffortCapability.max" :step="activeEffortCapability.step" @change="commitIntegerEffort(activeEffortCapability)" />
-                            <input
-                              v-model.number="effortIntegerValue"
-                              type="number"
-                              class="w-20 rounded-sm border bg-background px-2 py-1 text-xs"
-                              :min="activeEffortCapability.min"
-                              :max="activeEffortCapability.max"
-                              :step="activeEffortCapability.step"
-                              @change="commitIntegerEffort(activeEffortCapability)"
-                              @click.stop
-                            />
-                          </div>
-                        </template>
-                        <template v-else-if="activeEffortCapability?.kind === 'boolean'">
-                          <button type="button" class="flex w-full items-center rounded-sm px-2 py-1.5 text-xs hover:bg-accent" @click="selectEffort({ kind: 'boolean', value: true })">
-                            <span class="flex-1 text-left">{{ t("ai.effortEnabled") }}</span>
-                            <Check v-if="settings.activeEffort?.kind === 'boolean' && settings.activeEffort.value" class="h-3.5 w-3.5 text-primary" />
-                          </button>
-                          <button type="button" class="flex w-full items-center rounded-sm px-2 py-1.5 text-xs hover:bg-accent" @click="selectEffort({ kind: 'boolean', value: false })">
-                            <span class="flex-1 text-left">{{ t("ai.effortDisabled") }}</span>
-                            <Check v-if="settings.activeEffort?.kind === 'boolean' && !settings.activeEffort.value" class="h-3.5 w-3.5 text-primary" />
-                          </button>
-                        </template>
-                        <form v-else-if="activeEffortCapability?.kind === 'freeText'" class="flex items-center gap-1 py-1" @submit.prevent="commitTextEffort">
-                          <input
-                            v-model="effortTextValue"
-                            type="text"
-                            maxlength="64"
-                            :placeholder="activeEffortCapability.placeholder || t('ai.customEffortPlaceholder')"
-                            class="min-w-0 flex-1 rounded-sm border bg-background px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-primary"
-                            @click.stop
-                            @blur="commitTextEffort"
-                          />
-                          <Button type="submit" size="sm" class="h-6 px-2 text-[10px]">{{ t("common.confirm") }}</Button>
-                        </form>
-                        <div v-else-if="activeEffortCapability?.kind === 'unsupported'" class="px-2 py-2 text-xs text-muted-foreground">
-                          {{ t("ai.effortUnsupported") }}
-                        </div>
-                      </PopoverContent>
-                    </Popover>
+                      />
+                    </div>
+                  </template>
+                  <template v-else-if="activeEffortCapability?.kind === 'boolean'">
+                    <button type="button" class="flex w-full items-center rounded-sm px-2 py-1.5 text-xs hover:bg-accent" @click="selectEffort({ kind: 'boolean', value: true })">
+                      <span class="flex-1 text-left">{{ t("ai.effortEnabled") }}</span>
+                      <Check v-if="settings.activeEffort?.kind === 'boolean' && settings.activeEffort.value" class="h-3.5 w-3.5 text-primary" />
+                    </button>
+                    <button type="button" class="flex w-full items-center rounded-sm px-2 py-1.5 text-xs hover:bg-accent" @click="selectEffort({ kind: 'boolean', value: false })">
+                      <span class="flex-1 text-left">{{ t("ai.effortDisabled") }}</span>
+                      <Check v-if="settings.activeEffort?.kind === 'boolean' && !settings.activeEffort.value" class="h-3.5 w-3.5 text-primary" />
+                    </button>
+                  </template>
+                  <form v-else-if="activeEffortCapability?.kind === 'freeText'" class="flex items-center gap-1 py-1" @submit.prevent="commitTextEffort">
+                    <input
+                      v-model="effortTextValue"
+                      type="text"
+                      maxlength="64"
+                      :placeholder="activeEffortCapability.placeholder || t('ai.customEffortPlaceholder')"
+                      class="min-w-0 flex-1 rounded-sm border bg-background px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-primary"
+                      @click.stop
+                      @blur="commitTextEffort"
+                    />
+                    <Button type="submit" size="sm" class="h-6 px-2 text-[10px]">{{ t("common.confirm") }}</Button>
+                  </form>
+                  <div v-else-if="activeEffortCapability?.kind === 'unsupported'" class="px-2 py-2 text-xs text-muted-foreground">
+                    {{ t("ai.effortUnsupported") }}
                   </div>
                 </PopoverContent>
               </Popover>
@@ -2804,7 +2787,7 @@ async function openExternalUrl(url: string) {
             <button v-if="isGenerating" class="h-7 w-7 shrink-0 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center" :title="t('ai.stopGenerating')" @click="cancelStream">
               <Square class="h-3.5 w-3.5" />
             </button>
-            <button v-else class="h-7 w-7 shrink-0 rounded-full bg-foreground text-background flex items-center justify-center disabled:opacity-30" :disabled="(!prompt.trim() && !selectedMentions.length && !selectedSqlFileMentions.length) || !props.tab?.database" @click="send">
+            <button v-else class="h-7 w-7 shrink-0 rounded-full bg-foreground text-background flex items-center justify-center disabled:opacity-30" :disabled="(!prompt.trim() && !selectedMentions.length && !selectedSqlFileMentions.length) || !props.tab?.database" @click="() => send()">
               <ArrowUp class="h-4 w-4" />
             </button>
           </div>

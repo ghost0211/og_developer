@@ -160,6 +160,7 @@ const emit = defineEmits<{
   "update:activeOutputView": [value: "result" | "output" | "summary" | "explain" | "chart"];
   fixWithAi: [errorMessage: string];
   sendSelectionToAi: [sql: string];
+  explainPlanAnalyzeWithAi: [prompt: string];
   execute: [sqlOverride?: SqlExecutionOverride];
   executeInNewResultTab: [sqlOverride?: SqlExecutionOverride];
   saveSql: [];
@@ -1270,8 +1271,12 @@ defineExpose({ focusSearch, refreshData, refreshQueryEditorCompletionCache, hand
               :loading="activeTab.isExplaining"
               :source-sql="activeTab.lastExplainedSql"
               :explain-sql="activeTab.explainSql"
+              :connection="activeConnection"
+              :database="activeTab.database"
+              :schema="activeTab.schema"
               :table-result="activeTab.explainTableResult"
               :table-error="activeTab.explainTableError"
+              @analyze-ai="emit('explainPlanAnalyzeWithAi', $event)"
             />
 
             <QueryChart v-else-if="activeOutputView === 'chart' && activeTab.result" class="flex-1 min-h-0" :result="activeTab.result" />

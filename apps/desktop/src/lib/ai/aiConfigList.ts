@@ -10,7 +10,8 @@ export function generateId(): string {
 }
 
 export function getConfigKey(config: AiConfig): string {
-  return `${config.provider}|${config.apiKey}|${config.endpoint}|${config.model}`;
+  const credential = config.provider === "openai-codex" ? (config.oauthAccountId ?? "") : config.apiKey;
+  return `${config.provider}|${credential}|${config.endpoint}|${config.model}`;
 }
 
 export function aiConfigToItem(config: AiConfig, id: string, name: string): AiConfigItem {

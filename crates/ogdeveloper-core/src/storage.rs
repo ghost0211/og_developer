@@ -4435,6 +4435,7 @@ mod tests {
             is_default,
             config: AiConfig {
                 provider: AiProvider::Openai,
+                oauth_account_id: None,
                 api_key: "sk-test".to_string(),
                 auth_method: AiAuthMethod::ApiKey,
                 endpoint: "https://api.openai.com/v1".to_string(),
