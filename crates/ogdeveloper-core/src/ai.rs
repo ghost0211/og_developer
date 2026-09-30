@@ -1579,15 +1579,29 @@ struct CodexCatalogCacheEntry {
 static CODEX_CATALOG_CACHE: LazyLock<std::sync::Mutex<Option<CodexCatalogCacheEntry>>> =
     LazyLock::new(|| std::sync::Mutex::new(None));
 const CODEX_CATALOG_TTL: std::time::Duration = std::time::Duration::from_secs(300);
+// Codex's /models client_version gates catalog compatibility, not our app version.
+// Pin to the upstream release whose catalog contract we implement; never use this
+// crate's CARGO_PKG_VERSION (0.2.0), which predates modern models' minimum versions.
+// Reference: openai/codex rust-v0.159.2, models-manager/src/manager.rs and models.json.
+const CODEX_CATALOG_CLIENT_VERSION: &str = "0.159.2";
+const CODEX_MODELS_URL: &str = "https://chatgpt.com/backend-api/codex/models";
 
 fn codex_catalog_cache_key(config: &AiConfig) -> String {
     config.oauth_account_id.clone().unwrap_or_default()
 }
 
-fn cached_codex_catalog(account_key: &str) -> Option<Vec<AiModelInfo>> {
+fn cached_codex_catalog_in(
+    entry: &CodexCatalogCacheEntry,
+    account_key: &str,
+    force_refresh: bool,
+) -> Option<Vec<AiModelInfo>> {
+    (!force_refresh && entry.account_key == account_key && entry.loaded_at.elapsed() < CODEX_CATALOG_TTL)
+        .then(|| entry.models.clone())
+}
+
+fn cached_codex_catalog(account_key: &str, force_refresh: bool) -> Option<Vec<AiModelInfo>> {
     let cache = CODEX_CATALOG_CACHE.lock().ok()?;
-    let entry = cache.as_ref()?;
-    (entry.account_key == account_key && entry.loaded_at.elapsed() < CODEX_CATALOG_TTL).then(|| entry.models.clone())
+    cached_codex_catalog_in(cache.as_ref()?, account_key, force_refresh)
 }
 
 fn store_codex_catalog(account_key: String, models: Vec<AiModelInfo>) {
@@ -1614,19 +1628,28 @@ pub(crate) fn codex_catalog_context_window(config: &AiConfig, model_id: &str) ->
     codex_catalog_context_window_in(cache.as_ref()?, &account_key, model_id)
 }
 
-async fn list_codex_models(config: &AiConfig) -> Result<Vec<AiModelInfo>, String> {
+fn codex_models_request(
+    client: &reqwest::Client,
+    token: &crate::ai_codex_oauth::CodexAccessToken,
+    model_url: &str,
+) -> Result<reqwest::RequestBuilder, String> {
+    let mut headers = codex_responses_headers(token)?;
+    headers.insert("accept", HeaderValue::from_static("application/json"));
+    headers.insert(
+        reqwest::header::USER_AGENT,
+        HeaderValue::from_static("codex_cli_rs/0.159.2 (OG Developer catalog compatibility)"),
+    );
+    Ok(client.get(model_url).query(&[("client_version", CODEX_CATALOG_CLIENT_VERSION)]).headers(headers))
+}
+
+async fn list_codex_models(config: &AiConfig, force_refresh: bool) -> Result<Vec<AiModelInfo>, String> {
     let account_key = codex_catalog_cache_key(config);
-    if let Some(models) = cached_codex_catalog(&account_key) {
+    if let Some(models) = cached_codex_catalog(&account_key, force_refresh) {
         return Ok(models);
     }
     let client = crate::ai_codex_oauth::build_responses_client(config, 30)?;
     let mut token = crate::ai_codex_oauth::access_token(config, None).await?;
-    let model_url = "https://chatgpt.com/backend-api/codex/models";
-    let send = |token: &crate::ai_codex_oauth::CodexAccessToken| -> Result<reqwest::RequestBuilder, String> {
-        let mut headers = codex_responses_headers(token)?;
-        headers.insert("accept", HeaderValue::from_static("application/json"));
-        Ok(client.get(model_url).query(&[("client_version", env!("CARGO_PKG_VERSION"))]).headers(headers))
-    };
+    let send = |token: &crate::ai_codex_oauth::CodexAccessToken| codex_models_request(&client, token, CODEX_MODELS_URL);
     let response = match send(&token)?.send().await {
         Ok(response) if response.status() == reqwest::StatusCode::UNAUTHORIZED => {
             token = crate::ai_codex_oauth::access_token(config, Some(&token.bearer)).await?;
@@ -1646,13 +1669,23 @@ async fn list_codex_models(config: &AiConfig) -> Result<Vec<AiModelInfo>, String
     let data: serde_json::Value =
         response.json().await.map_err(|_| "Codex model discovery returned invalid JSON".to_string())?;
     let models = parse_codex_model_list(&data)?;
+    let received =
+        data["models"].as_array().or_else(|| data["data"].as_array()).or_else(|| data.as_array()).map_or(0, Vec::len);
+    // Counts only: never log tokens, workspace/account IDs, headers, or catalog contents.
+    log::info!(
+        "[ai][codex-models] client_version={} received={} selectable={}",
+        CODEX_CATALOG_CLIENT_VERSION,
+        received,
+        models.len()
+    );
     store_codex_catalog(account_key, models.clone());
     Ok(models)
 }
 
 pub async fn list_models_core(config: &AiConfig) -> Result<Vec<AiModelInfo>, String> {
     if matches!(config.provider, AiProvider::OpenaiCodex) {
-        let mut models = list_codex_models(config).await?;
+        // Explicit model-list requests (including the refresh button) always go online.
+        let mut models = list_codex_models(config, true).await?;
         decorate_model_capabilities(config, &mut models);
         return Ok(models);
     }
@@ -1718,7 +1751,9 @@ pub async fn resolve_model_effort_core(config: &AiConfig, model_id: &str) -> Res
     if matches!(config.provider, AiProvider::OpenaiCodex) {
         // Discovery can lag, fail, or omit manually entered/saved slugs; the static GPT
         // registry still knows their levels, so degrade to it instead of "unsupported".
-        let models = list_models_core(config).await.unwrap_or_default();
+        // Capability resolution may reuse a fresh catalog; explicit picker refresh may not.
+        let mut models = list_codex_models(config, false).await.unwrap_or_default();
+        decorate_model_capabilities(config, &mut models);
         return Ok(models
             .into_iter()
             .find(|model| model.id == model_id)
@@ -7463,6 +7498,59 @@ mod tests {
             panic!("expected enum capability");
         };
         assert_eq!(*default, super::AiEffortSelection::Enum("high".to_string()));
+    }
+
+    #[test]
+    fn codex_models_request_uses_upstream_compatibility_version_not_app_version() {
+        let token = crate::ai_codex_oauth::CodexAccessToken {
+            bearer: "dummy-test-token".to_string(),
+            chatgpt_account_id: Some("dummy-workspace".to_string()),
+        };
+        let request = super::codex_models_request(&reqwest::Client::new(), &token, super::CODEX_MODELS_URL)
+            .unwrap()
+            .build()
+            .unwrap();
+        let version = request.url().query_pairs().find(|(key, _)| key == "client_version").unwrap().1.into_owned();
+        assert_eq!(version, super::CODEX_CATALOG_CLIENT_VERSION);
+        assert_ne!(version, env!("CARGO_PKG_VERSION"));
+        let parts: Vec<u32> = version.split('.').map(|part| part.parse().unwrap()).collect();
+        // Modern upstream models advertise minimal_client_version up to 0.155.0.
+        assert!(parts.as_slice() >= [0, 155, 0].as_slice());
+        assert_eq!(request.headers()["accept"], "application/json");
+        assert_eq!(request.headers()["originator"], "codex_cli_rs");
+        assert!(request.headers()["user-agent"].to_str().unwrap().contains(&version));
+        assert!(request.headers()["authorization"].is_sensitive());
+    }
+
+    #[test]
+    fn codex_catalog_explicit_refresh_bypasses_fresh_cache() {
+        let entry = CodexCatalogCacheEntry {
+            account_key: "test-account".to_string(),
+            loaded_at: std::time::Instant::now(),
+            models: vec![AiModelInfo::new("gpt-6.1-sol", None)],
+        };
+        assert!(super::cached_codex_catalog_in(&entry, "test-account", false).is_some());
+        assert!(super::cached_codex_catalog_in(&entry, "test-account", true).is_none());
+        assert!(super::cached_codex_catalog_in(&entry, "other-account", false).is_none());
+        let expired =
+            CodexCatalogCacheEntry { loaded_at: std::time::Instant::now() - super::CODEX_CATALOG_TTL, ..entry };
+        assert!(super::cached_codex_catalog_in(&expired, "test-account", false).is_none());
+    }
+
+    #[test]
+    fn codex_catalog_keeps_all_visible_modern_models() {
+        let models = parse_codex_model_list(&serde_json::json!({ "models": [
+            { "slug": "gpt-6.1-sol", "visibility": "list", "priority": 1, "minimal_client_version": "0.153.0" },
+            { "slug": "gpt-6-sol", "visibility": "list", "priority": 2, "minimal_client_version": "0.155.0" },
+            { "slug": "gpt-6-luna", "visibility": "list", "priority": 3, "minimal_client_version": "0.155.0" },
+            { "slug": "gpt-5.5", "visibility": "list", "priority": 4, "minimal_client_version": "0.124.0" },
+            { "slug": "codex-auto-review", "visibility": "hide", "priority": 0 }
+        ] }))
+        .unwrap();
+        assert_eq!(
+            models.iter().map(|model| model.id.as_str()).collect::<Vec<_>>(),
+            ["gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna", "gpt-5.5"]
+        );
     }
 
     #[test]

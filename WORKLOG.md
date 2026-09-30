@@ -1084,3 +1084,30 @@ kimi-for-coding 等未知型号保持 128k 兜底（可在设置里手动指定�
 **验证**：effort 28 项、codex 8 项（+1 目录窗口纯函数测试）、agent_loop 23 项（+1 K3 启发式）
 全部通过；cargo fmt、CI 同款 clippy、oxfmt/typecheck 通过。缓存 lookup 拆成纯函数
 `codex_catalog_context_window_in`，避免并行测试共享静态态的竞态。未启动桌面 UI。
+
+---
+
+## 32. v0.2.35：修正 Codex 模型目录客户端版本与刷新语义（2026-09-30）
+
+用户再次报告 Codex OAuth 登录后下拉仅有 gpt-6.1-sol。此前以「账号目录由上游决定」
+解释数量并没有真实响应证据，不能视为已定位。本轮核对官方 openai/codex rust-v0.159.2：
+模型目录请求包含 Codex `client_version`，官方目录 `minimal_client_version` 对现代模型
+可达 0.155.0（gpt-6-sol/luna），gpt-5.5 为 0.124.0。
+
+**确认的请求错误**：`list_codex_models` 使用核心 crate 的 `env!("CARGO_PKG_VERSION")`，
+实际始终为 **0.2.0**，不是桌面发布版本，更不是 Codex 协议版本。改为明确固定的上游
+兼容契约版本 **0.159.2**，与 OG Developer 发布版本解耦；目录请求补同版本 User-Agent
+并注明 OG Developer catalog compatibility。版本常量附官方版本出处，后续同步上游契约时更新。
+
+**刷新**：显式 `ai_list_models`（设置刷新按钮/聊天目录刷新）绕过后端缓存，能力解析仍
+可复用 5 分钟缓存；保留账号隔离和目录上下文窗口缓存。新增安全诊断日志，仅记录
+client_version、服务器目录总数和可选模型数，不记录令牌、账号/工作区 ID 或原始响应。
+
+**截图翻译**：设置模板错误引用不存在的 `ai.defaultReasoningLevel`；改用已有
+`ai.reasoningLevel`，新增 locale 回归测试。
+
+**验证**：后端 AI 105 项测试通过（新增请求版本/headers、多现代模型保留、强制刷新缓存
+3 项）；完整 `pnpm check` 执行，格式/lint/typecheck 通过、5267 项测试通过，仍有既有
+5 个本机 `No such built-in module: node:` 环境套件失败；cargo fmt 与 CI 同款全工作区
+clippy 通过。不操作桌面、不读取用户凭据。实际账号是否恢复完整目录仍须用户更新后
+点击刷新验证；不能据代码修复承诺所有账号均可见同一模型集。

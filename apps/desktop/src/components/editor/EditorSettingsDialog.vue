@@ -4618,7 +4618,7 @@ onUnmounted(() => {
 
                 <!-- Default reasoning level -->
                 <div class="grid grid-cols-3 items-start gap-3">
-                  <Label class="pt-1.5 text-right text-xs">{{ t("ai.defaultReasoningLevel") }}</Label>
+                  <Label class="pt-1.5 text-right text-xs">{{ t("ai.reasoningLevel") }}</Label>
                   <div class="col-span-2 space-y-1.5">
                     <Select v-model="aiEditReasoningLevel">
                       <SelectTrigger class="h-8 w-full text-xs">
