@@ -58,7 +58,7 @@ test("AI effort control is a direct composer popover beside the model selector",
   assert.match(source.slice(effortStart - 80, effortStart), /<\/Popover>\s*$/);
   assert.doesNotMatch(providerSelector, /effortMenuOpen|ai\.effort/);
   assert.match(effortPopover, /<PopoverTrigger as-child>[\s\S]*?<button\s+type="button"/);
-  assert.match(effortPopover, /:title="t\('ai\.effort'\)"/);
+  assert.match(effortPopover, /:title="`\$\{t\('ai\.effort'\)\}: \$\{effortSelectionLabel\(settings\.activeEffort\)\}`"/);
   assert.match(effortPopover, /focus-visible:ring-primary/);
   assert.match(effortPopover, /effortSelectionLabel\(settings\.activeEffort\)/);
   assert.match(effortPopover, /<PopoverContent[\s\S]*?side="top"[\s\S]*?align="end"[\s\S]*?:collision-padding="8"/);
@@ -91,6 +91,32 @@ test("AI model and effort menu refreshes do not persist effort settings", () => 
   assert.notEqual(loaderEnd, -1, "the model selection handler should follow the effort loader");
   assert.match(loader, /await resolveEffort\(config, modelId, force\)/);
   assert.doesNotMatch(loader, /updateActiveEffort|persistAiChatSelection/);
+});
+
+test("AI composer allocates selector widths independently of their labels", () => {
+  const { descriptor } = parse(source, { filename: aiAssistantPath });
+  const style = descriptor.styles[0].content;
+  assert.match(source, /class="ai-composer-controls"/);
+  assert.match(source, /class="ai-composer-model-controls"/);
+  assert.match(style, /container: ai-composer \/ inline-size/);
+  assert.match(style, /\.ai-composer-model-controls--with-effort\s*\{\s*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);
+  assert.doesNotMatch(source, /flex min-w-0 flex-nowrap items-center gap-1\.5 overflow-hidden/);
+  assert.doesNotMatch(source, /max-w-\[150px\]|max-w-\[220px\]/);
+});
+
+test("AI composer responds to sidebar width rather than the app viewport", () => {
+  const { descriptor } = parse(source, { filename: aiAssistantPath });
+  const style = descriptor.styles[0].content;
+  assert.match(style, /\.ai-composer-toolbar--with-models\s*\{\s*grid-template-areas:\s*"mode send"\s*"models models"/);
+  assert.match(style, /@container ai-composer \(min-width: 520px\)[\s\S]*?grid-template-areas: "mode models send"/);
+  assert.match(style, /@container ai-composer \(max-width: 299px\)[\s\S]*?grid-template-columns: minmax\(0, 1fr\)/);
+});
+
+test("AI composer keeps full names accessible when text is truncated", () => {
+  assert.match(source, /:title="modeActionTriggerLabel"/);
+  assert.match(source, /:title="activeFullConfig\?\.model \|\| t\('ai\.selectModel'\)"/);
+  assert.match(source, /min-w-0 flex-1 truncate text-left"\s*>\{\{ t\("ai\.effort"\) \}\}/);
+  assert.match(source, /class="ai-composer-submit h-7 w-7 shrink-0/g);
 });
 
 test("AI composer template remains compilable", () => {

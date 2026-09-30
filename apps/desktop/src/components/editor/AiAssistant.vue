@@ -2555,241 +2555,253 @@ async function openExternalUrl(url: string) {
             @compositionend="promptCompositionActive = false"
             @keydown="onPromptKeydown"
           />
-          <div class="flex min-w-0 flex-nowrap items-center gap-1.5 overflow-hidden">
-            <!-- Combined mode + action selector -->
-            <Popover v-model:open="modeActionOpen">
-              <PopoverTrigger as-child>
-                <button type="button" class="flex shrink-0 items-center gap-1 whitespace-nowrap rounded-[6px] border px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground" :aria-label="modeActionTriggerLabel">
-                  <component :is="modeIcon" class="h-3 w-3" />
-                  <span>{{ modeActionTriggerLabel }}</span>
-                  <svg class="h-3 w-3 shrink-0 opacity-60" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6" /></svg>
-                </button>
-              </PopoverTrigger>
-              <PopoverContent align="start" class="w-56 gap-0 p-1.5" @click.stop>
-                <!-- Mode tabs -->
-                <div class="flex items-center gap-1 mb-1.5 px-0.5">
-                  <button
-                    type="button"
-                    class="flex-1 flex items-center justify-center gap-1.5 rounded-sm px-2 py-1 text-xs"
-                    :class="assistantMode === 'ask' ? 'bg-accent text-accent-foreground font-medium' : 'text-muted-foreground hover:text-foreground hover:bg-muted'"
-                    @click="switchModeActionTab('ask')"
-                  >
-                    <MessageSquarePlus class="h-3 w-3" />
-                    {{ t("ai.modes.ask") }}
-                  </button>
-                  <button
-                    type="button"
-                    class="flex-1 flex items-center justify-center gap-1.5 rounded-sm px-2 py-1 text-xs"
-                    :class="assistantMode === 'agent' ? 'bg-accent text-accent-foreground font-medium' : 'text-muted-foreground hover:text-foreground hover:bg-muted'"
-                    @click="switchModeActionTab('agent')"
-                  >
-                    <Bot class="h-3 w-3" />
-                    {{ t("ai.modes.agent") }}
-                  </button>
-                </div>
-                <template v-if="showActionButtons">
-                  <div class="border-t my-1" />
-                  <!-- Action list -->
-                  <div class="max-h-56 overflow-auto">
-                    <button v-for="button in actionButtons" :key="button.action" type="button" class="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-xs" :class="activeAction === button.action ? 'bg-accent' : 'hover:bg-muted'" @click="selectModeActionItem(button.action)">
-                      <component :is="button.icon" class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                      <span class="flex-1 text-left">{{ t(button.key) }}</span>
-                      <Check v-if="activeAction === button.action" class="h-3.5 w-3.5 shrink-0" />
-                    </button>
-                  </div>
-                </template>
-              </PopoverContent>
-            </Popover>
-            <span class="min-w-0 flex-1" />
-            <template v-if="settings.aiConfigs.length > 0">
-              <!-- Combined provider + model selector -->
-              <Popover v-model:open="providerSelectorOpen">
+          <div class="ai-composer-controls">
+            <div class="ai-composer-toolbar" :class="{ 'ai-composer-toolbar--with-models': settings.aiConfigs.length > 0 }">
+              <!-- Combined mode + action selector -->
+              <Popover v-model:open="modeActionOpen">
                 <PopoverTrigger as-child>
-                  <button type="button" class="min-w-0 flex shrink items-center gap-1.5 max-w-[220px] rounded-[6px] border px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground">
-                    <AiProviderLogo
-                      :provider="activeFullConfig?.provider ?? 'claude'"
-                      :label="AI_PROVIDER_PRESETS[activeFullConfig?.provider ?? 'claude']?.label ?? activeFullConfig?.provider ?? 'claude'"
-                      :icon-slug="AI_PROVIDER_PRESETS[activeFullConfig?.provider ?? 'claude']?.iconSlug"
-                      class="h-3 w-3 shrink-0"
-                    />
-                    <span class="min-w-0 truncate">{{ activeFullConfig?.model || t("ai.selectModel") }}</span>
+                  <button type="button" class="ai-composer-mode flex min-w-0 items-center gap-1 rounded-[6px] border px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground" :title="modeActionTriggerLabel" :aria-label="modeActionTriggerLabel">
+                    <component :is="modeIcon" class="h-3 w-3 shrink-0" />
+                    <span class="min-w-0 truncate">{{ modeActionTriggerLabel }}</span>
                     <svg class="h-3 w-3 shrink-0 opacity-60" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6" /></svg>
                   </button>
                 </PopoverTrigger>
-                <PopoverContent align="end" class="max-h-(--reka-popover-content-available-height) w-80 gap-0 overflow-y-auto p-1.5" @open-auto-focus.prevent>
-                  <div class="relative px-1 pb-1">
-                    <Search class="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-                    <input v-model="modelSearchQuery" type="text" :placeholder="t('ai.searchModels')" class="w-full rounded-sm border bg-background py-1.5 pl-7 pr-2 text-xs outline-none focus:ring-1 focus:ring-primary" @click.stop />
+                <PopoverContent align="start" class="w-56 gap-0 p-1.5" @click.stop>
+                  <!-- Mode tabs -->
+                  <div class="flex items-center gap-1 mb-1.5 px-0.5">
+                    <button
+                      type="button"
+                      class="flex-1 flex items-center justify-center gap-1.5 rounded-sm px-2 py-1 text-xs"
+                      :class="assistantMode === 'ask' ? 'bg-accent text-accent-foreground font-medium' : 'text-muted-foreground hover:text-foreground hover:bg-muted'"
+                      @click="switchModeActionTab('ask')"
+                    >
+                      <MessageSquarePlus class="h-3 w-3" />
+                      {{ t("ai.modes.ask") }}
+                    </button>
+                    <button
+                      type="button"
+                      class="flex-1 flex items-center justify-center gap-1.5 rounded-sm px-2 py-1 text-xs"
+                      :class="assistantMode === 'agent' ? 'bg-accent text-accent-foreground font-medium' : 'text-muted-foreground hover:text-foreground hover:bg-muted'"
+                      @click="switchModeActionTab('agent')"
+                    >
+                      <Bot class="h-3 w-3" />
+                      {{ t("ai.modes.agent") }}
+                    </button>
                   </div>
-                  <div class="max-h-80 overflow-auto">
-                    <template v-for="config in configuredProviders" :key="config.id">
-                      <button
-                        type="button"
-                        class="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs hover:bg-muted"
-                        :class="config.id === settings.activeModel?.configId ? 'bg-accent text-accent-foreground' : 'text-foreground'"
-                        :aria-expanded="!isModelConfigCollapsed(config.id)"
-                        @click="toggleModelConfig(config.id)"
-                      >
-                        <ChevronRight class="h-3.5 w-3.5 shrink-0 transition-transform" :class="{ 'rotate-90': !isModelConfigCollapsed(config.id) }" />
-                        <AiProviderLogo :provider="config.provider" :label="AI_PROVIDER_PRESETS[config.provider]?.label ?? config.provider" :icon-slug="AI_PROVIDER_PRESETS[config.provider]?.iconSlug" class="h-3.5 w-3.5 shrink-0" />
-                        <span class="min-w-0 flex-1 truncate font-medium">{{ config.name }}</span>
-                        <Loader2 v-if="getModelCatalog(config.id).status === 'loading'" class="h-3 w-3 shrink-0 animate-spin text-muted-foreground" />
-                        <span v-if="config.isDefault" class="ml-auto text-[10px] text-muted-foreground">{{ t("ai.default") }}</span>
+                  <template v-if="showActionButtons">
+                    <div class="border-t my-1" />
+                    <!-- Action list -->
+                    <div class="max-h-56 overflow-auto">
+                      <button v-for="button in actionButtons" :key="button.action" type="button" class="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-xs" :class="activeAction === button.action ? 'bg-accent' : 'hover:bg-muted'" @click="selectModeActionItem(button.action)">
+                        <component :is="button.icon" class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        <span class="flex-1 text-left">{{ t(button.key) }}</span>
+                        <Check v-if="activeAction === button.action" class="h-3.5 w-3.5 shrink-0" />
                       </button>
-                      <div v-if="!isModelConfigCollapsed(config.id)">
-                        <div v-if="getModelCatalog(config.id).status === 'loading' && !getModelsForConfig(config.id).length" class="flex items-center gap-2 px-2 py-2 text-xs text-muted-foreground">
-                          <Loader2 class="h-3.5 w-3.5 animate-spin" />
-                          {{ t("ai.loadingModels") }}
-                        </div>
-                        <div v-else-if="getModelCatalog(config.id).status === 'error' && !getModelsForConfig(config.id).length" class="space-y-1 px-2 py-2 text-xs text-muted-foreground">
-                          <div class="truncate" :title="getModelCatalog(config.id).error">{{ t("ai.modelLoadFailed") }}</div>
-                          <button type="button" class="text-primary hover:underline" @click="loadModels(config, true)">{{ t("ai.retry") }}</button>
-                        </div>
-                        <div v-else-if="getModelCatalog(config.id).status === 'ready' && !getConfigModelOptions(config).length" class="px-2 py-2 text-xs text-muted-foreground">
-                          {{ modelSearchQuery.trim() ? t("ai.noModelMatch") : t("ai.noModels") }}
-                        </div>
-                        <template v-if="getConfigModelOptions(config).length">
-                          <button
-                            v-for="model in getConfigModelOptions(config)"
-                            :key="model.id"
-                            type="button"
-                            class="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs hover:bg-accent hover:text-accent-foreground"
-                            :class="model.id === settings.activeModel?.modelId && config.id === settings.activeModel?.configId ? 'bg-accent text-accent-foreground' : ''"
-                            @click="handleModelSelect(config.id, model.id)"
-                          >
-                            <span class="min-w-0 flex-1 truncate">
-                              {{ model.displayName || model.id }}
-                              <span v-if="model.displayName && model.displayName !== model.id" class="ml-1 text-[10px] text-muted-foreground">{{ model.id }}</span>
-                            </span>
-                            <Check v-if="model.id === settings.activeModel?.modelId && config.id === settings.activeModel?.configId" class="h-3.5 w-3.5 shrink-0 text-primary" />
-                          </button>
-                        </template>
-                        <div v-if="getModelCatalog(config.id).status === 'error' && getModelsForConfig(config.id).length" class="flex items-center justify-between gap-2 px-2 py-1 text-[10px] text-muted-foreground">
-                          <span class="truncate" :title="getModelCatalog(config.id).error">{{ t("ai.modelLoadFailed") }}</span>
-                          <button type="button" class="shrink-0 text-primary hover:underline" @click="loadModels(config, true)">{{ t("ai.retry") }}</button>
-                        </div>
-                        <form v-if="manualModelConfigId === config.id" class="flex items-center gap-1 px-2 py-1" @submit.prevent="applyManualModel(config.id)">
-                          <input v-model="manualModelId" data-manual-model-input type="text" :placeholder="t('ai.manualModelPlaceholder')" class="min-w-0 flex-1 rounded-sm border bg-background px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-primary" @click.stop />
-                          <Button type="submit" size="sm" class="h-6 px-2 text-[10px]" :disabled="!manualModelId.trim()">{{ t("common.confirm") }}</Button>
-                        </form>
-                        <button v-else type="button" class="flex w-full items-center gap-2 rounded-sm px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground" @click="startManualModel(config.id)">
-                          <Pencil class="h-3 w-3" />
-                          {{ t("ai.manualModel") }}
-                        </button>
-                      </div>
-                      <div class="my-1 border-t" />
-                    </template>
-                  </div>
-                </PopoverContent>
-              </Popover>
-              <Popover v-if="settings.activeModel" v-model:open="effortMenuOpen">
-                <PopoverTrigger as-child>
-                  <button
-                    type="button"
-                    class="flex max-w-[150px] min-w-0 shrink items-center gap-1.5 rounded-[6px] border px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
-                    :title="t('ai.effort')"
-                    :aria-label="`${t('ai.effort')}: ${effortSelectionLabel(settings.activeEffort)}`"
-                  >
-                    <span class="shrink-0">{{ t("ai.effort") }}</span>
-                    <span class="min-w-0 truncate text-foreground/80">{{ effortSelectionLabel(settings.activeEffort) }}</span>
-                    <svg class="h-3 w-3 shrink-0 opacity-60" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6" /></svg>
-                  </button>
-                </PopoverTrigger>
-                <PopoverContent side="top" align="end" :side-offset="6" :collision-padding="8" class="max-h-(--reka-popover-content-available-height) w-72 max-w-[calc(100vw-1rem)] gap-1 overflow-y-auto p-2" @pointerdown.stop @click.stop @keydown.stop>
-                  <div v-if="activeEffortSourceLabel" class="px-2 pb-1 text-[10px] leading-4 text-muted-foreground">
-                    {{ activeEffortSourceLabel }}
-                  </div>
-                  <button type="button" class="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs hover:bg-accent" :class="!settings.activeEffort ? 'bg-accent text-accent-foreground' : ''" @click="selectEffort(null)">
-                    <span class="flex-1">{{ t("ai.configDefaultEffort") }}</span>
-                    <Check v-if="!settings.activeEffort" class="h-3.5 w-3.5 text-primary" />
-                  </button>
-                  <button type="button" class="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs hover:bg-accent" :class="settings.activeEffort?.kind === 'providerDefault' ? 'bg-accent text-accent-foreground' : ''" @click="selectEffort({ kind: 'providerDefault' })">
-                    <span class="flex-1">{{ t("ai.providerDefault") }}</span>
-                    <Check v-if="settings.activeEffort?.kind === 'providerDefault'" class="h-3.5 w-3.5 text-primary" />
-                  </button>
-                  <div v-if="activeEffortEntry?.status === 'loading'" class="flex items-center gap-2 py-2 text-xs text-muted-foreground">
-                    <Loader2 class="h-3.5 w-3.5 animate-spin" />
-                    {{ t("ai.loadingEffort") }}
-                  </div>
-                  <div v-else-if="activeEffortEntry?.status === 'error'" class="flex items-center justify-between gap-2 py-2 text-xs text-muted-foreground">
-                    <span class="truncate" :title="activeEffortEntry.error">{{ t("ai.effortLoadFailed") }}</span>
-                    <button type="button" class="shrink-0 text-primary hover:underline" @click="retryActiveEffort">
-                      {{ t("ai.retry") }}
-                    </button>
-                  </div>
-                  <template v-else-if="activeEffortCapability?.kind === 'enum'">
-                    <button
-                      v-for="option in activeEffortCapability.options"
-                      :key="option.id"
-                      type="button"
-                      class="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs hover:bg-accent"
-                      :class="effortSelectionEquals(settings.activeEffort, option.selection) ? 'bg-accent text-accent-foreground' : ''"
-                      @click="selectEffortOption(option)"
-                    >
-                      <span class="flex-1">{{ option.label }}</span>
-                      <Check v-if="effortSelectionEquals(settings.activeEffort, option.selection)" class="h-3.5 w-3.5 text-primary" />
-                    </button>
-                  </template>
-                  <template v-else-if="activeEffortCapability?.kind === 'integer'">
-                    <button
-                      v-for="option in activeEffortCapability.specialValues"
-                      :key="option.id"
-                      type="button"
-                      class="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs hover:bg-accent"
-                      :class="effortSelectionEquals(settings.activeEffort, option.selection) ? 'bg-accent text-accent-foreground' : ''"
-                      @click="selectEffortOption(option)"
-                    >
-                      <span class="flex-1">{{ option.label }}</span>
-                      <Check v-if="effortSelectionEquals(settings.activeEffort, option.selection)" class="h-3.5 w-3.5 text-primary" />
-                    </button>
-                    <div class="flex items-center gap-2 py-1">
-                      <input v-model.number="effortIntegerValue" type="range" class="min-w-0 flex-1" :min="activeEffortCapability.min" :max="activeEffortCapability.max" :step="activeEffortCapability.step" @change="commitIntegerEffort(activeEffortCapability)" />
-                      <input
-                        v-model.number="effortIntegerValue"
-                        type="number"
-                        class="w-20 rounded-sm border bg-background px-2 py-1 text-xs"
-                        :min="activeEffortCapability.min"
-                        :max="activeEffortCapability.max"
-                        :step="activeEffortCapability.step"
-                        @change="commitIntegerEffort(activeEffortCapability)"
-                        @click.stop
-                      />
                     </div>
                   </template>
-                  <template v-else-if="activeEffortCapability?.kind === 'boolean'">
-                    <button type="button" class="flex w-full items-center rounded-sm px-2 py-1.5 text-xs hover:bg-accent" @click="selectEffort({ kind: 'boolean', value: true })">
-                      <span class="flex-1 text-left">{{ t("ai.effortEnabled") }}</span>
-                      <Check v-if="settings.activeEffort?.kind === 'boolean' && settings.activeEffort.value" class="h-3.5 w-3.5 text-primary" />
-                    </button>
-                    <button type="button" class="flex w-full items-center rounded-sm px-2 py-1.5 text-xs hover:bg-accent" @click="selectEffort({ kind: 'boolean', value: false })">
-                      <span class="flex-1 text-left">{{ t("ai.effortDisabled") }}</span>
-                      <Check v-if="settings.activeEffort?.kind === 'boolean' && !settings.activeEffort.value" class="h-3.5 w-3.5 text-primary" />
-                    </button>
-                  </template>
-                  <form v-else-if="activeEffortCapability?.kind === 'freeText'" class="flex items-center gap-1 py-1" @submit.prevent="commitTextEffort">
-                    <input
-                      v-model="effortTextValue"
-                      type="text"
-                      maxlength="64"
-                      :placeholder="activeEffortCapability.placeholder || t('ai.customEffortPlaceholder')"
-                      class="min-w-0 flex-1 rounded-sm border bg-background px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-primary"
-                      @click.stop
-                      @blur="commitTextEffort"
-                    />
-                    <Button type="submit" size="sm" class="h-6 px-2 text-[10px]">{{ t("common.confirm") }}</Button>
-                  </form>
-                  <div v-else-if="activeEffortCapability?.kind === 'unsupported'" class="px-2 py-2 text-xs text-muted-foreground">
-                    {{ t("ai.effortUnsupported") }}
-                  </div>
                 </PopoverContent>
               </Popover>
-            </template>
-            <button v-if="isGenerating" class="h-7 w-7 shrink-0 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center" :title="t('ai.stopGenerating')" @click="cancelStream">
-              <Square class="h-3.5 w-3.5" />
-            </button>
-            <button v-else class="h-7 w-7 shrink-0 rounded-full bg-foreground text-background flex items-center justify-center disabled:opacity-30" :disabled="(!prompt.trim() && !selectedMentions.length && !selectedSqlFileMentions.length) || !props.tab?.database" @click="() => send()">
-              <ArrowUp class="h-4 w-4" />
-            </button>
+              <div v-if="settings.aiConfigs.length > 0" class="ai-composer-model-controls" :class="{ 'ai-composer-model-controls--with-effort': settings.activeModel }">
+                <!-- Combined provider + model selector -->
+                <Popover v-model:open="providerSelectorOpen">
+                  <PopoverTrigger as-child>
+                    <button
+                      type="button"
+                      class="ai-composer-model flex w-full min-w-0 items-center gap-1.5 rounded-[6px] border px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
+                      :title="activeFullConfig?.model || t('ai.selectModel')"
+                      :aria-label="activeFullConfig?.model || t('ai.selectModel')"
+                    >
+                      <AiProviderLogo
+                        :provider="activeFullConfig?.provider ?? 'claude'"
+                        :label="AI_PROVIDER_PRESETS[activeFullConfig?.provider ?? 'claude']?.label ?? activeFullConfig?.provider ?? 'claude'"
+                        :icon-slug="AI_PROVIDER_PRESETS[activeFullConfig?.provider ?? 'claude']?.iconSlug"
+                        class="h-3 w-3 shrink-0"
+                      />
+                      <span class="min-w-0 flex-1 truncate text-left">{{ activeFullConfig?.model || t("ai.selectModel") }}</span>
+                      <svg class="h-3 w-3 shrink-0 opacity-60" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6" /></svg>
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent align="end" class="max-h-(--reka-popover-content-available-height) w-80 gap-0 overflow-y-auto p-1.5" @open-auto-focus.prevent>
+                    <div class="relative px-1 pb-1">
+                      <Search class="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                      <input v-model="modelSearchQuery" type="text" :placeholder="t('ai.searchModels')" class="w-full rounded-sm border bg-background py-1.5 pl-7 pr-2 text-xs outline-none focus:ring-1 focus:ring-primary" @click.stop />
+                    </div>
+                    <div class="max-h-80 overflow-auto">
+                      <template v-for="config in configuredProviders" :key="config.id">
+                        <button
+                          type="button"
+                          class="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs hover:bg-muted"
+                          :class="config.id === settings.activeModel?.configId ? 'bg-accent text-accent-foreground' : 'text-foreground'"
+                          :aria-expanded="!isModelConfigCollapsed(config.id)"
+                          @click="toggleModelConfig(config.id)"
+                        >
+                          <ChevronRight class="h-3.5 w-3.5 shrink-0 transition-transform" :class="{ 'rotate-90': !isModelConfigCollapsed(config.id) }" />
+                          <AiProviderLogo :provider="config.provider" :label="AI_PROVIDER_PRESETS[config.provider]?.label ?? config.provider" :icon-slug="AI_PROVIDER_PRESETS[config.provider]?.iconSlug" class="h-3.5 w-3.5 shrink-0" />
+                          <span class="min-w-0 flex-1 truncate font-medium">{{ config.name }}</span>
+                          <Loader2 v-if="getModelCatalog(config.id).status === 'loading'" class="h-3 w-3 shrink-0 animate-spin text-muted-foreground" />
+                          <span v-if="config.isDefault" class="ml-auto text-[10px] text-muted-foreground">{{ t("ai.default") }}</span>
+                        </button>
+                        <div v-if="!isModelConfigCollapsed(config.id)">
+                          <div v-if="getModelCatalog(config.id).status === 'loading' && !getModelsForConfig(config.id).length" class="flex items-center gap-2 px-2 py-2 text-xs text-muted-foreground">
+                            <Loader2 class="h-3.5 w-3.5 animate-spin" />
+                            {{ t("ai.loadingModels") }}
+                          </div>
+                          <div v-else-if="getModelCatalog(config.id).status === 'error' && !getModelsForConfig(config.id).length" class="space-y-1 px-2 py-2 text-xs text-muted-foreground">
+                            <div class="truncate" :title="getModelCatalog(config.id).error">{{ t("ai.modelLoadFailed") }}</div>
+                            <button type="button" class="text-primary hover:underline" @click="loadModels(config, true)">{{ t("ai.retry") }}</button>
+                          </div>
+                          <div v-else-if="getModelCatalog(config.id).status === 'ready' && !getConfigModelOptions(config).length" class="px-2 py-2 text-xs text-muted-foreground">
+                            {{ modelSearchQuery.trim() ? t("ai.noModelMatch") : t("ai.noModels") }}
+                          </div>
+                          <template v-if="getConfigModelOptions(config).length">
+                            <button
+                              v-for="model in getConfigModelOptions(config)"
+                              :key="model.id"
+                              type="button"
+                              class="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs hover:bg-accent hover:text-accent-foreground"
+                              :class="model.id === settings.activeModel?.modelId && config.id === settings.activeModel?.configId ? 'bg-accent text-accent-foreground' : ''"
+                              @click="handleModelSelect(config.id, model.id)"
+                            >
+                              <span class="min-w-0 flex-1 truncate">
+                                {{ model.displayName || model.id }}
+                                <span v-if="model.displayName && model.displayName !== model.id" class="ml-1 text-[10px] text-muted-foreground">{{ model.id }}</span>
+                              </span>
+                              <Check v-if="model.id === settings.activeModel?.modelId && config.id === settings.activeModel?.configId" class="h-3.5 w-3.5 shrink-0 text-primary" />
+                            </button>
+                          </template>
+                          <div v-if="getModelCatalog(config.id).status === 'error' && getModelsForConfig(config.id).length" class="flex items-center justify-between gap-2 px-2 py-1 text-[10px] text-muted-foreground">
+                            <span class="truncate" :title="getModelCatalog(config.id).error">{{ t("ai.modelLoadFailed") }}</span>
+                            <button type="button" class="shrink-0 text-primary hover:underline" @click="loadModels(config, true)">{{ t("ai.retry") }}</button>
+                          </div>
+                          <form v-if="manualModelConfigId === config.id" class="flex items-center gap-1 px-2 py-1" @submit.prevent="applyManualModel(config.id)">
+                            <input v-model="manualModelId" data-manual-model-input type="text" :placeholder="t('ai.manualModelPlaceholder')" class="min-w-0 flex-1 rounded-sm border bg-background px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-primary" @click.stop />
+                            <Button type="submit" size="sm" class="h-6 px-2 text-[10px]" :disabled="!manualModelId.trim()">{{ t("common.confirm") }}</Button>
+                          </form>
+                          <button v-else type="button" class="flex w-full items-center gap-2 rounded-sm px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground" @click="startManualModel(config.id)">
+                            <Pencil class="h-3 w-3" />
+                            {{ t("ai.manualModel") }}
+                          </button>
+                        </div>
+                        <div class="my-1 border-t" />
+                      </template>
+                    </div>
+                  </PopoverContent>
+                </Popover>
+                <Popover v-if="settings.activeModel" v-model:open="effortMenuOpen">
+                  <PopoverTrigger as-child>
+                    <button
+                      type="button"
+                      class="ai-composer-effort flex w-full min-w-0 items-center gap-1.5 rounded-[6px] border px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
+                      :title="`${t('ai.effort')}: ${effortSelectionLabel(settings.activeEffort)}`"
+                      :aria-label="`${t('ai.effort')}: ${effortSelectionLabel(settings.activeEffort)}`"
+                    >
+                      <span class="min-w-0 flex-1 truncate text-left"
+                        >{{ t("ai.effort") }} <span class="text-foreground/80">{{ effortSelectionLabel(settings.activeEffort) }}</span></span
+                      >
+                      <svg class="h-3 w-3 shrink-0 opacity-60" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6" /></svg>
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent side="top" align="end" :side-offset="6" :collision-padding="8" class="max-h-(--reka-popover-content-available-height) w-72 max-w-[calc(100vw-1rem)] gap-1 overflow-y-auto p-2" @pointerdown.stop @click.stop @keydown.stop>
+                    <div v-if="activeEffortSourceLabel" class="px-2 pb-1 text-[10px] leading-4 text-muted-foreground">
+                      {{ activeEffortSourceLabel }}
+                    </div>
+                    <button type="button" class="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs hover:bg-accent" :class="!settings.activeEffort ? 'bg-accent text-accent-foreground' : ''" @click="selectEffort(null)">
+                      <span class="flex-1">{{ t("ai.configDefaultEffort") }}</span>
+                      <Check v-if="!settings.activeEffort" class="h-3.5 w-3.5 text-primary" />
+                    </button>
+                    <button type="button" class="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs hover:bg-accent" :class="settings.activeEffort?.kind === 'providerDefault' ? 'bg-accent text-accent-foreground' : ''" @click="selectEffort({ kind: 'providerDefault' })">
+                      <span class="flex-1">{{ t("ai.providerDefault") }}</span>
+                      <Check v-if="settings.activeEffort?.kind === 'providerDefault'" class="h-3.5 w-3.5 text-primary" />
+                    </button>
+                    <div v-if="activeEffortEntry?.status === 'loading'" class="flex items-center gap-2 py-2 text-xs text-muted-foreground">
+                      <Loader2 class="h-3.5 w-3.5 animate-spin" />
+                      {{ t("ai.loadingEffort") }}
+                    </div>
+                    <div v-else-if="activeEffortEntry?.status === 'error'" class="flex items-center justify-between gap-2 py-2 text-xs text-muted-foreground">
+                      <span class="truncate" :title="activeEffortEntry.error">{{ t("ai.effortLoadFailed") }}</span>
+                      <button type="button" class="shrink-0 text-primary hover:underline" @click="retryActiveEffort">
+                        {{ t("ai.retry") }}
+                      </button>
+                    </div>
+                    <template v-else-if="activeEffortCapability?.kind === 'enum'">
+                      <button
+                        v-for="option in activeEffortCapability.options"
+                        :key="option.id"
+                        type="button"
+                        class="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs hover:bg-accent"
+                        :class="effortSelectionEquals(settings.activeEffort, option.selection) ? 'bg-accent text-accent-foreground' : ''"
+                        @click="selectEffortOption(option)"
+                      >
+                        <span class="flex-1">{{ option.label }}</span>
+                        <Check v-if="effortSelectionEquals(settings.activeEffort, option.selection)" class="h-3.5 w-3.5 text-primary" />
+                      </button>
+                    </template>
+                    <template v-else-if="activeEffortCapability?.kind === 'integer'">
+                      <button
+                        v-for="option in activeEffortCapability.specialValues"
+                        :key="option.id"
+                        type="button"
+                        class="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs hover:bg-accent"
+                        :class="effortSelectionEquals(settings.activeEffort, option.selection) ? 'bg-accent text-accent-foreground' : ''"
+                        @click="selectEffortOption(option)"
+                      >
+                        <span class="flex-1">{{ option.label }}</span>
+                        <Check v-if="effortSelectionEquals(settings.activeEffort, option.selection)" class="h-3.5 w-3.5 text-primary" />
+                      </button>
+                      <div class="flex items-center gap-2 py-1">
+                        <input v-model.number="effortIntegerValue" type="range" class="min-w-0 flex-1" :min="activeEffortCapability.min" :max="activeEffortCapability.max" :step="activeEffortCapability.step" @change="commitIntegerEffort(activeEffortCapability)" />
+                        <input
+                          v-model.number="effortIntegerValue"
+                          type="number"
+                          class="w-20 rounded-sm border bg-background px-2 py-1 text-xs"
+                          :min="activeEffortCapability.min"
+                          :max="activeEffortCapability.max"
+                          :step="activeEffortCapability.step"
+                          @change="commitIntegerEffort(activeEffortCapability)"
+                          @click.stop
+                        />
+                      </div>
+                    </template>
+                    <template v-else-if="activeEffortCapability?.kind === 'boolean'">
+                      <button type="button" class="flex w-full items-center rounded-sm px-2 py-1.5 text-xs hover:bg-accent" @click="selectEffort({ kind: 'boolean', value: true })">
+                        <span class="flex-1 text-left">{{ t("ai.effortEnabled") }}</span>
+                        <Check v-if="settings.activeEffort?.kind === 'boolean' && settings.activeEffort.value" class="h-3.5 w-3.5 text-primary" />
+                      </button>
+                      <button type="button" class="flex w-full items-center rounded-sm px-2 py-1.5 text-xs hover:bg-accent" @click="selectEffort({ kind: 'boolean', value: false })">
+                        <span class="flex-1 text-left">{{ t("ai.effortDisabled") }}</span>
+                        <Check v-if="settings.activeEffort?.kind === 'boolean' && !settings.activeEffort.value" class="h-3.5 w-3.5 text-primary" />
+                      </button>
+                    </template>
+                    <form v-else-if="activeEffortCapability?.kind === 'freeText'" class="flex items-center gap-1 py-1" @submit.prevent="commitTextEffort">
+                      <input
+                        v-model="effortTextValue"
+                        type="text"
+                        maxlength="64"
+                        :placeholder="activeEffortCapability.placeholder || t('ai.customEffortPlaceholder')"
+                        class="min-w-0 flex-1 rounded-sm border bg-background px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-primary"
+                        @click.stop
+                        @blur="commitTextEffort"
+                      />
+                      <Button type="submit" size="sm" class="h-6 px-2 text-[10px]">{{ t("common.confirm") }}</Button>
+                    </form>
+                    <div v-else-if="activeEffortCapability?.kind === 'unsupported'" class="px-2 py-2 text-xs text-muted-foreground">
+                      {{ t("ai.effortUnsupported") }}
+                    </div>
+                  </PopoverContent>
+                </Popover>
+              </div>
+              <button v-if="isGenerating" class="ai-composer-submit h-7 w-7 shrink-0 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center" :title="t('ai.stopGenerating')" @click="cancelStream">
+                <Square class="h-3.5 w-3.5" />
+              </button>
+              <button
+                v-else
+                class="ai-composer-submit h-7 w-7 shrink-0 rounded-full bg-foreground text-background flex items-center justify-center disabled:opacity-30"
+                :disabled="(!prompt.trim() && !selectedMentions.length && !selectedSqlFileMentions.length) || !props.tab?.database"
+                @click="() => send()"
+              >
+                <ArrowUp class="h-4 w-4" />
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -2798,6 +2810,57 @@ async function openExternalUrl(url: string) {
 </template>
 
 <style scoped>
+/* Allocate tracks by sidebar width, never by the selected model/effort's text. */
+.ai-composer-controls {
+  container: ai-composer / inline-size;
+  min-width: 0;
+}
+.ai-composer-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 28px;
+  grid-template-areas: "mode send";
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.ai-composer-toolbar--with-models {
+  grid-template-areas:
+    "mode send"
+    "models models";
+}
+.ai-composer-mode {
+  grid-area: mode;
+  justify-self: start;
+  max-width: 100%;
+}
+.ai-composer-model-controls {
+  grid-area: models;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.ai-composer-model-controls--with-effort {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.ai-composer-submit {
+  grid-area: send;
+}
+/* Only a genuinely wide composer can fit mode, both selectors and send on one row. */
+@container ai-composer (min-width: 520px) {
+  .ai-composer-toolbar--with-models {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) 28px;
+    grid-template-areas: "mode models send";
+  }
+}
+/* Very narrow sidebars give each selector its own full-width row. */
+@container ai-composer (max-width: 299px) {
+  .ai-composer-model-controls--with-effort {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .ai-markdown :deep(h1) {
   font-size: 1em;
   font-weight: 700;

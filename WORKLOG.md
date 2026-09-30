@@ -1111,3 +1111,32 @@ client_version、服务器目录总数和可选模型数，不记录令牌、账
 5 个本机 `No such built-in module: node:` 环境套件失败；cargo fmt 与 CI 同款全工作区
 clippy 通过。不操作桌面、不读取用户凭据。实际账号是否恢复完整目录仍须用户更新后
 点击刷新验证；不能据代码修复承诺所有账号均可见同一模型集。
+
+---
+
+## 33. v0.2.36：聊天模型与思考档位选择器不再互相挤压（2026-09-30）
+
+用户截图再次确认长模型名会使输入栏中的模型/思考档位文字挤成一两个字符。
+此前只是把 effort 的 shrink-0 改成 shrink，两者仍与不可收缩的模式按钮挤在同一
+flex-nowrap 行，未从结构上消除内容长度影响。
+
+**布局**：AiAssistant.vue 输入栏改为命名 inline-size 容器 + CSS Grid。默认两行：
+模式/发送为第一行，模型/思考档位为第二行，两选择器使用等宽 minmax(0,1fr) 轨道；
+可用宽度不足 300px 时两个选择器分别占整行；至少 520px 才把模式/选择器/发送合并
+一行。断点依据输入栏自身宽度而非应用视口，名称不参与轨道分配。未配置模型时
+保留一行模式/发送，不出现空白选择器行。
+
+**控件**：去掉原 flex spacer 和外层 overflow-hidden，不再让按钮互相压缩；图标与
+箭头 shrink-0，文字在各自区域截断。模式、模型、思考档位都提供完整 title/aria
+标签，思考等级前缀与值合为一个可截断文本区，发送/停止按钮保留 28px 固定轨道。
+
+**验证**：新增 3 项布局静态回归，composer/sendGuard 共 13 项通过；新增
+`scripts/test-ai-composer-layout.mjs` 与 `pnpm test:ai-composer-layout`，以独立临时
+配置运行无窗口 Chromium，不访问用户浏览器配置。抽取 SFC 实际 composer CSS 与
+按钮 class，独立 HTML 样例在 180–800px、中文/英文、短/长模型名及思考值、
+有/无模型与思考控件组合下共 360 种通过：轨道不随名称变化、图标/箭头不越界、
+发送固定尺寸、分行断点正确。此为真实浏览器几何样例测试，不冒充完整应用挂载测试。
+
+完整 pnpm check：格式/lint/typecheck 通过、5270 项测试通过；既有 5 个本机
+`No such built-in module: node:` 套件仍失败。pnpm build、cargo fmt --all --check
+通过；未改动 Rust 实现，未启动桌面应用或可见浏览器窗口。
