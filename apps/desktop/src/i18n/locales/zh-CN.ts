@@ -2405,6 +2405,8 @@ export const zhCNMessages = {
     modelListUnsupported: "当前提供商不支持自动获取模型列表。",
     modelListEndpointRequired: "填写 Endpoint 后再获取模型列表。",
     modelListApiKeyRequired: "填写 API Key 后再获取模型列表。",
+    modelListLoginRequired: "完成订阅账号登录后自动获取模型列表。",
+    modelListEmpty: "暂未获取到模型，可直接输入模型 ID",
     run: "执行",
     readingSchema: "读取结构",
     noConnection: "当前标签页没有可用连接",

@@ -4,7 +4,7 @@ import type { Ref } from "vue";
 import type { EditorView as EditorViewType } from "@codemirror/view";
 import { useI18n } from "vue-i18n";
 import { translateBackendError } from "@/i18n/backend-errors";
-import { ArrowLeft, CheckCircle2, CircleHelp, Copy, FolderGit2, GripVertical, Loader2, Moon, Pencil, Plus, RotateCcw, Search, Settings, Sun, SunMoon, Trash2, X } from "@lucide/vue";
+import { ArrowLeft, CheckCircle2, CircleHelp, Copy, FolderGit2, GripVertical, Loader2, Moon, Pencil, Plus, RefreshCw, RotateCcw, Search, Settings, Sun, SunMoon, Trash2, X } from "@lucide/vue";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -51,14 +51,16 @@ import { isTauriRuntime } from "@/lib/backend/tauriRuntime";
 import { useTheme } from "@/composables/useTheme";
 import { copyToClipboard } from "@/lib/common/clipboard";
 import { clearDebugLogs as clearStoredDebugLogs, downloadDebugLogs, getDebugLogBundleText } from "@/lib/backend/debugLog";
-import { aiTestConnection, loadMaxAgentTurns, saveMaxAgentTurns, loadMaxRetries, saveMaxRetries } from "@/lib/backend/api";
+import { aiTestConnection, aiListModels, loadMaxAgentTurns, saveMaxAgentTurns, loadMaxRetries, saveMaxRetries } from "@/lib/backend/api";
 import { eventToModifierOnlyShortcut, eventToShortcut } from "@/lib/editor/keyboardShortcuts";
 import { SHORTCUT_DEFINITIONS, findShortcutConflict, normalizeShortcutSettings, type ShortcutActionId } from "@/lib/editor/shortcutRegistry";
 import { formatShortcutDisplay } from "@/lib/editor/shortcutDisplay";
 import { normalizeSidebarHiddenTablePrefixes } from "@/lib/sidebar/sidebarTableNameDisplay";
 import { currentStatementFrameRangeTo, visualSqlColumnsWithInlineHints } from "@/lib/sql/currentStatementFrame";
 import { normalizeSqlFormatterSettings, type SqlFormatterSettings } from "@/lib/sql/sqlFormatterConfig";
-import { validateConfigName, generateId, type AiConfigItem, type ConfigNameValidationResult } from "@/lib/ai/aiConfigList";
+import { aiModelOptions, validateConfigName, generateId, type AiConfigItem, type ConfigNameValidationResult } from "@/lib/ai/aiConfigList";
+import { aiModelFetchBlocker, autoDefaultModelId, uniqueModelsById } from "@/lib/ai/aiModelListFetch";
+import type { AiModelInfo } from "@/lib/backend/tauri";
 import type { AiAgentPermissionLevel } from "@/types/ai";
 import { currentExecutableStatementRange, type SqlTextRange } from "@/lib/sql/sqlStatementRanges";
 import { executableStatementRangeCacheForDoc, executableStatementRangeStartingAt, type ExecutableStatementRangeCache } from "@/lib/sql/executableStatementRangeCache";
@@ -1983,6 +1985,88 @@ function syncAiEditState() {
   aiTestErrorCopied.value = false;
 }
 
+// ---------- Provider model list for the default-model picker ----------
+const aiFetchedModels = ref<AiModelInfo[]>([]);
+const aiEditModelListStatus = ref<"idle" | "loading" | "ready" | "error">("idle");
+const aiEditModelListError = ref("");
+let aiModelFetchTimer: ReturnType<typeof setTimeout> | undefined;
+let aiModelFetchSeq = 0;
+
+const aiModelFetchBlockerReason = computed(() =>
+  aiModelFetchBlocker({
+    isCliProvider: aiIsCliProvider.value,
+    isCodexSubscription: aiIsCodexSubscription.value,
+    requiresApiKey: aiRequiresApiKey.value,
+    apiKey: aiEditApiKey.value,
+    endpoint: aiEditEndpoint.value,
+    oauthAccountId: aiEditOauthAccountId.value,
+  }),
+);
+
+const aiModelFetchHint = computed(() => {
+  switch (aiModelFetchBlockerReason.value) {
+    case "apiKey":
+      return t("ai.modelListApiKeyRequired");
+    case "endpoint":
+      return t("ai.modelListEndpointRequired");
+    case "oauth":
+      return t("ai.modelListLoginRequired");
+    default:
+      return "";
+  }
+});
+
+const aiModelSelectOptions = computed(() => aiModelOptions({ model: aiEditModel.value, models: aiEditLegacyModels.value }, aiFetchedModels.value));
+const aiModelSelectOptionIds = computed(() => aiModelSelectOptions.value.map((model) => model.id));
+
+function aiModelDisplayName(id: string): string {
+  return aiModelSelectOptions.value.find((model) => model.id === id)?.displayName ?? id;
+}
+
+async function refreshAiEditModels() {
+  if (aiModelFetchBlockerReason.value) return;
+  clearTimeout(aiModelFetchTimer);
+  const seq = ++aiModelFetchSeq;
+  aiEditModelListStatus.value = "loading";
+  aiEditModelListError.value = "";
+  const config = currentAiEditConfig();
+  try {
+    const models = uniqueModelsById(await aiListModels(config));
+    if (seq !== aiModelFetchSeq) return;
+    aiFetchedModels.value = models;
+    aiEditModelListStatus.value = "ready";
+    if (!aiEditModel.value.trim()) {
+      const defaultId = autoDefaultModelId(models, AI_PROVIDER_PRESETS[config.provider].model);
+      if (defaultId) aiEditModel.value = defaultId;
+    }
+  } catch (error) {
+    if (seq !== aiModelFetchSeq) return;
+    aiEditModelListStatus.value = "error";
+    aiEditModelListError.value = translateBackendError(t, error);
+  }
+}
+
+function scheduleAiModelFetch(delay = 600) {
+  aiModelFetchSeq += 1;
+  clearTimeout(aiModelFetchTimer);
+  aiFetchedModels.value = [];
+  aiEditModelListError.value = "";
+  aiEditModelListStatus.value = "idle";
+  if (aiModelFetchBlockerReason.value) return;
+  aiModelFetchTimer = setTimeout(() => {
+    void refreshAiEditModels();
+  }, delay);
+}
+
+watch([aiEditProvider, aiEditEndpoint, aiEditAuthMethod, aiEditApiStyle, aiEditProxyEnabled, aiEditProxyUrl], () => scheduleAiModelFetch());
+watch(aiEditApiKey, () => scheduleAiModelFetch(900));
+watch(aiEditOauthAccountId, () => scheduleAiModelFetch(aiEditOauthAccountId.value ? 150 : 0));
+
+onUnmounted(() => {
+  clearTimeout(aiModelFetchTimer);
+  aiModelFetchSeq += 1;
+});
+
 function aiSelectProvider(provider: AiProvider) {
   if (isWeb && CLI_AI_PROVIDERS.has(provider)) return;
   if (provider === aiEditProvider.value) return;
@@ -1994,7 +2078,8 @@ function aiSelectProvider(provider: AiProvider) {
   aiEditOauthAccountId.value = undefined;
   aiEditAuthMethod.value = preset.authMethod;
   aiEditEndpoint.value = preset.endpoint;
-  aiEditModel.value = provider === "openai-codex" ? preset.model : "";
+  // The model list auto-fetches once credentials are available; autofill picks the preset when discovered.
+  aiEditModel.value = "";
   aiEditLegacyModels.value = [];
   aiEditApiStyle.value = preset.apiStyle;
   aiEditEnableThinking.value = true;
@@ -4496,9 +4581,39 @@ onUnmounted(() => {
                 </div>
 
                 <!-- Default Model -->
-                <div v-if="!aiIsCliProvider" class="grid grid-cols-3 items-center gap-3">
-                  <Label class="text-right text-xs">{{ t("ai.defaultModel") }}</Label>
-                  <Input v-model="aiEditModel" autocomplete="off" class="col-span-2 h-8 text-xs" :placeholder="t('ai.manualModelPlaceholder')" />
+                <div v-if="!aiIsCliProvider" class="grid grid-cols-3 items-start gap-3">
+                  <Label class="pt-2 text-right text-xs">{{ t("ai.defaultModel") }}</Label>
+                  <div class="col-span-2 space-y-1">
+                    <div class="flex items-center gap-1.5">
+                      <div class="min-w-0 flex-1">
+                        <SearchableSelect
+                          v-model="aiEditModel"
+                          :options="aiModelSelectOptionIds"
+                          :placeholder="t('ai.manualModelPlaceholder')"
+                          :search-placeholder="t('ai.searchModels')"
+                          :empty-text="t('ai.modelListEmpty')"
+                          :loading="aiEditModelListStatus === 'loading'"
+                          :loading-text="t('ai.loadingModels')"
+                          :display-name="aiModelDisplayName"
+                          allow-custom
+                          trigger-class="h-8 text-xs"
+                          content-class="w-[var(--reka-popover-trigger-width)] min-w-[260px]"
+                        />
+                      </div>
+                      <Button type="button" variant="ghost" size="icon" class="h-8 w-8 shrink-0" :disabled="!!aiModelFetchBlockerReason || aiEditModelListStatus === 'loading'" :title="t('ai.refreshModels')" :aria-label="t('ai.refreshModels')" @click="refreshAiEditModels">
+                        <RefreshCw :class="['h-3.5 w-3.5', aiEditModelListStatus === 'loading' && 'animate-spin']" />
+                      </Button>
+                    </div>
+                    <p v-if="aiEditModelListStatus === 'error'" class="text-[11px] text-destructive">
+                      {{ aiEditModelListError }}
+                      <button type="button" class="text-primary hover:underline" @click="refreshAiEditModels">
+                        {{ t("ai.retry") }}
+                      </button>
+                    </p>
+                    <p v-else-if="aiModelFetchHint" class="text-[11px] text-muted-foreground">
+                      {{ aiModelFetchHint }}
+                    </p>
+                  </div>
                 </div>
 
                 <!-- Default reasoning level -->

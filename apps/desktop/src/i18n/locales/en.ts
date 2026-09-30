@@ -2401,6 +2401,8 @@ export default {
     modelListUnsupported: "This provider does not support fetching a model list.",
     modelListEndpointRequired: "Enter an endpoint before loading models.",
     modelListApiKeyRequired: "Enter an API key before loading models.",
+    modelListLoginRequired: "The model list loads automatically after the subscription account signs in.",
+    modelListEmpty: "No models fetched yet; you can type a model ID",
     run: "Run",
     readingSchema: "Reading schema",
     noConnection: "No connection is available for this tab",

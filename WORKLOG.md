@@ -1008,3 +1008,29 @@ schema 校验兜底（本地元数据冷时）。editor 相关 189 例 + 补全 
 - 发布后 CI 补充：首轮 `rust-fmt-clippy` 因两处 clippy 警告失败（`ai_effort.rs` 的 `unnecessary_lazy_evaluations`、
   `ai_codex_oauth.rs` 测试的 `bool_assert_comparison`），本地以 CI 同款参数复现并修复；`cargo fmt --all --check`、
   clippy（CI 参数）及受影响测试回归通过。
+
+---
+
+## 29. v0.2.32：AI 配置默认模型自动获取与下拉选择（2026-09-30）
+
+**问题**：新增/编辑 AI 配置时，「默认模型」只能手输模型 ID——用户已提供 API Key 或完成订阅登录，
+模型列表完全可以自动拉取。
+
+**改进**（`EditorSettingsDialog.vue`）：
+- 默认模型输入框改为 `SearchableSelect` 组合框：下拉展示服务商返回的模型（含显示名），支持搜索；
+  保留 `allow-custom` 自由输入，获取失败或本地/自建服务无 `/models` 时不阻塞手输。
+- 自动拉取时机：进入编辑且凭据可用时、输入 API Key 停顿后（900ms 防抖）、切换提供商/Endpoint/
+  认证方式/代理后、Codex 订阅登录完成（150ms）后立即拉取；条件不满足（缺 Key/Endpoint/未登录）时
+  字段下方给出对应提示。
+- 拉取成功且模型为空时自动填入：优先服务商预设模型（在列表中时），否则列表第一项；
+  已有值不被覆盖。切换提供商不再预填 Codex 预设模型，交给自动填充。
+- 旁置手动刷新按钮（加载中转圈）；失败时内联显示错误与重试；防抖期间作废旧请求结果，
+  避免跨提供商串数据。卸载时清理定时器。
+
+**实现**：新纯函数模块 `lib/ai/aiModelListFetch.ts`（`aiModelFetchBlocker`/`uniqueModelsById`/
+`autoDefaultModelId`），复用 `aiConfigList.aiModelOptions` 合并已保存模型与发现模型；
+i18n 复用既有 `searchModels`/`loadingModels`/`refreshModels`/`retry` 等键，新增
+`modelListLoginRequired`、`modelListEmpty`。
+
+**验证**：新增 6 项纯函数测试；设置相关 95 项既有测试回归通过；oxfmt/oxlint/typecheck/build 通过。
+未启动桌面 UI，交互以代码审查为准。
