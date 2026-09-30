@@ -1140,3 +1140,29 @@ flex-nowrap 行，未从结构上消除内容长度影响。
 完整 pnpm check：格式/lint/typecheck 通过、5270 项测试通过；既有 5 个本机
 `No such built-in module: node:` 套件仍失败。pnpm build、cargo fmt --all --check
 通过；未改动 Rust 实现，未启动桌面应用或可见浏览器窗口。
+
+---
+
+## 34. v0.2.37：裸元数据字段被误当关键字着色（2026-09-30）
+
+用户对比相同 SQL 的别名/无别名版本：`t.schema_name/t.table_name` 正常，
+裸 `schema_name/table_name` 却与 SELECT/FROM/WHERE 同色。
+
+**复现与根因**：@codemirror/lang-sql 的 PostgreSQL/MySQL `keywords` 表包含
+schema_name、table_name 等 SQL 诊断项名；词法扫描器将点号前后名称强制标成
+Identifier，但无点号时查方言表命中 Keyword。实际渲染回归在修复前确认：
+vscode-light 裸字段 #0000ff、限定字段 #0070c1，暗色与自定义主题亦复现。
+这不是数据库数据或别名解析结果导致，也不是全局主题颜色设置错误。
+
+**修复**：codemirrorSqlDialect.ts 新增精确元数据名称过滤集：CATALOG_NAME、
+COLUMN_NAME、SCHEMA_NAME、TABLE_NAME，从基础方言的 keyword 表排除；已有
+PostgreSQL 常用标识符过滤同步纳入。保持真正 SCHEMA/TABLE/SELECT 等关键字，
+不使用后缀通配，不改 builtin 表，SQL Server SCHEMA_NAME() 与 PostgreSQL
+CURRENT_SCHEMA、PL/pgSQL 关键字/触发器内置变量照常高亮。
+
+**回归**：新增 openGauss/PostgreSQL/MySQL/Doris、大小写、裸/限定名词法测试，
+以及亮/暗/自定义主题的真实 EditorView DOM 颜色断言；14 项针对测试通过，新增
+9 项。颜色用 happy-dom 计算样式验证（无需可见界面），不冒充浏览器像素布局验证。
+完整 pnpm check：格式/lint/typecheck 通过、5279 项测试通过；既有 5 个本机
+`No such built-in module: node:` 套件仍失败。pnpm build、cargo fmt --all --check
+通过。未访问数据库、未操作桌面、未改动 SQL 执行逻辑。

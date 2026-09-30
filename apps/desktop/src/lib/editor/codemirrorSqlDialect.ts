@@ -50,6 +50,11 @@ const POSTGRES_PLPGSQL_KEYWORDS = "PERFORM";
 const POSTGRES_PLPGSQL_TYPES = "RECORD JSON JSONB";
 const POSTGRES_PLPGSQL_BUILTIN = "SQLERRM TG_NAME TG_WHEN TG_LEVEL TG_OP TG_RELID TG_RELNAME TG_TABLE_NAME TG_TABLE_SCHEMA TG_NARGS TG_ARGV";
 const POSTGRES_IDENTIFIER_LIKE_KEYWORDS = new Set("COMMENT COUNT DATA DAY HOUR ID KEY LEVEL MINUTE MONTH NAME OWNER PASSWORD POSITION ROLE SECOND TYPE USER VALUE YEAR".split(" "));
+// Upstream PostgreSQL/MySQL keyword lists include SQL diagnostic item names that
+// are also ordinary metadata columns. A dot forces Identifier in its tokenizer,
+// but bare names hit Keyword; exclude these exact terms to avoid alias-dependent
+// colors. Do not touch builtin lists (e.g. SQL Server's SCHEMA_NAME() function).
+const SQL_METADATA_IDENTIFIER_LIKE_KEYWORDS = new Set("CATALOG_NAME COLUMN_NAME SCHEMA_NAME TABLE_NAME".split(" "));
 
 // SQL Server table-valued parameters require READONLY in procedure/function declarations.
 const SQLSERVER_KEYWORDS = "readonly";
@@ -142,8 +147,15 @@ const CLICKHOUSE_TYPES = [
 
 const CLICKHOUSE_BUILTINS = ["now", "today", "toDate", "toDateTime", "toDateTime64", "toYYYYMM", "count", "sum", "avg", "min", "max", "uniq", "uniqExact", "argMin", "argMax", "groupArray", "arrayJoin", "mapKeys", "mapValues", "JSONExtract", "JSONExtractString"].join(" ").toLowerCase();
 
-export function postgresKeywordSyntaxTerms(keywords: string): string {
+function metadataKeywordSyntaxTerms(keywords: string): string {
   return keywords
+    .split(/\s+/)
+    .filter((keyword) => keyword && !SQL_METADATA_IDENTIFIER_LIKE_KEYWORDS.has(keyword.toUpperCase()))
+    .join(" ");
+}
+
+export function postgresKeywordSyntaxTerms(keywords: string): string {
+  return metadataKeywordSyntaxTerms(keywords)
     .split(/\s+/)
     .filter((keyword) => keyword && !POSTGRES_IDENTIFIER_LIKE_KEYWORDS.has(keyword.toUpperCase()))
     .join(" ");
@@ -180,7 +192,7 @@ export function createDbxCodeMirrorSqlDialect(langSql: CodeMirrorSqlLanguageModu
   const isPostgres = baseDialect === langSql.PostgreSQL;
   const isSqlServer = baseDialect === langSql.MSSQL;
   const isClickHouse = databaseType === "clickhouse" || dialectName === "clickhouse";
-  const baseKeywords = isClickHouse ? standardSqlKeywordSyntaxTerms(langSql) : isPostgres ? postgresKeywordSyntaxTerms(baseDialect.spec.keywords || "") : baseDialect.spec.keywords || "";
+  const baseKeywords = metadataKeywordSyntaxTerms(isClickHouse ? standardSqlKeywordSyntaxTerms(langSql) : isPostgres ? postgresKeywordSyntaxTerms(baseDialect.spec.keywords || "") : baseDialect.spec.keywords || "");
   const baseTypes = isClickHouse ? STANDARD_SQL_TYPES : baseDialect.spec.types || "";
   const commonKeywords = isClickHouse ? OGDEVELOPER_COMMON_SQL_KEYWORDS.toLowerCase() : OGDEVELOPER_COMMON_SQL_KEYWORDS;
 

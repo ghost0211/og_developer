@@ -20,12 +20,45 @@ function countParsedNodes(dialect: langSql.SQLDialect, sql: string, nodeName: st
   return count;
 }
 
-
-
 test("keeps generic JDBC on Standard SQL without the ASE editor override", () => {
   const dialect = createDbxCodeMirrorSqlDialect(langSql, "mysql", "jdbc");
 
   assert.equal(countParsedNodes(dialect, "SELECT top 1 * FROM wfAdmin AS wa", "Keyword", "top"), 0);
+});
+
+test.each(["opengauss", "postgres", "mysql", "doris"] satisfies DatabaseType[])("keeps bare and qualified metadata columns as identifiers in %s", (databaseType) => {
+  const dialect = createDbxCodeMirrorSqlDialect(langSql, codeMirrorSqlDialect(databaseType), databaseType);
+  for (const qualify of [false, true]) {
+    for (const names of [
+      ["schema_name", "table_name"],
+      ["Schema_Name", "TABLE_NAME"],
+    ]) {
+      const [schemaName, tableName] = names;
+      const prefix = qualify ? "t." : "";
+      const sql = `select ${prefix}${schemaName},${prefix}${tableName} from ddd.pdm_table${qualify ? " t" : ""} where ${prefix}${schemaName} = 'dbo';`;
+      assert.equal(countParsedNodes(dialect, sql, "Identifier", schemaName), 2, sql);
+      assert.equal(countParsedNodes(dialect, sql, "Identifier", tableName), 1, sql);
+      assert.equal(countParsedNodes(dialect, sql, "Keyword", schemaName), 0, sql);
+      assert.equal(countParsedNodes(dialect, sql, "Keyword", tableName), 0, sql);
+      for (const keyword of ["select", "from", "where"]) assert.equal(countParsedNodes(dialect, sql, "Keyword", keyword), 1, sql);
+    }
+  }
+});
+
+test("keeps metadata diagnostic names out of keywords without stripping real SCHEMA/TABLE keywords", () => {
+  for (const databaseType of ["opengauss", "mysql"] satisfies DatabaseType[]) {
+    const dialect = createDbxCodeMirrorSqlDialect(langSql, codeMirrorSqlDialect(databaseType), databaseType);
+    const sql = "SELECT catalog_name, column_name FROM information_schema.columns; CREATE SCHEMA app; CREATE TABLE app.test_table(schema_name text, table_name text);";
+    for (const name of ["catalog_name", "column_name", "schema_name", "table_name"]) assert.equal(countParsedNodes(dialect, sql, "Identifier", name), 1, name);
+    for (const keyword of ["SCHEMA", "TABLE"]) assert.equal(countParsedNodes(dialect, sql, "Keyword", keyword), 1, keyword);
+  }
+});
+
+test("preserves SQL Server SCHEMA_NAME builtin and PostgreSQL CURRENT_SCHEMA keyword", () => {
+  const sqlServer = createDbxCodeMirrorSqlDialect(langSql, "sqlserver", "sqlserver");
+  assert.equal(countParsedNodes(sqlServer, "SELECT SCHEMA_NAME(1)", "Builtin", "SCHEMA_NAME"), 1);
+  const postgres = createDbxCodeMirrorSqlDialect(langSql, "postgres", "opengauss");
+  assert.equal(countParsedNodes(postgres, "SELECT CURRENT_SCHEMA", "Keyword", "CURRENT_SCHEMA"), 1);
 });
 
 test("keeps DBX PostgreSQL procedural dialect extensions", () => {
@@ -35,8 +68,6 @@ test("keeps DBX PostgreSQL procedural dialect extensions", () => {
   assert.equal(hasKeyword(dialect.spec.types, "JSONB"), true);
   assert.equal(hasKeyword(dialect.spec.builtin, "TG_NAME"), true);
 });
-
-
 
 test("treats compact double-dash comments as comments in non-MySQL SQL dialects", () => {
   const databaseTypes: DatabaseType[] = [
@@ -74,7 +105,6 @@ test("treats compact double-dash comments as comments in non-MySQL SQL dialects"
     assert.equal(countParsedNodes(dialect, "--SELECT 1", "Keyword", "SELECT"), 0, databaseType);
   }
 });
-
 
 test("propagates database type to every DDL viewer entrypoint", () => {
   const ddlViewDialog = readFileSync("apps/desktop/src/components/objects/DdlViewDialog.vue", "utf8");

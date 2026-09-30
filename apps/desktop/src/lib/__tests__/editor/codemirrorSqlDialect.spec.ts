@@ -13,5 +13,7 @@ describe("codemirrorSqlDialect", () => {
     expect(keywords.has("name")).toBe(false);
     expect(keywords.has("user")).toBe(false);
     expect(keywords.has("count")).toBe(false);
+    for (const field of ["schema_name", "table_name", "column_name", "catalog_name"]) expect(keywords.has(field)).toBe(false);
+    expect(keywords.has("current_schema")).toBe(true);
   });
 });
