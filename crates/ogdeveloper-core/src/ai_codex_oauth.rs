@@ -953,7 +953,7 @@ mod tests {
         let canceled = cancel(&storage, &session_id).await.unwrap();
         assert!(canceled.canceled);
         assert!(storage.load_state(&vault_key(&account_id)).await.unwrap().is_none());
-        assert_eq!(directory.path().exists(), true);
+        assert!(directory.path().exists());
     }
 
     #[tokio::test]

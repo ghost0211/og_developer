@@ -108,9 +108,8 @@ pub fn static_effort_capability(config: &AiConfig, model_id: &str) -> Option<AiE
             if config.api_style == AiApiStyle::AnthropicMessages {
                 Some(AiEffortCapability::FreeText { placeholder: None, source: AiCapabilitySource::Custom })
             } else {
-                compatible_routed_capability(&model).or_else(|| {
-                    Some(AiEffortCapability::FreeText { placeholder: None, source: AiCapabilitySource::Custom })
-                })
+                compatible_routed_capability(&model)
+                    .or(Some(AiEffortCapability::FreeText { placeholder: None, source: AiCapabilitySource::Custom }))
             }
         }
         AiProvider::Claude | AiProvider::CodexCli | AiProvider::ClaudeCodeCli | AiProvider::PiAgentCli => None,

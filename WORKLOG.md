@@ -1005,3 +1005,6 @@ schema 校验兜底（本地元数据冷时）。editor 相关 189 例 + 补全 
 - 桌面 AI 单测编译成功，但程序启动被本机 `0xc0000139 / STATUS_ENTRYPOINT_NOT_FOUND` 阻断，未执行测试，不记为通过，也未认定为既有问题。未为排查启动应用或操作桌面。
 - 未读取用户 Codex 凭据、未进行真实账号登录、未打开或自动化桌面；真实设备授权和订阅请求端到端验证仍需用户自行登录完成。
 - 主应用四处版本同步至 `0.2.31`；账号可用性仍受套餐、服务权限及设备授权策略限制。
+- 发布后 CI 补充：首轮 `rust-fmt-clippy` 因两处 clippy 警告失败（`ai_effort.rs` 的 `unnecessary_lazy_evaluations`、
+  `ai_codex_oauth.rs` 测试的 `bool_assert_comparison`），本地以 CI 同款参数复现并修复；`cargo fmt --all --check`、
+  clippy（CI 参数）及受影响测试回归通过。
