@@ -298,6 +298,8 @@ export interface AiModelInfo {
   displayName?: string;
   supportedEffortLevels?: AiEffortLevel[];
   effortCapability?: AiEffortCapability;
+  /** Provider-advertised usable context window in tokens, when known. */
+  contextWindow?: number;
 }
 
 export async function aiComplete(request: AiCompletionRequest): Promise<string> {

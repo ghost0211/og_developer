@@ -522,11 +522,20 @@ pub struct AiModelInfo {
     pub supported_effort_levels: Vec<AiEffortLevel>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effort_capability: Option<AiEffortCapability>,
+    /// Provider-advertised usable context window in tokens, when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_window: Option<u32>,
 }
 
 impl AiModelInfo {
     pub fn new(id: impl Into<String>, display_name: Option<String>) -> Self {
-        Self { id: id.into(), display_name, supported_effort_levels: Vec::new(), effort_capability: None }
+        Self {
+            id: id.into(),
+            display_name,
+            supported_effort_levels: Vec::new(),
+            effort_capability: None,
+            context_window: None,
+        }
     }
 }
 
@@ -1545,6 +1554,11 @@ fn parse_codex_model_list(data: &serde_json::Value) -> Result<Vec<AiModelInfo>, 
                 }
             }
             let priority = item["priority"].as_i64().unwrap_or(i64::MAX);
+            model.context_window = item["context_window"]
+                .as_u64()
+                .or_else(|| item["max_context_window"].as_u64())
+                .map(|value| value.min(u32::MAX as u64) as u32)
+                .filter(|value| *value > 0);
             Some((priority, model))
         })
         .collect();
@@ -1553,7 +1567,58 @@ fn parse_codex_model_list(data: &serde_json::Value) -> Result<Vec<AiModelInfo>, 
     Ok(models.into_iter().map(|(_, model)| model).collect())
 }
 
+// --- Codex catalog cache (per account, short TTL) ---
+// The catalog powers both the model picker and the agent loop's context-window budget,
+// so keep one process-local copy instead of re-fetching for every resolution.
+struct CodexCatalogCacheEntry {
+    account_key: String,
+    loaded_at: std::time::Instant,
+    models: Vec<AiModelInfo>,
+}
+
+static CODEX_CATALOG_CACHE: LazyLock<std::sync::Mutex<Option<CodexCatalogCacheEntry>>> =
+    LazyLock::new(|| std::sync::Mutex::new(None));
+const CODEX_CATALOG_TTL: std::time::Duration = std::time::Duration::from_secs(300);
+
+fn codex_catalog_cache_key(config: &AiConfig) -> String {
+    config.oauth_account_id.clone().unwrap_or_default()
+}
+
+fn cached_codex_catalog(account_key: &str) -> Option<Vec<AiModelInfo>> {
+    let cache = CODEX_CATALOG_CACHE.lock().ok()?;
+    let entry = cache.as_ref()?;
+    (entry.account_key == account_key && entry.loaded_at.elapsed() < CODEX_CATALOG_TTL).then(|| entry.models.clone())
+}
+
+fn store_codex_catalog(account_key: String, models: Vec<AiModelInfo>) {
+    if let Ok(mut cache) = CODEX_CATALOG_CACHE.lock() {
+        *cache = Some(CodexCatalogCacheEntry { account_key, loaded_at: std::time::Instant::now(), models });
+    }
+}
+
+fn codex_catalog_context_window_in(entry: &CodexCatalogCacheEntry, account_key: &str, model_id: &str) -> Option<u32> {
+    if entry.account_key != account_key {
+        return None;
+    }
+    entry.models.iter().find(|model| model.id == model_id).and_then(|model| model.context_window)
+}
+
+/// Context window advertised by this account's Codex catalog for the model, when the
+/// catalog was discovered in this process. Consumed by the agent loop's compaction budget.
+pub(crate) fn codex_catalog_context_window(config: &AiConfig, model_id: &str) -> Option<u32> {
+    if !matches!(config.provider, AiProvider::OpenaiCodex) {
+        return None;
+    }
+    let account_key = codex_catalog_cache_key(config);
+    let cache = CODEX_CATALOG_CACHE.lock().ok()?;
+    codex_catalog_context_window_in(cache.as_ref()?, &account_key, model_id)
+}
+
 async fn list_codex_models(config: &AiConfig) -> Result<Vec<AiModelInfo>, String> {
+    let account_key = codex_catalog_cache_key(config);
+    if let Some(models) = cached_codex_catalog(&account_key) {
+        return Ok(models);
+    }
     let client = crate::ai_codex_oauth::build_responses_client(config, 30)?;
     let mut token = crate::ai_codex_oauth::access_token(config, None).await?;
     let model_url = "https://chatgpt.com/backend-api/codex/models";
@@ -1580,7 +1645,9 @@ async fn list_codex_models(config: &AiConfig) -> Result<Vec<AiModelInfo>, String
     }
     let data: serde_json::Value =
         response.json().await.map_err(|_| "Codex model discovery returned invalid JSON".to_string())?;
-    parse_codex_model_list(&data)
+    let models = parse_codex_model_list(&data)?;
+    store_codex_catalog(account_key, models.clone());
+    Ok(models)
 }
 
 pub async fn list_models_core(config: &AiConfig) -> Result<Vec<AiModelInfo>, String> {
@@ -4346,8 +4413,8 @@ mod tests {
     use super::{
         append_gemini_model_parts, apply_chat_completion_thinking_toggle, build_ai_http_client,
         build_codex_responses_body, build_gemini_contents, build_responses_input_with_tools, call_claude,
-        classify_error, claude_headers, claude_system_prompt, codex_event_terminal, codex_reasoning_delta,
-        codex_responses_headers, complete, drain_next_stream_line, emit_gemini_tool_call_parts,
+        classify_error, claude_headers, claude_system_prompt, codex_catalog_context_window_in, codex_event_terminal,
+        codex_reasoning_delta, codex_responses_headers, complete, drain_next_stream_line, emit_gemini_tool_call_parts,
         emit_responses_function_call_item, finish_codex_sse_buffer, format_transport_error, gemini_text, is_kimi_model,
         is_retryable_error, list_models_core, maybe_bearer_headers, maybe_tag_retry_after, measure_first_stream_chunk,
         merge_global_max_retries, ollama_selected_model_tool_support, openai_response_text, openai_stream_reasoning,
@@ -4360,8 +4427,9 @@ mod tests {
         stream_data_payload, stream_error, stream_openai_with_tools, stream_with_tools, test_connection_core,
         uses_anthropic_messages_api, validate_config, validate_model_list_config, with_retry, with_stream_retry,
         AiApiStyle, AiAuthMethod, AiCapabilitySource, AiCompletionRequest, AiConfig, AiEffortCapability,
-        AiEffortOption, AiEffortSelection, AiMessage, AiModelInfo, AiProvider, AiReasoningLevel, StreamToolEvent,
-        StreamingToolCallAccumulator, ToolCallRef, AUTHORIZATION, CLAUDE_DEFAULT_SYSTEM, TEST_PROMPT,
+        AiEffortOption, AiEffortSelection, AiMessage, AiModelInfo, AiProvider, AiReasoningLevel,
+        CodexCatalogCacheEntry, StreamToolEvent, StreamingToolCallAccumulator, ToolCallRef, AUTHORIZATION,
+        CLAUDE_DEFAULT_SYSTEM, TEST_PROMPT,
     };
     struct CapturedJsonRequest {
         headers: String,
@@ -7395,6 +7463,25 @@ mod tests {
             panic!("expected enum capability");
         };
         assert_eq!(*default, super::AiEffortSelection::Enum("high".to_string()));
+    }
+
+    #[test]
+    fn codex_catalog_context_window_uses_advertised_values_per_account() {
+        let models = parse_codex_model_list(&serde_json::json!({
+            "models": [
+                { "slug": "gpt-6.1-sol", "visibility": "list", "priority": 1, "context_window": 400_000 },
+                { "slug": "no-window", "visibility": "list", "priority": 2 }
+            ]
+        }))
+        .unwrap();
+        assert_eq!(models[0].context_window, Some(400_000));
+        assert_eq!(models[1].context_window, None);
+
+        let entry =
+            CodexCatalogCacheEntry { account_key: "acc-a".to_string(), loaded_at: std::time::Instant::now(), models };
+        assert_eq!(codex_catalog_context_window_in(&entry, "acc-a", "gpt-6.1-sol"), Some(400_000));
+        assert_eq!(codex_catalog_context_window_in(&entry, "acc-a", "missing"), None);
+        assert_eq!(codex_catalog_context_window_in(&entry, "acc-b", "gpt-6.1-sol"), None);
     }
 
     #[test]

@@ -154,7 +154,9 @@ fn openai_capability(model: &str, source: AiCapabilitySource) -> Option<AiEffort
 fn kimi_capability(model: &str, source: AiCapabilitySource) -> Option<AiEffortCapability> {
     if matches_family(model, "k3") || matches_family(model, "kimi-k3") || matches_family(model, "kimi-for-coding") {
         let mut capability = enum_capability(&["low", "high", "max"], source);
-        if let AiEffortCapability::Enum { default, .. } = &mut capability {
+        if let AiEffortCapability::Enum { options, default, .. } = &mut capability {
+            // Official docs accept `none` to explicitly disable thinking on K3/K2.8.
+            options.insert(0, option("off", "Off", AiEffortSelection::Disabled));
             *default = AiEffortSelection::ProviderDefault;
         }
         return Some(capability);
@@ -397,9 +399,9 @@ pub fn apply_runtime_effort(body: &mut Value, config: &AiConfig) {
         AiProvider::Openai
         | AiProvider::OpenaiCodex
         | AiProvider::OpenaiCompatible
-        | AiProvider::Kimi
         | AiProvider::Glm
         | AiProvider::Doubao => apply_openai_effort(object, &config.api_style, &selection),
+        AiProvider::Kimi => apply_kimi_effort(object, &config.api_style, &selection),
         AiProvider::Custom => {
             if config.api_style == AiApiStyle::AnthropicMessages {
                 apply_claude_effort(object, &selection);
@@ -425,6 +427,20 @@ fn apply_openai_effort(object: &mut Map<String, Value>, api_style: &AiApiStyle, 
             object.insert("reasoning_effort".to_string(), Value::String(value));
         }
     }
+}
+
+/// Kimi documents `none` as the explicit way to disable thinking on K3/K2.8; keep the
+/// mapping Kimi-only so other OpenAI-shaped providers are unaffected.
+fn apply_kimi_effort(object: &mut Map<String, Value>, api_style: &AiApiStyle, selection: &AiEffortSelection) {
+    if matches!(selection, AiEffortSelection::Disabled) {
+        if *api_style == AiApiStyle::Responses {
+            object.insert("reasoning".to_string(), json!({ "effort": "none" }));
+        } else {
+            object.insert("reasoning_effort".to_string(), Value::String("none".to_string()));
+        }
+        return;
+    }
+    apply_openai_effort(object, api_style, selection);
 }
 
 fn apply_minimax_effort(object: &mut Map<String, Value>, selection: &AiEffortSelection) {
@@ -837,7 +853,21 @@ mod tests {
                 .collect();
             assert_eq!(values, ["low", "high", "max"], "levels for {model}");
             assert_eq!(default, AiEffortSelection::ProviderDefault, "default for {model}");
+            assert_eq!(options[0].selection, AiEffortSelection::Disabled, "off option for {model}");
         }
+
+        // Official `none` disables thinking; keep it on the Kimi wire shape only.
+        let mut disabled = config(AiProvider::Kimi, "k3-256k");
+        disabled.runtime_effort = Some(AiEffortSelection::Disabled);
+        let mut body = json!({});
+        apply_runtime_effort(&mut body, &disabled);
+        assert_eq!(body["reasoning_effort"], "none");
+
+        disabled.api_style = AiApiStyle::Responses;
+        let mut body = json!({});
+        apply_runtime_effort(&mut body, &disabled);
+        assert_eq!(body["reasoning"]["effort"], "none");
+        assert!(body.get("reasoning_effort").is_none());
 
         // The configured default reasoning level must actually reach the request body.
         let mut configured = config(AiProvider::Kimi, "k3-256k");

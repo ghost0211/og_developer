@@ -417,6 +417,7 @@ async fn list_pi_agent_models_with_process(process: &mut PiRpcProcess) -> Result
         display_name: Some(default_label),
         supported_effort_levels: Vec::new(),
         effort_capability: pi_effort_capability(&levels),
+        context_window: None,
     }];
     let mut seen = BTreeSet::new();
 
@@ -437,6 +438,7 @@ async fn list_pi_agent_models_with_process(process: &mut PiRpcProcess) -> Result
             display_name: Some(format!("{name} ({provider})")),
             supported_effort_levels: Vec::new(),
             effort_capability: None,
+            context_window: None,
         });
     }
     Ok(result)

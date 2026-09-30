@@ -983,6 +983,13 @@ fn context_window_for_model(model: &str) -> u32 {
     if m.contains("gpt-4.1") {
         return 1_000_000;
     }
+    // Kimi K3 family (official Kimi Code docs): 1M default, 256K variant.
+    if m == "k3" || m.starts_with("k3-") {
+        return if m.contains("256k") { 256_000 } else { 1_000_000 };
+    }
+    if m == "kimi-k3" || m.starts_with("kimi-k3-") {
+        return 1_000_000;
+    }
     if m.contains("claude") || m.contains("o1") || m.starts_with("o3") || m.starts_with("o4") {
         200_000
     } else if m.contains("gpt-4") {
@@ -1024,7 +1031,10 @@ async fn maybe_compact(
     cancelled: &Notify,
     force: bool,
 ) -> CompactResult {
-    let window = config.context_window.unwrap_or_else(|| context_window_for_model(&config.model));
+    let window = config
+        .context_window
+        .or_else(|| crate::ai::codex_catalog_context_window(config, &config.model))
+        .unwrap_or_else(|| context_window_for_model(&config.model));
     let budget = prompt_budget(window, max_tokens);
     let estimated_before = estimate_current_prompt_tokens(system_prompt, tools, messages);
 
@@ -1306,6 +1316,15 @@ fn summarize_message_content(content: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn context_window_heuristic_covers_kimi_k3_family() {
+        assert_eq!(context_window_for_model("k3"), 1_000_000);
+        assert_eq!(context_window_for_model("K3-256k"), 256_000);
+        assert_eq!(context_window_for_model("kimi-k3"), 1_000_000);
+        // Unrelated models keep the generic fallback.
+        assert_eq!(context_window_for_model("kimi-for-coding"), 128_000);
+    }
 
     #[test]
     fn clamp_max_agent_turns_enforces_bounds() {

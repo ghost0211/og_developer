@@ -1062,3 +1062,25 @@ i18n 复用既有 `searchModels`/`loadingModels`/`refreshModels`/`retry` 等键�
 
 **验证**：核心测试 effort 28 项（+2 Kimi）、codex 7 项（+2）通过；前端 composer/sendGuard 10 项、
 typecheck、oxfmt/oxlint、cargo fmt、CI 同款 clippy 全部通过。未启动桌面 UI。
+
+---
+
+## 31. v0.2.34：Kimi 关闭思考档与 Codex 上下文窗口目录（2026-09-30）
+
+**Kimi k3 族「关闭」档**：官方文档确认 K3/K2.8 接受 `reasoning_effort: "none"` 显式关闭思考
+（路由到 K2.8 thinking-off）。`kimi_capability` 枚举首项新增 Off（Disabled 选择）；
+新增 Kimi 专属 `apply_kimi_effort`：`Disabled → reasoning_effort: "none"`（Responses 风格为
+`reasoning.effort`），不影响共享的 OpenAI 映射；其余档位维持 low/high/max。
+
+**Codex 上下文窗口来自账号目录**：`AiModelInfo` 新增 `context_window`（Rust/TS 同步），
+`parse_codex_model_list` 提取目录的 `context_window`（缺失回退 `max_context_window`）。
+新增按账号隔离的进程级目录缓存（5 分钟 TTL，`CODEX_CATALOG_CACHE`）：`list_codex_models`
+先查缓存避免重复拉取；agent 循环 compaction 预算从「用户设置 → 目录广告值 → 名称启发式」
+依次取值，Codex 模型不再被 128k 默认值低估。
+
+**Kimi K3 启发式**：`context_window_for_model` 新增 k3/k3-256k（1M/256K）与 kimi-k3（1M）规则，
+kimi-for-coding 等未知型号保持 128k 兜底（可在设置里手动指定）。
+
+**验证**：effort 28 项、codex 8 项（+1 目录窗口纯函数测试）、agent_loop 23 项（+1 K3 启发式）
+全部通过；cargo fmt、CI 同款 clippy、oxfmt/typecheck 通过。缓存 lookup 拆成纯函数
+`codex_catalog_context_window_in`，避免并行测试共享静态态的竞态。未启动桌面 UI。
