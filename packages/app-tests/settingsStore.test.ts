@@ -551,11 +551,18 @@ test("AI provider presets include common hosted and local providers", () => {
 
 test("API AI provider settings expose and persist a default model ID", () => {
   const source = readFileSync("apps/desktop/src/components/editor/EditorSettingsDialog.vue", "utf8");
-  const modelControl = source.indexOf('<Input v-model="aiEditModel"');
+  const blockStart = source.indexOf("<!-- Default Model -->");
 
-  assert.ok(modelControl >= 0);
-  assert.match(source.slice(modelControl - 300, modelControl + 300), /v-if="!aiIsCliProvider"[\s\S]*t\("ai\.defaultModel"\)[\s\S]*t\('ai\.manualModelPlaceholder'\)/);
+  assert.ok(blockStart >= 0);
+  const block = source.slice(blockStart, blockStart + 2500);
+  assert.match(block, /v-if="!aiIsCliProvider"/);
+  assert.match(block, /t\("ai\.defaultModel"\)/);
+  assert.match(block, /<SearchableSelect[\s\S]*v-model="aiEditModel"/);
+  assert.match(block, /ai\.manualModelPlaceholder/);
   assert.match(source, /model:\s*aiEditModel\.value/);
+  // The picker auto-fetches the provider catalog once credentials exist.
+  assert.match(source, /aiModelFetchBlocker\(\{/);
+  assert.match(source, /await aiListModels\(config\)/);
 });
 
 test("normalizes legacy AI config and fills provider defaults", () => {
