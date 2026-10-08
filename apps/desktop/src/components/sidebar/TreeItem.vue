@@ -243,7 +243,7 @@ function getIconInfo(node: TreeNode): { icon: any; colorClass: string } | null {
     case "fkey":
       return { icon: Link, colorClass: "text-blue-300" };
     case "trigger":
-      return { icon: Zap, colorClass: "text-orange-300" };
+      return { icon: Zap, colorClass: node.triggerEnabledMode === "D" ? "text-muted-foreground" : "text-orange-300" };
     case "procedure":
       return { icon: ScrollText, colorClass: "text-blue-500" };
     case "function":
@@ -315,6 +315,10 @@ function displayLabel(node: TreeNode): string {
 }
 
 function visibleLabel(node: TreeNode): string {
+  if (node.type === "trigger") {
+    const modeKey = node.triggerEnabledMode === "D" ? "contextMenu.triggerDisabled" : node.triggerEnabledMode === "R" ? "contextMenu.triggerReplica" : node.triggerEnabledMode === "A" ? "contextMenu.triggerAlways" : undefined;
+    return modeKey ? `${displayLabel(node)} · ${t(modeKey)}` : displayLabel(node);
+  }
   const withValidity = (label: string) => (node.valid === false ? `${label} · INVALID` : label);
   if (node.type === "table" || node.type === "view" || node.type === "materialized_view") {
     return withValidity(sidebarDisplayTableName(node.label, settingsStore.editorSettings.sidebarHiddenTablePrefixes));

@@ -117,6 +117,7 @@ describe("sidebar object-group routing", () => {
         name: "trg_orders_audit",
         timing: "AFTER",
         event: "UPDATE",
+        enabled_mode: "D",
       },
     ]);
     const { connection, store } = await createStore({ listObjects, listTriggers });
@@ -140,9 +141,28 @@ describe("sidebar object-group routing", () => {
           objectName: "trg_orders_audit",
           tableName: "orders",
           type: "trigger",
+          triggerEnabledMode: "D",
         },
       ],
     });
+  });
+
+  it("refreshes all copies from table-scoped metadata after trigger changes", async () => {
+    const listObjects = vi.fn().mockResolvedValue([]);
+    const listTriggers = vi.fn().mockResolvedValue([{ name: "audit", event: "UPDATE", timing: "AFTER", enabled_mode: "D" }]);
+    const { connection, store } = await createStore({ listObjects, listTriggers });
+    const trigger: TreeNode = { id: "schema-trigger", label: "audit", type: "trigger", objectName: "audit", tableName: "users", schema: "app", database: "app", connectionId: connection.id, triggerEnabledMode: "O" };
+    const other: TreeNode = { ...trigger, id: "other-table", tableName: "orders" };
+    const deleted: TreeNode = { ...trigger, id: "deleted", objectName: "obsolete", label: "obsolete" };
+    const group = { ...objectGroup("group-triggers", `${connection.id}:app:app:__triggers`), objectCount: 3, children: [trigger, other, deleted] };
+    store.treeNodes = [{ id: connection.id, label: connection.name, type: "connection", connectionId: connection.id, children: [group] }];
+    await store.refreshTriggerMetadata(trigger);
+    const nodes = store.treeNodes[0].children![0].children!;
+    expect(nodes).toHaveLength(2);
+    expect(nodes[0].triggerEnabledMode).toBe("D");
+    expect(nodes[1].triggerEnabledMode).toBe("O");
+    expect(listTriggers).toHaveBeenCalledWith(connection.id, "app", "app", "users", undefined);
+    expect(listObjects).not.toHaveBeenCalled();
   });
 
   it("propagates rejected schema-level metadata while clearing the loading state", async () => {

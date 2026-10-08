@@ -10,6 +10,7 @@ const objects = ["orders", "users"].map((parent_name) => ({
   parent_schema: "app",
   parent_name,
   comment: "Audit changes",
+  enabled_mode: "R",
 }));
 
 describe("schema trigger overview", () => {
@@ -30,6 +31,7 @@ describe("schema trigger overview", () => {
       expect(node.objectName).toBe("audit");
       expect(node.type).toBe("trigger");
       expect(node.schema).toBe("app");
+      expect(node.triggerEnabledMode).toBe("R");
       expect(node.comment).toBe(`${node.tableName} — Audit changes`);
     });
   });

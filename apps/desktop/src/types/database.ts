@@ -414,6 +414,8 @@ export interface TableInfo {
 export type DatabaseObjectType = "TABLE" | "VIEW" | "MATERIALIZED_VIEW" | "PROCEDURE" | "FUNCTION" | "TRIGGER" | "SEQUENCE" | "SYNONYM" | "PACKAGE" | "PACKAGE_BODY" | "TYPE" | "TYPE_BODY" | "JOB" | "SCHEDULER";
 
 export interface ObjectInfo {
+  /** pg_trigger.tgenabled: O (origin), D (disabled), R (replica), A (always). */
+  enabled_mode?: string | null;
   name: string;
   object_type: DatabaseObjectType | string;
   schema?: string | null;
@@ -489,6 +491,7 @@ export interface ForeignKeyInfo {
 }
 
 export interface TriggerInfo {
+  enabled_mode?: string | null;
   name: string;
   event: string;
   timing: string;
@@ -891,6 +894,8 @@ export interface TreeNode {
   targetSchema?: string;
   targetName?: string;
   targetKind?: string;
+  /** Raw pg_trigger.tgenabled; undefined/unknown must not be treated as enabled. */
+  triggerEnabledMode?: string;
   signature?: string;
   tableType?: string;
   comment?: string | null;

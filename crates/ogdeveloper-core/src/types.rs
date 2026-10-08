@@ -71,6 +71,8 @@ pub struct ObjectInfo {
     pub valid: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub signature: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enabled_mode: Option<String>,
     pub comment: Option<String>,
     pub created_at: Option<String>,
     pub updated_at: Option<String>,
@@ -396,6 +398,8 @@ pub struct TriggerInfo {
     pub event: String,
     pub timing: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enabled_mode: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub statement: Option<String>,
 }
 
@@ -590,16 +594,40 @@ pub struct ObjectReferenceInfo {
 
 #[cfg(test)]
 mod tests {
-    use super::{ObjectInfo, ObjectSourceKind, SpatialColumn, SpatialColumnBuilder};
+    use super::{ObjectInfo, ObjectSourceKind, SpatialColumn, SpatialColumnBuilder, TriggerInfo};
 
     #[test]
     fn list_objects_payload_preserves_optional_validity() {
-        let objects: Vec<ObjectInfo> =
-            serde_json::from_str(r#"[{"name":"TRG_AUDIT","object_type":"TRIGGER","schema":"APP","valid":false}]"#)
-                .unwrap();
+        let objects: Vec<ObjectInfo> = serde_json::from_str(
+            r#"[{"name":"TRG_AUDIT","object_type":"TRIGGER","schema":"APP","valid":false,"enabled_mode":"R"}]"#,
+        )
+        .unwrap();
 
         assert_eq!(objects[0].valid, Some(false));
         assert_eq!(objects[0].object_type, "TRIGGER");
+        assert_eq!(objects[0].enabled_mode.as_deref(), Some("R"));
+    }
+
+    #[test]
+    fn trigger_enabled_mode_serializes_exact_catalog_mode_and_defaults_when_missing() {
+        for mode in ["O", "D", "R", "A", "future-mode"] {
+            let trigger = TriggerInfo {
+                name: "audit_trigger".to_string(),
+                event: "INSERT".to_string(),
+                timing: "BEFORE".to_string(),
+                enabled_mode: Some(mode.to_string()),
+                statement: None,
+            };
+            let value = serde_json::to_value(&trigger).unwrap();
+            assert_eq!(value["enabled_mode"], mode);
+            let decoded: TriggerInfo = serde_json::from_value(value).unwrap();
+            assert_eq!(decoded.enabled_mode.as_deref(), Some(mode));
+        }
+
+        let decoded: TriggerInfo =
+            serde_json::from_str(r#"{"name":"audit_trigger","event":"INSERT","timing":"BEFORE"}"#).unwrap();
+        assert_eq!(decoded.enabled_mode, None);
+        assert!(serde_json::to_value(decoded).unwrap().get("enabled_mode").is_none());
     }
 
     #[test]

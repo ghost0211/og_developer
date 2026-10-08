@@ -58,7 +58,7 @@ export function getTreeNodeIconInfo(node: TreeNode): TreeNodeIconInfo | null {
     case "group-triggers":
       return { icon: Zap, colorClass: "text-orange-400" };
     case "trigger":
-      return { icon: Zap, colorClass: "text-orange-300" };
+      return { icon: Zap, colorClass: node.triggerEnabledMode === "D" ? "text-muted-foreground" : "text-orange-300" };
     case "group-constraints":
     case "constraint":
       return { icon: Key, colorClass: "text-amber-500" };

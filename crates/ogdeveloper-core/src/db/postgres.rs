@@ -3011,7 +3011,7 @@ fn opengauss_triggers_sql() -> &'static str {
        obj_description(t.oid, 'pg_trigger')::text AS object_comment, \
        NULL::text AS created_at, NULL::text AS updated_at, \
        n.nspname::text AS parent_schema, c.relname::text AS parent_name, \
-       NULL::text AS signature, 6 AS sort_order \
+       t.tgenabled::text AS signature, 6 AS sort_order \
      FROM pg_catalog.pg_trigger t \
      JOIN pg_catalog.pg_class c ON c.oid = t.tgrelid \
      JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
@@ -3471,6 +3471,19 @@ async fn list_objects_rows(
     postgres_query_cached(client, &sql, &[&schema]).await.map_err(|e| e.to_string())
 }
 
+fn postgres_object_signature_and_enabled_mode(
+    object_type: &str,
+    signature_slot: Option<String>,
+) -> (Option<String>, Option<String>) {
+    if object_type.eq_ignore_ascii_case("TRIGGER") {
+        // The openGauss UNION contract stores pg_trigger.tgenabled in the
+        // signature slot for triggers. Preserve unknown values verbatim.
+        (None, signature_slot)
+    } else {
+        (signature_slot, None)
+    }
+}
+
 pub async fn list_objects(pool: &Pool, schema: &str) -> Result<Vec<ObjectInfo>, String> {
     let client = checkout_postgres_client(pool, None, super::connection_timeout()).await?;
     let has_proc_prokind = postgres_proc_has_prokind(&client).await?;
@@ -3529,17 +3542,25 @@ pub async fn list_objects(pool: &Pool, schema: &str) -> Result<Vec<ObjectInfo>, 
 
     let mut objects: Vec<ObjectInfo> = rows
         .iter()
-        .map(|row| ObjectInfo {
-            name: pg_row_try_string(row, 0),
-            object_type: pg_row_try_string(row, 1),
-            schema: Some(schema.to_string()),
-            valid: None,
-            comment: row.try_get::<_, Option<String>>(2).ok().flatten().filter(|s| !s.is_empty()),
-            created_at: row.try_get::<_, Option<String>>(3).ok().flatten().filter(|s| !s.is_empty()),
-            updated_at: row.try_get::<_, Option<String>>(4).ok().flatten().filter(|s| !s.is_empty()),
-            parent_schema: row.try_get::<_, Option<String>>(5).ok().flatten().filter(|s| !s.is_empty()),
-            parent_name: row.try_get::<_, Option<String>>(6).ok().flatten().filter(|s| !s.is_empty()),
-            signature: row.try_get::<_, Option<String>>(7).ok().flatten(),
+        .map(|row| {
+            let object_type = pg_row_try_string(row, 1);
+            let (signature, enabled_mode) = postgres_object_signature_and_enabled_mode(
+                &object_type,
+                row.try_get::<_, Option<String>>(7).ok().flatten(),
+            );
+            ObjectInfo {
+                name: pg_row_try_string(row, 0),
+                object_type,
+                schema: Some(schema.to_string()),
+                valid: None,
+                signature,
+                enabled_mode,
+                comment: row.try_get::<_, Option<String>>(2).ok().flatten().filter(|s| !s.is_empty()),
+                created_at: row.try_get::<_, Option<String>>(3).ok().flatten().filter(|s| !s.is_empty()),
+                updated_at: row.try_get::<_, Option<String>>(4).ok().flatten().filter(|s| !s.is_empty()),
+                parent_schema: row.try_get::<_, Option<String>>(5).ok().flatten().filter(|s| !s.is_empty()),
+                parent_name: row.try_get::<_, Option<String>>(6).ok().flatten().filter(|s| !s.is_empty()),
+            }
         })
         .collect();
     if has_gs_source {
@@ -3619,6 +3640,7 @@ async fn enrich_objects_with_gs_source_validity(
                 object_type: kind,
                 schema: Some(schema.to_string()),
                 valid: Some(false),
+                enabled_mode: None,
                 comment: Some("failed compilation".to_string()),
                 created_at: None,
                 updated_at: None,
@@ -5062,16 +5084,8 @@ pub async fn list_table_dependencies(pool: &Pool, schema: &str) -> Result<Vec<(S
 
 pub async fn list_triggers(pool: &Pool, schema: &str, table: &str) -> Result<Vec<TriggerInfo>, String> {
     let client = checkout_postgres_client(pool, None, super::connection_timeout()).await?;
-    let rows = postgres_query_cached(
-        &client,
-        "SELECT trigger_name, event_manipulation, action_timing \
-         FROM information_schema.triggers \
-         WHERE trigger_schema = $1 AND event_object_table = $2 \
-         ORDER BY trigger_name",
-        &[&schema, &table],
-    )
-    .await
-    .map_err(|e| e.to_string())?;
+    let rows =
+        postgres_query_cached(&client, postgres_triggers_sql(), &[&schema, &table]).await.map_err(|e| e.to_string())?;
 
     Ok(rows
         .iter()
@@ -5079,9 +5093,28 @@ pub async fn list_triggers(pool: &Pool, schema: &str, table: &str) -> Result<Vec
             name: pg_row_try_string(row, 0),
             event: pg_row_try_string(row, 1),
             timing: pg_row_try_string(row, 2),
+            enabled_mode: row.try_get::<_, Option<String>>(3).ok().flatten(),
             statement: None,
         })
         .collect())
+}
+
+/// Keep information_schema.triggers as the source of visible rows so its
+/// privilege filtering remains in force, then attach the catalog's exact
+/// enabled mode. Group by trigger OID because information_schema emits one row
+/// per event for a multi-event trigger.
+fn postgres_triggers_sql() -> &'static str {
+    "SELECT it.trigger_name, \
+            string_agg(DISTINCT it.event_manipulation::text, ', ' ORDER BY it.event_manipulation::text) AS event, \
+            string_agg(DISTINCT it.action_timing::text, ', ' ORDER BY it.action_timing::text) AS timing, \
+            t.tgenabled::text AS enabled_mode \
+     FROM information_schema.triggers it \
+     JOIN pg_catalog.pg_namespace n ON n.nspname = it.trigger_schema \
+     JOIN pg_catalog.pg_class c ON c.relnamespace = n.oid AND c.relname = it.event_object_table \
+     JOIN pg_catalog.pg_trigger t ON t.tgrelid = c.oid AND t.tgname = it.trigger_name \
+     WHERE it.trigger_schema = $1 AND it.event_object_table = $2 AND NOT t.tgisinternal \
+     GROUP BY t.oid, it.trigger_name, t.tgenabled \
+     ORDER BY it.trigger_name"
 }
 
 pub async fn list_trigger_definitions(pool: &Pool, schema: &str, table: &str) -> Result<Vec<String>, String> {
@@ -7935,9 +7968,10 @@ mod tests {
     }
 
     #[test]
-    fn opengauss_trigger_list_carries_table_identity_and_excludes_internal_triggers() {
+    fn opengauss_trigger_list_carries_table_identity_and_enabled_mode() {
         let sql = opengauss_triggers_sql();
         assert!(sql.contains("'TRIGGER' AS object_type"));
+        assert!(sql.contains("t.tgenabled::text AS signature"));
         assert!(sql.contains("c.oid = t.tgrelid"));
         assert!(sql.contains("AS parent_schema"));
         assert!(sql.contains("AS parent_name"));
@@ -7945,6 +7979,37 @@ mod tests {
         assert!(sql.contains("obj_description(t.oid, 'pg_trigger')"));
         assert!(list_objects_sql_full(false, true, false, true, false, true, false, false).contains(sql));
         assert!(!list_objects_sql_full(false, true, false, true, false, false, false, false).contains(sql));
+    }
+
+    #[test]
+    fn native_trigger_sql_aggregates_events_and_respects_information_schema_visibility() {
+        let sql = postgres_triggers_sql();
+        assert!(sql.contains("FROM information_schema.triggers it"));
+        assert!(sql.contains("JOIN pg_catalog.pg_namespace n"));
+        assert!(sql.contains("JOIN pg_catalog.pg_class c"));
+        assert!(sql.contains("JOIN pg_catalog.pg_trigger t"));
+        assert!(sql.contains("t.tgenabled::text AS enabled_mode"));
+        assert!(sql.contains("string_agg(DISTINCT it.event_manipulation"));
+        assert!(sql.contains("ORDER BY it.event_manipulation::text"));
+        assert!(!sql.contains('\\'));
+        assert!(sql.contains("GROUP BY t.oid, it.trigger_name, t.tgenabled"));
+        assert!(sql.contains("NOT t.tgisinternal"));
+        assert!(sql.contains("WHERE it.trigger_schema = $1 AND it.event_object_table = $2"));
+    }
+
+    #[test]
+    fn object_signature_slot_maps_trigger_modes_verbatim_only_for_triggers() {
+        for mode in ["O", "D", "R", "A", "future-mode"] {
+            let (signature, enabled_mode) =
+                postgres_object_signature_and_enabled_mode("TRIGGER", Some(mode.to_string()));
+            assert_eq!(signature, None);
+            assert_eq!(enabled_mode.as_deref(), Some(mode));
+        }
+
+        let (signature, enabled_mode) =
+            postgres_object_signature_and_enabled_mode("FUNCTION", Some("integer".to_string()));
+        assert_eq!(signature.as_deref(), Some("integer"));
+        assert_eq!(enabled_mode, None);
     }
 
     #[test]

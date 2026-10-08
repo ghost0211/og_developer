@@ -737,5 +737,12 @@ mod tests {
         assert!(is_write_sql_for_database("UPDATE users SET name = 'a'", DatabaseType::Postgres));
         assert!(is_write_sql_for_database("DELETE FROM users", DatabaseType::Postgres));
         assert!(!is_write_sql_for_database("SELECT * FROM users", DatabaseType::Postgres));
+        for sql in [
+            "ALTER TABLE \"auth\".\"users\" ENABLE TRIGGER \"audit\";",
+            "ALTER TABLE \"auth\".\"users\" DISABLE TRIGGER \"audit\";",
+            "DROP TRIGGER \"audit\" ON \"auth\".\"users\";",
+        ] {
+            assert!(is_write_sql_for_database(sql, DatabaseType::OpenGauss));
+        }
     }
 }

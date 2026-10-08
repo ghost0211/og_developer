@@ -125,6 +125,7 @@ import { formatSqlForDisplay, sqlFormatDialectForDbType } from "@/lib/sql/sqlFor
 import { getTableStructureCapabilities } from "@/lib/table/tableStructureCapabilities";
 import { connectionObjectTreeNodeSchema, connectionObjectTreeQuerySchema, connectionUsesDatabaseObjectTreeMode, effectiveDatabaseTypeForConnection, tableStructureDatabaseTypeForConnection } from "@/lib/database/jdbcDialect";
 import { hasTreeNodeDatabaseContext, treeNodeDataObjectName } from "@/lib/sidebar/treeNodeContext";
+import { buildTriggerEnabledSql, canChangeTriggerEnabledMode, executeTriggerEnabledChange, normalizeTriggerEnabledMode } from "@/lib/sidebar/triggerActions";
 import { defaultPasteTableMode, pasteTableModeCopiesData, supportsWholeRowTableDataCopy, tableClipboardMatchesTarget, tableClipboardMenuState, tableClipboardSourceContext, tableDataCopyColumnOptions, type TableClipboardContext, type TableClipboardTableContext } from "@/lib/table/tableClipboard";
 import { selectedTreeNodesInVisibleOrder as orderSelectedTreeNodes } from "@/lib/sidebar/sidebarTreeSelection";
 import { connectionPasteTargetGroupId, selectedConnectionClipboardTargets, selectedConnectionEditTarget } from "@/lib/sidebar/sidebarConnectionSelection";
@@ -1330,6 +1331,7 @@ const canDropTableChildObject = computed(() => {
 });
 
 function canDropTableChildObjectNode(node: TreeNode): boolean {
+  if (node.connectionId && connectionStore.getConfig(node.connectionId)?.read_only) return false;
   const options = dropTableChildObjectSqlOptionsForNode(node);
   if (!options) return false;
   const capabilities = getTableStructureCapabilities(options.databaseType);
@@ -1972,10 +1974,15 @@ async function confirmDropTableChildObject() {
   try {
     await connectionStore.ensureConnected(node.connectionId);
     const sql = dropTableChildObjectPreviewSql.value || (await buildDropTableChildObjectSql(options));
-    await executeTreeNodeSqlWithProductionGuard(node, sql, { database: node.database, schema: node.schema });
+    if (!canDropTableChildObjectNode(node)) return;
+    const executed = await executeTreeNodeSqlWithProductionGuard(node, sql, { database: node.database, schema: node.schema });
+    if (executed === undefined) return;
     toast(t("contextMenu.dropTableChildObjectSuccess", { name: options.name }), 3000);
     connectionStore.removeTreeNode(node.id);
     releaseActiveNodeReference([node.id]);
+    if (node.type === "trigger" && databaseTypeForNode(node) === "opengauss") {
+      await refreshTriggerStateAfterMutation(node);
+    }
   } catch (e: any) {
     toast(t("contextMenu.tableOperationFailed", { message: e?.message || String(e) }), 5000);
   }
@@ -3836,6 +3843,13 @@ function buildObjectSidebarMenu(context: SidebarMenuFactoryContext): boolean {
     items.push({ label: t("contextMenu.copyName"), action: copyName, icon: Copy, shortcut: shortcutCopyName.value });
     if (node.type === "trigger") {
       items.push({ label: t("contextMenu.viewSource"), action: () => openObjectSourceDialog(false), icon: Code2 });
+      const config = node.connectionId ? connectionStore.getConfig(node.connectionId) : undefined;
+      if (effectiveDatabaseTypeForConnection(config) === "opengauss") {
+        const mode = normalizeTriggerEnabledMode(node.triggerEnabledMode);
+        const canChange = canChangeTriggerEnabledMode(node, config);
+        items.push({ label: t("contextMenu.enableTrigger"), action: () => requestTriggerEnabledChange(node, true), icon: Power, disabled: !canChange || mode === "O" });
+        items.push({ label: t("contextMenu.disableTrigger"), action: () => requestTriggerEnabledChange(node, false), icon: X, disabled: !canChange || mode === "D" });
+      }
     }
     if (node.type === "index" && canOpenStructureEditor.value) {
       items.push({ label: "", separator: true });
@@ -4093,6 +4107,46 @@ function openEditJobDialog(node: TreeNode = activeNode.value) {
   createJobDialogEditName.value = node.label;
   showCreateJobDialog.value = true;
   routeTreeItemDialogController();
+}
+
+async function refreshTriggerStateAfterMutation(node: TreeNode) {
+  try {
+    await connectionStore.refreshTriggerMetadata(node);
+  } catch (error) {
+    // The DDL already succeeded; distinguish a metadata failure from a failed
+    // change and never invent an enabled state from a comment or stale node.
+    toast(t("contextMenu.triggerRefreshFailed", { message: translateBackendError(t, error) }), 5000);
+  }
+}
+
+function requestTriggerEnabledChange(node: TreeNode, enabled: boolean) {
+  const config = node.connectionId ? connectionStore.getConfig(node.connectionId) : undefined;
+  if (!canChangeTriggerEnabledMode(node, config)) return;
+  const target = createSidebarActionTarget(node);
+  const label = t(enabled ? "contextMenu.enableTrigger" : "contextMenu.disableTrigger");
+  emit("open-danger-dialog", {
+    target,
+    title: label,
+    message: t(enabled ? "contextMenu.confirmEnableTrigger" : "contextMenu.confirmDisableTrigger", { name: target.objectName, table: `${target.schema}.${target.tableName}` }),
+    sql: buildTriggerEnabledSql(target, enabled),
+    confirmLabel: label,
+    async confirm() {
+      try {
+        await executeTriggerEnabledChange({
+          node: target,
+          connection: target.connectionId ? connectionStore.getConfig(target.connectionId) : undefined,
+          enabled,
+          execute: (sql) => executeTreeNodeSqlWithProductionGuard(target, sql, { database: target.database, schema: target.schema }),
+          async onExecuted() {
+            toast(t(enabled ? "contextMenu.enableTriggerSuccess" : "contextMenu.disableTriggerSuccess", { name: target.objectName }), 3000);
+            await refreshTriggerStateAfterMutation(target);
+          },
+        });
+      } catch (error) {
+        toast(t("contextMenu.triggerOperationFailed", { message: translateBackendError(t, error) }), 5000);
+      }
+    },
+  });
 }
 
 async function runJob(node: TreeNode = activeNode.value) {

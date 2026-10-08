@@ -1290,3 +1290,34 @@ findExistingSameTableDataTab 统一改用它；页签标题仍用 label（保留
 模块测试 153 项通过、10 项 ignored，clippy/fmt 和 frontend build 通过。
 真实 tygl_biz openGauss 只读查询验证 SQL 可执行；该库目前无用户触发器，未进行
 实际触发器创建或桌面 UI 操作。
+
+---
+
+## 41. v0.2.44：触发器右键启用/禁用/删除与真实状态同步
+
+- ObjectInfo / TriggerInfo 增加可选 enabled_mode，保留 pg_trigger.tgenabled
+  的 O（普通）、D（禁用）、R（复制）、A（始终）四种模式及未知值；绝不从 comment
+  或 valid 推断状态。schema 清单内部利用原 UNION 签名槽携带状态，映射到独立字段，
+  trigger 的 signature 清空；其他对象语义不变。
+- 表级触发器从 information_schema.triggers 加表限定目录 JOIN 读取状态，保留
+  权限过滤；多事件按触发器聚合，避免同一触发器在表内出现多个同 ID 节点。
+- schema/table/simple/reference 各处 trigger 节点透传 triggerEnabledMode；
+  已禁用显示灰色闪电与“已禁用”，复制/始终模式有独立状态说明。旧缓存版本升级。
+- 实际渲染菜单（SidebarTreeRuntimeHost.vue）新增启用/禁用，普通 O 模式禁用
+  “启用”项、D 模式禁用“禁用”项；未知状态不允许启停，只读连接禁用写操作。
+  SQL 分别引用 schema、所属表、触发器名，不使用展示 label、不操作 ALL/USER。
+- 所有启停先展示确认和 SQL，再走现有生产 SQL 保护；捕获不可变目标避免弹窗
+  期间焦点切换。取消返回 undefined，不提示成功、不修改节点、不刷新。
+  “启用”是普通 O 模式，确认文案明确提醒会把 R/A 模式改成普通模式。
+- 删除沿用带 ON 所属表的现有确认路径，补只读检查和生产保护取消检查；修复
+  取消后数据库未删除但树节点被移除的问题。成功删除/启停后重新读所属表的
+  真实触发器快照，同步所有可见/隐藏副本，清除 schema 对象缓存和持久数据库
+  快照；同名但不同表/schema 的对象不受影响。刷新失败与 DDL 失败分别提示。
+
+验证：SQL 引用/注入形态、O/D/R/A/未知模式、只读/权限失败/生产确认取消、成功
+回调、同名不同表及多位置副本状态/删除同步测试；实际菜单接线静态守卫。
+前端完整 pnpm check：5308 项通过，5 个既有本机 node: 环境套件失败；typecheck/
+lint/fmt 通过。Rust core 全量 1192 项通过、11 项 ignored，workspace clippy 通过。
+新元数据 SQL 在 tygl_biz 只读验证可执行（该库无用户触发器）；openGauss parser
+源码确认 ALTER TABLE ENABLE/DISABLE TRIGGER 语法。未创建或修改真实数据库触发器，
+未自动化操作用户桌面。
