@@ -1200,3 +1200,20 @@ store 映射（object_kinds 含 synonym、synonymTarget 透传）、树图标 7 
 映射，共 58 项针对测试通过；typecheck/lint/fmt、CI 同款 clippy 通过。完整
 pnpm check 5289 项通过，5 个既有本机 node: 环境套件失败不变。
 注意：未限定名称的同义词补全遵循 search_path（与运行时解析一致），与表相同。
+
+---
+
+## 36. v0.2.39：修复同义词类型图标不生效（真正的渲染点在 TreeItem.vue）（2026-10-11）
+
+用户反馈 v0.2.38 后同义词图标无变化。根因：`lib/sidebar/treeNodeIcon.ts` 的
+`getTreeNodeIconInfo` 是无人调用的死代码，侧栏真实渲染在
+`components/sidebar/TreeItem.vue` 内自己的 `getIconInfo`，其中 synonym 分支
+硬编码 Link2、忽略 targetKind。
+
+**修复**：把 relkind/prokind → 图标映射抽为共享函数
+`synonymIconInfoForTargetKind(targetKind)` 放在 treeNodeIcon.ts；TreeItem.vue 的
+synonym 分支改为调用它（删除硬编码 Link2）；getTreeNodeIconInfo 同样委托。
+**缓存失效**：对象组持久化树缓存版本 objects-v8 → objects-v9，旧缓存（无
+targetKind 的节点）不再恢复，展开即重新拉取带目标类型的数据。
+新增 packages/app-tests/treeItemSynonymIcon.test.ts 静态守卫（TreeItem.vue 必须
+走共享映射、treeNodeIcon.ts 必须含 6 种 relkind 映射），43 项相关测试通过。

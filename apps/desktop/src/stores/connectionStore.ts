@@ -1283,7 +1283,7 @@ export const useConnectionStore = defineStore("connection", () => {
 
   function objectGroupCacheKey(node: TreeNode): string {
     const config = node.connectionId ? getConfig(node.connectionId) : undefined;
-    const cacheVersion = ownerAwareMetadataCacheVersion(config, "objects-v8");
+    const cacheVersion = ownerAwareMetadataCacheVersion(config, "objects-v9");
     return schemaCacheKey(node.connectionId || "", node.database || "", node.schema || "", node.type, cacheVersion);
   }
 

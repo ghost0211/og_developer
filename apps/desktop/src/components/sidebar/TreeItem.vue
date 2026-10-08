@@ -55,6 +55,7 @@ import { effectiveDatabaseTypeForConnection } from "@/lib/database/jdbcDialect";
 import { connectionDisplayUrlScheme } from "@/lib/connection/connectionPresentation";
 import { hexToRgba } from "@/lib/common/color";
 import { sidebarDisplayTableName } from "@/lib/sidebar/sidebarTableNameDisplay";
+import { synonymIconInfoForTargetKind } from "@/lib/sidebar/treeNodeIcon";
 import { shouldMeasureSidebarLabelOverflow } from "@/lib/sidebar/sidebarLabelTooltip";
 import { treeSelectionRangeIdsByIndex, treeSelectionRangeIds } from "@/lib/sidebar/sidebarTreeSelection";
 import { isSidebarDatabaseOpenForVisual } from "@/lib/sidebar/sidebarDatabaseOpenState";
@@ -249,7 +250,8 @@ function getIconInfo(node: TreeNode): { icon: any; colorClass: string } | null {
     case "sequence":
       return { icon: ListTree, colorClass: "text-emerald-500" };
     case "synonym":
-      return { icon: Link2, colorClass: "text-sky-500" };
+      // Icon follows the resolved synonym target object type.
+      return synonymIconInfoForTargetKind(node.targetKind);
     case "package":
       return { icon: Package, colorClass: "text-cyan-500" };
     case "package-body":
