@@ -559,7 +559,10 @@ export function buildSimpleObjectTreeNodes({ nodeId, connectionId, database, sch
 
     const childSchema = obj.schema ? normalizeDatabaseObjectName(obj.schema) : schema;
     const signature = obj.signature?.trim() || "";
-    const dedupeKey = exactObjectIdentityKey(objectType, childSchema, name, signature);
+    const isTrigger = objectType === "TRIGGER";
+    const triggerParent = isTrigger ? obj.parent_name || undefined : undefined;
+    const triggerIdentity = isTrigger ? `:${encodeURIComponent(obj.parent_schema || childSchema || "")}:${encodeURIComponent(triggerParent || "")}` : "";
+    const dedupeKey = exactObjectIdentityKey(objectType, childSchema, name, signature) + triggerIdentity;
     if (seen.has(dedupeKey)) continue;
     seen.add(dedupeKey);
 
@@ -580,16 +583,17 @@ export function buildSimpleObjectTreeNodes({ nodeId, connectionId, database, sch
     } else {
       const simpleNodeType = simpleObjectNodeType(objectType);
       objectNodes.push({
-        id: objectType === "VIEW" || objectType === "MATERIALIZED_VIEW" ? entry.node.id : `${nodeId}:${childSchema ? `${childSchema}:` : ""}${name}:${signature}:${objectType}`,
+        id: objectType === "VIEW" || objectType === "MATERIALIZED_VIEW" ? entry.node.id : `${nodeId}:${childSchema ? `${childSchema}:` : ""}${name}:${signature}:${objectType}${triggerIdentity}`,
         label: signature && (objectType === "FUNCTION" || objectType === "PROCEDURE") ? `${name}(${signature})` : name,
         type: simpleNodeType,
         objectName: name,
         signature: signature || undefined,
-        comment: obj.comment,
+        comment: isTrigger ? [triggerParent, obj.comment].filter(Boolean).join(" — ") : obj.comment,
+        tableName: triggerParent,
         valid: obj.valid ?? undefined,
         connectionId,
         database,
-        schema: childSchema,
+        schema: isTrigger ? obj.parent_schema || childSchema : childSchema,
         isExpanded: false,
         // openGauss packages and package bodies expand to reveal their subprograms.
         children: objectType === "PACKAGE" || objectType === "PACKAGE_BODY" ? [] : undefined,
@@ -652,13 +656,6 @@ const groupDefs: Array<{
     childType: "function",
   },
   {
-    key: "__triggers",
-    label: "tree.triggers",
-    objectTypes: ["TRIGGER"],
-    nodeType: "group-triggers",
-    childType: "trigger",
-  },
-  {
     key: "__sequences",
     label: "tree.sequences",
     objectTypes: ["SEQUENCE"],
@@ -685,6 +682,13 @@ const groupDefs: Array<{
     objectTypes: ["PACKAGE_BODY"],
     nodeType: "group-package-bodies",
     childType: "package-body",
+  },
+  {
+    key: "__triggers",
+    label: "tree.triggers",
+    objectTypes: ["TRIGGER"],
+    nodeType: "group-triggers",
+    childType: "trigger",
   },
   {
     key: "__types",
@@ -747,7 +751,7 @@ export function buildGroupedObjectTreeNodes({ nodeId, connectionId, database, sc
     const t = normalizeObjectType(obj.object_type);
     const objectSchema = obj.schema ? normalizeDatabaseObjectName(obj.schema) : schema || "";
     const signature = (obj.signature ?? "").trim();
-    const key = exactObjectIdentityKey(t, objectSchema, name, signature);
+    const key = exactObjectIdentityKey(t, objectSchema, name, signature) + (t === "TRIGGER" ? `\0${obj.parent_schema || objectSchema}\0${obj.parent_name || ""}` : "");
     if (seen.has(key)) continue;
     seen.add(key);
     const arr = buckets.get(t) ?? [];
@@ -777,19 +781,23 @@ export function buildGroupedObjectTreeNodes({ nodeId, connectionId, database, sc
           const signature = obj.signature?.trim() || "";
           const signatureIdPart = signature && (objectType === "FUNCTION" || objectType === "PROCEDURE") ? `:${signature}` : "";
           const isSynonym = childType === "synonym";
+          const isTrigger = childType === "trigger";
+          const triggerParent = obj.parent_name || undefined;
+          const triggerIdentity = isTrigger ? `:${encodeURIComponent(obj.parent_schema || childSchema || "")}:${encodeURIComponent(triggerParent || "")}` : "";
           return {
-            id: `${nodeId}:${def.key}:${childSchema ? `${childSchema}:` : ""}${obj.name}${signatureIdPart}${objectTypeSuffix}`,
+            id: `${nodeId}:${def.key}:${childSchema ? `${childSchema}:` : ""}${obj.name}${signatureIdPart}${objectTypeSuffix}${triggerIdentity}`,
             label: signature && (objectType === "FUNCTION" || objectType === "PROCEDURE") ? `${obj.name}(${signature})` : obj.name,
             type: childType,
             objectName: obj.name,
             signature: isSynonym ? undefined : signature || undefined,
             // openGauss list-objects SQL carries the synonym target relkind in signature.
             targetKind: isSynonym ? signature || undefined : undefined,
-            comment: obj.comment,
+            comment: isTrigger ? [triggerParent, obj.comment].filter(Boolean).join(" — ") : obj.comment,
+            tableName: isTrigger ? triggerParent : undefined,
             valid: obj.valid ?? undefined,
             connectionId,
             database,
-            schema: childSchema,
+            schema: isTrigger ? obj.parent_schema || childSchema : childSchema,
             isExpanded: false,
             // openGauss packages and package bodies expand to reveal their subprograms.
             children: objectType === "PACKAGE" || objectType === "PACKAGE_BODY" ? [] : undefined,

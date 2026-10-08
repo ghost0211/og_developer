@@ -1283,7 +1283,7 @@ export const useConnectionStore = defineStore("connection", () => {
 
   function objectGroupCacheKey(node: TreeNode): string {
     const config = node.connectionId ? getConfig(node.connectionId) : undefined;
-    const cacheVersion = ownerAwareMetadataCacheVersion(config, "objects-v9");
+    const cacheVersion = ownerAwareMetadataCacheVersion(config, "objects-v10");
     return schemaCacheKey(node.connectionId || "", node.database || "", node.schema || "", node.type, cacheVersion);
   }
 
@@ -1578,9 +1578,12 @@ export const useConnectionStore = defineStore("connection", () => {
       return { children: [], objectCount: 0, hasMore: false, nextOffset: options.offset };
     }
     const searchFilter = options.searchFilter || undefined;
-    const fetchLimit = searchFilter ? undefined : options.pageSize + 1;
-    const fetchOffset = searchFilter ? undefined : options.offset;
-    const objects = await loadCachedMetadataListPage<ObjectInfo[]>(
+    // Native listObjects currently enumerates the whole schema; filter trigger
+    // rows before paging so large schemas do not hide triggers behind tables.
+    const isTriggerGroup = options.objectTypes.every((kind) => kind === "TRIGGER");
+    const fetchLimit = searchFilter || isTriggerGroup ? undefined : options.pageSize + 1;
+    const fetchOffset = searchFilter || isTriggerGroup ? undefined : options.offset;
+    const listedObjects = await loadCachedMetadataListPage<ObjectInfo[]>(
       metadataListCacheScope({
         kind: "object-list-page",
         connectionId: options.node.connectionId,
@@ -1596,6 +1599,12 @@ export const useConnectionStore = defineStore("connection", () => {
       () => api.listObjects(options.node.connectionId!, options.node.database!, options.querySchema, options.objectTypes, searchFilter, fetchLimit, fetchOffset),
       { force: options.force },
     );
+    const objects = isTriggerGroup
+      ? listedObjects
+          .filter((object) => normalizedObjectTreeKind(object.object_type) === "TRIGGER")
+          .filter((object) => !searchFilter || `${object.name} ${object.parent_name || ""}`.toLowerCase().includes(searchFilter.toLowerCase()))
+          .slice(searchFilter ? 0 : options.offset)
+      : listedObjects;
     const hasMore = searchFilter ? false : objects.length > options.pageSize;
     const pageObjects = hasMore ? objects.slice(0, options.pageSize) : objects;
     const children = objectGroupChildrenFromObjects({
@@ -1798,7 +1807,7 @@ export const useConnectionStore = defineStore("connection", () => {
     if (parent.type === "group-tables") return objectGroupCacheKey(parent);
     if (parent.type !== "database" && parent.type !== "schema") return null;
     const simpleObjectDisplay = useSettingsStore().editorSettings.sidebarObjectDisplay === "simple";
-    const cacheVersion = ownerAwareMetadataCacheVersion(getConfig(parent.connectionId), simpleObjectDisplay ? "objects-simple-v8" : "objects-grouped-v9");
+    const cacheVersion = ownerAwareMetadataCacheVersion(getConfig(parent.connectionId), simpleObjectDisplay ? "objects-simple-v9" : "objects-grouped-v10");
     return schemaCacheKey(parent.connectionId, parent.database, parent.schema || "", cacheVersion);
   }
 
@@ -2970,7 +2979,7 @@ export const useConnectionStore = defineStore("connection", () => {
     });
     if (!options?.force && simpleObjectDisplayForScope && !searchFilter && !options?.sidebarTableSearchParentId && !tableNameFilterForScope) {
       const nodeId = schema ? `${connectionId}:${database}:${schema}` : `${connectionId}:${database}`;
-      const cacheKey = schemaCacheKey(connectionId, database, schema || "", ownerAwareMetadataCacheVersion(configForScope, "objects-simple-v8"));
+      const cacheKey = schemaCacheKey(connectionId, database, schema || "", ownerAwareMetadataCacheVersion(configForScope, "objects-simple-v9"));
       if (await hydrateTreeNodeFromCache(findNode(treeNodes.value, nodeId), cacheKey)) {
         void loadTables(connectionId, database, schema, { ...options, force: true }).catch(() => undefined);
         return;
@@ -3003,7 +3012,7 @@ export const useConnectionStore = defineStore("connection", () => {
           const simpleObjectDisplay = useSettingsStore().editorSettings.sidebarObjectDisplay === "simple";
           const searchFilter = activeTreeLoadSearchFilter(options);
           const config = getConfig(connectionId);
-          const cacheVersion = ownerAwareMetadataCacheVersion(config, simpleObjectDisplay ? "objects-simple-v8" : "objects-grouped-v9");
+          const cacheVersion = ownerAwareMetadataCacheVersion(config, simpleObjectDisplay ? "objects-simple-v9" : "objects-grouped-v10");
           const cacheKey = schemaCacheKey(connectionId, database, schema || "", cacheVersion);
           const querySchema = connectionObjectTreeQuerySchema(config, database, schema);
           const effectiveSchema = connectionObjectTreeNodeSchema(config, database, schema);
@@ -3267,7 +3276,7 @@ export const useConnectionStore = defineStore("connection", () => {
             const nextChildren = page.hasMore ? appendTableTreeLoadMoreNode(mergedChildren, buildLoadMoreNode(targetParent, page.nextOffset, loadMore.pageSize), page.loadMoreParent) : mergedChildren;
             targetParent.objectCount = mergedChildren.length;
             setChildren(targetParent, nextChildren);
-            await savePersistedTreeChildren(schemaCacheKey(parentConnectionId, parentDatabase, parent.schema || "", ownerAwareMetadataCacheVersion(config, "objects-simple-v8")), nextChildren);
+            await savePersistedTreeChildren(schemaCacheKey(parentConnectionId, parentDatabase, parent.schema || "", ownerAwareMetadataCacheVersion(config, "objects-simple-v9")), nextChildren);
             const currentTargetParent = treeNodeLoadRelatedTarget(load, parent);
             if (currentTargetParent && parentEpoch.isCurrent()) currentTargetParent.isExpanded = true;
             return;

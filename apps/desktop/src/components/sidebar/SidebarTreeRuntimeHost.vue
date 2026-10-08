@@ -1303,7 +1303,7 @@ function tableChildDropObjectName(node: TreeNode): string {
   if (node.type === "column") return node.meta && "name" in node.meta ? node.meta.name : node.label.replace(/\s+\(.+\)$/, "");
   if (node.type === "index") return node.meta && "name" in node.meta ? node.meta.name : node.label.replace(/\s+\(.+\)$/, "");
   if (node.type === "fkey") return node.meta && "name" in node.meta ? node.meta.name : node.label;
-  if (node.type === "trigger") return node.meta && "name" in node.meta ? node.meta.name : node.label.replace(/\s+\(.+\)$/, "");
+  if (node.type === "trigger") return node.objectName || (node.meta && "name" in node.meta ? node.meta.name : node.label.replace(/\s+\(.+\)$/, ""));
   return node.label;
 }
 
@@ -1438,6 +1438,7 @@ function openObjectSourceDialog(initialEditing: boolean) {
           objectType: objectType as any,
           databaseType,
           signature: node.signature,
+          relationName: node.type === "trigger" ? node.tableName : undefined,
         });
         const tabId = queryStore.createTab(connectionId, database, `Source - ${node.label}`, "query", schema, editableSource, node.catalog, { forceNew: true });
         const sourceIsEditable = raw.editable !== false && !["SEQUENCE", "TRIGGER", "TYPE", "TYPE_BODY"].includes(resolvedType);
@@ -3833,6 +3834,9 @@ function buildObjectSidebarMenu(context: SidebarMenuFactoryContext): boolean {
 
   if (node.type === "index" || node.type === "fkey" || (node.type === "trigger" && !!node.tableName)) {
     items.push({ label: t("contextMenu.copyName"), action: copyName, icon: Copy, shortcut: shortcutCopyName.value });
+    if (node.type === "trigger") {
+      items.push({ label: t("contextMenu.viewSource"), action: () => openObjectSourceDialog(false), icon: Code2 });
+    }
     if (node.type === "index" && canOpenStructureEditor.value) {
       items.push({ label: "", separator: true });
       items.push({ label: t("contextMenu.editIndex"), action: openStructureEditor, icon: PencilRuler });

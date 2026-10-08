@@ -1265,3 +1265,28 @@ useSidebarDataOpenRuntime 的 8 处表名取值与 SidebarTreeRuntimeHost 的
 findExistingSameTableDataTab 统一改用它；页签标题仍用 label（保留展示信息）。
 新增 treeNodeDataObjectName.spec（4 例），useSidebarDataOpenRuntime.spec mock
 同步；162 项侧栏测试、完整 pnpm check 5292 项通过（5 个既有本机环境套件除外）。
+
+---
+
+## 40. v0.2.43：schema 级触发器总览（同义词与类型之间）
+
+按用户确认新增 schema 下“触发器”总节点，保留原有每张表下的触发器组。
+
+- openGauss 侧栏能力在各兼容模式下启用 TRIGGER；组顺序移至同义词之后、类型之前。
+- 原生元数据 listObjects 增加 pg_trigger UNION 分支（在 openGauss 目录门控下），
+  通过所属表 namespace 限定 schema，过滤 tgisinternal，返回真实注释及所属表信息。
+- 触发器行保留纯触发器名，尾部显示“所属表 — 注释”（无注释时只显示所属表）。
+  grouped/simple 两种节点构建路径均以所属表参与去重和节点 ID，保留 objectName、
+  tableName；不同表上的同名触发器不会合并。schema 总览与表级加载路由保持分离。
+- 双击源码的 query-tab 路径补传 relationName，dialog 路径已有所属表参数；
+  表子对象菜单补“查看源码”，删除仍走带 ON 表名的人为确认路径。
+- 原生 listObjects 当前返回整个 schema，触发器总览因此先本地筛选再分页，
+  避免大型 schema 中前面的表把触发器截掉；支持按触发器名/所属表搜索。
+- 升级对象组与 schema 对象树持久化缓存版本，避免旧缓存缺组/缺所属表数据。
+
+验证：新增同名触发器在 grouped/simple 中的身份测试、各兼容模式组顺序测试、
+250 个表加触发器的加载回归，以及真实源码渲染入口静态守卫。针对测试 228 项通过；
+完整 pnpm check：5300 项通过，仅既有 5 个本机 node: 环境套件失败；Rust PostgreSQL
+模块测试 153 项通过、10 项 ignored，clippy/fmt 和 frontend build 通过。
+真实 tygl_biz openGauss 只读查询验证 SQL 可执行；该库目前无用户触发器，未进行
+实际触发器创建或桌面 UI 操作。

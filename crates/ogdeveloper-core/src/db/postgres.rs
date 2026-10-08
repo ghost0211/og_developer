@@ -2932,6 +2932,8 @@ fn list_objects_sql_full(
     if has_pg_synonym_catalog {
         sql.push_str(" UNION ALL ");
         sql.push_str(opengauss_synonyms_sql());
+        sql.push_str(" UNION ALL ");
+        sql.push_str(opengauss_triggers_sql());
     }
     if has_pg_job_catalog {
         sql.push_str(" UNION ALL ");
@@ -3001,10 +3003,24 @@ fn opengauss_packages_sql() -> &'static str {
      WHERE n.nspname = $1 AND p.pkgbodydeclsrc IS NOT NULL"
 }
 
+/// Schema-wide user trigger inventory; table identity is required because
+/// trigger names are unique per table, not per schema.
+fn opengauss_triggers_sql() -> &'static str {
+    "SELECT t.tgname AS object_name, \
+       'TRIGGER' AS object_type, \
+       obj_description(t.oid, 'pg_trigger')::text AS object_comment, \
+       NULL::text AS created_at, NULL::text AS updated_at, \
+       n.nspname::text AS parent_schema, c.relname::text AS parent_name, \
+       NULL::text AS signature, 6 AS sort_order \
+     FROM pg_catalog.pg_trigger t \
+     JOIN pg_catalog.pg_class c ON c.oid = t.tgrelid \
+     JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
+     WHERE n.nspname = $1 AND NOT t.tgisinternal"
+}
+
 /// Resolve the object a synonym points at (pg_catalog.pg_synonym). Returns the
-/// target schema/name plus its relkind when the target is a pg_class object.
+/// target schema/name plus its relkind/prokind when the target is known.
 /// Synonyms can chain to other synonyms, so the caller resolves iteratively.
-#[allow(dead_code)]
 pub(crate) fn opengauss_synonym_target_sql() -> &'static str {
     // Column 3 resolves the target object kind (relkind, or prokind for
     // routines) so reference lists can render the target with its real object
@@ -7916,6 +7932,19 @@ mod tests {
         assert!(sql.contains("c.relkind::text"));
         assert!(sql.contains("CASE WHEN p.prokind = 'p' THEN 'p' ELSE 'f' END"));
         assert!(sql.contains("AS signature"));
+    }
+
+    #[test]
+    fn opengauss_trigger_list_carries_table_identity_and_excludes_internal_triggers() {
+        let sql = opengauss_triggers_sql();
+        assert!(sql.contains("'TRIGGER' AS object_type"));
+        assert!(sql.contains("c.oid = t.tgrelid"));
+        assert!(sql.contains("AS parent_schema"));
+        assert!(sql.contains("AS parent_name"));
+        assert!(sql.contains("n.nspname = $1 AND NOT t.tgisinternal"));
+        assert!(sql.contains("obj_description(t.oid, 'pg_trigger')"));
+        assert!(list_objects_sql_full(false, true, false, true, false, true, false, false).contains(sql));
+        assert!(!list_objects_sql_full(false, true, false, true, false, false, false, false).contains(sql));
     }
 
     #[test]

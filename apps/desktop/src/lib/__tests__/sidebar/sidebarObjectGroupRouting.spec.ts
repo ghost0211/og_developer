@@ -86,13 +86,28 @@ describe("sidebar object-group routing", () => {
     await loadSidebarObjectGroup(storedSynonymGroup, store);
     await loadSidebarObjectGroup(storedTypeGroup, store);
 
-    expect(listObjects).toHaveBeenNthCalledWith(1, connection.id, "app", "app", ["TRIGGER"], undefined, 11, 0);
+    expect(listObjects).toHaveBeenNthCalledWith(1, connection.id, "app", "app", ["TRIGGER"], undefined, undefined, undefined);
     expect(listObjects).toHaveBeenNthCalledWith(2, connection.id, "app", "app", ["SYNONYM"], undefined, 11, 0);
     expect(listObjects).toHaveBeenNthCalledWith(3, connection.id, "app", "app", ["TYPE", "TYPE_BODY"], undefined, 11, 0);
     expect(listTriggers).not.toHaveBeenCalled();
     expect(storedTriggerGroup).toMatchObject({ isExpanded: true, isLoading: false, children: [] });
     expect(storedSynonymGroup).toMatchObject({ isExpanded: true, isLoading: false, children: [] });
     expect(storedTypeGroup).toMatchObject({ isExpanded: true, isLoading: false, children: [] });
+  });
+
+  it("filters schema triggers before paging and preserves same-named triggers on different tables", async () => {
+    const triggers = ["orders", "users"].map((parent_name) => ({ name: "audit", object_type: "TRIGGER", schema: "app", parent_schema: "app", parent_name }));
+    const listObjects = vi.fn().mockResolvedValue([...Array.from({ length: 250 }, (_, i) => ({ name: `table_${i}`, object_type: "TABLE", schema: "app" })), ...triggers]);
+    const listTriggers = vi.fn().mockResolvedValue([]);
+    const { connection, store } = await createStore({ listObjects, listTriggers });
+    const triggerGroup = objectGroup("group-triggers", `${connection.id}:app:app:__triggers`);
+    store.treeNodes = [{ id: connection.id, label: connection.name, type: "connection", connectionId: connection.id, children: [triggerGroup] }];
+    const liveGroup = store.treeNodes[0].children![0];
+    await loadSidebarObjectGroup(liveGroup, store);
+    expect(liveGroup.children).toHaveLength(2);
+    expect(liveGroup.children!.map((node) => node.tableName)).toEqual(["orders", "users"]);
+    expect(new Set(liveGroup.children!.map((node) => node.id)).size).toBe(2);
+    expect(listTriggers).not.toHaveBeenCalled();
   });
 
   it("keeps table-level trigger groups on listTriggers", async () => {
@@ -140,7 +155,7 @@ describe("sidebar object-group routing", () => {
 
     await expect(loadSidebarObjectGroup(storedTriggerGroup, store)).rejects.toThrow("metadata access denied");
 
-    expect(listObjects).toHaveBeenCalledWith(connection.id, "app", "app", ["TRIGGER"], undefined, 11, 0);
+    expect(listObjects).toHaveBeenCalledWith(connection.id, "app", "app", ["TRIGGER"], undefined, undefined, undefined);
     expect(listTriggers).not.toHaveBeenCalled();
     expect(storedTriggerGroup).toMatchObject({ isExpanded: false, isLoading: false, children: [] });
   });
