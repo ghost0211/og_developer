@@ -647,6 +647,12 @@ const FUNCTION_ICON: LucideIconNode = [
 
 const SCHEMA_ICON: LucideIconNode = [["path", { d: "M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2v11z" }]];
 
+const SYNONYM_ICON: LucideIconNode = [
+  ["path", { d: "M9 17H7A5 5 0 0 1 7 7h2" }],
+  ["path", { d: "M15 7h2a5 5 0 1 1 0 10h-2" }],
+  ["line", { x1: "8", x2: "16", y1: "12", y2: "12" }],
+];
+
 function encodeSvgIcon(iconNode: LucideIconNode): string {
   const body = iconNode
     .map(
@@ -1039,6 +1045,10 @@ export function buildSqlCompletionThemeRules(): CodeMirrorStyleSpec {
     ".cm-completionIcon-schema": {
       color: colorMixValue("var(--amber-500, #f59e0b)", "color-mix(in oklch, var(--amber-500, #f59e0b) 92%, var(--popover-foreground))"),
       ...lucideCompletionIconMask(SCHEMA_ICON),
+    },
+    ".cm-completionIcon-synonym": {
+      color: colorMixValue("var(--sky-500, #0ea5e9)", "color-mix(in oklch, var(--sky-500, #0ea5e9) 92%, var(--popover-foreground))"),
+      ...lucideCompletionIconMask(SYNONYM_ICON),
     },
     ".cm-completionLabel": {
       color: "inherit",

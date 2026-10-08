@@ -1,4 +1,4 @@
-export type SqlCompletionItemType = "keyword" | "table" | "column" | "snippet" | "function" | "schema" | "property" | "text";
+export type SqlCompletionItemType = "keyword" | "table" | "column" | "snippet" | "function" | "schema" | "synonym" | "property" | "text";
 
 const COMPLETION_SPACE_BLOCKING_CHARACTERS = new Set([",", ";", ":", ")", "]", "}", "'", '"']);
 

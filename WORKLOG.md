@@ -1166,3 +1166,37 @@ CURRENT_SCHEMA、PL/pgSQL 关键字/触发器内置变量照常高亮。
 完整 pnpm check：格式/lint/typecheck 通过、5279 项测试通过；既有 5 个本机
 `No such built-in module: node:` 套件仍失败。pnpm build、cargo fmt --all --check
 通过。未访问数据库、未操作桌面、未改动 SQL 执行逻辑。
+
+---
+
+## 35. v0.2.38：SQL 补全支持 openGauss 同义词 + 同义词按目标类型区分图标（2026-10-11）
+
+用户报告两点：编辑器 `from app.def` 补全不出现同义词 def_user（对象树里明明存在）；
+左侧树的同义词全部用同一个链接图标，看不出目标是表/视图/存储过程/函数。
+
+**补全（#1）**：补全助手后端新增 Synonym 对象类型与候选类型（types.rs）；
+`postgres_completion_synonyms_sql()` 在 pg_synonym 上按表清单同一契约查询
+（schema 限定或 search_path(current_schemas) 可见性、ILIKE 前缀、LIMIT 截断），
+并 LEFT JOIN pg_class/pg_proc 解析目标 schema/名称/类型（relkind/prokind，
+支持表/视图/物化视图/序列/外部表/分区表/函数/存储过程）；仅当 pg_synonym
+目录存在时启用。前端请求 kinds 增加 "synonym"，候选映射为带 `synonymTarget`
+的 SqlCompletionTable；buildTableItems 对同义词候选使用新 item 类型 "synonym"
+（排序优先级介于表与 schema 之间），detail 显示 `→ dbo.def_user (table)`，
+apply 与表一致（可直接用于 FROM）。补全弹窗新增 link 样式的同义词图标
+（sky 色 lucide mask）。
+
+**树图标（#2）**：openGauss listObjects 同义词 SQL 的 signature 列（同义词下
+原本恒 NULL）改为携带目标 relkind（r/v/m/S/f/p）；buildGroupedObjectTreeNodes
+把同义词子节点的 targetKind 填上；treeNodeIcon 对同义词按 targetKind 返回目标
+对象类型的图标与颜色（表=绿表、视图=紫眼、物化视图=靛眼、序列=翠绿、
+函数=琥珀括号、过程=蓝卷轴），未知目标保持 Link2。展开同义词解析目标后也会
+回写 targetKind 保持一致。
+
+**验证**：后端两条新 SQL 在 tygl_biz（openGauss 6.0）实测：app schema 的
+def_user→dbo.def_user(table)、seq_auth_user_account→sequence 均正确，与用户
+截图一致；后端 db:: 236 项测试通过（含 2 项新 SQL 契约测试）；前端新增 3 个
+测试文件/用例：补全项构建（schema 限定与非限定、detail/apply/type）、
+store 映射（object_kinds 含 synonym、synonymTarget 透传）、树图标 7 种 relkind
+映射，共 58 项针对测试通过；typecheck/lint/fmt、CI 同款 clippy 通过。完整
+pnpm check 5289 项通过，5 个既有本机 node: 环境套件失败不变。
+注意：未限定名称的同义词补全遵循 search_path（与运行时解析一致），与表相同。

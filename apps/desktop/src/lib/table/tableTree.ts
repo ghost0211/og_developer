@@ -776,12 +776,15 @@ export function buildGroupedObjectTreeNodes({ nodeId, connectionId, database, sc
           const objectTypeSuffix = objectType === "PACKAGE" || objectType === "PACKAGE_BODY" || objectType === "TYPE" || objectType === "TYPE_BODY" ? `:${objectType}` : "";
           const signature = obj.signature?.trim() || "";
           const signatureIdPart = signature && (objectType === "FUNCTION" || objectType === "PROCEDURE") ? `:${signature}` : "";
+          const isSynonym = childType === "synonym";
           return {
             id: `${nodeId}:${def.key}:${childSchema ? `${childSchema}:` : ""}${obj.name}${signatureIdPart}${objectTypeSuffix}`,
             label: signature && (objectType === "FUNCTION" || objectType === "PROCEDURE") ? `${obj.name}(${signature})` : obj.name,
             type: childType,
             objectName: obj.name,
-            signature: signature || undefined,
+            signature: isSynonym ? undefined : signature || undefined,
+            // openGauss list-objects SQL carries the synonym target relkind in signature.
+            targetKind: isSynonym ? signature || undefined : undefined,
             comment: obj.comment,
             valid: obj.valid ?? undefined,
             connectionId,

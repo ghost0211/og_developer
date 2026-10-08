@@ -168,6 +168,37 @@ describe("connectionStore completion assistant", () => {
     expect(first[0]).toMatchObject({ name: "accounts", schema: "public", type: "table" });
   });
 
+  it("passes openGauss synonyms through with their resolved target", async () => {
+    const completionAssistantSearch = vi.fn().mockResolvedValue({
+      candidates: [
+        { name: "app_duty_checkfun_def", kind: "table", schema: "app" },
+        { name: "def_user", kind: "synonym", schema: "app", parent_schema: "dbo", parent_name: "def_user", comment: "FOR dbo.def_user", data_type: "table" },
+        { name: "seq_auth_user_account", kind: "synonym", schema: "app", parent_schema: "auth", parent_name: "seq_auth_user_account", comment: "FOR auth.seq_auth_user_account", data_type: "sequence" },
+      ],
+      incomplete: false,
+      fallback_used: false,
+    });
+
+    vi.doMock("@/lib/backend/tauriRuntime", () => ({ isTauriRuntime: () => false }));
+    vi.doMock("@/lib/backend/api", () => ({
+      checkConnectionHealth: vi.fn().mockResolvedValue(undefined),
+      completionAssistantSearch,
+      listSchemas: vi.fn().mockResolvedValue(["app"]),
+      listTables: vi.fn().mockResolvedValue([]),
+    }));
+
+    const { useConnectionStore } = await import("@/stores/connectionStore");
+    const store = useConnectionStore();
+    store.connections = [postgresConnection()];
+    store.connectedIds.add("pg-1");
+
+    const tables = await store.listCompletionTables("pg-1", "app", "def", 20, "app");
+
+    expect(completionAssistantSearch).toHaveBeenCalledWith(expect.objectContaining({ object_kinds: expect.arrayContaining(["table", "view", "synonym"]) }));
+    expect(tables).toContainEqual({ name: "def_user", schema: "app", synonymTarget: { schema: "dbo", name: "def_user", kind: "table" } });
+    expect(tables).toContainEqual({ name: "seq_auth_user_account", schema: "app", synonymTarget: { schema: "auth", name: "seq_auth_user_account", kind: "sequence" } });
+  });
+
   it("returns fallback metadata when assistant table search fails", async () => {
     const completionAssistantSearch = vi.fn().mockRejectedValue(new Error("assistant unavailable"));
     const listTables = vi.fn().mockResolvedValue([{ name: "accounts", table_type: "BASE TABLE", comment: null }]);

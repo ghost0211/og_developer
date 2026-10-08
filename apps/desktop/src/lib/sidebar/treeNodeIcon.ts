@@ -54,8 +54,25 @@ export function getTreeNodeIconInfo(node: TreeNode): TreeNodeIconInfo | null {
       return { icon: Braces, colorClass: "text-amber-500" };
     case "sequence":
       return { icon: ListTree, colorClass: "text-emerald-500" };
-    case "synonym":
-      return { icon: Link2, colorClass: "text-sky-500" };
+    case "synonym": {
+      // Icon follows the resolved target object type; unknown targets keep the link icon.
+      switch (node.targetKind) {
+        case "r":
+          return { icon: Table, colorClass: "text-green-500" };
+        case "v":
+          return { icon: Eye, colorClass: "text-purple-500" };
+        case "m":
+          return { icon: Eye, colorClass: "text-indigo-500" };
+        case "S":
+          return { icon: ListTree, colorClass: "text-emerald-500" };
+        case "f":
+          return { icon: Braces, colorClass: "text-amber-500" };
+        case "p":
+          return { icon: ScrollText, colorClass: "text-blue-500" };
+        default:
+          return { icon: Link2, colorClass: "text-sky-500" };
+      }
+    }
     case "package":
       return { icon: Package, colorClass: "text-cyan-500" };
     case "package-body":

@@ -3702,6 +3702,7 @@ export const useConnectionStore = defineStore("connection", () => {
       await loadTableGroups(connectionId, database, target.targetName, target.targetSchema, node.id, undefined, synonymTargetObjectType(target.targetKind));
       const live = findNode(treeNodes.value, node.id);
       if (live) {
+        live.targetKind = target.targetKind;
         live.children = [...(live.children ?? []), ...buildObjectReferenceGroupNodes(node, "synonym", synonym, "references", true)];
       }
       return;
@@ -3712,6 +3713,7 @@ export const useConnectionStore = defineStore("connection", () => {
       if (!targetNode) return;
       const children: TreeNode[] = [...buildObjectReferenceGroupNodes(node, "synonym", synonym, "references", true)];
       if (target) {
+        targetNode.targetKind = target.targetKind;
         children.unshift({
           id: `${node.id}:__target`,
           label: `${target.targetSchema}.${target.targetName}`,
@@ -4521,8 +4523,19 @@ export const useConnectionStore = defineStore("connection", () => {
 
   function completionAssistantTables(candidates: CompletionAssistantCandidate[], preferredSchema?: string, withOracleMetadata = false): SqlCompletionTable[] {
     return candidates
-      .filter((candidate) => candidate.kind === "table" || candidate.kind === "view")
+      .filter((candidate) => candidate.kind === "table" || candidate.kind === "view" || candidate.kind === "synonym")
       .map((candidate) => {
+        if (candidate.kind === "synonym") {
+          return {
+            name: candidate.name,
+            schema: candidate.schema ?? undefined,
+            synonymTarget: {
+              schema: candidate.parent_schema ?? undefined,
+              name: candidate.parent_name ?? undefined,
+              kind: candidate.data_type ?? undefined,
+            },
+          };
+        }
         const table: SqlCompletionTable = {
           name: candidate.name,
           schema: candidate.schema ?? undefined,
@@ -4593,7 +4606,7 @@ export const useConnectionStore = defineStore("connection", () => {
 
   async function listCompletionAssistantTables(connectionId: string, database: string, filter: string, limit?: number, schema?: string, globalSearch = false): Promise<SqlCompletionTable[]> {
     const preferredSchema = schema?.trim() || undefined;
-    const objectKinds: CompletionAssistantObjectKind[] = ["table", "view"];
+    const objectKinds: CompletionAssistantObjectKind[] = ["table", "view", "synonym"];
     const response = await completionAssistantSearch({
       connection_id: connectionId,
       database,

@@ -196,6 +196,7 @@ pub enum CompletionAssistantObjectKind {
     Procedure,
     Function,
     Column,
+    Synonym,
 }
 
 impl CompletionAssistantObjectKind {
@@ -219,6 +220,7 @@ pub enum CompletionAssistantCandidateKind {
     Function,
     Column,
     Object,
+    Synonym,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

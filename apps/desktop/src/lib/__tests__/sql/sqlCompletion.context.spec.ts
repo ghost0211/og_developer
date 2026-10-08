@@ -167,6 +167,52 @@ describe("sqlCompletion table targets", () => {
   });
 });
 
+describe("sqlCompletion synonyms", () => {
+  it("suggests schema-qualified synonyms with their resolved target in the detail", () => {
+    const sql = "select *\nfrom app.def";
+    const items = buildSqlCompletionItems(sql, sql.length, {
+      dialect: "postgres",
+      tables: [
+        { name: "app_duty_checkfun_def", schema: "app", type: "table" },
+        { name: "def_user", schema: "app", synonymTarget: { schema: "dbo", name: "def_user", kind: "table" } },
+        { name: "seq_auth_user_account", schema: "app", synonymTarget: { schema: "auth", name: "seq_auth_user_account", kind: "sequence" } },
+      ],
+      columnsByTable: new Map(),
+    });
+
+    const synonym = items.find((item) => item.label === "def_user");
+    expect(synonym?.type).toBe("synonym");
+    expect(synonym?.detail).toBe("\u2192 dbo.def_user (table)");
+    // Schema-qualified completions insert the bare synonym name.
+    expect(synonym?.apply).toBe("def_user");
+    const table = items.find((item) => item.label === "app_duty_checkfun_def");
+    expect(table?.type).toBe("table");
+
+    const seqSql = "select *\nfrom app.seq";
+    const seqItems = buildSqlCompletionItems(seqSql, seqSql.length, {
+      dialect: "postgres",
+      tables: [{ name: "seq_auth_user_account", schema: "app", synonymTarget: { schema: "auth", name: "seq_auth_user_account", kind: "sequence" } }],
+      columnsByTable: new Map(),
+    });
+    const sequenceSynonym = seqItems.find((item) => item.label === "seq_auth_user_account");
+    expect(sequenceSynonym?.type).toBe("synonym");
+    expect(sequenceSynonym?.detail).toBe("\u2192 auth.seq_auth_user_account (sequence)");
+  });
+
+  it("suggests unqualified synonyms like tables", () => {
+    const sql = "select * from def";
+    const items = buildSqlCompletionItems(sql, sql.length, {
+      dialect: "postgres",
+      tables: [{ name: "def_user", schema: "app", synonymTarget: { schema: "dbo", name: "def_user", kind: "table" } }],
+      columnsByTable: new Map(),
+    });
+
+    const synonym = items.find((item) => item.label === "def_user");
+    expect(synonym?.type).toBe("synonym");
+    expect(synonym?.detail).toBe("\u2192 dbo.def_user (table)");
+  });
+});
+
 describe("sqlCompletion table aliases", () => {
   it("uses initials from all words for generated aliases", () => {
     const sql = "SELECT * FROM mat";

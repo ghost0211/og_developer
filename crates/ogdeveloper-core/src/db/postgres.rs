@@ -2297,6 +2297,32 @@ pub async fn completion_assistant_search(
         }
     }
 
+    if candidates.len() < limit && kinds.iter().any(|kind| matches!(kind, CompletionAssistantObjectKind::Synonym)) {
+        let has_pg_synonym = postgres_has_pg_catalog_relation(&client, "pg_synonym").await.unwrap_or(false);
+        if has_pg_synonym {
+            let rows = postgres_query_cached(
+                &client,
+                postgres_completion_synonyms_sql(),
+                &[&schema, &pattern, &((limit - candidates.len()) as i64)],
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+            for row in rows {
+                candidates.push(CompletionAssistantCandidate {
+                    name: pg_row_try_string(&row, 0),
+                    kind: CompletionAssistantCandidateKind::Synonym,
+                    database: Some(request.database.clone()),
+                    schema: Some(pg_row_try_string(&row, 1)),
+                    parent_schema: row.try_get::<_, Option<String>>(3).ok().flatten(),
+                    parent_name: row.try_get::<_, Option<String>>(4).ok().flatten(),
+                    comment: row.try_get::<_, Option<String>>(2).ok().flatten(),
+                    data_type: row.try_get::<_, Option<String>>(5).ok().flatten(),
+                    signature: None,
+                });
+            }
+        }
+    }
+
     if candidates.len() < limit && kinds.iter().any(CompletionAssistantObjectKind::is_routine_like) {
         let prokinds = postgres_completion_prokinds(&kinds);
         let rows = postgres_query_cached(
@@ -2384,6 +2410,32 @@ fn postgres_completion_tables_sql() -> &'static str {
        AND c.relkind::text = ANY($3::text[]) \
        AND ($2 = '%%' OR c.relname ILIKE $2 ESCAPE '~') \
      ORDER BY c.relname LIMIT $4"
+}
+
+fn postgres_completion_synonyms_sql() -> &'static str {
+    // openGauss synonyms live in pg_catalog.pg_synonym. parent_schema/parent_name carry
+    // the target and data_type carries a friendly target kind so the editor can render
+    // synonym candidates with their target type. Unqualified search follows search_path
+    // (current_schemas), mirroring how bare synonym names resolve at runtime.
+    "SELECT s.synname, n.nspname, \
+            ('FOR ' || s.synobjschema || '.' || s.synobjname)::text AS synonym_comment, \
+            s.synobjschema::text AS target_schema, s.synobjname::text AS target_name, \
+            COALESCE( \
+                CASE c.relkind \
+                    WHEN 'r' THEN 'table' WHEN 'v' THEN 'view' WHEN 'm' THEN 'materialized_view' \
+                    WHEN 'S' THEN 'sequence' WHEN 'f' THEN 'foreign_table' WHEN 'p' THEN 'partitioned_table' \
+                END, \
+                CASE WHEN p.oid IS NOT NULL THEN CASE WHEN p.prokind = 'p' THEN 'procedure' ELSE 'function' END END \
+            )::text AS target_kind \
+     FROM pg_catalog.pg_synonym s \
+     JOIN pg_catalog.pg_namespace n ON n.oid = s.synnamespace \
+     LEFT JOIN pg_catalog.pg_namespace tn ON tn.nspname = s.synobjschema \
+     LEFT JOIN pg_catalog.pg_class c ON c.relnamespace = tn.oid AND c.relname = s.synobjname \
+     LEFT JOIN pg_catalog.pg_proc p ON p.pronamespace = tn.oid AND p.proname = s.synobjname \
+     WHERE ($1::text IS NOT NULL AND n.nspname = $1 \
+            OR $1::text IS NULL AND n.nspname = ANY (current_schemas(false))) \
+       AND ($2 = '%%' OR s.synname ILIKE $2 ESCAPE '~') \
+     ORDER BY s.synname LIMIT $3"
 }
 
 fn postgres_completion_routines_sql() -> &'static str {
@@ -3181,6 +3233,11 @@ pub(crate) fn opengauss_referenced_by_sql() -> &'static str {
 /// openGauss synonyms live in pg_catalog.pg_synonym (not present in vanilla
 /// PostgreSQL). The comment column carries the referenced target so the sidebar
 /// can show what each synonym points at.
+/// openGauss synonyms live in pg_catalog.pg_synonym (not present in vanilla
+/// PostgreSQL). The comment column carries the referenced target so the sidebar
+/// can show what each synonym points at. The otherwise-unused signature column
+/// carries the resolved target relkind (r/v/m/S/f/p) so the tree can pick an
+/// icon matching the target object type; chained synonyms resolve to NULL.
 fn opengauss_synonyms_sql() -> &'static str {
     "SELECT s.synname AS object_name, \
        'SYNONYM' AS object_type, \
@@ -3189,10 +3246,16 @@ fn opengauss_synonyms_sql() -> &'static str {
        NULL::text AS updated_at, \
        NULL::text AS parent_schema, \
        NULL::text AS parent_name, \
-       NULL::text AS signature, \
+       COALESCE( \
+         c.relkind::text, \
+         CASE WHEN p.oid IS NOT NULL THEN CASE WHEN p.prokind = 'p' THEN 'p' ELSE 'f' END END \
+       )::text AS signature, \
        6 AS sort_order \
      FROM pg_catalog.pg_synonym s \
      JOIN pg_catalog.pg_namespace n ON n.oid = s.synnamespace \
+     LEFT JOIN pg_catalog.pg_namespace tn ON tn.nspname = s.synobjschema \
+     LEFT JOIN pg_catalog.pg_class c ON c.relnamespace = tn.oid AND c.relname = s.synobjname \
+     LEFT JOIN pg_catalog.pg_proc p ON p.pronamespace = tn.oid AND p.proname = s.synobjname \
      WHERE n.nspname = $1"
 }
 
@@ -7824,6 +7887,27 @@ mod tests {
         assert!(postgres_completion_routines_sql().contains("ORDER BY p.proname LIMIT $4"));
         assert!(postgres_completion_columns_sql().contains("a.attname ILIKE $3 ESCAPE '~'"));
         assert!(postgres_visible_table_schema_sql().contains("pg_catalog.pg_table_is_visible(c.oid)"));
+    }
+
+    #[test]
+    fn postgres_completion_synonyms_sql_follows_table_contract_and_carries_target_kind() {
+        let sql = postgres_completion_synonyms_sql();
+        assert!(sql.contains("pg_catalog.pg_synonym"));
+        assert!(sql.contains("s.synname ILIKE $2 ESCAPE '~'"));
+        assert!(sql.contains("current_schemas(false)"));
+        assert!(sql.contains("LEFT JOIN pg_catalog.pg_class c"));
+        assert!(sql.contains("LEFT JOIN pg_catalog.pg_proc p"));
+        assert!(sql.contains("materialized_view"));
+        assert!(sql.contains("ORDER BY s.synname LIMIT $3"));
+    }
+
+    #[test]
+    fn opengauss_synonyms_sql_carries_target_relkind_in_signature() {
+        let sql = opengauss_synonyms_sql();
+        assert!(sql.contains("'SYNONYM' AS object_type"));
+        assert!(sql.contains("c.relkind::text"));
+        assert!(sql.contains("CASE WHEN p.prokind = 'p' THEN 'p' ELSE 'f' END"));
+        assert!(sql.contains("AS signature"));
     }
 
     #[test]

@@ -1402,6 +1402,8 @@ export interface SqlCompletionTable {
   database?: string;
   schema?: string;
   type?: SqlObjectNavigationType;
+  /** Resolved target for synonym candidates (schema-qualified completions show it in the detail). */
+  synonymTarget?: { schema?: string; name?: string; kind?: string };
   detail?: string;
   applyName?: string;
   boost?: number;
@@ -1441,7 +1443,7 @@ export interface SqlCompletionForeignKey {
 export interface SqlCompletionItem {
   label: string;
   filterText?: string;
-  type: "keyword" | "table" | "column" | "snippet" | "function" | "schema";
+  type: "keyword" | "table" | "column" | "snippet" | "function" | "schema" | "synonym";
   detail?: string;
   info?: string;
   apply?: string;
@@ -3133,10 +3135,12 @@ function buildTableItems(
       const suppliedApplyNameIsQualified = suppliedApplyName?.includes(".") === true;
       const applyName = qualifiedByContext ? quoteSqlIdentifier(table.name, dialect) : ambiguousTableName && !!table.schema && (!suppliedApplyName || !suppliedApplyNameIsQualified) ? defaultApplyName : (suppliedApplyName ?? defaultApplyName);
       const alias = autoAliasTables ? generateTableCompletionAlias(table.name, existingAliases) : "";
+      const synonymTarget = table.synonymTarget;
+      const synonymDetail = synonymTarget ? (synonymTarget.name ? `\u2192 ${synonymTarget.schema ? `${synonymTarget.schema}.` : ""}${synonymTarget.name}${synonymTarget.kind ? ` (${synonymTarget.kind})` : ""}` : table.schema ? `${table.schema}.${table.name}` : undefined) : undefined;
       return {
         label: table.name,
-        type: "table" as const,
-        detail: table.detail ?? (table.schema ? `${table.schema}.${table.name}` : table.type),
+        type: synonymTarget ? ("synonym" as const) : ("table" as const),
+        detail: table.detail ?? synonymDetail ?? (table.schema ? `${table.schema}.${table.name}` : table.type),
         apply: formatTableAliasApply(applyName, alias, databaseType, keywordCase),
         boost: computeBoost(table.name, prefix) + 1000 + (table.boost ?? 0),
         dedupeKey: table.applyName || ambiguousTableName ? applyName : undefined,
@@ -4592,6 +4596,8 @@ function getTypePriorityBoost(type: SqlCompletionItem["type"]): number {
       return 180;
     case "table":
       return 160;
+    case "synonym":
+      return 155;
     case "schema":
       return 120;
     case "function":
