@@ -2,6 +2,16 @@ import type { TreeNode } from "@/types/database";
 
 export const DEFAULT_DATABASE_TREE_LABEL = "tree.defaultDatabase";
 
+/**
+ * Real object name to use when opening a data tab. Reference-result and
+ * synonym-target nodes carry a schema-qualified display label (e.g.
+ * "auth.auth_user (FOR ...)"); the actual object name lives in
+ * tableName/objectName. Plain table/view nodes only have label.
+ */
+export function treeNodeDataObjectName(node: Pick<TreeNode, "label" | "tableName" | "objectName">): string {
+  return node.tableName?.trim() || node.objectName?.trim() || node.label;
+}
+
 export function hasTreeNodeDatabaseContext(node: Pick<TreeNode, "database">): node is Pick<TreeNode, "database"> & {
   database: string;
 } {

@@ -1248,3 +1248,20 @@ ListTree 不变。treeNodeIcon.spec 同步更新，8 项图标测试通过。
 是原始 relkind 字母（显示“r”），与函数引用显示的友好名（“table”）不一致。
 现映射为 table/view/materialized_view/sequence/function/procedure 友好词汇，
 与函数/视图引用行的展示完全一致；未知目标仍回退 synonym_target。
+
+---
+
+## 39. v0.2.42：修复引用结果节点双击打开数据拼错表名（2026-10-11）
+
+用户反馈：双击同义词“引用”里的表节点报错 relation "auth.auth.auth_user"
+does not exist。根因：打开数据页签的整条链路（dataTabTarget、表元数据加载/
+缓存、buildTableSelectSql、既有页签匹配）都用 node.label 当表名；引用结果
+节点的 label 是展示用的限定名 "auth.auth_user"，拼出 "auth"."auth.auth_user"。
+普通表节点 label 即表名所以从不触发，函数/视图引用里的表节点同样受影响。
+
+**修复**：新增 treeNodeDataObjectName()（lib/sidebar/treeNodeContext.ts）——
+优先 tableName（引用节点携带的真实对象名），其次 objectName，回退 label；
+useSidebarDataOpenRuntime 的 8 处表名取值与 SidebarTreeRuntimeHost 的
+findExistingSameTableDataTab 统一改用它；页签标题仍用 label（保留展示信息）。
+新增 treeNodeDataObjectName.spec（4 例），useSidebarDataOpenRuntime.spec mock
+同步；162 项侧栏测试、完整 pnpm check 5292 项通过（5 个既有本机环境套件除外）。

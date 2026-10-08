@@ -9,7 +9,7 @@ import { effectiveDatabaseTypeForConnection, connectionObjectTreeNodeSchema, con
 import { getCachedTableMetadata, loadTableMetadata, TABLE_METADATA_CACHE_TTL_MS, tableMetadataToDataTabMeta } from "@/lib/metadata/tableMetadataCache";
 import { canApplyDataTabMetadata, dataTabMetadataNeedsRefresh, findExistingDataTabCandidate, type DataTabOpenMode, type DataTabReuseMode } from "@/lib/sidebar/dataTabOpenPolicy";
 import type { SidebarDataOpenRequest } from "@/lib/sidebar/sidebarDataOpenCoordinator";
-import { hasTreeNodeDatabaseContext } from "@/lib/sidebar/treeNodeContext";
+import { hasTreeNodeDatabaseContext, treeNodeDataObjectName } from "@/lib/sidebar/treeNodeContext";
 import { buildTableSelectSql } from "@/lib/table/tableSelectSql";
 import { tableOpenPageLimit } from "@/lib/table/tableOpenPageLimit";
 import { canActivateExistingDataTableTab } from "@/lib/tabs/dataTabActivation";
@@ -60,12 +60,15 @@ export function useSidebarDataOpenRuntime() {
     const querySchema = config ? connectionObjectTreeQuerySchema(config, node.database, tableSchema) : (tableSchema ?? "");
     const effectiveDbType = effectiveDatabaseTypeForConnection(config);
     const metadataDatabaseType = effectiveDbType || config?.db_type || "";
+    // Reference-result / synonym-target nodes carry a schema-qualified display
+    // label; the real object name lives in tableName/objectName.
+    const dataObjectName = treeNodeDataObjectName(node);
     const dataTabTarget = {
       connectionId: node.connectionId,
       database: node.database,
       schema: tableSchema,
       catalog: node.catalog,
-      tableName: node.label,
+      tableName: dataObjectName,
     };
     const canApplyTableMetadata = (targetTabId: string) =>
       canApplyDataTabMetadata(
@@ -86,7 +89,7 @@ export function useSidebarDataOpenRuntime() {
           connectionId: node.connectionId,
           database: node.database,
           schema: querySchema,
-          tableName: node.label,
+          tableName: dataObjectName,
           tableType,
           databaseType: metadataDatabaseType,
           driverProfile: config.driver_profile || config.db_type,
@@ -146,7 +149,7 @@ export function useSidebarDataOpenRuntime() {
 
     if (existingSameTableTab && (existingSameTableTab.isExecuting || canActivateExistingDataTableTab(existingSameTableTab, { activateExecuting: false }))) {
       queryStore.switchTab(existingSameTableTab.id);
-      logPhase("existing-tab-activated", { table: node.label });
+      logPhase("existing-tab-activated", { table: dataObjectName });
       if (dataTabMetadataNeedsRefresh(existingSameTableTab, DATA_TAB_METADATA_TTL_MS)) {
         // 真实列缺失时行标识未知：启动刷新的同时必须挂起编辑门控（所有
         // "真实列缺失且启动刷新"的入口统一置 pending）
@@ -201,7 +204,7 @@ export function useSidebarDataOpenRuntime() {
           connectionId: node.connectionId,
           database: node.database,
           schema: querySchema,
-          tableName: node.label,
+          tableName: dataObjectName,
           tableType,
           databaseType: metadataDatabaseType,
           driverProfile: config.driver_profile || config.db_type,
@@ -209,7 +212,7 @@ export function useSidebarDataOpenRuntime() {
         })
       : undefined;
     const tabCachedTableMeta =
-      existingTableMeta?.tableName === node.label && (existingTableMeta.catalog || "") === (node.catalog || "") && existingTableMeta.schema === tableSchema && existingTableMeta.tableType === tableType && existingTableMeta.columns.length > 0 && existingTableMetaAgeMs < DATA_TAB_METADATA_TTL_MS
+      existingTableMeta?.tableName === dataObjectName && (existingTableMeta.catalog || "") === (node.catalog || "") && existingTableMeta.schema === tableSchema && existingTableMeta.tableType === tableType && existingTableMeta.columns.length > 0 && existingTableMetaAgeMs < DATA_TAB_METADATA_TTL_MS
         ? existingTableMeta
         : undefined;
     // 空列的共享缓存条目不算暖缓存：columns=[] 无法区分"表确实无列"与
@@ -224,7 +227,7 @@ export function useSidebarDataOpenRuntime() {
         catalog: node.catalog,
         database: node.database,
         schema: tableSchema,
-        tableName: node.label,
+        tableName: dataObjectName,
         tableType,
         columns: [],
         primaryKeys: [],
@@ -299,7 +302,7 @@ export function useSidebarDataOpenRuntime() {
         identifierQuote: connectionStore.connectionIdentifierQuote?.(node.connectionId),
         schema: tableSchema,
         database: node.database,
-        tableName: node.label,
+        tableName: dataObjectName,
         tableType,
         catalog: node.catalog,
         columns: columns.map((column) => column.name),
