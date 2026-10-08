@@ -1645,11 +1645,17 @@ pub async fn list_object_references_core(
             .map_err(|e| e.to_string())?;
         return Ok(rows
             .iter()
-            .map(|row| ObjectReferenceInfo {
-                schema: row.try_get::<_, String>(0).unwrap_or_default(),
-                name: row.try_get::<_, String>(1).unwrap_or_default(),
-                object_type: "synonym_target".to_string(),
-                detail: None,
+            .map(|row| {
+                // Carry the resolved target kind (relkind/prokind letter) so the
+                // reference node renders and expands like the real target object;
+                // unknown/chained targets keep the generic synonym marker.
+                let target_kind = row.try_get::<_, Option<String>>(2).ok().flatten().unwrap_or_default();
+                ObjectReferenceInfo {
+                    schema: row.try_get::<_, String>(0).unwrap_or_default(),
+                    name: row.try_get::<_, String>(1).unwrap_or_default(),
+                    object_type: if target_kind.is_empty() { "synonym_target".to_string() } else { target_kind },
+                    detail: None,
+                }
             })
             .collect());
     }

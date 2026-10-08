@@ -1217,3 +1217,20 @@ synonym 分支改为调用它（删除硬编码 Link2）；getTreeNodeIconInfo �
 targetKind 的节点）不再恢复，展开即重新拉取带目标类型的数据。
 新增 packages/app-tests/treeItemSynonymIcon.test.ts 静态守卫（TreeItem.vue 必须
 走共享映射、treeNodeIcon.ts 必须含 6 种 relkind 映射），43 项相关测试通过。
+
+---
+
+## 37. v0.2.40：同义词“引用”里的目标对象按真实类型渲染（2026-10-11）
+
+用户反馈：同义词展开“引用”后，目标（如 auth.auth_user 表）显示为链接图标且
+不能像函数引用里的表那样展开字段/索引等。根因：后端 list_object_references
+的 synonym 分支把目标 object_type 硬编码为字面量 "synonym_target"，前端
+referenceResultNodeType 只能映射成 synonym 节点。
+
+**修复**：opengauss_synonym_target_sql 增加第三列 target_kind（LEFT JOIN
+pg_class/pg_proc 解析 relkind/prokind，与补全同套逻辑；链式同义词为 NULL）；
+引用分支返回真实 kind（前端 referenceResultNodeType 本就把 r/v/m/S/f/p 映射为
+表/视图/物化视图/序列/函数/过程节点类型），未知目标保持 synonym_target。
+resolve_synonym_target_core 按列序号只读前两列，不受影响。
+真实库验证 app.auth_user → auth.auth_user(r)；新增 SQL 契约测试，后端 152+2
+项相关测试通过。

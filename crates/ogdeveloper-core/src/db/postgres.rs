@@ -3006,9 +3006,17 @@ fn opengauss_packages_sql() -> &'static str {
 /// Synonyms can chain to other synonyms, so the caller resolves iteratively.
 #[allow(dead_code)]
 pub(crate) fn opengauss_synonym_target_sql() -> &'static str {
-    "SELECT synobjschema, synobjname FROM pg_catalog.pg_synonym \
-     WHERE synname = $1 \
-       AND synnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = $2)"
+    // Column 3 resolves the target object kind (relkind, or prokind for
+    // routines) so reference lists can render the target with its real object
+    // type; chained synonyms simply yield NULL there.
+    "SELECT s.synobjschema, s.synobjname, \
+       COALESCE(c.relkind::text, CASE WHEN p.oid IS NOT NULL THEN CASE WHEN p.prokind = 'p' THEN 'p' ELSE 'f' END END)::text AS target_kind \
+     FROM pg_catalog.pg_synonym s \
+     LEFT JOIN pg_catalog.pg_namespace tn ON tn.nspname = s.synobjschema \
+     LEFT JOIN pg_catalog.pg_class c ON c.relnamespace = tn.oid AND c.relname = s.synobjname \
+     LEFT JOIN pg_catalog.pg_proc p ON p.pronamespace = tn.oid AND p.proname = s.synobjname \
+     WHERE s.synname = $1 \
+       AND s.synnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = $2)"
 }
 
 #[allow(dead_code)]
@@ -7908,6 +7916,15 @@ mod tests {
         assert!(sql.contains("c.relkind::text"));
         assert!(sql.contains("CASE WHEN p.prokind = 'p' THEN 'p' ELSE 'f' END"));
         assert!(sql.contains("AS signature"));
+    }
+
+    #[test]
+    fn opengauss_synonym_target_sql_resolves_target_kind() {
+        let sql = opengauss_synonym_target_sql();
+        assert!(sql.contains("AS target_kind"));
+        assert!(sql.contains("LEFT JOIN pg_catalog.pg_class c"));
+        assert!(sql.contains("LEFT JOIN pg_catalog.pg_proc p"));
+        assert!(sql.contains("s.synname = $1"));
     }
 
     #[test]
