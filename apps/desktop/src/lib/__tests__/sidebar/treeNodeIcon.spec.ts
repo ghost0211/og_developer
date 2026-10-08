@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Braces, Eye, Link2, ListTree, ScrollText, Table } from "@lucide/vue";
+import { Braces, Eye, Link2, ListOrdered, ScrollText, Table } from "@lucide/vue";
 import { getTreeNodeIconInfo } from "@/lib/sidebar/treeNodeIcon";
 import type { TreeNode } from "@/types/database";
 
@@ -12,7 +12,7 @@ describe("synonym tree node icons", () => {
     ["r", Table],
     ["v", Eye],
     ["m", Eye],
-    ["S", ListTree],
+    ["S", ListOrdered],
     ["f", Braces],
     ["p", ScrollText],
   ] as const)("uses the target object icon for relkind %s", (targetKind, icon) => {

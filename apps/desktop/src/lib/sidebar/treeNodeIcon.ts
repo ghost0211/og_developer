@@ -1,5 +1,5 @@
 import type { Component } from "vue";
-import { ArrowLeftRight, Braces, Columns3, Database, Eye, FileCode, FolderClosed, FolderOpen, GitFork, Key, Link, Link2, ListTree, Package, Plus, ScrollText, Table, TableProperties, UsersRound, Zap } from "@lucide/vue";
+import { ArrowLeftRight, Braces, Columns3, Database, Eye, FileCode, FolderClosed, FolderOpen, GitFork, Key, Link, Link2, ListOrdered, ListTree, Package, Plus, ScrollText, Table, TableProperties, UsersRound, Zap } from "@lucide/vue";
 import type { ColumnInfo, TreeNode } from "@/types/database";
 
 export type TreeNodeIconInfo = {
@@ -21,7 +21,7 @@ export function synonymIconInfoForTargetKind(targetKind?: string): TreeNodeIconI
     case "m":
       return { icon: Eye, colorClass: "text-indigo-500" };
     case "S":
-      return { icon: ListTree, colorClass: "text-emerald-500" };
+      return { icon: ListOrdered, colorClass: "text-emerald-500" };
     case "f":
       return { icon: Braces, colorClass: "text-amber-500" };
     case "p":
@@ -77,7 +77,7 @@ export function getTreeNodeIconInfo(node: TreeNode): TreeNodeIconInfo | null {
     case "function":
       return { icon: Braces, colorClass: "text-amber-500" };
     case "sequence":
-      return { icon: ListTree, colorClass: "text-emerald-500" };
+      return { icon: ListOrdered, colorClass: "text-emerald-500" };
     case "synonym":
       return synonymIconInfoForTargetKind(node.targetKind);
     case "package":
@@ -95,7 +95,7 @@ export function getTreeNodeIconInfo(node: TreeNode): TreeNodeIconInfo | null {
     case "group-functions":
       return { icon: Braces, colorClass: "text-amber-500" };
     case "group-sequences":
-      return { icon: ListTree, colorClass: "text-emerald-500" };
+      return { icon: ListOrdered, colorClass: "text-emerald-500" };
     case "group-synonyms":
       return { icon: Link2, colorClass: "text-sky-500" };
     case "group-packages":

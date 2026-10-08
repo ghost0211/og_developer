@@ -1234,3 +1234,17 @@ pg_class/pg_proc 解析 relkind/prokind，与补全同套逻辑；链式同义�
 resolve_synonym_target_core 按列序号只读前两列，不受影响。
 真实库验证 app.auth_user → auth.auth_user(r)；新增 SQL 契约测试，后端 152+2
 项相关测试通过。
+
+---
+
+## 38. v0.2.41：序列图标改为 ListOrdered + 同义词引用注释显示友好类型名（2026-10-11）
+
+用户反馈：表的“字段”组图标与序列图标同为 ListTree（仅颜色差异），难以区分。
+序列节点、序列组节点、同义词指向序列（relkind S）三处统一改为 lucide
+ListOrdered（带序号列表，贴合自增序列语义），保留翠绿配色；字段组保持
+ListTree 不变。treeNodeIcon.spec 同步更新，8 项图标测试通过。
+
+同义词“引用”细节修正：引用节点的尾部注释直接展示 objectType，v0.2.40 返回的
+是原始 relkind 字母（显示“r”），与函数引用显示的友好名（“table”）不一致。
+现映射为 table/view/materialized_view/sequence/function/procedure 友好词汇，
+与函数/视图引用行的展示完全一致；未知目标仍回退 synonym_target。

@@ -16,6 +16,7 @@ import {
   Link,
   Link2,
   Zap,
+  ListOrdered,
   ListTree,
   FileCode,
   Pin,
@@ -248,7 +249,7 @@ function getIconInfo(node: TreeNode): { icon: any; colorClass: string } | null {
     case "function":
       return { icon: Braces, colorClass: "text-amber-500" };
     case "sequence":
-      return { icon: ListTree, colorClass: "text-emerald-500" };
+      return { icon: ListOrdered, colorClass: "text-emerald-500" };
     case "synonym":
       // Icon follows the resolved synonym target object type.
       return synonymIconInfoForTargetKind(node.targetKind);
@@ -275,7 +276,7 @@ function getIconInfo(node: TreeNode): { icon: any; colorClass: string } | null {
     case "group-functions":
       return { icon: Braces, colorClass: "text-amber-500" };
     case "group-sequences":
-      return { icon: ListTree, colorClass: "text-emerald-500" };
+      return { icon: ListOrdered, colorClass: "text-emerald-500" };
     case "group-synonyms":
       return { icon: Link2, colorClass: "text-sky-500" };
     case "group-packages":

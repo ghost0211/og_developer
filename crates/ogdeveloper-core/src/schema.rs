@@ -1646,14 +1646,25 @@ pub async fn list_object_references_core(
         return Ok(rows
             .iter()
             .map(|row| {
-                // Carry the resolved target kind (relkind/prokind letter) so the
-                // reference node renders and expands like the real target object;
-                // unknown/chained targets keep the generic synonym marker.
+                // Carry the resolved target kind so the reference node renders
+                // and expands like the real target object; use the friendly
+                // type name (same vocabulary as other reference rows) since it
+                // is also shown as the node's trailing comment. Unknown or
+                // chained targets keep the generic synonym marker.
                 let target_kind = row.try_get::<_, Option<String>>(2).ok().flatten().unwrap_or_default();
+                let object_type = match target_kind.as_str() {
+                    "r" => "table",
+                    "v" => "view",
+                    "m" => "materialized_view",
+                    "S" => "sequence",
+                    "f" => "function",
+                    "p" => "procedure",
+                    _ => "synonym_target",
+                };
                 ObjectReferenceInfo {
                     schema: row.try_get::<_, String>(0).unwrap_or_default(),
                     name: row.try_get::<_, String>(1).unwrap_or_default(),
-                    object_type: if target_kind.is_empty() { "synonym_target".to_string() } else { target_kind },
+                    object_type: object_type.to_string(),
                     detail: None,
                 }
             })
