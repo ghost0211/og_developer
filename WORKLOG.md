@@ -9,18 +9,18 @@
 
 ## 0. 速览
 
-| # | 主题 | 状态 | 风险 |
-|---|---|---|---|
-| A | shiki 语法包按需加载（安装包 -8MB） | 已改，已验证 | 低 |
-| B | i18n key 对齐测试 + 3 个漏译补全 | 已改，已验证 | 低 |
-| C | 工程残留清理 | 已改 | 低 |
-| D | Schema Diff 部署结果契约（`status` 字段） | 已改，**真机验证通过** | 低 |
-| E | 失败的部署污染连接池 | 已改，**真机验证通过**（含反证） | 低 |
-| F | 部署错误信息被吞成 `"db error"` | 已改，**真机验证通过** | 低 |
-| **G** | **JDBC 路径调用的 `executeTransaction` 在插件里不存在** | **已修，0.1.29 真机通过** | 低 |
-| **H** | **B/M 兼容模式 DDL 引号用错（生成 `"` 应为反引号）** | **已修，B/A/PG 真机通过；M 离线验证** | 低 |
-| I | 深链可绕过 openGauss 白名单 | 未修（已知，暂不处理） | 低 |
-| J | `two_phase_commit.rs` 是死代码 | 未处理 | 低 |
+| #     | 主题                                                    | 状态                                  | 风险 |
+| ----- | ------------------------------------------------------- | ------------------------------------- | ---- |
+| A     | shiki 语法包按需加载（安装包 -8MB）                     | 已改，已验证                          | 低   |
+| B     | i18n key 对齐测试 + 3 个漏译补全                        | 已改，已验证                          | 低   |
+| C     | 工程残留清理                                            | 已改                                  | 低   |
+| D     | Schema Diff 部署结果契约（`status` 字段）               | 已改，**真机验证通过**                | 低   |
+| E     | 失败的部署污染连接池                                    | 已改，**真机验证通过**（含反证）      | 低   |
+| F     | 部署错误信息被吞成 `"db error"`                         | 已改，**真机验证通过**                | 低   |
+| **G** | **JDBC 路径调用的 `executeTransaction` 在插件里不存在** | **已修，0.1.29 真机通过**             | 低   |
+| **H** | **B/M 兼容模式 DDL 引号用错（生成 `"` 应为反引号）**    | **已修，B/A/PG 真机通过；M 离线验证** | 低   |
+| I     | 深链可绕过 openGauss 白名单                             | 未修（已知，暂不处理）                | 低   |
+| J     | `two_phase_commit.rs` 是死代码                          | 未处理                                | 低   |
 
 **H → G 已完成；下方第 1–5 节保留原始记录，最新验证及剩余范围见第 6 节。**
 
@@ -74,12 +74,12 @@ cargo test -p ogdeveloper-core --no-default-features `
 **根因**：`SqlPreviewPanel.vue` 从 `shiki` **根入口**导入，根入口是 `bundle-full`，会把全部
 250 种语言语法都产出 chunk。实测 dist 里躺着 250 个语法 chunk，合计 **7,384 KB**。
 
-| 文件 | 改动 |
-|---|---|
-| `apps/desktop/src/components/editor/SqlPreviewPanel.vue` | `import("shiki")` → `shiki/core` + `langs/sql.mjs` + 两个主题（`dark-plus`/`min-light`）。已校验主题名与 `codeToHtml` 传参一致 |
-| `apps/desktop/src/lib/ai/aiCodeHighlighter.ts` | 拆成 **eager**（`bash/json/shellscript/sql/xml/yaml`，约 84KB，随高亮器加载）与 **deferred**（`css/go/html/java/javascript/markdown/php/python/rust/tsx/typescript/vue`，首次用到才拉）。新增 `onLanguageLoaded` 回调 |
-| `apps/desktop/src/components/editor/AiAssistant.vue` | 新增 `shikiGrammarVersion` ref 接 `onLanguageLoaded`，语法到位后重建 renderer 重渲染；语法未到时返回转义纯文本（与 `aiMessageRender` 的兜底字节一致，无视觉跳变） |
-| `apps/desktop/src/lib/__tests__/ai/aiCodeHighlighter.spec.ts` | 新增 6 项：eager 即时高亮、别名识别、无语法转义、延迟语法"先纯文本后高亮"、主题映射、未知语言 |
+| 文件                                                          | 改动                                                                                                                                                                                                                  |
+| ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/desktop/src/components/editor/SqlPreviewPanel.vue`      | `import("shiki")` → `shiki/core` + `langs/sql.mjs` + 两个主题（`dark-plus`/`min-light`）。已校验主题名与 `codeToHtml` 传参一致                                                                                        |
+| `apps/desktop/src/lib/ai/aiCodeHighlighter.ts`                | 拆成 **eager**（`bash/json/shellscript/sql/xml/yaml`，约 84KB，随高亮器加载）与 **deferred**（`css/go/html/java/javascript/markdown/php/python/rust/tsx/typescript/vue`，首次用到才拉）。新增 `onLanguageLoaded` 回调 |
+| `apps/desktop/src/components/editor/AiAssistant.vue`          | 新增 `shikiGrammarVersion` ref 接 `onLanguageLoaded`，语法到位后重建 renderer 重渲染；语法未到时返回转义纯文本（与 `aiMessageRender` 的兜底字节一致，无视觉跳变）                                                     |
+| `apps/desktop/src/lib/__tests__/ai/aiCodeHighlighter.spec.ts` | 新增 6 项：eager 即时高亮、别名识别、无语法转义、延迟语法"先纯文本后高亮"、主题映射、未知语言                                                                                                                         |
 
 **验证**：`dist/assets` 18.17MB → **10.24MB**；整个 `dist` 22.10MB → **14.13MB**。
 
@@ -89,10 +89,10 @@ cargo test -p ogdeveloper-core --no-default-features `
 7090 = 7090 **零差异**——因为 fallback 已经把英文合并进来了，缺口被掩盖。必须比 **fallback
 之前的原始 override**。
 
-| 文件 | 改动 |
-|---|---|
-| `apps/desktop/src/i18n/locales/zh-CN.ts` | 抽取并额外 `export const zhCNMessages`（原始对象，不含 fallback）；补 3 个一直静默显示英文的 key：`userAdmin.addHost`、`diff.addHost`、`mqBroker.addHost` |
-| `packages/app-tests/localeKeyParity.test.ts` | 新增 4 项断言：无漏译、无孤儿 key、值类型一致、无空串 |
+| 文件                                         | 改动                                                                                                                                                      |
+| -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/desktop/src/i18n/locales/zh-CN.ts`     | 抽取并额外 `export const zhCNMessages`（原始对象，不含 fallback）；补 3 个一直静默显示英文的 key：`userAdmin.addHost`、`diff.addHost`、`mqBroker.addHost` |
+| `packages/app-tests/localeKeyParity.test.ts` | 新增 4 项断言：无漏译、无孤儿 key、值类型一致、无空串                                                                                                     |
 
 **验证**：临时给 `en.ts` 注入 `app.__parityProbe` → 测试精确报出该 key，随后 `git checkout` 还原。
 
@@ -101,14 +101,14 @@ cargo test -p ogdeveloper-core --no-default-features `
 
 ### C. 工程残留清理
 
-| 动作 | 对象 | 依据 |
-|---|---|---|
-| 删除 | `.cleanup-worktree/` | 不是注册的 worktree（`git worktree list` 只有主工作区），内部只有失效的 node_modules 符号链接 |
-| 删除 | `packages/cli/`、`packages/mcp-server/`、`packages/mongo-shell/` | tracked 文件数均为 0，只剩 node_modules/断链；全仓库无引用 |
-| 删除 | `scripts/dev-full.cmd` | 与 `dev-full.bat` MD5 完全相同，只有 `.bat` 被 `package.json` 引用 |
-| 删除 | `handoff.md` | 内容是上游 dbx 的 AI 交接稿（`name: dbx`、`root: D:\...\rust\dbx`），引用的 `需求问题/` 目录本仓库不存在 |
-| `.gitignore` | `DBX_*_x64-portable.zip` → `ogdeveloper_*-portable.zip` | 实际产物名由 `update_portable.rs:63` 生成，旧模式永远匹配不到 |
-| `.gitignore` | 新增 `需求问题/`、`handoff.md` | 与已有的 `需求文档/` 同类；防止以后的交接稿再被提交 |
+| 动作         | 对象                                                             | 依据                                                                                                     |
+| ------------ | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| 删除         | `.cleanup-worktree/`                                             | 不是注册的 worktree（`git worktree list` 只有主工作区），内部只有失效的 node_modules 符号链接            |
+| 删除         | `packages/cli/`、`packages/mcp-server/`、`packages/mongo-shell/` | tracked 文件数均为 0，只剩 node_modules/断链；全仓库无引用                                               |
+| 删除         | `scripts/dev-full.cmd`                                           | 与 `dev-full.bat` MD5 完全相同，只有 `.bat` 被 `package.json` 引用                                       |
+| 删除         | `handoff.md`                                                     | 内容是上游 dbx 的 AI 交接稿（`name: dbx`、`root: D:\...\rust\dbx`），引用的 `需求问题/` 目录本仓库不存在 |
+| `.gitignore` | `DBX_*_x64-portable.zip` → `ogdeveloper_*-portable.zip`          | 实际产物名由 `update_portable.rs:63` 生成，旧模式永远匹配不到                                            |
+| `.gitignore` | 新增 `需求问题/`、`handoff.md`                                   | 与已有的 `需求文档/` 同类；防止以后的交接稿再被提交                                                      |
 
 `handoff.md` 与 `dev-full.cmd` 删除前备份到了 `tmp/cleanup-backup/`（`tmp/` 已 gitignore，仅本地）；
 也能从 `git log -- handoff.md` 取回。
@@ -125,15 +125,15 @@ cargo test -p ogdeveloper-core --no-default-features `
 - `tauri.ts:1031` 把返回类型声明成 `Promise<TransactionLog>`（旧的 2PC 形状），TypeScript 抓不到漂移
 - 旧测试喂的是手写的 `TransactionLog` 假数据，所以测试一路绿着
 
-| 文件 | 改动 |
-|---|---|
-| `crates/ogdeveloper-core/src/query.rs:1116` | 新增 `SchemaDiffDeployStatus { Committed, RolledBack }`（serde `snake_case` → `"committed"`/`"rolled_back"`），`SchemaDiffDeployResult` 增加 `status` 字段并填充 |
-| `apps/desktop/src/types/database.ts` | 删除谎言类型 `TransactionLog`/`ParticipantInfo`；新增 `SchemaDiffDeployStatus` / `SchemaDiffDeployResult`（注释标明 `"mixed"` 是预留值） |
-| `apps/desktop/src/lib/schema/deployTxResult.ts` | 改为读取后端真实字段；不再从 `success` 反推状态 |
-| `apps/desktop/src/lib/backend/tauri.ts:1031`、`http.ts:979` | 返回类型 `TransactionLog`/`any` → `SchemaDiffDeployResult` |
-| `apps/desktop/src/components/diff/SchemaDiffDialog.vue` | `deployResult` ref 改用 `DeployTxResult`；`showDeployTxResult` 参数去掉 `any` |
-| `apps/desktop/src/lib/schema/__tests__/deployTxResult.spec.ts` | **重写**：改用真实后端报文（这是关键，旧测试的形状后端从不产出） |
-| `crates/ogdeveloper-core/src/query.rs`（tests mod） | 新增序列化形状测试，钉死 `status`/`executedStatements`/`totalStatements` 字段名 |
+| 文件                                                           | 改动                                                                                                                                                             |
+| -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `crates/ogdeveloper-core/src/query.rs:1116`                    | 新增 `SchemaDiffDeployStatus { Committed, RolledBack }`（serde `snake_case` → `"committed"`/`"rolled_back"`），`SchemaDiffDeployResult` 增加 `status` 字段并填充 |
+| `apps/desktop/src/types/database.ts`                           | 删除谎言类型 `TransactionLog`/`ParticipantInfo`；新增 `SchemaDiffDeployStatus` / `SchemaDiffDeployResult`（注释标明 `"mixed"` 是预留值）                         |
+| `apps/desktop/src/lib/schema/deployTxResult.ts`                | 改为读取后端真实字段；不再从 `success` 反推状态                                                                                                                  |
+| `apps/desktop/src/lib/backend/tauri.ts:1031`、`http.ts:979`    | 返回类型 `TransactionLog`/`any` → `SchemaDiffDeployResult`                                                                                                       |
+| `apps/desktop/src/components/diff/SchemaDiffDialog.vue`        | `deployResult` ref 改用 `DeployTxResult`；`showDeployTxResult` 参数去掉 `any`                                                                                    |
+| `apps/desktop/src/lib/schema/__tests__/deployTxResult.spec.ts` | **重写**：改用真实后端报文（这是关键，旧测试的形状后端从不产出）                                                                                                 |
+| `crates/ogdeveloper-core/src/query.rs`（tests mod）            | 新增序列化形状测试，钉死 `status`/`executedStatements`/`totalStatements` 字段名                                                                                  |
 
 ### E. 失败的部署污染连接池
 
@@ -258,7 +258,7 @@ app identifier_quote = "`"            ← 探测本身是对的
 ```
 
 3. 但 DDL 生成**完全不看这个**。用应用自己的生成器（`prepare_schema_diff` +
-`generate_schema_sync_sql`，target = `DatabaseType::OpenGauss`）输出的真实脚本：
+   `generate_schema_sync_sql`，target = `DatabaseType::OpenGauss`）输出的真实脚本：
 
 ```sql
 -- Create table: new_table
@@ -343,18 +343,18 @@ mysql**：`connectionProfileForScheme(preferredProfile || "mysql")`。
 
 ### 本轮改动后的检查结果
 
-| 检查 | 命令 | 结果 |
-|---|---|---|
-| Rust 格式 | `cargo fmt -p ogdeveloper-core -- --check` | ✅ exit 0 |
-| Rust lint | `cargo clippy -p ogdeveloper-core --no-default-features --tests` | ✅ 无警告 |
-| Rust 单测 | `cargo test -p ogdeveloper-core --no-default-features --lib` | ✅ 1143 passed, 11 ignored |
-| 真机 native | 见第 1 节命令 | ✅ 2 passed（native + 报告） |
-| 真机 JDBC | 同上 | ❌ 1 failed —— **这是已知缺口 G，故意保留为绊线** |
-| 前端类型 | `npx vue-tsc --noEmit --project apps/desktop/tsconfig.json` | ✅ exit 0 |
-| 前端格式 | `npx oxfmt --check "apps/desktop/src/**/*.{ts,vue}"` | ✅ exit 0 |
-| 前端 lint | `npx oxlint --vue-plugin apps/desktop/src` | ✅ exit 0（改动文件零警告） |
-| 前端测试 | `npx vitest run` | ✅ 4999 passed / 605 files |
-| 前端构建 | `pnpm build` | ✅ |
+| 检查        | 命令                                                             | 结果                                              |
+| ----------- | ---------------------------------------------------------------- | ------------------------------------------------- |
+| Rust 格式   | `cargo fmt -p ogdeveloper-core -- --check`                       | ✅ exit 0                                         |
+| Rust lint   | `cargo clippy -p ogdeveloper-core --no-default-features --tests` | ✅ 无警告                                         |
+| Rust 单测   | `cargo test -p ogdeveloper-core --no-default-features --lib`     | ✅ 1143 passed, 11 ignored                        |
+| 真机 native | 见第 1 节命令                                                    | ✅ 2 passed（native + 报告）                      |
+| 真机 JDBC   | 同上                                                             | ❌ 1 failed —— **这是已知缺口 G，故意保留为绊线** |
+| 前端类型    | `npx vue-tsc --noEmit --project apps/desktop/tsconfig.json`      | ✅ exit 0                                         |
+| 前端格式    | `npx oxfmt --check "apps/desktop/src/**/*.{ts,vue}"`             | ✅ exit 0                                         |
+| 前端 lint   | `npx oxlint --vue-plugin apps/desktop/src`                       | ✅ exit 0（改动文件零警告）                       |
+| 前端测试    | `npx vitest run`                                                 | ✅ 4999 passed / 605 files                        |
+| 前端构建    | `pnpm build`                                                     | ✅                                                |
 
 ### ⚠️ 本机 5 个预存测试失败（与本轮改动无关）
 
@@ -446,18 +446,18 @@ vitest/happy-dom 环境解析问题。**已用 `git stash` 在干净基线上复
 
 ### 本次验证
 
-| 检查 | 结果 |
-|---|---|
-| Rust core `cargo check --no-default-features --tests` | 通过 |
-| Rust 格式 / Clippy | 通过；唯一新测试 lint 提示修复后定向复查通过 |
-| Web 服务端 `cargo check -p ogdeveloper-web --tests` | 通过 |
-| Rust core `--lib` | **1145 passed，11 ignored** |
-| API 契约回归 | **13 passed** |
-| 新增兼容模式回归 | **3 passed** |
-| Java `gradlew.bat --offline test bundleZip` | **80 passed**，打包成功 |
-| openGauss 6.0.0 test_b / test_a / test_pg | 每库 **4 passed**，共 **12 passed** |
-| 前端 `pnpm typecheck` / 改动文件 oxlint / oxfmt | 通过 |
-| 部署结果 + i18n parity 定向 Vitest | **10 passed** |
+| 检查                                                  | 结果                                         |
+| ----------------------------------------------------- | -------------------------------------------- |
+| Rust core `cargo check --no-default-features --tests` | 通过                                         |
+| Rust 格式 / Clippy                                    | 通过；唯一新测试 lint 提示修复后定向复查通过 |
+| Web 服务端 `cargo check -p ogdeveloper-web --tests`   | 通过                                         |
+| Rust core `--lib`                                     | **1145 passed，11 ignored**                  |
+| API 契约回归                                          | **13 passed**                                |
+| 新增兼容模式回归                                      | **3 passed**                                 |
+| Java `gradlew.bat --offline test bundleZip`           | **80 passed**，打包成功                      |
+| openGauss 6.0.0 test_b / test_a / test_pg             | 每库 **4 passed**，共 **12 passed**          |
+| 前端 `pnpm typecheck` / 改动文件 oxlint / oxfmt       | 通过                                         |
+| 部署结果 + i18n parity 定向 Vitest                    | **10 passed**                                |
 
 真机覆盖 native/JDBC 两路：成功/失败状态、失败后无残留对象、连接恢复，以及真正生成的 CREATE → 两条 ALTER → ALTER 逆向回滚 → CREATE 逆向回滚。表名含空格、列名含保留字，以前端相同的整段带注释脚本输入部署。
 
@@ -542,6 +542,7 @@ $env:DBX_TEST_OPENGAUSS_PLUGIN_DIR = 'D:\proj\og_developer\tmp\schema-diff-live-
 展开过一次后即正常。
 
 **根因（两层）**：
+
 1. 前端本地补全数据来自侧边栏树（`completionTreeIndex`），未展开的 schema 自然没有缓存——
    此时应走远端补全 `completionAssistantSearch`（connectionStore.ts `listCompletionTables` 的
    remote 分支）。
@@ -551,6 +552,7 @@ $env:DBX_TEST_OPENGAUSS_PLUGIN_DIR = 'D:\proj\og_developer\tmp\schema-diff-live-
    （列补全不受影响：`get_columns_core` 路由完整，所以已输入表名后的列提示一直正常。）
 
 **修复**（`crates/ogdeveloper-core/src/schema.rs`，+146/-3）：
+
 - `completion_assistant_search_core` 恢复真实分派：`PoolKind::Postgres` →
   `db::postgres::completion_assistant_search`；`ExternalDriver + openGauss` → 经
   `opengauss_metadata_postgres_pool` 走原生协议元数据池（JDBC 插件无 completion 端点）；
@@ -559,6 +561,7 @@ $env:DBX_TEST_OPENGAUSS_PLUGIN_DIR = 'D:\proj\og_developer\tmp\schema-diff-live-
   Schema/Table/View/Column 候选，行为与收窄前一致。
 
 **验证**：
+
 - 新增真机回归 `crates/ogdeveloper-core/tests/live_opengauss_completion_assistant.rs`：
   建独立 schema + 表 + 视图 + 函数（绝不展开侧边栏），断言 `schema.` 空 mask 列出表和视图、
   前缀 mask 正确过滤、函数例程可见；JDBC 与原生两种驱动并行跑均 **PASS**（对 test_b）。
@@ -585,6 +588,7 @@ $env:DBX_TEST_OPENGAUSS_PLUGIN_DIR = 'D:\proj\og_developer\tmp\schema-diff-live-
 三个消费方（侧栏展开 / 执行对话框 / 测试窗口、调试面板）共用此查询，一处修复全部生效。
 
 **验证**：
+
 - 现网直查（tygl_pg）：修复后的完整查询对 `app.get_menu_tree_user_system` 返回且仅返回
   3 个 IN 参数，has_default 判定不变。
 - 回归测试加入 `lib/__tests__/table/routineExecutionSql.spec.ts`（断言排除 't'、保留 o/b 映射），
@@ -598,6 +602,7 @@ $env:DBX_TEST_OPENGAUSS_PLUGIN_DIR = 'D:\proj\og_developer\tmp\schema-diff-live-
 `schema.` 一概无提示。
 
 **根因（链路三段，前两段已由 §8 的后端修复盘活，第三段本次修）**：
+
 1. 数据：`completionAssistantSearch` 桩函数返回空（§8 已修复，所有语境共用此数据源）。
 2. 拉取：列语境下 `resolveSqlCompletionTableLookupTarget` 把 qualifier 当作当前 schema 的
    “名字过滤器”（`suggestTables=false` 分支），注定查空；QueryEditor 的 schema 兜底
@@ -608,6 +613,7 @@ $env:DBX_TEST_OPENGAUSS_PLUGIN_DIR = 'D:\proj\og_developer\tmp\schema-diff-live-
    且重写打开 exclusive 闸门后，`matchesPrefix(候选, "")` 恒真会让内置函数片段全部涌入弹窗。
 
 **修复**：
+
 - `QueryEditor.vue`：兜底重写**保留 qualifier**（表/例程构建器会以它为元数据作用域生成点号后
   裸名插入；CodeMirror 从 prefix 起点替换）；`exclusiveRoutineSuggestions`（CALL/EXEC）语境
   不启用表条目，保持只提示过程。
@@ -635,6 +641,7 @@ Tab 切换下一个、Shift+Tab 返回上一个，最后一次 Tab 跳到右括�
 无参数名的签名使用 `arg1`、`arg2`；无入参函数仅插入空括号。
 
 **实现**：
+
 - 新增 `sqlRoutineParameters.ts`，解析参数名、模式和默认值，避免类型修饰符、
   字符串、数组及嵌套表达式中的逗号拆错参数；函数排除纯 OUT，过程保留 OUT。
 - 复用 CodeMirror snippet 导航，并增加括号后的退出位置。
@@ -649,6 +656,7 @@ Tab 切换下一个、Shift+Tab 返回上一个，最后一次 Tab 跳到右括�
 ## 12. 过程源码着色一致性与 IF 配对（2026-09-16）
 
 **着色原因及修复**：
+
 - 原表名扫描把 SELECT INTO 的首个接收变量当成表，逗号扫描也会跨分号追溯旧 FROM，误染后续 RAISE 参数。现在区分过程赋值、INSERT/MERGE 表目标及 RETURNING INTO 接收变量，并在过程和语句边界停止扫描。
 - 字符串在语法窗口中完全清空，导致 DISTINCT FROM 'CUSTOM' THEN 被误读为 FROM THEN。现在保留非标识符占位，并排除 DISTINCT FROM、EXTRACT 等表达式中的 FROM。
 - 部分第三方主题没有表色 CSS 变量，原 !important 覆盖使表名退回默认黑色。现在表名优先采用主题自带/自定义表色，否则用当前主题的类型色；切换主题会刷新装饰。schema、别名、字段及变量保持普通标识符配色，关键词、字符串、数字沿用主题规则。
@@ -665,6 +673,7 @@ Tab 切换下一个、Shift+Tab 返回上一个，最后一次 Tab 跳到右括�
 **评估**：循环依赖会让引用树重复出现相同对象，用户可不断手动展开，增加树深度与重复元数据请求。采用单层关系展示：原始对象保留引用/被引用组，结果对象保留参数、字段、属性等自身结构，但不再生成这两个组。
 
 **实现**：
+
 - 引用结果增加 isReferenceResult 标记，统一在引用组工厂拦截；包内成员、同义词目标继承来源，避免间接重新展开引用链。
 - 修复表、视图、物化视图、类型和同义词展开时误把 schema.name（说明）显示标签当真实名称的问题；函数/过程原本已使用 objectName，这也是此前不同对象表现不一致的原因。
 - 界面表节点展开统一走 store 加载，补齐类型节点路由；引用结果中的序列不显示空展开箭头。
@@ -691,16 +700,18 @@ pgjdbc 拒绝。explain 每次使用独立 client session 池（新 JVM，probe 
 `src-tauri/resources/jdbc-plugin.zip`（桌面端启动时自动升级已安装旧插件）。
 
 **修复 B（core 兜底，同一排查中发现的两个缺陷）**：
+
 - `query.rs` 新增 `config_uses_external_driver`/`pool_uses_external_driver`：外部驱动判定
-  不再只看 `db_type == Jdbc`，openGauss-profile（db_type 为 OpenGauss）的 JDBC 池同样覆盖。
+  不再只看 `db_type == Jdbc`，openGauss-profile（db*type 为 OpenGauss）的 JDBC 池同样覆盖。
   应用于单条查询（`do_execute_typed`/`do_execute_typed_with_retry`）、批量
-  （`execute_multi_*`）与事务（`execute_statements_in_transaction_*`）三条链路的
-  丢弃死池 + 新池重试判定；重试判定抽出 `should_retry_with_fresh_pool` 便于单测。
+  （`execute_multi*_`）与事务（`execute*statements_in_transaction*_`）三条链路的
+丢弃死池 + 新池重试判定；重试判定抽出 `should_retry_with_fresh_pool` 便于单测。
 - `rebuild_pool_after_connection_error` 增加 `client_session_id` 参数：session 作用域池
   （如 explain 的 `tab:explain`）重建时落在同一个 `:session:` key 上，重试才找得到。
   批量/事务路径按 base key 寻池，显式传 `None` 并注明原因。
 
 **验证**：
+
 - 插件单元回归 `openGaussOutputProbeKeepsSharedConnectionOpen`（fake Driver + 关闭即抛错的
   代理连接模拟 pgjdbc）：修复前精确复现 `{"error":{"message":"This connection has been closed."}}`，
   修复后通过；插件共 81 例全绿（`gradlew.bat --offline test bundleZip`）。
@@ -754,6 +765,7 @@ ok:true，死池被当成好池递给调用方，第一条语句才在死连接�
 因此未再给 schema/元数据路径加重试包装（探测在复用前跑，恢复对调用方透明）。
 
 **验证**：
+
 - 单元反证：`testConnectionDetectsServerTerminatedIdleSession`（isClosed=false 但
   isValid=false 的代理连接，模拟 pgjdbc 被杀瞬间状态）在修复前返回 `{"ok":true}`（精确
   复现探测盲区），修复后返回 error；`testConnectionToleratesDriversWithoutIsValidSupport`
@@ -777,7 +789,7 @@ DM8 等其他 JDBC 驱动走同一代码路径，isValid 为标准实现，风�
 
 **FROM 函数候选**：PG/openGauss 的 FROM、JOIN、逗号连接及 LATERAL 位置允许函数候选，schema 限定按实际 schema 过滤；不混入过程，也不把当前正在输入的对象错误提示为别名。保留参数名占位符；UPDATE/INSERT/DELETE 目标位置仍排除函数。编辑器查询候选时按此上下文请求 function 元数据。
 
-**子查询 SELECT * 字段透传**：语义模型保留星号投影及内部源信息，编辑器本地、后台与异步加载统一查询真实源表，不将派生别名当物理表。由源表字段推导外层别名的列，支持限定星号、混合显式列、嵌套子查询、CTE 与列别名列表；外层候选不混入内部别名。显式 CTE 列无需额外数据库查询，递归 CTE 避免循环加载。混合投影在冷缓存时会等待缺失字段，不被已有显式列提前截断。
+**子查询 SELECT \* 字段透传**：语义模型保留星号投影及内部源信息，编辑器本地、后台与异步加载统一查询真实源表，不将派生别名当物理表。由源表字段推导外层别名的列，支持限定星号、混合显式列、嵌套子查询、CTE 与列别名列表；外层候选不混入内部别名。显式 CTE 列无需额外数据库查询，递归 CTE 避免循环加载。混合投影在冷缓存时会等待缺失字段，不被已有显式列提前截断。
 
 **完整块折叠**：新增 CodeMirror foldService，复用 BEGIN/IF/CASE/LOOP 配对结果，优先于默认 SQL 按分号划分的折叠范围；外层 IF 折到对应 END IF（含分号），不在第一个 UPDATE 或内层 IF 处结束。普通查询仍用原语法折叠。按不可变文档缓存范围，编辑后重新计算。
 
@@ -817,14 +829,16 @@ DM8 等其他 JDBC 驱动走同一代码路径，isValid 为标准实现，风�
 
 **问题 2：关闭自动提交后点一次 rollback，之后任何查询都报错，刷新恢复**
 机制链（用户日志从刷新后才开始，事故窗口无日志，按代码确证）：
+
 - 缺陷 A（core）：`spawn_txn_idle_watcher` 在会话创建 300s 后**无条件**回滚并移除手动事务
   会话——`last_activity` 只在创建时赋值、执行语句从不更新，且是一次性 sleep。前端无感知。
 - 缺陷 B（前端）：会话被（看门狗或服务端空闲杀会话）移除后，查询报 `Transaction session
-  not found`，但 queryStore 仅在错误匹配 `/rolled.?back/i` 时清空 `txnSessionId`，该消息
+not found`，但 queryStore 仅在错误匹配 `/rolled.?back/i` 时清空 `txnSessionId`，该消息
   不匹配 → 标签页永久卡在死会话 ID 上，之后每条查询都报同一错误。`txnSessionId` 不持久化，
   刷新即恢复——与现象完全吻合。
 
 **修复**：
+
 - core：执行事务语句前后经 `touch_transaction_session` 刷新 `last_activity` 并置/清 `busy`；
   看门狗改为每 60s 巡检的循环，只有“非忙且空闲满 300s”才回收（`txn_session_is_reapable`
   纯函数抽出并单测）；回收时打 warn 日志。
@@ -851,11 +865,12 @@ src-tauri 编译通过。
 
 工具栏原有的连接/数据库/模式三个下拉 + 清除/设默认按钮合并为单个上下文选择器
 （`EditorContextPicker.vue`）：面包屑式触发按钮（连接 / 数据库 / 模式），弹出层内一个搜索框
-+ 分组列表（数据库→模式→连接），页脚保留“设为默认数据库/清除”操作。事件契约不变
-（changeConnection/changeDatabase/changeSchema/setDefaultDatabase/clearDefaultDatabase），
-App.vue 处理逻辑零改动；保留生产环境徽标、颜色条、长名称换行样式与数据库必选抖动提示。
-EditorToolbar.vue 净减约 230 行。验证：typecheck/build/oxlint 通过，editorContextPicker.spec.ts
-5 例 + searchableSelectLayout.spec.ts 更新后全绿。
+
+- 分组列表（数据库→模式→连接），页脚保留“设为默认数据库/清除”操作。事件契约不变
+  （changeConnection/changeDatabase/changeSchema/setDefaultDatabase/clearDefaultDatabase），
+  App.vue 处理逻辑零改动；保留生产环境徽标、颜色条、长名称换行样式与数据库必选抖动提示。
+  EditorToolbar.vue 净减约 230 行。验证：typecheck/build/oxlint 通过，editorContextPicker.spec.ts
+  5 例 + searchableSelectLayout.spec.ts 更新后全绿。
 
 ---
 
@@ -911,6 +926,7 @@ i18n 词条（中英双全），未知 code 降级显示 detail 而不是漏出�
 **问题**：`update ddd.ldm_datatype set row_uuid=public.g` 这类 UPDATE SET 赋值表达式位置，
 输入 `schema.` 完全不提示。探针实测该语境：qualifier=public、exclusiveColumnSuggestions=true、
 **suggestRoutines=false**。两重根因：
+
 1. QueryEditor 的 qualifierIsSchema 回退只在“该 schema 下按当前前缀查到表”时触发——
    public 下没有匹配 g 的表 → 不重写；独占列语境里 qualifier 又不匹配被引用表 → 弹窗为空。
 2. 即使触发，重写也未打开 suggestRoutines → buildObjectItems 不执行 → 函数永不出现。
@@ -940,6 +956,7 @@ schema 校验兜底（本地元数据冷时）。editor 相关 189 例 + 补全 
 **原因**：`formatAsciiTable`（CommandWindow.vue）用 `String.length`/`padEnd` 计算列宽，但中文等东亚宽字符在等宽字体下占 2 个显示列，按字符数补齐必然错位。
 
 **修复**：
+
 - 新增 `apps/desktop/src/lib/common/displayWidth.ts`：`displayWidth`/`padEndToWidth`/`truncateToWidth`，基于精简 wcwidth 码位表（CJK/假名/谚文/全角计 2 列，组合字符与控制字符计 0 列，代理对正确迭代）。
 - 命令窗口 `formatAsciiTable`：列宽计算、表头/单元格补齐、60 列截断全部改用显示宽度。
 - 顺带修复同类问题：编辑器悬停表结构 `alignColumnRows`（hoverTableSql.ts，列注释含中文时同样错位）。
@@ -963,7 +980,7 @@ schema 校验兜底（本地元数据冷时）。editor 相关 189 例 + 补全 
 
 **web 端修复二连（0.2.24）**：(1) 保存/测试连接报错显示整页 HTML——根因是请求未到达 API 后端（返回 index.html；本仓库当前代码对未注册路由返回 405 空体，已 curl 实测验证，故用户环境为版本不匹配或反代未转发 /api）。`backendResponseError` 新增 HTML 响应体识别（looksLikeHtmlErrorBody），转为结构化错误 `DBX-WEB-0001` + `backendErrors.htmlResponse`（含状态码与请求 URL、指向部署配置的中英提示）。(2) 复制错误按钮在 web 端无效——非安全上下文（http://IP）无 navigator.clipboard，legacy textarea 路径的 focus()+select() 被 reka Dialog focus trap 抢焦导致 execCommand 静默失败；clipboard.ts 改为优先 Range 选区复制（不触碰焦点，<pre> 保留换行），createRange/getSelection 不可用时才回退 textarea。新增 clipboard Range 路径与 HTML 错误转换测试。
 
-**web 端保存/测试连接报错根因修复（0.2.25）**：用户 Ubuntu 源码部署仍报错（内容变为空响应兜底）。深挖发现 ogdeveloper-web **完全没有注册 /api/agents/* 路由组**，而连接对话框在测试/保存前必经 `ensureRequiredAgentDriverInstalled → refreshLocalAgentDrivers`（GET /api/agents/installed-local）。桌面端这些 Tauri 命令是返回空数据的兼容 stub（driver store 已移除），web 端缺路由导致 405 空体。新增 `crates/ogdeveloper-web/src/routes/agents.rs` 完整镜像 19 个端点（runtime summary/stop/restart 委托 core 真实实现，其余按桌面 stub 语义返回空；progress/global SSE 返回保持连接的空流避免 EventSource 重连风暴），main.rs 注册。curl 实测三个端点恢复 200 JSON。另：`backendResponseError` 对空错误体补 `DBX-WEB-0002` 结构化诊断（状态码+URL+401/405 排查指引）；新增 `webRouteCoverage.spec.ts` 静态对齐 http.ts 全部 /api 路径与 main.rs 路由（防再犯，当前 0 缺口）。
+**web 端保存/测试连接报错根因修复（0.2.25）**：用户 Ubuntu 源码部署仍报错（内容变为空响应兜底）。深挖发现 ogdeveloper-web **完全没有注册 /api/agents/\* 路由组**，而连接对话框在测试/保存前必经 `ensureRequiredAgentDriverInstalled → refreshLocalAgentDrivers`（GET /api/agents/installed-local）。桌面端这些 Tauri 命令是返回空数据的兼容 stub（driver store 已移除），web 端缺路由导致 405 空体。新增 `crates/ogdeveloper-web/src/routes/agents.rs` 完整镜像 19 个端点（runtime summary/stop/restart 委托 core 真实实现，其余按桌面 stub 语义返回空；progress/global SSE 返回保持连接的空流避免 EventSource 重连风暴），main.rs 注册。curl 实测三个端点恢复 200 JSON。另：`backendResponseError` 对空错误体补 `DBX-WEB-0002` 结构化诊断（状态码+URL+401/405 排查指引）；新增 `webRouteCoverage.spec.ts` 静态对齐 http.ts 全部 /api 路径与 main.rs 路由（防再犯，当前 0 缺口）。
 
 **Top SQL 授权引导修复（0.2.26）**：用户实测 GRANT MONADMIN 报 role does not exist——该 openGauss 6.0.0 发行版未预置 monadmin 角色（pg_roles 仅有 omm/sysadmin/tygl_biz）。服务器探查：dbe_perf schema 无公共 ACL，omm 靠 rolmonitoradmin=True 属性通过，tygl_biz 虽有 SYSADMIN 但rolmonitoradmin=False 被拒。面板在无权限引导前探测 pg_roles 中 monadmin 角色是否存在：存在→GRANT MONADMIN；不存在→`ALTER USER <user> MONADMIN;`（属性方式）。同时新增最小权限备选块（GRANT USAGE ON SCHEMA dbe_perf + GRANT SELECT ON dbe_perf.statement）。
 
@@ -1000,6 +1017,7 @@ schema 校验兜底（本地元数据冷时）。editor 相关 189 例 + 补全 
 使用说明：`docs/ai-context-actions.md`。
 
 **最终验证**：
+
 - 前端 format、oxlint、typecheck、build 通过；全量 `pnpm check` 已执行的 **5260 项测试全部通过**，但 5 个既有本地套件因 `Error: No such built-in module: node:` 无法加载，整体 check 非全绿。此问题此前已在 v0.2.27 基线复现。
 - 核心 AI 模块 99 项、思考等级 26 项、订阅授权/保险库 9 项通过（134 项）；Web AI 路由 5 项通过。桌面及 Web 的 `cargo check --tests`、`cargo fmt --all --check` 通过。
 - 桌面 AI 单测编译成功，但程序启动被本机 `0xc0000139 / STATUS_ENTRYPOINT_NOT_FOUND` 阻断，未执行测试，不记为通过，也未认定为既有问题。未为排查启动应用或操作桌面。
@@ -1017,6 +1035,7 @@ schema 校验兜底（本地元数据冷时）。editor 相关 189 例 + 补全 
 模型列表完全可以自动拉取。
 
 **改进**（`EditorSettingsDialog.vue`）：
+
 - 默认模型输入框改为 `SearchableSelect` 组合框：下拉展示服务商返回的模型（含显示名），支持搜索；
   保留 `allow-custom` 自由输入，获取失败或本地/自建服务无 `/models` 时不阻塞手输。
 - 自动拉取时机：进入编辑且凭据可用时、输入 API Key 停顿后（900ms 防抖）、切换提供商/Endpoint/
@@ -1040,11 +1059,13 @@ i18n 复用既有 `searchModels`/`loadingModels`/`refreshModels`/`retry` 等键�
 ## 30. v0.2.33：Codex/Kimi 思考档位修复与聊天布局修正（2026-09-30）
 
 **问题**（用户实测反馈）：
+
 1. Kimi Code 订阅（k3-256k）聊天窗口无思考档位可选，只有自由文本；设置里配的「最高」实际从未发送。
 2. Codex 订阅聊天窗口提示「此模型不支持设置推理强度」。
 3. 聊天输入区模型按钮被压缩到只剩图标，看起来像图标偏右。
 
 **根因与修复**：
+
 - **Kimi 能力缺失**：Kimi 此前一律回退 FreeText（谨慎策略），`reasoning_effort` 枚举档被
   `is_selection_supported` 拦截静默丢弃。依据官方文档（Kimi Code models 页 + platform.kimi.ai
   reasoning-effort 指南）新增 `kimi_capability`：`k3`/`k3-256k`/`kimi-k3`/`kimi-for-coding` →
@@ -1344,3 +1365,35 @@ buildGroupedObjectTreeNodes 生成的触发器节点，覆盖无注释、带注�
 6 个全部通过。happy-dom 中为靠右分支提供固定宽度，只验证真实渲染内容，不声称
 实际浏览器几何验收。相关测试 21 项通过；完整 pnpm check 5314 项通过，只有
 既有 5 个本机 node: 环境套件失败；typecheck/lint/fmt 通过，未操作用户桌面。
+
+---
+
+## 43. v0.2.46：禁用对象名称/图标统一灰色，作业状态改为显式字段
+
+用户要求禁用触发器名称也灰色，并要求作业/调度在存在禁用状态时同样处理。
+排查发现 v0.2.44 只给触发器图标置灰，且 trigger 被列入 markRaw 叶子集合；
+启停后的状态字段虽被同步，组件可能不会立即重绘。作业/调度此前从尾部 comment
+中猜测 disabled，间隔或运行参数包含 disabled 字样时可能误判。
+
+- 新增 treeNodeStatus.ts：触发器仅 triggerEnabledMode === "D" 判禁用；
+  作业/调度仅显式 jobEnabled === false 判禁用，不再解析 comment；未知状态不置灰。
+- TreeItem.vue 真实渲染行同时给名称和图标使用 muted 灰色；行仍可选中、可打开
+  源码，不设置 aria-disabled，避免把数据库对象状态误表达为 UI 禁用。禁用状态
+  判断使用轻量函数而不是新增 computed，遵守现有 TreeItem 热路径预算。
+- trigger 从 markRaw 叶子集合移除，保持浅响应式；schema/table/reference 各副本
+  启停后可不折叠节点即时恢复/置灰。图标辅助函数同步 trigger/job/scheduler。
+- openGauss pg_job 经只读目录确认同时有 job_status(char) 和 enable(boolean)。
+  JOB 与 SCHEDULER 清单 SQL 同时依据二者判定：job_status='d' 或 enable IS FALSE
+  即禁用；ObjectInfo 增加可选 job_enabled，使用原 UNION 签名槽传递布尔文本并
+  映射到独立字段，不影响触发器 enabled_mode 或函数签名。类型序列化兼容旧负载。
+- 作业/调度右键启用/禁用改为使用显式状态；操作成功后刷新捕获节点的真实清单
+  （对象组或 simple schema），不再可能刷新异步切换后的其他节点。对象缓存升级到
+  objects-v12 / simple-v11 / grouped-v12。
+
+回归：真实挂载 TreeItem.vue，覆盖禁用 trigger/job/scheduler 的名称与图标、选中态、
+无 aria-disabled、禁用样 comment 不误判，以及启用→禁用→启用即时重绘；simple/grouped
+构建保留 job_enabled=false，作业叶子刷新会回到真实清单。针对测试 53 项通过；
+完整 pnpm check 5335 项通过，仅既有 5 个本机 node: 环境套件失败；TreeItem 性能
+预算守卫通过。Rust core 全量 1192 项通过、11 项 ignored；workspace clippy/fmt、
+frontend typecheck/lint/build 通过。tygl_biz 只读验证 pg_job 布尔状态 SQL 可执行，
+该库当前无作业行；未创建/启停真实作业，未操作用户桌面。

@@ -1,4 +1,5 @@
 import { createPinia, setActivePinia } from "pinia";
+import { isReactive } from "vue";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { loadSidebarObjectGroup } from "@/lib/sidebar/sidebarObjectGroupRouting";
 import type { ConnectionConfig, ObjectInfo, TreeNode, TriggerInfo } from "@/types/database";
@@ -105,6 +106,7 @@ describe("sidebar object-group routing", () => {
     const liveGroup = store.treeNodes[0].children![0];
     await loadSidebarObjectGroup(liveGroup, store);
     expect(liveGroup.children).toHaveLength(2);
+    expect(liveGroup.children!.every(isReactive)).toBe(true);
     expect(liveGroup.children!.map((node) => node.tableName)).toEqual(["orders", "users"]);
     expect(new Set(liveGroup.children!.map((node) => node.id)).size).toBe(2);
     expect(listTriggers).not.toHaveBeenCalled();
@@ -131,6 +133,7 @@ describe("sidebar object-group routing", () => {
     await loadSidebarObjectGroup(storedTriggerGroup, store);
 
     expect(listTriggers).toHaveBeenCalledWith(connection.id, "app", "app", "orders", undefined);
+    expect(isReactive(storedTriggerGroup.children![0])).toBe(true);
     expect(listObjects).not.toHaveBeenCalled();
     expect(storedTriggerGroup).toMatchObject({
       isExpanded: true,
@@ -163,6 +166,31 @@ describe("sidebar object-group routing", () => {
     expect(nodes[1].triggerEnabledMode).toBe("O");
     expect(listTriggers).toHaveBeenCalledWith(connection.id, "app", "app", "users", undefined);
     expect(listObjects).not.toHaveBeenCalled();
+  });
+
+  it.each(["JOB", "SCHEDULER"] as const)("refreshes a %s leaf through its inventory to reload enable state", async (object_type) => {
+    const listObjects = vi.fn().mockResolvedValue([{ name: "scheduled_work", object_type, job_enabled: true }]);
+    const listTriggers = vi.fn().mockResolvedValue([]);
+    const { connection, store } = await createStore({ listObjects, listTriggers });
+    const group: TreeNode = {
+      id: `${connection.id}:app:app:__${object_type === "JOB" ? "jobs" : "schedulers"}`,
+      label: "jobs",
+      type: object_type === "JOB" ? "group-jobs" : "group-schedulers",
+      connectionId: connection.id,
+      database: "app",
+      schema: "app",
+      children: [],
+    };
+    store.treeNodes = [{ id: connection.id, label: connection.name, type: "connection", connectionId: connection.id, children: [group] }];
+    const liveGroup = store.treeNodes[0].children![0]!;
+    await loadSidebarObjectGroup(liveGroup, store);
+    const target = liveGroup.children![0]!;
+    expect(target.jobEnabled).toBe(true);
+    listObjects.mockResolvedValue([{ name: "scheduled_work", object_type, job_enabled: false }]);
+    await store.refreshTreeNode(target);
+    expect(listObjects).toHaveBeenCalledTimes(2);
+    expect(liveGroup.children![0]!.jobEnabled).toBe(false);
+    expect(listTriggers).not.toHaveBeenCalled();
   });
 
   it("propagates rejected schema-level metadata while clearing the loading state", async () => {

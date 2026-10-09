@@ -125,6 +125,7 @@ import { formatSqlForDisplay, sqlFormatDialectForDbType } from "@/lib/sql/sqlFor
 import { getTableStructureCapabilities } from "@/lib/table/tableStructureCapabilities";
 import { connectionObjectTreeNodeSchema, connectionObjectTreeQuerySchema, connectionUsesDatabaseObjectTreeMode, effectiveDatabaseTypeForConnection, tableStructureDatabaseTypeForConnection } from "@/lib/database/jdbcDialect";
 import { hasTreeNodeDatabaseContext, treeNodeDataObjectName } from "@/lib/sidebar/treeNodeContext";
+import { isTreeNodeDisabled } from "@/lib/sidebar/treeNodeStatus";
 import { buildTriggerEnabledSql, canChangeTriggerEnabledMode, executeTriggerEnabledChange, normalizeTriggerEnabledMode } from "@/lib/sidebar/triggerActions";
 import { defaultPasteTableMode, pasteTableModeCopiesData, supportsWholeRowTableDataCopy, tableClipboardMatchesTarget, tableClipboardMenuState, tableClipboardSourceContext, tableDataCopyColumnOptions, type TableClipboardContext, type TableClipboardTableContext } from "@/lib/table/tableClipboard";
 import { selectedTreeNodesInVisibleOrder as orderSelectedTreeNodes } from "@/lib/sidebar/sidebarTreeSelection";
@@ -3957,7 +3958,7 @@ function buildObjectSidebarMenu(context: SidebarMenuFactoryContext): boolean {
       action: () => void runJob(node),
       icon: Play,
     });
-    const isCurrentlyDisabled = node.comment === "disabled" || node.comment?.includes("disabled");
+    const isCurrentlyDisabled = isTreeNodeDisabled(node);
     items.push({
       label: isCurrentlyDisabled ? t("contextMenu.enableJob") || "启用" : t("contextMenu.disableJob") || "禁用",
       action: () => void toggleJobEnabled(node),
@@ -4220,7 +4221,7 @@ async function toggleJobEnabled(node: TreeNode = activeNode.value) {
   const name = node.label;
   try {
     const escaped = name.replace(/'/g, "''");
-    const isCurrentlyDisabled = node.comment === "disabled" || node.comment?.includes("disabled");
+    const isCurrentlyDisabled = isTreeNodeDisabled(node);
     const newEnabled = isCurrentlyDisabled ? true : false;
     if (node.type === "job") {
       const sql = `SELECT pkg_service.job_finish(${name}, ${newEnabled ? "false, sysdate" : "true"});`;
@@ -4230,7 +4231,11 @@ async function toggleJobEnabled(node: TreeNode = activeNode.value) {
       await api.executeQuery(node.connectionId, node.database, callSql);
     }
     toast(newEnabled ? t("contextMenu.enableJobSuccess", { name }) || `作业 "${name}" 已启用` : t("contextMenu.disableJobSuccess", { name }) || `作业 "${name}" 已禁用`);
-    void refresh();
+    // Refresh the captured job's inventory, not whichever row is active after
+    // the asynchronous operation. Display state comes from the database.
+    void connectionStore.refreshTreeNode(node).catch((e: any) => {
+      toast(t("connection.connectFailed", { message: translateBackendError(t, e) }), 5000);
+    });
   } catch (e: any) {
     toast(translateBackendError(t, e) || String(e), 5000);
   }

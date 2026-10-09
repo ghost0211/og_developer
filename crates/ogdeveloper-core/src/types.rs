@@ -73,6 +73,8 @@ pub struct ObjectInfo {
     pub signature: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enabled_mode: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub job_enabled: Option<bool>,
     pub comment: Option<String>,
     pub created_at: Option<String>,
     pub updated_at: Option<String>,
@@ -606,6 +608,13 @@ mod tests {
         assert_eq!(objects[0].valid, Some(false));
         assert_eq!(objects[0].object_type, "TRIGGER");
         assert_eq!(objects[0].enabled_mode.as_deref(), Some("R"));
+        assert_eq!(objects[0].job_enabled, None);
+        assert!(serde_json::to_value(&objects[0]).unwrap().get("job_enabled").is_none());
+
+        let job: ObjectInfo =
+            serde_json::from_str(r#"{"name":"nightly","object_type":"JOB","job_enabled":false}"#).unwrap();
+        assert_eq!(job.job_enabled, Some(false));
+        assert_eq!(serde_json::to_value(job).unwrap()["job_enabled"], false);
     }
 
     #[test]

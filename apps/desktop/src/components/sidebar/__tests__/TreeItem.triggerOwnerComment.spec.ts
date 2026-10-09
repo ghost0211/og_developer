@@ -1,12 +1,13 @@
 // @vitest-environment happy-dom
 
-import { createApp, defineComponent, h, nextTick, type App } from "vue";
+import { createApp, defineComponent, h, nextTick, reactive, type App } from "vue";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import i18n from "@/i18n";
 import TreeItem from "@/components/sidebar/TreeItem.vue";
 import { createSidebarTreeRuntime, sidebarTreeRuntimeKey } from "@/lib/sidebar/sidebarTreeRuntime";
 import { buildGroupedObjectTreeNodes } from "@/lib/table/tableTree";
 import { isSidebarCommentAlignableNode, sidebarTreeNodeComment } from "@/lib/sidebar/sidebarTreeItemLayout";
+import { synchronizeTriggerNodes } from "@/lib/sidebar/triggerActions";
 import type { TreeNode } from "@/types/database";
 
 const connectionStore = {
@@ -20,7 +21,7 @@ const connectionStore = {
   isPinnedTreeNodeReorderTarget: () => false,
   isTreeNodeChildrenLoaded: () => false,
   isTreeNodePinned: () => false,
-  selectedTreeNodeId: null,
+  selectedTreeNodeId: null as string | null,
   selectedTreeNodeIds: [],
   selectedTreeNodeIdsSet: new Set<string>(),
   sidebarTableSearchQueries: {},
@@ -87,6 +88,7 @@ afterEach(() => {
   for (const app of apps.splice(0)) app.unmount();
   document.body.innerHTML = "";
   settingsStore.editorSettings.sidebarObjectInfoMode = "comment-inline";
+  connectionStore.selectedTreeNodeId = null;
   vi.restoreAllMocks();
 });
 
@@ -122,5 +124,61 @@ describe("TreeItem schema trigger owner comments", () => {
     settingsStore.editorSettings.sidebarObjectInfoMode = "none";
     const container = await mountNodes(triggerNodes());
     expect(container.querySelector(".sidebar-object-comment")).toBeNull();
+  });
+});
+
+describe("TreeItem disabled database object colors", () => {
+  it.each(["trigger", "job", "scheduler"] as const)("grays both name and icon for a disabled %s, including selection", async (type) => {
+    const node: TreeNode = {
+      ...triggerNodes()[0]!,
+      type,
+      triggerEnabledMode: type === "trigger" ? "D" : undefined,
+      jobEnabled: type === "trigger" ? undefined : false,
+    };
+    connectionStore.selectedTreeNodeId = node.id;
+    const container = await mountNodes([node]);
+    const row = container.querySelector<HTMLElement>("[tabindex]")!;
+    expect(row.classList.contains("tree-item-object-disabled")).toBe(true);
+    expect(row.classList.contains("text-muted-foreground")).toBe(true);
+    expect(row.classList.contains("tree-item-active")).toBe(true);
+    expect(row.querySelector(".sidebar-object-name")?.classList.contains("text-muted-foreground")).toBe(true);
+    expect(row.querySelector("svg")?.classList.contains("text-muted-foreground")).toBe(true);
+    expect(row.getAttribute("aria-disabled")).toBeNull();
+    expect(row.classList.contains("cursor-pointer")).toBe(true);
+  });
+
+  it.each(["job", "scheduler"] as const)("does not guess %s state from a disabled-looking comment", async (type) => {
+    const node: TreeNode = { ...triggerNodes()[0]!, type, comment: "disabled · every disabled_interval", jobEnabled: undefined };
+    const container = await mountNodes([node]);
+    expect(container.querySelector(".tree-item-object-disabled")).toBeNull();
+    expect(container.querySelector(".sidebar-object-name")?.classList.contains("text-muted-foreground")).toBe(false);
+    expect(container.querySelector("[tabindex] svg")?.classList.contains("text-muted-foreground")).toBe(false);
+  });
+
+  it("repaints the name and icon when a live trigger snapshot disables and re-enables it", async () => {
+    const node = reactive(triggerNodes()[0]!);
+    const container = await mountNodes([node]);
+    expect(container.querySelector(".tree-item-object-disabled")).toBeNull();
+    synchronizeTriggerNodes([node], node, [{ name: node.objectName!, timing: "AFTER", event: "UPDATE", enabled_mode: "D" }]);
+    await nextTick();
+    expect(container.querySelector(".tree-item-object-disabled")).not.toBeNull();
+    expect(container.querySelector(".sidebar-object-name")?.classList.contains("text-muted-foreground")).toBe(true);
+    expect(container.querySelector("[tabindex] svg")?.classList.contains("text-muted-foreground")).toBe(true);
+    synchronizeTriggerNodes([node], node, [{ name: node.objectName!, timing: "AFTER", event: "UPDATE", enabled_mode: "O" }]);
+    await nextTick();
+    expect(container.querySelector(".tree-item-object-disabled")).toBeNull();
+    expect(container.querySelector(".sidebar-object-name")?.classList.contains("text-muted-foreground")).toBe(false);
+    expect(container.querySelector("[tabindex] svg")?.classList.contains("text-orange-300")).toBe(true);
+  });
+
+  it.each(["job", "scheduler"] as const)("restores %s colors after a fresh enabled state", async (type) => {
+    const node = reactive<TreeNode>({ ...triggerNodes()[0]!, type, jobEnabled: false });
+    const container = await mountNodes([node]);
+    expect(container.querySelector(".tree-item-object-disabled")).not.toBeNull();
+    node.jobEnabled = true;
+    await nextTick();
+    expect(container.querySelector(".tree-item-object-disabled")).toBeNull();
+    expect(container.querySelector(".sidebar-object-name")?.classList.contains("text-muted-foreground")).toBe(false);
+    expect(container.querySelector("[tabindex] svg")?.classList.contains(type === "job" ? "text-orange-500" : "text-amber-500")).toBe(true);
   });
 });

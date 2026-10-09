@@ -57,6 +57,7 @@ import { connectionDisplayUrlScheme } from "@/lib/connection/connectionPresentat
 import { hexToRgba } from "@/lib/common/color";
 import { sidebarDisplayTableName } from "@/lib/sidebar/sidebarTableNameDisplay";
 import { synonymIconInfoForTargetKind } from "@/lib/sidebar/treeNodeIcon";
+import { isTreeNodeDisabled } from "@/lib/sidebar/treeNodeStatus";
 import { shouldMeasureSidebarLabelOverflow } from "@/lib/sidebar/sidebarLabelTooltip";
 import { treeSelectionRangeIdsByIndex, treeSelectionRangeIds } from "@/lib/sidebar/sidebarTreeSelection";
 import { isSidebarDatabaseOpenForVisual } from "@/lib/sidebar/sidebarDatabaseOpenState";
@@ -243,7 +244,7 @@ function getIconInfo(node: TreeNode): { icon: any; colorClass: string } | null {
     case "fkey":
       return { icon: Link, colorClass: "text-blue-300" };
     case "trigger":
-      return { icon: Zap, colorClass: node.triggerEnabledMode === "D" ? "text-muted-foreground" : "text-orange-300" };
+      return { icon: Zap, colorClass: isTreeNodeDisabled(node) ? "text-muted-foreground" : "text-orange-300" };
     case "procedure":
       return { icon: ScrollText, colorClass: "text-blue-500" };
     case "function":
@@ -258,9 +259,9 @@ function getIconInfo(node: TreeNode): { icon: any; colorClass: string } | null {
     case "package-body":
       return { icon: FileCode, colorClass: "text-cyan-400" };
     case "job":
-      return { icon: CalendarClock, colorClass: "text-orange-500" };
+      return { icon: CalendarClock, colorClass: isTreeNodeDisabled(node) ? "text-muted-foreground" : "text-orange-500" };
     case "scheduler":
-      return { icon: Timer, colorClass: "text-amber-500" };
+      return { icon: Timer, colorClass: isTreeNodeDisabled(node) ? "text-muted-foreground" : "text-amber-500" };
     case "type":
       return { icon: Braces, colorClass: "text-violet-500" };
     case "type-body":
@@ -633,6 +634,11 @@ const tableSearchValue = computed(() => {
 const isConnecting = computed(() => activeNode.value.type === "connection" && !!activeNode.value.connectionId && connectionStore.connectingIds.has(activeNode.value.connectionId));
 
 const isConnectionReadonly = computed(() => activeNode.value.type === "connection" && !!activeNode.value.connectionId && (connectionStore.getConfig(activeNode.value.connectionId)?.read_only ?? false));
+
+// Keep this out of the computed hot-path budget; it is evaluated during render.
+function activeObjectDisabled(): boolean {
+  return isTreeNodeDisabled(activeNode.value);
+}
 
 const databaseOpenVisual = computed(() => {
   const databaseOpen = isSidebarDatabaseOpenForVisual(activeNode.value, connectionStore.isTreeNodeChildrenLoaded, queryStore.openDatabaseKeys);
@@ -1103,6 +1109,8 @@ function onKeydown(event: KeyboardEvent) {
             'tree-item-active': selectionVisual.rowSelected,
             'tree-item-active--selection-set': selectionVisual.usesSelectionSetHighlight && selectionVisual.rowSelected,
             'tree-item-highlight': highlighted,
+            'tree-item-object-disabled': activeObjectDisabled(),
+            'text-muted-foreground': activeObjectDisabled(),
           },
         ]"
         :tabindex="selectionVisual.selected || selectionVisual.multiSelected ? 0 : -1"
@@ -1143,7 +1151,7 @@ function onKeydown(event: KeyboardEvent) {
               @keydown.escape.prevent="isRenamingGroup = false"
               @click.stop
             />
-            <span v-else ref="labelRef" :class="[labelWidthClass, { 'flex-1': node.type === 'connection' && !trailingComment }]">{{ visibleLabel(node) }}</span>
+            <span v-else ref="labelRef" class="sidebar-object-name" :class="[labelWidthClass, { 'flex-1': node.type === 'connection' && !trailingComment, 'text-muted-foreground': activeObjectDisabled() }]">{{ visibleLabel(node) }}</span>
             <button
               v-if="canDragPinnedOrder()"
               type="button"

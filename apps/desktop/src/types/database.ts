@@ -416,6 +416,8 @@ export type DatabaseObjectType = "TABLE" | "VIEW" | "MATERIALIZED_VIEW" | "PROCE
 export interface ObjectInfo {
   /** pg_trigger.tgenabled: O (origin), D (disabled), R (replica), A (always). */
   enabled_mode?: string | null;
+  /** Explicit job/scheduler enable state; absent when the database does not provide it. */
+  job_enabled?: boolean | null;
   name: string;
   object_type: DatabaseObjectType | string;
   schema?: string | null;
@@ -896,6 +898,8 @@ export interface TreeNode {
   targetKind?: string;
   /** Raw pg_trigger.tgenabled; undefined/unknown must not be treated as enabled. */
   triggerEnabledMode?: string;
+  /** Explicit job/scheduler enable state, never inferred from display comments. */
+  jobEnabled?: boolean;
   signature?: string;
   tableType?: string;
   comment?: string | null;

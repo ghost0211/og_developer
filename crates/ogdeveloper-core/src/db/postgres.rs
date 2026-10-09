@@ -3297,7 +3297,7 @@ fn opengauss_jobs_sql() -> &'static str {
     "SELECT j.job_id::text AS object_name, \
        'JOB' AS object_type, \
        (CASE \
-         WHEN j.job_status = 'd' THEN 'disabled' \
+         WHEN j.job_status = 'd' OR j.enable IS FALSE THEN 'disabled' \
          WHEN j.job_status = 'f' THEN 'failed' \
          WHEN j.job_status = 'r' THEN 'running' \
          ELSE 'enabled' \
@@ -3308,7 +3308,7 @@ fn opengauss_jobs_sql() -> &'static str {
        NULL::text AS updated_at, \
        NULL::text AS parent_schema, \
        NULL::text AS parent_name, \
-       NULL::text AS signature, \
+       (NOT (j.job_status = 'd' OR j.enable IS FALSE))::text AS signature, \
        7 AS sort_order \
      FROM pg_catalog.pg_job j \
      WHERE (j.job_name IS NULL OR length(j.job_name) = 0) \
@@ -3318,7 +3318,7 @@ fn opengauss_jobs_sql() -> &'static str {
      SELECT j.job_name AS object_name, \
        'SCHEDULER' AS object_type, \
        (CASE \
-         WHEN j.job_status = 'd' THEN 'disabled' \
+         WHEN j.job_status = 'd' OR j.enable IS FALSE THEN 'disabled' \
          WHEN j.job_status = 'f' THEN 'failed' \
          WHEN j.job_status = 'r' THEN 'running' \
          ELSE 'enabled' \
@@ -3329,7 +3329,7 @@ fn opengauss_jobs_sql() -> &'static str {
        NULL::text AS updated_at, \
        NULL::text AS parent_schema, \
        NULL::text AS parent_name, \
-       NULL::text AS signature, \
+       (NOT (j.job_status = 'd' OR j.enable IS FALSE))::text AS signature, \
        8 AS sort_order \
      FROM pg_catalog.pg_job j \
      WHERE (j.job_name IS NOT NULL AND length(j.job_name) > 0) \
@@ -3471,16 +3471,23 @@ async fn list_objects_rows(
     postgres_query_cached(client, &sql, &[&schema]).await.map_err(|e| e.to_string())
 }
 
-fn postgres_object_signature_and_enabled_mode(
+fn postgres_object_signature_enabled_mode_and_job_enabled(
     object_type: &str,
     signature_slot: Option<String>,
-) -> (Option<String>, Option<String>) {
+) -> (Option<String>, Option<String>, Option<bool>) {
     if object_type.eq_ignore_ascii_case("TRIGGER") {
         // The openGauss UNION contract stores pg_trigger.tgenabled in the
         // signature slot for triggers. Preserve unknown values verbatim.
-        (None, signature_slot)
+        (None, signature_slot, None)
+    } else if object_type.eq_ignore_ascii_case("JOB") || object_type.eq_ignore_ascii_case("SCHEDULER") {
+        let job_enabled = signature_slot.as_deref().and_then(|value| match value {
+            "true" => Some(true),
+            "false" => Some(false),
+            _ => None,
+        });
+        (None, None, job_enabled)
     } else {
-        (signature_slot, None)
+        (signature_slot, None, None)
     }
 }
 
@@ -3544,7 +3551,7 @@ pub async fn list_objects(pool: &Pool, schema: &str) -> Result<Vec<ObjectInfo>, 
         .iter()
         .map(|row| {
             let object_type = pg_row_try_string(row, 1);
-            let (signature, enabled_mode) = postgres_object_signature_and_enabled_mode(
+            let (signature, enabled_mode, job_enabled) = postgres_object_signature_enabled_mode_and_job_enabled(
                 &object_type,
                 row.try_get::<_, Option<String>>(7).ok().flatten(),
             );
@@ -3555,6 +3562,7 @@ pub async fn list_objects(pool: &Pool, schema: &str) -> Result<Vec<ObjectInfo>, 
                 valid: None,
                 signature,
                 enabled_mode,
+                job_enabled,
                 comment: row.try_get::<_, Option<String>>(2).ok().flatten().filter(|s| !s.is_empty()),
                 created_at: row.try_get::<_, Option<String>>(3).ok().flatten().filter(|s| !s.is_empty()),
                 updated_at: row.try_get::<_, Option<String>>(4).ok().flatten().filter(|s| !s.is_empty()),
@@ -3641,6 +3649,7 @@ async fn enrich_objects_with_gs_source_validity(
                 schema: Some(schema.to_string()),
                 valid: Some(false),
                 enabled_mode: None,
+                job_enabled: None,
                 comment: Some("failed compilation".to_string()),
                 created_at: None,
                 updated_at: None,
@@ -7463,6 +7472,8 @@ mod tests {
         assert!(sql.contains("j.nspname::text = $1"));
         assert!(sql.contains("j.dbname = current_database()::name"));
         assert!(sql.contains("j.next_run_date"));
+        assert_eq!(sql.matches("(NOT (j.job_status = 'd' OR j.enable IS FALSE))::text AS signature").count(), 2);
+        assert_eq!(sql.matches("WHEN j.job_status = 'd' OR j.enable IS FALSE THEN 'disabled'").count(), 2);
         // openGauss A-compatibility folds '' to NULL, so job_name emptiness must
         // be tested via length(); `= ''` / `!= ''` never match there and would
         // hide every scheduler row from the sidebar.
@@ -7998,18 +8009,36 @@ mod tests {
     }
 
     #[test]
-    fn object_signature_slot_maps_trigger_modes_verbatim_only_for_triggers() {
+    fn object_signature_slot_maps_trigger_modes_and_job_enabled_state() {
         for mode in ["O", "D", "R", "A", "future-mode"] {
-            let (signature, enabled_mode) =
-                postgres_object_signature_and_enabled_mode("TRIGGER", Some(mode.to_string()));
+            let (signature, enabled_mode, job_enabled) =
+                postgres_object_signature_enabled_mode_and_job_enabled("TRIGGER", Some(mode.to_string()));
             assert_eq!(signature, None);
             assert_eq!(enabled_mode.as_deref(), Some(mode));
+            assert_eq!(job_enabled, None);
         }
 
-        let (signature, enabled_mode) =
-            postgres_object_signature_and_enabled_mode("FUNCTION", Some("integer".to_string()));
+        for (object_type, raw, expected) in [
+            ("JOB", Some("true"), Some(true)),
+            ("SCHEDULER", Some("false"), Some(false)),
+            ("job", Some("true"), Some(true)),
+            ("scheduler", Some("false"), Some(false)),
+            ("JOB", None, None),
+            ("SCHEDULER", Some("TRUE"), None),
+            ("JOB", Some("enabled"), None),
+        ] {
+            let (signature, enabled_mode, job_enabled) =
+                postgres_object_signature_enabled_mode_and_job_enabled(object_type, raw.map(str::to_string));
+            assert_eq!(signature, None);
+            assert_eq!(enabled_mode, None);
+            assert_eq!(job_enabled, expected, "object_type={object_type}, raw={raw:?}");
+        }
+
+        let (signature, enabled_mode, job_enabled) =
+            postgres_object_signature_enabled_mode_and_job_enabled("FUNCTION", Some("integer".to_string()));
         assert_eq!(signature.as_deref(), Some("integer"));
         assert_eq!(enabled_mode, None);
+        assert_eq!(job_enabled, None);
     }
 
     #[test]

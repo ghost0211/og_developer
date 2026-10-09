@@ -1,6 +1,7 @@
 import type { Component } from "vue";
-import { ArrowLeftRight, Braces, Columns3, Database, Eye, FileCode, FolderClosed, FolderOpen, GitFork, Key, Link, Link2, ListOrdered, ListTree, Package, Plus, ScrollText, Table, TableProperties, UsersRound, Zap } from "@lucide/vue";
+import { ArrowLeftRight, Braces, CalendarClock, Columns3, Database, Eye, FileCode, FolderClosed, FolderOpen, GitFork, Key, Link, Link2, ListOrdered, ListTree, Package, Plus, ScrollText, Table, TableProperties, Timer, UsersRound, Zap } from "@lucide/vue";
 import type { ColumnInfo, TreeNode } from "@/types/database";
+import { isTreeNodeDisabled } from "@/lib/sidebar/treeNodeStatus";
 
 export type TreeNodeIconInfo = {
   icon: Component;
@@ -58,7 +59,11 @@ export function getTreeNodeIconInfo(node: TreeNode): TreeNodeIconInfo | null {
     case "group-triggers":
       return { icon: Zap, colorClass: "text-orange-400" };
     case "trigger":
-      return { icon: Zap, colorClass: node.triggerEnabledMode === "D" ? "text-muted-foreground" : "text-orange-300" };
+      return { icon: Zap, colorClass: isTreeNodeDisabled(node) ? "text-muted-foreground" : "text-orange-300" };
+    case "job":
+      return { icon: CalendarClock, colorClass: isTreeNodeDisabled(node) ? "text-muted-foreground" : "text-orange-500" };
+    case "scheduler":
+      return { icon: Timer, colorClass: isTreeNodeDisabled(node) ? "text-muted-foreground" : "text-amber-500" };
     case "group-constraints":
     case "constraint":
       return { icon: Key, colorClass: "text-amber-500" };
