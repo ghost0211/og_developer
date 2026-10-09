@@ -26,7 +26,9 @@ const emptyContainerTypes: Set<TreeNodeType> = new Set(["saved-sql-root", "saved
 
 const pinnableTypes: Set<TreeNodeType> = new Set(["connection-group", "database", "schema", "table", "view", "materialized_view"]);
 
-const commentTypes: Set<TreeNodeType> = new Set(["connection", "schema", "table", "view", "materialized_view", "column"]);
+// Schema trigger rows carry their owning table in the trailing comment; keep
+// them eligible in both the TreeItem renderer and sibling comment alignment.
+const commentTypes: Set<TreeNodeType> = new Set(["connection", "schema", "table", "view", "materialized_view", "column", "trigger"]);
 
 export function treeItemPaddingLeft(depth: number): string {
   return `${depth * 16 + 8}px`;

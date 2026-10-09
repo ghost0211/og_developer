@@ -1321,3 +1321,26 @@ lint/fmt 通过。Rust core 全量 1192 项通过、11 项 ignored，workspace c
 新元数据 SQL 在 tygl_biz 只读验证可执行（该库无用户触发器）；openGauss parser
 源码确认 ALTER TABLE ENABLE/DISABLE TRIGGER 语法。未创建或修改真实数据库触发器，
 未自动化操作用户桌面。
+
+---
+
+## 42. v0.2.45：修复 schema 触发器总览未渲染所属表说明
+
+用户实测总览中的 ogdev_display_test_trg 无所属表说明。数据构建层已将
+parent_name 写入 tableName 和 comment，但真实 TreeItem.vue 使用的
+sidebarTreeNodeComment() 白名单仅允许 connection/schema/table/view/
+materialized_view/column，排除了 trigger；对齐计算也用同一白名单。
+此前只测节点数据和菜单接线，遗漏了实际组件的说明过滤链路。
+
+修复：sidebarTreeItemLayout.ts 的 commentTypes 增加 trigger，同步开放说明
+渲染及同级对齐资格。沿用用户说明显示设置：行内/对齐/靠右均显示
+“所属表 — 真实触发器注释”（无注释则只显示所属表）；关闭说明时仍隐藏。
+不修改 label/objectName/节点 ID，不改变源码定位、启停、删除或数据库查询。
+无需重新登录或清除缓存，现有携带 comment 的节点即可使用修正后的渲染规则。
+
+回归：新增 TreeItem.triggerOwnerComment.spec.ts，实际挂载 TreeItem.vue 并传入
+buildGroupedObjectTreeNodes 生成的触发器节点，覆盖无注释、带注释、同名不同表、
+三种说明模式及关闭说明。修复前 5 个显示用例失败（关闭说明用例通过），修复后
+6 个全部通过。happy-dom 中为靠右分支提供固定宽度，只验证真实渲染内容，不声称
+实际浏览器几何验收。相关测试 21 项通过；完整 pnpm check 5314 项通过，只有
+既有 5 个本机 node: 环境套件失败；typecheck/lint/fmt 通过，未操作用户桌面。
