@@ -1400,7 +1400,7 @@ frontend typecheck/lint/build 通过。tygl_biz 只读验证 pg_job 布尔状态
 
 ---
 
-## 44. 选择性适配上游高相关修复与小功能（待发版）
+## 44. v0.2.47：选择性适配上游高相关修复与小功能
 
 根据用户要求，从 fork 后的 DBX 更新中选择六项与 openGauss、导出安全和现有侧栏
 直接相关的改动，按当前代码结构手工适配；不是整仓 merge/cherry-pick，不引入上游
@@ -1442,12 +1442,11 @@ crate 拆分、多数据库、CLI/MCP、市场或凭据迁移，也不覆盖已�
 check 仍非全绿。Rust core 全量 1209 项通过、11 项 ignored；CI 同款 workspace
 clippy（locked/all-targets/no-default-features/system-fonts/offline）、cargo fmt 与
 frontend build 通过。只读核对测试库 standard_conforming_strings=on；没有执行真实
-数据库重命名或其他写操作，也没有启动或自动化桌面 UI。本批仅合入代码并本地提交，
-未升版本、推送或发版。
+数据库重命名或其他写操作，也没有启动或自动化桌面 UI。本批随 v0.2.47 发布。
 
 ---
 
-## 45. 修复函数参数提示（签名 tooltip）残留不消失
+## 45. v0.2.47：修复函数参数提示（签名 tooltip）残留不消失
 
 用户反馈：例程自动补全/参数提示偶尔一直留在 SQL 编辑器里，除非关闭标签页或清空
 文本才消失，且难以稳定复现（截图中光标已在新 `select` 语句，顶部仍显示
