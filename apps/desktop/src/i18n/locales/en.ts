@@ -5564,6 +5564,7 @@ export default {
     sqlFormatterDenseOperators: "Dense operators",
     sqlFormatterNewlineBeforeSemicolon: "Semicolon on new line",
     sqlFormatterClauseInline: "Inline FROM/WHERE clause content",
+    sqlFormatterDedentJoin: "Align JOIN with FROM (requires inline)",
     sqlFormatterAdvancedOptions: "Advanced options",
     sqlFormatterParams: "Params",
     sqlFormatterParamTypes: "Param types",

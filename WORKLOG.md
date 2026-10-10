@@ -1515,3 +1515,24 @@ tabularLeft/Right 风格本就关键字与内容同行，该处理自然为空�
 完整 pnpm check：5393 项测试、643 个套件通过，仅既有 5 个本机 `node:` 套件
 未加载；格式/lint/typecheck/build 通过。未操作用户桌面 UI；真实视觉效果待用户
 开启设置后确认。
+
+**追加：JOIN 缩进（`dedentJoin`，默认 false）**。sql-formatter 同样把 JOIN 固定
+缩进在 FROM 下一级且不可配。新增「JOIN 与 FROM 对齐」开关（界面在 clauseInline
+未开启时禁用，因其依赖同行布局）。开启后 JOIN 行及其 ON 续行、派生表块整体
+与 FROM 关键字对齐：
+
+```sql
+from ddd.t1
+join ddd.t2 on t1.id = t2.id
+and t1.tenant_id = t2.tenant_id
+where a = 1;
+```
+
+实现为第二个行级后处理 `dedentJoinLines`：维护 FROM 区域栈（缩进即嵌套深度，
+子查询开自己的区域），某个 FROM 区域内出现恰好深一级的 JOIN 行后进入 join 块，
+此后每个处于 join 块的外层区域都剥掉一级缩进——嵌套子查询整块平移，内层 JOIN
+再与自己内层 FROM 对齐；WHERE 主体 AND/OR 永不受影响（WHERE 行使区域出栈）；
+逗号表列表不是 JOIN，保持缩进。探测确认长 ON 条件的 `and` 续行与 JOIN 同级，
+已一并处理。新增 7 项测试：多 JOIN、多行 ON 续行、JOIN 子查询整块平移、内层
+JOIN 与内层 FROM 对齐、逗号表不受损、开关依赖（仅 clauseInline 开启才生效）、
+Tab 缩进，均逐行精确断言。

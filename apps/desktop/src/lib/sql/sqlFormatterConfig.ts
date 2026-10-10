@@ -51,6 +51,9 @@ export interface SqlFormatterOptionSettings {
   /** DBX-only post-processing: put FROM/WHERE content on the keyword's line.
    * Not passed to sql-formatter (it has no such option). */
   clauseInline: boolean;
+  /** DBX-only post-processing: align JOIN lines with FROM. Applied only when
+   * clauseInline is enabled. */
+  dedentJoin: boolean;
   paramTypes: SqlFormatterParamTypes | null;
 }
 
@@ -78,6 +81,7 @@ export const DEFAULT_SQL_FORMATTER_SETTINGS: SqlFormatterSettings = {
   denseOperators: false,
   newlineBeforeSemicolon: false,
   clauseInline: false,
+  dedentJoin: false,
   paramTypes: null,
 };
 
@@ -95,6 +99,7 @@ const SQL_FORMATTER_OPTION_KEYS = new Set<keyof SqlFormatterOptionSettings>([
   "denseOperators",
   "newlineBeforeSemicolon",
   "clauseInline",
+  "dedentJoin",
   "paramTypes",
 ]);
 
@@ -112,6 +117,7 @@ const SQL_FORMATTER_OPTION_VALIDATORS: Record<keyof SqlFormatterOptionSettings, 
   denseOperators: (value) => typeof value === "boolean",
   newlineBeforeSemicolon: (value) => typeof value === "boolean",
   clauseInline: (value) => typeof value === "boolean",
+  dedentJoin: (value) => typeof value === "boolean",
   paramTypes: isSqlFormatterParamTypes,
 };
 
@@ -193,6 +199,7 @@ export function sqlFormatterOptionSettings(settings: unknown): SqlFormatterOptio
     denseOperators: normalizeBoolean(input.denseOperators, DEFAULT_SQL_FORMATTER_SETTINGS.denseOperators),
     newlineBeforeSemicolon: normalizeBoolean(input.newlineBeforeSemicolon, DEFAULT_SQL_FORMATTER_SETTINGS.newlineBeforeSemicolon),
     clauseInline: normalizeBoolean(input.clauseInline, DEFAULT_SQL_FORMATTER_SETTINGS.clauseInline),
+    dedentJoin: normalizeBoolean(input.dedentJoin, DEFAULT_SQL_FORMATTER_SETTINGS.dedentJoin),
     paramTypes: normalizeParamTypes(input.paramTypes, DEFAULT_SQL_FORMATTER_SETTINGS.paramTypes),
   };
 }

@@ -135,6 +135,7 @@ const sqlFormatterOptionLabelKeys: Record<keyof SqlFormatterOptionSettings, stri
   denseOperators: "settings.sqlFormatterDenseOperators",
   newlineBeforeSemicolon: "settings.sqlFormatterNewlineBeforeSemicolon",
   clauseInline: "settings.sqlFormatterClauseInline",
+  dedentJoin: "settings.sqlFormatterDedentJoin",
   paramTypes: "settings.sqlFormatterParamTypes",
 };
 const sqlFormatterConfigErrorKeys: Record<string, string> = {
@@ -708,6 +709,13 @@ onBeforeUnmount(() => {
               {{ t("settings.sqlFormatterClauseInline") }}
             </Label>
             <Switch id="sql-formatter-clause-inline" :model-value="settings.clauseInline" @update:model-value="(value: boolean) => updateOption('clauseInline', value)" />
+          </div>
+
+          <div class="flex items-center justify-between gap-4 rounded-md border bg-muted/20 px-3 py-2">
+            <Label for="sql-formatter-dedent-join">
+              {{ t("settings.sqlFormatterDedentJoin") }}
+            </Label>
+            <Switch id="sql-formatter-dedent-join" :model-value="settings.dedentJoin" :disabled="!settings.clauseInline" @update:model-value="(value: boolean) => updateOption('dedentJoin', value)" />
           </div>
         </div>
 

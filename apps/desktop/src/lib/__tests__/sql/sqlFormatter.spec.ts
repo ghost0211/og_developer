@@ -136,6 +136,60 @@ describe("sqlFormatter", () => {
     expect(formatted).toContain("WHERE a = 1;");
   });
 
+  it("aligns JOIN lines with FROM when dedentJoin is enabled", async () => {
+    const sql = "select a from t1 join t2 on t1.id = t2.id left join t3 on t2.x = t3.x where a = 1;";
+
+    const formatted = await formatSqlText(sql, "postgres", { keywordCase: "lower", clauseInline: true, dedentJoin: true });
+
+    expect(formatted).toBe(["select", "  a", "from t1", "join t2 on t1.id = t2.id", "left join t3 on t2.x = t3.x", "where a = 1;"].join("\n"));
+  });
+
+  it("dedents multi-line ON continuations together with their JOIN", async () => {
+    const sql = "select a from t1 join t2 on t1.id = t2.id and t1.tenant_id = t2.tenant_id and t1.version_no = t2.version_no where a = 1;";
+
+    const formatted = await formatSqlText(sql, "postgres", { keywordCase: "lower", clauseInline: true, dedentJoin: true });
+
+    expect(formatted).toBe(["select", "  a", "from t1", "join t2 on t1.id = t2.id", "and t1.tenant_id = t2.tenant_id", "and t1.version_no = t2.version_no", "where a = 1;"].join("\n"));
+  });
+
+  it("shifts a join subquery as one block and aligns its inner clauses", async () => {
+    const sql = "select a.id from app.accounts a join (select id, name from app.users where status = 'on') s on s.id = a.user_id where a.deleted = 0;";
+
+    const formatted = await formatSqlText(sql, "postgres", { keywordCase: "lower", clauseInline: true, dedentJoin: true });
+
+    expect(formatted).toBe(["select", "  a.id", "from app.accounts a", "join (", "  select", "    id,", "    name", "  from app.users", "  where status = 'on'", ") s on s.id = a.user_id", "where a.deleted = 0;"].join("\n"));
+  });
+
+  it("aligns an inner JOIN with its own inner FROM inside a join subquery", async () => {
+    const sql = "select a from t1 join (select u.id from u join r on r.uid = u.id where u.x = 1) s on s.id = t1.id where a = 1;";
+
+    const formatted = await formatSqlText(sql, "postgres", { keywordCase: "lower", clauseInline: true, dedentJoin: true });
+
+    expect(formatted).toBe(["select", "  a", "from t1", "join (", "  select", "    u.id", "  from u", "  join r on r.uid = u.id", "  where u.x = 1", ") s on s.id = t1.id", "where a = 1;"].join("\n"));
+  });
+
+  it("keeps comma-separated table lists indented and does not treat them as JOINs", async () => {
+    const formatted = await formatSqlText("select a from t1, t2 where t1.id = t2.id;", "postgres", { keywordCase: "lower", clauseInline: true, dedentJoin: true });
+
+    expect(formatted).toBe(["select", "  a", "from t1,", "  t2", "where t1.id = t2.id;"].join("\n"));
+  });
+
+  it("does not dedent JOINs when clauseInline is off or dedentJoin is off", async () => {
+    const sql = "select a from t1 join t2 on t1.id = t2.id where a = 1;";
+
+    const inlineOnly = await formatSqlText(sql, "postgres", { keywordCase: "lower", clauseInline: true });
+    expect(inlineOnly).toContain("from t1\n  join t2");
+
+    const joinOnly = await formatSqlText(sql, "postgres", { keywordCase: "lower", dedentJoin: true });
+    expect(joinOnly).toContain("from\n  t1\n  join t2");
+  });
+
+  it("dedents JOINs with tab indentation", async () => {
+    const formatted = await formatSqlText("select a from t1 join t2 on t1.id = t2.id where a = 1;", "postgres", { keywordCase: "lower", clauseInline: true, dedentJoin: true, useTabs: true });
+
+    expect(formatted).toBe(["select", "\ta", "from t1", "join t2 on t1.id = t2.id", "where a = 1;"].join("\n"));
+  });
+
   it("returns the original SQL for display when formatting fails", async () => {
     const oversizedSql = "x".repeat(MAX_SQL_FORMAT_CHARS + 1);
 

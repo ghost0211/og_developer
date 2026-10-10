@@ -5566,6 +5566,7 @@ export const zhCNMessages = {
     sqlFormatterDenseOperators: "紧凑运算符",
     sqlFormatterNewlineBeforeSemicolon: "分号单独换行",
     sqlFormatterClauseInline: "FROM/WHERE 与内容同行",
+    sqlFormatterDedentJoin: "JOIN 与 FROM 对齐（需开启同行）",
     sqlFormatterAdvancedOptions: "高级选项",
     sqlFormatterParams: "参数替换",
     sqlFormatterParamTypes: "参数类型",
