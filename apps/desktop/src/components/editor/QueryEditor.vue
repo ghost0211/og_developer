@@ -392,6 +392,11 @@ let ogdeveloperVimCommandsConfigured = false;
 let buildSqlDiagnosticExtension: (() => import("@codemirror/state").Extension) | null = null;
 let buildSqlSignatureExtension: (() => import("@codemirror/state").Extension) | null = null;
 let signaturePrefetchEffect: import("@codemirror/state").StateEffectType<null> | null = null;
+// Signature help is a state tooltip: CodeMirror never hides it on blur, so an
+// editor that lost focus (or a hidden tab) could keep showing a stale call
+// signature. This effect marks the tooltip dismissed until the next edit or
+// selection change.
+let signatureDismissEffect: import("@codemirror/state").StateEffectType<null> | null = null;
 let buildSqlCompletionExtension: (() => import("@codemirror/state").Extension) | null = null;
 let buildSqlLanguageExtension: (() => import("@codemirror/state").Extension) | null = null;
 let buildSqlSemanticHighlightExtension: (() => import("@codemirror/state").Extension) | null = null;
@@ -3696,6 +3701,11 @@ function refreshActiveSqlCompletion(fullDoc: string, position: number, completio
 }
 
 function refreshCompletionCache() {
+  // A pending signature fetch belongs to the previous connection/database/
+  // schema scope. Drop it so a late result cannot re-open the tooltip for a
+  // scope the editor no longer shows.
+  sqlSignaturePrefetcher?.dispose();
+  sqlSignaturePrefetcher = null;
   cachedTables = [];
   cachedCompletionObjectsByScope.clear();
   cachedColumnsByTable.clear();
@@ -3759,6 +3769,7 @@ onMounted(async () => {
   indentComp = new Compartment();
   setSqlDiagnosticsEffect = StateEffect.define<SqlSemanticDiagnostic[]>();
   signaturePrefetchEffect = StateEffect.define<null>();
+  signatureDismissEffect = StateEffect.define<null>();
   codeMirrorCompletionStatus = completionStatus;
   codeMirrorAcceptCompletion = acceptCompletion;
   codeMirrorStartCompletion = startCompletion;
@@ -3989,9 +4000,23 @@ onMounted(async () => {
         return next;
       },
     });
+    const dismissedField = StateField.define<boolean>({
+      create: () => false,
+      update: (value, tr) => {
+        // Typing or moving the caret means the user is back in the call; only
+        // an explicit dismiss (blur / tab hidden) keeps the tooltip closed.
+        if (tr.docChanged || tr.selection) return false;
+        for (const effect of tr.effects) {
+          if (signatureDismissEffect && effect.is(signatureDismissEffect)) return true;
+        }
+        return value;
+      },
+    });
     return [
       refreshField,
-      showTooltip.compute(["doc", "selection", refreshField], (currentState) => {
+      dismissedField,
+      showTooltip.compute(["doc", "selection", refreshField, dismissedField], (currentState) => {
+        if (currentState.field(dismissedField)) return null;
         const sql = currentState.doc.toString();
         const cursor = currentState.selection.main.head;
         const databasePrefix = `${props.database ?? ""}:`.toLowerCase();
@@ -4001,7 +4026,8 @@ onMounted(async () => {
         return {
           pos: currentState.selection.main.head,
           above: false,
-          clip: false,
+          // Keep CodeMirror's default viewport clipping: a signature for a call
+          // that scrolled out of view must not stay pinned in the editor.
           create: () => ({ dom: createSqlSignatureTooltipDom(signature) }),
         };
       }),
@@ -4366,6 +4392,9 @@ onMounted(async () => {
         blur(_event, currentView) {
           latestSelection = readEditorSelection(currentView);
           if (editorIsActive) emitEditorSelection(latestSelection);
+          // The caret stays where it was, so a state tooltip would otherwise
+          // keep covering the editor after focus moved to another panel.
+          dismissSqlSignatureTooltip(currentView);
           return false;
         },
         compositionstart() {
@@ -4877,7 +4906,15 @@ watch(
   },
 );
 
+function dismissSqlSignatureTooltip(currentView: EditorViewType | undefined = view.value ?? undefined) {
+  if (!currentView || !signatureDismissEffect) return;
+  currentView.dispatch({ effects: signatureDismissEffect.of(null) });
+}
+
 function pauseQueryEditorBackgroundWork() {
+  dismissSqlSignatureTooltip();
+  sqlSignaturePrefetcher?.dispose();
+  sqlSignaturePrefetcher = null;
   flushEditorViewport();
   flushEditorSelection();
   clearTableNavigationHover();

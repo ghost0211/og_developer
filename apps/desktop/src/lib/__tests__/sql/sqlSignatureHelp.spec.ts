@@ -24,6 +24,16 @@ describe("getSqlSignatureCallContext", () => {
     expect(getSqlSignatureCallContext(sql, sql.length)).toBeNull();
   });
 
+  it.each(["select count_by_error_code('app', ;\nselect 1", "select count_by_error_code('app', ;", "select count_by_error_code('app', ;\nselect * from dbo.def_estab;"])("does not carry an unfinished call across a statement boundary: %s", (sql) => {
+    expect(getSqlSignatureCallContext(sql, sql.length)).toBeNull();
+  });
+
+  it("keeps multiline arguments and semicolons inside literals/comments", () => {
+    for (const sql of ["select count_by_error_code('a;b',\n ", "select count_by_error_code('a', /* ; */\n ", "select count_by_error_code($$a;b$$,\n "]) {
+      expect(getSqlSignatureCallContext(sql, sql.length)).toEqual({ name: "count_by_error_code", argumentIndex: 1 });
+    }
+  });
+
   it("字符串里的括号不算调用", () => {
     const sql = "select 'a(b' ";
     expect(getSqlSignatureCallContext(sql, sql.length)).toBeNull();
@@ -60,6 +70,11 @@ describe("getSqlFunctionSignatureHelp", () => {
     const help = getSqlFunctionSignatureHelp(sql, sql.length, "opengauss", [], "public");
     expect(help).not.toBeNull();
     expect(help!.name).toBe("SUBSTR");
+  });
+
+  it("does not show an old routine signature in later SELECT statements", () => {
+    const sql = "select app.count_by_error_code('app', ;\n\nselect * from dbo.def_estab;\nselect * from dbo.def_workday_calendar;";
+    expect(getSqlFunctionSignatureHelp(sql, sql.length, "opengauss", objects, "app")).toBeNull();
   });
 
   it("限定名不匹配缓存时不回退内置签名", () => {

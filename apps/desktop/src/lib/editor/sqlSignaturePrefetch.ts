@@ -26,6 +26,12 @@ export interface SqlSignaturePrefetcherOptions {
 
 export interface SqlSignaturePrefetcher {
   maybePrefetch(rawCallName: string): void;
+  /**
+   * 销毁预取器。
+   * 阻止后续新预取，丢弃正在进行中请求的异步结果（不触发回调、不登记缓存）。
+   * 幂等安全。
+   */
+  dispose(): void;
 }
 
 /** 把可能带限定的调用名拆成 { schema, name }；支持引号限定符。 */
@@ -44,12 +50,14 @@ export function createSqlSignaturePrefetcher(options: SqlSignaturePrefetcherOpti
   const now = options.now ?? (() => Date.now());
   const hitTtl = options.hitTtlMs ?? 10 * 60_000;
   const missTtl = options.missTtlMs ?? 60_000;
+  let disposed = false;
   const inflight = new Set<string>();
   const settledAt = new Map<string, number>();
   const hitKeys = new Set<string>();
 
   return {
     maybePrefetch(rawCallName: string) {
+      if (disposed) return;
       const { schema, name } = splitSignatureCallName(rawCallName);
       if (!name.trim()) return;
       const key = `${(schema ?? "").toLowerCase()}.${name.toLowerCase()}`;
@@ -59,23 +67,41 @@ export function createSqlSignaturePrefetcher(options: SqlSignaturePrefetcherOpti
       // 命中冷却单独判断：settledAt 只记时间，命中与否用更长的 TTL 通过 hitKeys 区分
       if (last !== undefined && hitKeys.has(key) && now() - last < hitTtl) return;
       inflight.add(key);
-      void options
-        .fetch(schema, name)
-        .then((objects) => {
-          if (objects.length > 0) {
-            hitKeys.add(key);
-            options.onObjects(objects);
-          } else {
+      try {
+        void options
+          .fetch(schema, name)
+          .then((objects) => {
+            if (disposed) return;
+            if (objects.length > 0) {
+              hitKeys.add(key);
+              options.onObjects(objects);
+            } else {
+              hitKeys.delete(key);
+            }
+          })
+          .catch(() => {
+            if (disposed) return;
             hitKeys.delete(key);
-          }
-        })
-        .catch(() => {
-          hitKeys.delete(key);
-        })
-        .finally(() => {
+          })
+          .finally(() => {
+            if (disposed) return;
+            inflight.delete(key);
+            settledAt.set(key, now());
+          });
+      } catch {
+        if (!disposed) {
           inflight.delete(key);
           settledAt.set(key, now());
-        });
+        }
+      }
+    },
+
+    dispose() {
+      if (disposed) return;
+      disposed = true;
+      inflight.clear();
+      settledAt.clear();
+      hitKeys.clear();
     },
   };
 }

@@ -1444,3 +1444,42 @@ clippy（locked/all-targets/no-default-features/system-fonts/offline）、cargo 
 frontend build 通过。只读核对测试库 standard_conforming_strings=on；没有执行真实
 数据库重命名或其他写操作，也没有启动或自动化桌面 UI。本批仅合入代码并本地提交，
 未升版本、推送或发版。
+
+---
+
+## 45. 修复函数参数提示（签名 tooltip）残留不消失
+
+用户反馈：例程自动补全/参数提示偶尔一直留在 SQL 编辑器里，除非关闭标签页或清空
+文本才消失，且难以稳定复现（截图中光标已在新 `select` 语句，顶部仍显示
+`ddd.preview_pdm_ddl(...)` 且高亮 `p_schema_name`）。
+
+**根因一：调用括号栈不按语句边界重置。** `sqlCompletion.ts` 的
+`findActiveFunctionOpenParen` 只对 `(` 入栈、`)` 出栈，遇到 `;` 或新语句都不清栈。
+只要文档上方残留一个未闭合的 `(`（漏写右括号、右括号被注释掉、复制了截断的 DDL
+片段），光标之后的所有文本都被当成该调用的参数列表：签名永远非空，于是每次
+光标移动都会在当前位置重新弹出旧签名；后续语句里成对的 `()` 出栈后栈顶又退回
+旧调用。修复：分词器判定为标点 `;` 时清空栈（字符串/注释/dollar 引用中的分号
+仍是字面内容，不影响多行调用）。
+
+**根因二：tooltip 生命周期。** 该提示用 `showTooltip.compute` 实现，是 CodeMirror
+的 state tooltip：它不会因失焦自动隐藏，且原先写死 `clip: false` 使提示即使滚出
+可视区域也不隐藏；位置按光标视口坐标固定，滚动内容在它下面移动时看起来就像
+“卡住”。修复：去掉 `clip: false` 恢复默认视口裁剪（光标真正滚出编辑区时隐藏，
+光标仍可见时随滚动重新定位）；新增 `signatureDismissEffect` + `dismissedField`，
+编辑器失焦、页签 deactivate/卸载时关闭提示，下次输入或移动光标自动恢复。
+
+**根因三：异步预取竞态。** 签名预取结果迟到时会主动 dispatch 刷新效果重新弹出
+提示。新增 `SqlSignaturePrefetcher.dispose()`：销毁后拒绝新预取、丢弃在途结果
+（不回调、不登记缓存），`refreshCompletionCache`（切换连接/数据库/schema/会话）
+与 `pauseQueryEditorBackgroundWork` 都会销毁旧预取器，避免旧作用域的结果重新
+打开提示。
+
+验证：`sqlSignatureHelp.spec.ts` 新增跨语句未闭合括号（含 `;` + 后续 `select`、
+限定名）必须返回 null 的用例，以及字符串/块注释/dollar 引用中的分号仍算作参数
+内容的对照用例；`sqlSignaturePrefetch.spec.ts` 新增 dispose 前挂起请求迟到成功/
+失败、销毁后拒绝新请求、幂等、新预取器可重新请求等 6 项；
+`queryEditorSqlSignature.spec.ts` 新增守卫：不得再出现 `clip: false`、失焦与页签
+隐藏会关闭提示、切换作用域与后台暂停会 dispose 预取器。相关 34 项定向测试通过；
+完整 pnpm check 格式/lint/typecheck 通过，5381 项测试、643 个套件通过，仅既有
+5 个本机 `node:` 套件未加载；frontend build 通过。未启动或自动化桌面 UI，
+未连数据库，无法声称已在真实交互中复现并观察修复，仍需用户实际使用确认。

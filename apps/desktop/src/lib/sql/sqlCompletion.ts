@@ -4670,7 +4670,8 @@ function findActiveFunctionOpenParen(sqlBeforeCursor: string): number | null {
   const stack: number[] = [];
   for (const token of tokenizeSqlSemantic(sqlBeforeCursor, "postgres")) {
     if (token.kind !== "punctuation") continue;
-    if (token.text === "(") stack.push(token.span.start);
+    if (token.text === ";") stack.length = 0;
+    else if (token.text === "(") stack.push(token.span.start);
     else if (token.text === ")") stack.pop();
   }
   return stack[stack.length - 1] ?? null;
