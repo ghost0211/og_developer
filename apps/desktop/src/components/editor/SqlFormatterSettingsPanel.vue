@@ -134,6 +134,7 @@ const sqlFormatterOptionLabelKeys: Record<keyof SqlFormatterOptionSettings, stri
   linesBetweenQueries: "settings.sqlFormatterLinesBetweenQueries",
   denseOperators: "settings.sqlFormatterDenseOperators",
   newlineBeforeSemicolon: "settings.sqlFormatterNewlineBeforeSemicolon",
+  clauseInline: "settings.sqlFormatterClauseInline",
   paramTypes: "settings.sqlFormatterParamTypes",
 };
 const sqlFormatterConfigErrorKeys: Record<string, string> = {
@@ -700,6 +701,13 @@ onBeforeUnmount(() => {
               {{ t("settings.sqlFormatterNewlineBeforeSemicolon") }}
             </Label>
             <Switch id="sql-formatter-newline-before-semicolon" :model-value="settings.newlineBeforeSemicolon" @update:model-value="(value: boolean) => updateOption('newlineBeforeSemicolon', value)" />
+          </div>
+
+          <div class="flex items-center justify-between gap-4 rounded-md border bg-muted/20 px-3 py-2">
+            <Label for="sql-formatter-clause-inline">
+              {{ t("settings.sqlFormatterClauseInline") }}
+            </Label>
+            <Switch id="sql-formatter-clause-inline" :model-value="settings.clauseInline" @update:model-value="(value: boolean) => updateOption('clauseInline', value)" />
           </div>
         </div>
 

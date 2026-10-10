@@ -5565,6 +5565,7 @@ export const zhCNMessages = {
     sqlFormatterLinesBetweenQueries: "查询之间空行",
     sqlFormatterDenseOperators: "紧凑运算符",
     sqlFormatterNewlineBeforeSemicolon: "分号单独换行",
+    sqlFormatterClauseInline: "FROM/WHERE 与内容同行",
     sqlFormatterAdvancedOptions: "高级选项",
     sqlFormatterParams: "参数替换",
     sqlFormatterParamTypes: "参数类型",

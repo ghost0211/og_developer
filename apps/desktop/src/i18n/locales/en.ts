@@ -5563,6 +5563,7 @@ export default {
     sqlFormatterLinesBetweenQueries: "Lines between queries",
     sqlFormatterDenseOperators: "Dense operators",
     sqlFormatterNewlineBeforeSemicolon: "Semicolon on new line",
+    sqlFormatterClauseInline: "Inline FROM/WHERE clause content",
     sqlFormatterAdvancedOptions: "Advanced options",
     sqlFormatterParams: "Params",
     sqlFormatterParamTypes: "Param types",

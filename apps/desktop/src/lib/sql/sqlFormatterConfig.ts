@@ -48,6 +48,9 @@ export interface SqlFormatterOptionSettings {
   linesBetweenQueries: SqlFormatterLinesBetweenQueries;
   denseOperators: boolean;
   newlineBeforeSemicolon: boolean;
+  /** DBX-only post-processing: put FROM/WHERE content on the keyword's line.
+   * Not passed to sql-formatter (it has no such option). */
+  clauseInline: boolean;
   paramTypes: SqlFormatterParamTypes | null;
 }
 
@@ -74,6 +77,7 @@ export const DEFAULT_SQL_FORMATTER_SETTINGS: SqlFormatterSettings = {
   linesBetweenQueries: 1,
   denseOperators: false,
   newlineBeforeSemicolon: false,
+  clauseInline: false,
   paramTypes: null,
 };
 
@@ -90,6 +94,7 @@ const SQL_FORMATTER_OPTION_KEYS = new Set<keyof SqlFormatterOptionSettings>([
   "linesBetweenQueries",
   "denseOperators",
   "newlineBeforeSemicolon",
+  "clauseInline",
   "paramTypes",
 ]);
 
@@ -106,6 +111,7 @@ const SQL_FORMATTER_OPTION_VALIDATORS: Record<keyof SqlFormatterOptionSettings, 
   linesBetweenQueries: (value) => isNumberChoice(value, LINES_BETWEEN_QUERIES_VALUES),
   denseOperators: (value) => typeof value === "boolean",
   newlineBeforeSemicolon: (value) => typeof value === "boolean",
+  clauseInline: (value) => typeof value === "boolean",
   paramTypes: isSqlFormatterParamTypes,
 };
 
@@ -186,6 +192,7 @@ export function sqlFormatterOptionSettings(settings: unknown): SqlFormatterOptio
     linesBetweenQueries: normalizeNumberChoice(input.linesBetweenQueries, LINES_BETWEEN_QUERIES_VALUES, DEFAULT_SQL_FORMATTER_SETTINGS.linesBetweenQueries),
     denseOperators: normalizeBoolean(input.denseOperators, DEFAULT_SQL_FORMATTER_SETTINGS.denseOperators),
     newlineBeforeSemicolon: normalizeBoolean(input.newlineBeforeSemicolon, DEFAULT_SQL_FORMATTER_SETTINGS.newlineBeforeSemicolon),
+    clauseInline: normalizeBoolean(input.clauseInline, DEFAULT_SQL_FORMATTER_SETTINGS.clauseInline),
     paramTypes: normalizeParamTypes(input.paramTypes, DEFAULT_SQL_FORMATTER_SETTINGS.paramTypes),
   };
 }

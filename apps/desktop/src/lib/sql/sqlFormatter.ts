@@ -1,4 +1,4 @@
-import { DEFAULT_SQL_FORMATTER_SETTINGS, sqlFormatterOptions, type SqlFormatterSettings } from "@/lib/sql/sqlFormatterConfig";
+import { DEFAULT_SQL_FORMATTER_SETTINGS, sqlFormatterOptions, sqlFormatterOptionSettings, type SqlFormatterSettings } from "@/lib/sql/sqlFormatterConfig";
 import { looksLikeXml } from "@/lib/sql/autoFormat";
 
 export type SqlFormatDialect = "mysql" | "postgres" | "sqlite" | "sqlserver" | "clickhouse" | "generic";
@@ -86,24 +86,127 @@ export async function formatSqlText(sql: string, dialect: SqlFormatDialect = "ge
   }
 
   const { format } = await import("sql-formatter");
-  const options = sqlFormatterOptions(settings);
+  const normalized = sqlFormatterOptionSettings(settings);
+  const options = sqlFormatterOptions(normalized);
   const language = formatterLanguage(dialect);
+  let formatted: string;
   try {
-    return format(sql, { language, ...options });
+    formatted = format(sql, { language, ...options });
   } catch (err) {
     // The generic "sql" dialect can't parse many real-world constructs (PostgreSQL
     // `::` casts, GaussDB/openGauss materialized-view DDL, T-SQL specifics, ...).
     // Retry once with the more permissive PostgreSQL grammar, which is a superset
     // that tolerates most of these, before surfacing the failure.
-    if (language !== "postgresql") {
-      try {
-        return format(sql, { language: "postgresql", ...options });
-      } catch {
-        // fall through to the original error below
+    if (language === "postgresql") throw err;
+    try {
+      formatted = format(sql, { language: "postgresql", ...options });
+    } catch {
+      throw err;
+    }
+  }
+  if (normalized.clauseInline) {
+    formatted = inlineClauseContents(formatted, normalized);
+  }
+  return formatted;
+}
+
+const INLINE_CLAUSE_KEYWORDS = new Set(["from", "where"]);
+const INLINE_CLAUSE_RE = /^(\s*)(from|where)[ \t]*$/i;
+
+/**
+ * Put the first content line of a FROM/WHERE clause on the keyword's own line.
+ *
+ * sql-formatter always breaks after a clause keyword ("from\n  t1") and offers
+ * no option for the compact "from t1" style, so this is a DBX-side line pass
+ * over the formatted output. It relies on two invariants of the standard
+ * indent style:
+ *   - a clause keyword sits alone on its line;
+ *   - clause content is indented exactly one unit deeper than the keyword.
+ * Because indentation encodes nesting depth, the same rule also inlines
+ * clauses inside subqueries at any depth without touching their inner lines.
+ *
+ * Conservative skips (output unchanged):
+ *   - a comment line between keyword and content (moving it could detach a
+ *     line comment from the clause, or break a multi-line block comment);
+ *     a single-line block-comment-plus-content line still merges;
+ *   - a multi-line parenthesized group (derived table / grouped conditions):
+ *     merging "from (" would leave the body indented relative to the paren,
+ *     not the keyword; a parenthesized group that closes on the same line
+ *     still merges;
+ *   - content indented deeper than exactly one unit (unexpected layout).
+ * Tabular indent styles already place clause content inline, so nothing
+ * matches and the pass is a no-op there.
+ */
+export function inlineClauseContents(sql: string, options: { useTabs?: boolean; tabWidth?: number } = {}): string {
+  const indentUnit = options.useTabs ? "\t" : " ".repeat(options.tabWidth === 4 ? 4 : 2);
+  const lines = sql.split("\n");
+  const out: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const match = INLINE_CLAUSE_RE.exec(line);
+    const next = lines[i + 1];
+    if (match && next !== undefined && INLINE_CLAUSE_KEYWORDS.has(match[2].toLowerCase())) {
+      const indent = match[1];
+      const contentPrefix = indent + indentUnit;
+      if (next.startsWith(contentPrefix)) {
+        const content = next.slice(contentPrefix.length);
+        // Content must be indented by exactly one unit: leading whitespace here
+        // would mean a deeper (unexpected) level.
+        if (content.length > 0 && content.trimStart() === content) {
+          const lineComment = content.startsWith("--");
+          const unclosedBlockComment = content.startsWith("/*") && !content.includes("*/");
+          const unclosedParenGroup = content.startsWith("(") && !closesParenGroupOnSameLine(content);
+          if (!lineComment && !unclosedBlockComment && !unclosedParenGroup) {
+            out.push(`${indent}${match[2]} ${content}`);
+            i++; // consume the merged content line
+            continue;
+          }
+        }
       }
     }
-    throw err;
+    out.push(line);
   }
+  return out.join("\n");
+}
+
+/** True when the parenthesized group opened at the line start closes on the
+ * same line. Quote/comment aware; a miss only means we skip merging. */
+function closesParenGroupOnSameLine(text: string): boolean {
+  let depth = 0;
+  let quote: string | null = null;
+  let i = 0;
+  while (i < text.length) {
+    const ch = text[i];
+    if (quote) {
+      if (ch === quote) {
+        if (text[i + 1] === quote) {
+          i += 2; // doubled quote inside the literal
+          continue;
+        }
+        quote = null;
+      }
+      i++;
+      continue;
+    }
+    if (ch === "'" || ch === '"' || ch === "`") {
+      quote = ch;
+    } else if (ch === "-" && text[i + 1] === "-") {
+      break; // rest of the line is a comment
+    } else if (ch === "/" && text[i + 1] === "*") {
+      const end = text.indexOf("*/", i + 2);
+      if (end === -1) return false;
+      i = end + 2;
+      continue;
+    } else if (ch === "(") {
+      depth++;
+    } else if (ch === ")") {
+      depth--;
+      if (depth === 0) return true;
+      if (depth < 0) return false;
+    }
+    i++;
+  }
+  return false;
 }
 
 /**

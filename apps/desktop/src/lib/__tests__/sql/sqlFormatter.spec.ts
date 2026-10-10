@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatSqlForDisplay, formatSqlText, MAX_SQL_FORMAT_CHARS, sqlFormatDialectForDbType, UnsupportedStructuredInputError } from "@/lib/sql/sqlFormatter";
+import { formatSqlForDisplay, formatSqlText, inlineClauseContents, MAX_SQL_FORMAT_CHARS, sqlFormatDialectForDbType, UnsupportedStructuredInputError } from "@/lib/sql/sqlFormatter";
 
 describe("sqlFormatter", () => {
   it("maps PostgreSQL-compatible database types to the postgres formatter dialect", () => {
@@ -48,6 +48,92 @@ describe("sqlFormatter", () => {
 
     expect(formatted).toContain("1::int");
     expect(formatted).toContain("AS id");
+  });
+
+  it("keeps FROM/WHERE on their own lines by default", async () => {
+    const formatted = await formatSqlText("select a from t1 where a = 1;", "postgres");
+
+    expect(formatted).toMatch(/FROM\n {2}t1/);
+    expect(formatted).toMatch(/WHERE\n {2}a = 1;/);
+  });
+
+  it("inlines FROM/WHERE content when clauseInline is enabled", async () => {
+    const sql = "select t1.domain_code, t1.datatype_name from ddd.ldm_datatype t1 join ddd.pdm_typemapping t2 on t1.datatype_id = t2.datatype_id where suffix_code = '_code';";
+
+    const formatted = await formatSqlText(sql, "postgres", { keywordCase: "lower", clauseInline: true });
+
+    expect(formatted).toBe(["select", "  t1.domain_code,", "  t1.datatype_name", "from ddd.ldm_datatype t1", "  join ddd.pdm_typemapping t2 on t1.datatype_id = t2.datatype_id", "where suffix_code = '_code';"].join("\n"));
+  });
+
+  it("inlines clauses inside subqueries at every nesting depth", async () => {
+    const sql = "select x from (select y from (select z from t3 where z > 0) t2 where y > 1) t1 where x > 2;";
+
+    const formatted = await formatSqlText(sql, "postgres", { keywordCase: "lower", clauseInline: true });
+
+    expect(formatted).toBe(["select", "  x", "from", "  (", "    select", "      y", "    from", "      (", "        select", "          z", "        from t3", "        where z > 0", "      ) t2", "    where y > 1", "  ) t1", "where x > 2;"].join("\n"));
+  });
+
+  it("never merges a keyword into a multi-line parenthesized group, but merges one that closes inline", async () => {
+    // Derived tables / grouped conditions stay structurally intact...
+    const derived = await formatSqlText("select a from (select 1 as a) s where (a = 1 or b = 2);", "postgres", { keywordCase: "lower", clauseInline: true });
+    expect(derived).toMatch(/from\n {2}\(\n {4}select/);
+    expect(derived).toMatch(/where\n {2}\(\n {4}a = 1/);
+
+    // ...while a parenthesized group that fits on one line still inlines.
+    const singleLine = await formatSqlText("select a from t where (a = 1);", "postgres", { keywordCase: "lower", clauseInline: true });
+    expect(singleLine).toContain("where (a = 1);");
+  });
+
+  it("preserves AND/OR newline placement around inlined WHERE content", async () => {
+    const sql = "select a from t where a = 1 and b = 2 or c = 3;";
+
+    const formatted = await formatSqlText(sql, "postgres", { keywordCase: "lower", clauseInline: true, logicalOperatorNewline: "before" });
+
+    expect(formatted).toContain("where a = 1");
+    expect(formatted).toMatch(/\n {2}and b = 2/);
+    expect(formatted).toMatch(/\n {2}or c = 3/);
+  });
+
+  it("does not merge a line comment between the keyword and its content", async () => {
+    const formatted = await formatSqlText("select a\nfrom\n-- pick source table\napp.t1\nwhere x = 1;", "postgres", { keywordCase: "lower", clauseInline: true });
+
+    expect(formatted).toMatch(/from\n {2}-- pick source table\n {2}app\.t1/);
+    expect(formatted).toContain("where x = 1;");
+  });
+
+  it("merges a closed single-line block comment but never an unterminated one", async () => {
+    const closed = await formatSqlText("select a from t1 where /* guard */ a = 1;", "postgres", { keywordCase: "lower", clauseInline: true });
+    expect(closed).toContain("where /* guard */ a = 1;");
+
+    const unterminated = inlineClauseContents(["select", "  a", "from", "  /* multi", "     line */ t1"].join("\n"), {});
+    expect(unterminated).toBe(["select", "  a", "from", "  /* multi", "     line */ t1"].join("\n"));
+  });
+
+  it("inlines with tab indentation and keeps deeper-than-one-unit content untouched", async () => {
+    const tabbed = inlineClauseContents(["from", "\tddd.t1", "where", "\ta = 1"].join("\n"), { useTabs: true });
+    expect(tabbed).toBe(["from ddd.t1", "where a = 1"].join("\n"));
+
+    const tooDeep = inlineClauseContents(["from", "    ddd.t1"].join("\n"), { useTabs: false, tabWidth: 2 });
+    expect(tooDeep).toBe(["from", "    ddd.t1"].join("\n"));
+
+    const tabWidth4 = inlineClauseContents(["from", "    ddd.t1"].join("\n"), { useTabs: false, tabWidth: 4 });
+    expect(tabWidth4).toBe("from ddd.t1");
+  });
+
+  it("is a no-op for tabular indent styles where content is already inline", async () => {
+    const sql = "select a from t1 where a = 1;";
+    const withoutInline = await formatSqlText(sql, "postgres", { keywordCase: "lower", indentStyle: "tabularLeft" });
+    const withInline = await formatSqlText(sql, "postgres", { keywordCase: "lower", indentStyle: "tabularLeft", clauseInline: true });
+
+    expect(withInline).toBe(withoutInline);
+    expect(withInline).toContain("from      t1");
+  });
+
+  it("keeps keyword case from the formatter output when inlining", async () => {
+    const formatted = await formatSqlText("select a from t1 where a = 1;", "postgres", { keywordCase: "upper", clauseInline: true });
+
+    expect(formatted).toContain("FROM t1");
+    expect(formatted).toContain("WHERE a = 1;");
   });
 
   it("returns the original SQL for display when formatting fails", async () => {
