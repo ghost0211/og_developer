@@ -20,7 +20,7 @@ const leafTypes: Set<TreeNodeType> = new Set([
   "sequence",
 ]);
 
-const fullWidthLabelTypes: Set<TreeNodeType> = new Set(["table", "view", "materialized_view"]);
+const fullWidthLabelTypes: Set<TreeNodeType> = new Set(["table", "view", "materialized_view", "procedure", "function"]);
 
 const emptyContainerTypes: Set<TreeNodeType> = new Set(["saved-sql-root", "saved-sql-folder"]);
 
@@ -28,7 +28,8 @@ const pinnableTypes: Set<TreeNodeType> = new Set(["connection-group", "database"
 
 // Schema trigger rows carry their owning table in the trailing comment; keep
 // them eligible in both the TreeItem renderer and sibling comment alignment.
-const commentTypes: Set<TreeNodeType> = new Set(["connection", "schema", "table", "view", "materialized_view", "column", "trigger"]);
+// Ported from dbx 235a2d2d, keeping OG Developer's trigger ownership tail.
+const commentTypes: Set<TreeNodeType> = new Set(["connection", "schema", "table", "view", "materialized_view", "column", "trigger", "procedure", "function", "sequence", "synonym", "package"]);
 
 export function treeItemPaddingLeft(depth: number): string {
   return `${depth * 16 + 8}px`;
@@ -105,8 +106,12 @@ export function sidebarTreeNodeComment(node: TreeNode): string | null {
   return node.comment || null;
 }
 
+export function isSidebarCommentSupportedType(type: TreeNodeType): boolean {
+  return commentTypes.has(type);
+}
+
 export function isSidebarCommentAlignableNode(node: TreeNode): boolean {
-  return commentTypes.has(node.type);
+  return isSidebarCommentSupportedType(node.type);
 }
 
 export function usesFullWidthTreeLabel(type: TreeNodeType, allowHorizontalScroll: boolean, hasTrailingComment = false): boolean {

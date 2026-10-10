@@ -6,10 +6,9 @@ import { useConnectionStore } from "@/stores/connectionStore";
 import { useQueryStore } from "@/stores/queryStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useToast } from "@/composables/useToast";
-import type { ObjectSourceKind, TableInfo, TableNameFilter, TreeNode, TreeNodeType } from "@/types/database";
-import { filterSidebarSearchRootsByConnectionState, filterSidebarTree, filterSidebarTreeToConnectedConnections, resolveSidebarFilterGuards, reuseLiveSidebarTreeNodes } from "@/lib/sidebar/sidebarSearchTree";
-import { matchSidebarLabel } from "@/lib/sidebar/sidebarSearch";
-import { buildTableTreeNodes } from "@/lib/table/tableTree";
+import type { ObjectSourceKind, TableNameFilter, TreeNode, TreeNodeType } from "@/types/database";
+import { filterSidebarSearchRootsByConnectionState, filterSidebarTree, filterSidebarTreeToConnectedConnections, resolveSidebarFilterGuards } from "@/lib/sidebar/sidebarSearchTree";
+import { filterLocallySearchedTables, type LocalTableSearchSnapshot } from "@/lib/sidebar/localTableSearch";
 import { isCancelSearchShortcut, isCopySidebarSelectionShortcut, isEditSidebarConnectionShortcut, isPasteSidebarSelectionShortcut, isViewTableDdlShortcut } from "@/lib/editor/keyboardShortcuts";
 import { sidebarNodeSupportsDdlView } from "@/lib/sidebar/sidebarTreeDdlShortcut";
 import { copyNameForTreeNode, objectSourceKindForTreeNode } from "@/lib/sidebar/treeNodeClick";
@@ -384,37 +383,16 @@ function focusTableSearchInput(parentNodeId: string) {
 }
 
 const displayedTreeNodes = computed(() => sortConnectionListForDisplay(store.treeNodes, settingsStore.editorSettings.sidebarConnectionSortMode));
-const localTableSearchResults = ref<Record<string, TableInfo[] | null>>({});
-
-const localTableSearchParentTypes = new Set<TreeNodeType>(["database", "schema", "group-tables"]);
-const localTableSearchChildTypes = new Set<TreeNodeType>(["table", "view", "materialized_view"]);
-
-function filterLocallySearchedTables(nodes: TreeNode[]): TreeNode[] {
-  return nodes.map((node) => {
-    const children = node.children ? filterLocallySearchedTables(node.children) : undefined;
-    const query = settingsStore.editorSettings.sidebarTableSearchLocal && localTableSearchParentTypes.has(node.type) ? store.sidebarTableSearchQueries[node.id]?.trim() : "";
-    if (!query || !children) return children === node.children ? node : { ...node, children };
-
-    const indexed = localTableSearchResults.value[node.id];
-    const matchingChildren =
-      indexed === null
-        ? children.filter((child) => localTableSearchChildTypes.has(child.type) && !!matchSidebarLabel(child.label.toLowerCase(), query.toLowerCase()))
-        : indexed
-          ? reuseLiveSidebarTreeNodes(
-              buildTableTreeNodes({ nodeId: node.id, connectionId: node.connectionId || "", database: node.database || "", schema: node.schema, catalog: node.catalog, tables: indexed.filter((entry) => !!matchSidebarLabel(entry.name.toLowerCase(), query.toLowerCase())) }),
-              children,
-            )
-          : children.filter((child) => localTableSearchChildTypes.has(child.type) && !!matchSidebarLabel(child.label.toLowerCase(), query.toLowerCase()));
-    return { ...node, children: matchingChildren };
-  });
-}
+const localTableSearchResults = ref<Record<string, LocalTableSearchSnapshot>>({});
 
 async function loadLocalTableSearchResults(parentNodeId: string, refresh = false) {
+  const epoch = store.sidebarTableSearchIndexEpoch;
   try {
     const entries = refresh ? await store.refreshSidebarTableSearchIndex(parentNodeId) : await store.loadSidebarTableSearchIndex(parentNodeId);
-    localTableSearchResults.value = { ...localTableSearchResults.value, [parentNodeId]: entries };
+    if (epoch !== store.sidebarTableSearchIndexEpoch) return;
+    localTableSearchResults.value = { ...localTableSearchResults.value, [parentNodeId]: { epoch, entries } };
   } finally {
-    if (latestTableSearchInteractionParentId === parentNodeId) focusTableSearchInput(parentNodeId);
+    if (epoch === store.sidebarTableSearchIndexEpoch && latestTableSearchInteractionParentId === parentNodeId) focusTableSearchInput(parentNodeId);
   }
 }
 
@@ -437,7 +415,12 @@ const filteredNodes = computed(() => {
     nodes = filterSidebarTreeToConnectedConnections(nodes, store.connectedIds);
   }
 
-  nodes = filterLocallySearchedTables(nodes);
+  nodes = filterLocallySearchedTables(nodes, {
+    enabled: settingsStore.editorSettings.sidebarTableSearchLocal,
+    epoch: store.sidebarTableSearchIndexEpoch,
+    queries: store.sidebarTableSearchQueries,
+    indexedResults: localTableSearchResults.value,
+  });
 
   const q = deferredSearchQuery.value;
   nodes = filterSidebarTree(nodes, q, searchCollapsedIds.value, searchableNodeTypes.value);

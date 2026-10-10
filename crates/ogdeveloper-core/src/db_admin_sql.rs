@@ -634,6 +634,34 @@ mod tests {
     }
 
     #[test]
+    fn opengauss_direct_relation_renames_preserve_identifier_quoting() {
+        for (object_type, keyword) in [
+            (DatabaseObjectType::Table, "TABLE"),
+            (DatabaseObjectType::View, "VIEW"),
+            (DatabaseObjectType::MaterializedView, "MATERIALIZED VIEW"),
+        ] {
+            assert!(supports_object_rename(Some(DatabaseType::Opengauss), object_type));
+            let sql = build_rename_object_sql(RenameObjectSqlOptions {
+                database_type: Some(DatabaseType::Opengauss),
+                object_type,
+                schema: Some("App\"Schema".to_string()),
+                old_name: "旧表\"; DROP TABLE other; --".to_string(),
+                new_name: "New\"Name".to_string(),
+            })
+            .unwrap();
+            assert_eq!(
+                sql,
+                format!(
+                    "ALTER {keyword} \"App\"\"Schema\".\"旧表\"\"; DROP TABLE other; --\" RENAME TO \"New\"\"Name\";"
+                )
+            );
+        }
+        for object_type in [DatabaseObjectType::Function, DatabaseObjectType::Procedure] {
+            assert!(!supports_object_rename(Some(DatabaseType::Opengauss), object_type));
+        }
+    }
+
+    #[test]
     fn builds_opengauss_create_database_sql() {
         assert_eq!(
             build_create_database_sql(CreateDatabaseSqlOptions {

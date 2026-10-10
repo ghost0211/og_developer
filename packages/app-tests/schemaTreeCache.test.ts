@@ -42,3 +42,22 @@ test("rejects invalid schema tree cache payloads", () => {
   assert.equal(decodeSchemaTreeCache({ version: 2, cachedAt: "bad", children: "nope" }, now), null);
   assert.equal(decodeSchemaTreeCache({ version: 1, cachedAt: "2026-05-17T10:00:00.000Z", children }, now), null);
 });
+
+test("roundtrips nullable and Unicode table comments in the persisted search index", () => {
+  const tableSearchIndex = {
+    complete: true as const,
+    indexedAt: new Date(now).toISOString(),
+    entries: [
+      { name: "users", tableType: "TABLE", comment: "用户账号档案" },
+      { name: "empty", tableType: "VIEW", comment: null },
+      { name: "legacy", tableType: "TABLE" },
+    ],
+  };
+  const stored = JSON.parse(JSON.stringify(encodeSchemaTreeCache(children, now, tableSearchIndex)));
+  assert.deepEqual(decodeSchemaTreeCache(stored, now)?.tableSearchIndex, tableSearchIndex);
+});
+
+test("rejects non-string comments without discarding valid tree children", () => {
+  const payload = { ...encodeSchemaTreeCache(children, now), tableSearchIndex: { complete: true, indexedAt: new Date(now).toISOString(), entries: [{ name: "users", tableType: "TABLE", comment: 42 }] } };
+  assert.deepEqual(decodeSchemaTreeCache(payload, now), { children, isStale: false });
+});

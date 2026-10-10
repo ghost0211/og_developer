@@ -348,7 +348,7 @@ describe("connectionStore metadata loading", () => {
 
   it("keeps concurrent table-tree and local-index refreshes in separate cache entries", async () => {
     const treeCacheKey = "pg-1:app:public:group-tables:objects-v12";
-    const indexCacheKey = `${treeCacheKey}:table-search-index-v1`;
+    const indexCacheKey = `${treeCacheKey}:table-search-index-v2`;
     const cachedPayloads = new Map<string, unknown>([
       [
         treeCacheKey,
@@ -368,7 +368,7 @@ describe("connectionStore metadata loading", () => {
       tableListCalls += 1;
       if (tableListCalls === 2) releaseTableLists();
       await bothTableListsStarted;
-      return limit === 2 ? ([{ name: "indexed_table", table_type: "TABLE", comment: null }] satisfies TableInfo[]) : ([{ name: "fresh_table", table_type: "TABLE", comment: null }] satisfies TableInfo[]);
+      return limit === 2 ? ([{ name: "indexed_table", table_type: "TABLE", comment: "用户索引表" }] satisfies TableInfo[]) : ([{ name: "fresh_table", table_type: "TABLE", comment: null }] satisfies TableInfo[]);
     });
     const loadSchemaCache = vi.fn(async (key: string) => {
       const payload = cachedPayloads.get(key) ?? null;
@@ -447,9 +447,19 @@ describe("connectionStore metadata loading", () => {
     const treeCache = decodeSchemaTreeCache<TreeNode[]>(cachedPayloads.get(treeCacheKey));
     const indexCache = decodeSchemaTreeCache<TreeNode[]>(cachedPayloads.get(indexCacheKey));
     expect(treeCache?.children.map((node) => node.label)).toEqual(["fresh_table"]);
-    expect(indexCache?.tableSearchIndex?.entries).toEqual([{ name: "indexed_table", tableType: "TABLE" }]);
-    await expect(store.loadSidebarTableSearchIndex(tablesGroup.id)).resolves.toEqual([{ name: "indexed_table", table_type: "TABLE" }]);
+    expect(indexCache?.tableSearchIndex?.entries).toEqual([{ name: "indexed_table", tableType: "TABLE", comment: "用户索引表" }]);
+    await expect(store.loadSidebarTableSearchIndex(tablesGroup.id)).resolves.toEqual([{ name: "indexed_table", table_type: "TABLE", comment: "用户索引表" }]);
     expect(loadSchemaCache).toHaveBeenLastCalledWith(indexCacheKey);
+
+    // A rename/full metadata refresh completed while an index query was in
+    // flight. Its old names must not overwrite the new persistent snapshot.
+    saveSchemaCache.mockClear();
+    listTables.mockImplementationOnce(async () => {
+      store.sidebarTableSearchIndexEpoch += 1;
+      return [{ name: "late_old_name", table_type: "TABLE", comment: "过期名称" }] satisfies TableInfo[];
+    });
+    await store.refreshSidebarTableSearchIndex(tablesGroup.id);
+    expect(saveSchemaCache).not.toHaveBeenCalled();
   });
 
   it("ignores stale table filter refreshes that finish out of order", async () => {

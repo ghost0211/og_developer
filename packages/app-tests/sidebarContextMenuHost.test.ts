@@ -71,6 +71,23 @@ test("query-tab object source opens clean isolated tabs and honors backend edita
   assert.doesNotMatch(openObjectSourceBody, /queryStore\.updateSql/);
 });
 
+test("object rename uses captured identity, read-only checks and cancellation-aware execution", () => {
+  const host = readFileSync("apps/desktop/src/components/sidebar/SidebarTreeRuntimeHost.vue", "utf8");
+  const confirm = functionBody(host, "confirmRenameObject");
+  const preview = functionBody(host, "refreshRenameObjectPreviewSql");
+  const open = functionBody(host, "openRenameObjectDialog");
+  assert.match(confirm, /createSidebarActionTarget\(sidebarFormTarget\.value \?\? activeNode\.value\)/);
+  assert.match(confirm, /read_only/);
+  assert.match(confirm, /executeObjectRename\(/);
+  assert.match(confirm, /executeTreeNodeSqlWithProductionGuard\(target, sql/);
+  assert.match(confirm, /beforeExecute: assertWritable/);
+  assert.match(confirm, /if \(executed === undefined\) return;/);
+  assert.match(preview, /const node = sidebarFormTarget\.value \?\? activeNode\.value/);
+  assert.match(preview, /oldName: treeNodeDataObjectName\(node\)/);
+  assert.match(open, /if \(!canRenameObject\.value\) return;/);
+  assert.match(host, /execute: \(\) => \{\s*options\.beforeExecute\?\.\(\);/);
+});
+
 test("source object context menus expose the Program Window entry", () => {
   const runtimeHost = readFileSync("apps/desktop/src/components/sidebar/SidebarTreeRuntimeHost.vue", "utf8");
 

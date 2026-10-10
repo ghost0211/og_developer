@@ -3,6 +3,7 @@ export const SCHEMA_TREE_CACHE_TTL_MS = 15 * 60 * 1000;
 export interface TableSearchIndexEntry {
   name: string;
   tableType: string;
+  comment?: string | null;
 }
 
 export interface TableSearchIndex {
@@ -37,7 +38,7 @@ function decodeTableSearchIndex(value: unknown): TableSearchIndex | undefined {
   if (!value || typeof value !== "object") return undefined;
   const index = value as Partial<TableSearchIndex>;
   if (index.complete !== true || typeof index.indexedAt !== "string" || !Array.isArray(index.entries)) return undefined;
-  const entries = index.entries.filter((entry): entry is TableSearchIndexEntry => !!entry && typeof entry.name === "string" && typeof entry.tableType === "string");
+  const entries = index.entries.filter((entry): entry is TableSearchIndexEntry => !!entry && typeof entry.name === "string" && typeof entry.tableType === "string" && (entry.comment == null || typeof entry.comment === "string"));
   return entries.length === index.entries.length ? { complete: true, indexedAt: index.indexedAt, entries } : undefined;
 }
 

@@ -127,6 +127,53 @@ describe("TreeItem schema trigger owner comments", () => {
   });
 });
 
+describe("TreeItem routine comments", () => {
+  const routineNodes = () =>
+    (["FUNCTION", "PROCEDURE"] as const).map(
+      (object_type) =>
+        buildGroupedObjectTreeNodes({
+          nodeId: "c:test_pg:app",
+          connectionId: "c",
+          database: "test_pg",
+          schema: "app",
+          objects: [{ name: `validate_${object_type.toLowerCase()}`, object_type, schema: "app", signature: "(integer)", comment: `校验用户账号 ${object_type}` }],
+        })[0]!.children![0]!,
+    );
+
+  it.each(["comment-inline", "comment-aligned", "comment-right"])("renders procedure/function comments in the real row (%s)", async (mode) => {
+    settingsStore.editorSettings.sidebarObjectInfoMode = mode;
+    const nodes = routineNodes();
+    const container = await mountNodes(nodes);
+    await vi.waitFor(() => expect([...container.querySelectorAll(".sidebar-object-comment")].map((element) => element.textContent)).toEqual(nodes.map((node) => node.comment)));
+    expect(nodes.map((node) => node.type)).toEqual(["function", "procedure"]);
+    expect(container.textContent).toContain("validate_function");
+    expect(container.textContent).toContain("validate_procedure");
+    expect(container.querySelector(".tree-item-object-disabled")).toBeNull();
+  });
+
+  it.each(["function", "procedure"] as const)("shows the full %s comment tooltip without a label overflow", async (type) => {
+    const node = routineNodes().find((entry) => entry.type === type)!;
+    node.comment = "Long routine documentation ".repeat(20);
+    const container = await mountNodes([node]);
+    const row = container.querySelector<HTMLElement>("[tabindex]")!;
+    // happy-dom doesn't maintain the browser's :hover state from mouse events.
+    const matches = row.matches.bind(row);
+    vi.spyOn(row, "matches").mockImplementation((selector) => selector === ":hover" || matches(selector));
+    row.parentElement!.dispatchEvent(new MouseEvent("mouseenter"));
+    await vi.waitFor(() => expect(document.querySelector('[role="tooltip"]')?.textContent).toContain(node.comment!.trim()));
+  });
+
+  it("does not fabricate comments and respects hidden metadata mode", async () => {
+    const nodes = routineNodes();
+    nodes[0]!.comment = undefined;
+    const container = await mountNodes(nodes);
+    expect(container.querySelectorAll(".sidebar-object-comment")).toHaveLength(1);
+    settingsStore.editorSettings.sidebarObjectInfoMode = "none";
+    const hidden = await mountNodes(routineNodes());
+    expect(hidden.querySelector(".sidebar-object-comment")).toBeNull();
+  });
+});
+
 describe("TreeItem disabled database object colors", () => {
   it.each(["trigger", "job", "scheduler"] as const)("grays both name and icon for a disabled %s, including selection", async (type) => {
     const node: TreeNode = {

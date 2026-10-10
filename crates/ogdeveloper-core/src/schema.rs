@@ -7,10 +7,12 @@ use std::collections::{BTreeSet, HashSet};
 use crate::connection::{AppState, PoolKind};
 use crate::db;
 use crate::models::connection::{ConnectionConfig, DatabaseType};
+mod opengauss_ddl_comments;
 pub use crate::types::{
     unpaged_object_list, CompletionAssistantCandidate, CompletionAssistantSearchParams, ObjectListOutcome,
     ObjectReferenceInfo, ObjectSourceKind, ObjectStatisticsInfo, SynonymTargetInfo, TableNameFilter, TypeAttributeInfo,
 };
+use opengauss_ddl_comments::normalize_opengauss_table_ddl_comments;
 
 pub async fn connection_config(state: &AppState, connection_id: &str) -> Option<ConnectionConfig> {
     state.configs.read().await.get(connection_id).cloned()
@@ -1854,6 +1856,10 @@ async fn external_opengauss_table_ddl(
         )
         .await?,
     );
+    // Repair pg_get_tabledef output once at its source, before export/transfer
+    // or source viewers see it. The native fallback below builds DDL itself
+    // and does not consume pg_get_tabledef comment literals.
+    let ddl = normalize_opengauss_table_ddl_comments(&ddl);
     Ok(append_opengauss_trigger_definitions(ddl, &trigger_definitions))
 }
 

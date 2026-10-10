@@ -276,6 +276,7 @@ export const useConnectionStore = defineStore("connection", () => {
   const schemaListCache = ref<Record<string, string[]>>({});
   const sidebarSearchQuery = ref("");
   const sidebarTableSearchQueries = ref<Record<string, string>>({});
+  const sidebarTableSearchIndexEpoch = ref(0);
   const sidebarTableNameFilters = ref<Record<string, TableNameFilter>>(loadSidebarTableNameFilters());
   const sidebarTableNameFilterRevisions = new Map<string, number>();
   const completionTableIndex = new Map<string, { touched: number; tables: SqlCompletionTable[] }>();
@@ -1816,7 +1817,8 @@ export const useConnectionStore = defineStore("connection", () => {
 
   function sidebarTableSearchIndexCacheKey(parent: TreeNode): string | null {
     const treeCacheKey = sidebarTableSearchTreeCacheKey(parent);
-    return treeCacheKey ? `${treeCacheKey}:table-search-index-v1` : null;
+    // v2 includes comments; invalidate apparently complete names-only indexes.
+    return treeCacheKey ? `${treeCacheKey}:table-search-index-v2` : null;
   }
 
   async function loadSidebarTableSearchIndex(parentNodeId: string): Promise<TableInfo[] | null> {
@@ -1827,10 +1829,11 @@ export const useConnectionStore = defineStore("connection", () => {
     const decoded = decodeSchemaTreeCache<TreeNode[]>(await api.loadSchemaCache<unknown>(cacheKey).catch(() => null));
     const index = decoded?.tableSearchIndex;
     if (!index) return null;
-    return index.entries.map((entry) => ({ name: entry.name, table_type: entry.tableType }));
+    return index.entries.map((entry) => ({ name: entry.name, table_type: entry.tableType, ...(entry.comment === undefined ? {} : { comment: entry.comment }) }));
   }
 
   async function refreshSidebarTableSearchIndex(parentNodeId: string): Promise<TableInfo[]> {
+    const epoch = sidebarTableSearchIndexEpoch.value;
     const parent = findNode(treeNodes.value, parentNodeId);
     if (!parent?.connectionId || !hasTreeNodeDatabaseContext(parent)) return [];
     const cacheKey = sidebarTableSearchIndexCacheKey(parent);
@@ -1847,8 +1850,10 @@ export const useConnectionStore = defineStore("connection", () => {
       if (page.length < pageSize) break;
     }
     const deduped = [...new Map(entries.map((entry) => [`${entry.table_type}\0${entry.name}`, entry])).values()];
-    const tableSearchIndex = { complete: true as const, indexedAt: new Date().toISOString(), entries: deduped.map((entry) => ({ name: entry.name, tableType: entry.table_type })) };
-    await api.saveSchemaCache(cacheKey, encodeSchemaTreeCache<TreeNode[]>([], Date.now(), tableSearchIndex));
+    const tableSearchIndex = { complete: true as const, indexedAt: new Date().toISOString(), entries: deduped.map((entry) => ({ name: entry.name, tableType: entry.table_type, ...(entry.comment === undefined ? {} : { comment: entry.comment }) })) };
+    if (epoch === sidebarTableSearchIndexEpoch.value) {
+      await api.saveSchemaCache(cacheKey, encodeSchemaTreeCache<TreeNode[]>([], Date.now(), tableSearchIndex));
+    }
     return deduped;
   }
 
@@ -4406,10 +4411,16 @@ export const useConnectionStore = defineStore("connection", () => {
     void invalidateObjectDdlCache(match);
     const shouldRefreshSchemaNode = !!schema && !catalog;
     const node = shouldRefreshSchemaNode ? findNode(treeNodes.value, `${connectionId}:${database}:${schema}`) : null;
-    if (node) {
-      await refreshTreeNode(node);
-    } else {
-      await refreshDatabaseTreeNode(connectionId, database, catalog);
+    try {
+      if (node) {
+        await refreshTreeNode(node);
+      } else {
+        await refreshDatabaseTreeNode(connectionId, database, catalog);
+      }
+    } finally {
+      // Invalidate in-memory local indexes even if a post-DDL metadata read
+      // fails: a cached old name must not recreate a renamed/dropped object.
+      sidebarTableSearchIndexEpoch.value += 1;
     }
     void loadSidebarTableStorage({ connectionId, database, schema: schema || "" }, { force: true });
   }
@@ -5989,6 +6000,7 @@ export const useConnectionStore = defineStore("connection", () => {
     databaseExportSource,
     sidebarSearchQuery,
     sidebarTableSearchQueries,
+    sidebarTableSearchIndexEpoch,
     sidebarTableNameFilters,
     tableNameFilterScopeKey,
     tableNameFilterForScope,

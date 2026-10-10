@@ -403,9 +403,16 @@ fn quote_export_sql_string(text: &str) -> String {
     format!("'{}'", text.replace('\\', "\\\\").replace('\'', "''"))
 }
 
+// Adapted from upstream 2766a5bc: openGauss standard-conforming strings keep
+// backslashes literal. Do not send this target through generic MySQL escaping.
+fn quote_opengauss_export_sql_string(text: &str) -> String {
+    format!("'{}'", text.replace('\'', "''"))
+}
+
 fn quote_export_sql_string_for_database(text: &str, database_type: Option<DatabaseType>) -> String {
     match database_type {
         Some(DatabaseType::Postgres) => quote_postgres_string_literal(text),
+        Some(DatabaseType::Opengauss) => quote_opengauss_export_sql_string(text),
         database_type if is_mysql_compatible_export_literal_target(database_type) => {
             quote_mysql_compatible_export_sql_string(text)
         }
@@ -2196,6 +2203,46 @@ fn build_database_export_object_source_sql(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn opengauss_export_literals_preserve_backslashes_and_escape_quotes() {
+        for text in [
+            r"C:\temp\files",
+            r"\n\t\r",
+            "owner's note",
+            "中文：'0'未删除",
+            "",
+            "line1\nline2",
+            "x'; DROP TABLE victims; --",
+        ] {
+            let expected = format!("'{}'", text.replace('\'', "''"));
+            assert_eq!(
+                format_export_sql_literal_for_database(&Value::String(text.to_string()), Some(DatabaseType::Opengauss)),
+                expected
+            );
+        }
+        let json = serde_json::json!({"path": "C:\\temp\\files", "name": "O'Hara"});
+        assert_eq!(
+            format_export_sql_literal_for_database(&json, Some(DatabaseType::Opengauss)),
+            format!("'{}'", json.to_string().replace('\'', "''"))
+        );
+        assert_eq!(format_export_sql_literal_for_database(&Value::Null, Some(DatabaseType::Opengauss)), "NULL");
+        assert_eq!(
+            format_export_sql_literal_for_database(&serde_json::json!(-12.5), Some(DatabaseType::Opengauss)),
+            "-12.5"
+        );
+        assert_eq!(format_export_sql_literal_for_database(&Value::Bool(true), Some(DatabaseType::Opengauss)), "TRUE");
+    }
+
+    #[test]
+    fn opengauss_export_fix_does_not_change_postgres_or_generic_escaping() {
+        let text = "O'Hara C:\\temp";
+        assert_eq!(
+            quote_export_sql_string_for_database(text, Some(DatabaseType::Postgres)),
+            quote_postgres_string_literal(text)
+        );
+        assert_eq!(quote_export_sql_string_for_database(text, None), "'O''Hara C:\\\\temp'");
+    }
 
     #[test]
     fn postgres_export_table_ddl() {

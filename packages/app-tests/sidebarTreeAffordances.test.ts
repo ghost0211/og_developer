@@ -8,7 +8,7 @@ const treeItem = readFileSync("apps/desktop/src/components/sidebar/TreeItem.vue"
 const runtimeHost = readFileSync("apps/desktop/src/components/sidebar/SidebarTreeRuntimeHost.vue", "utf8");
 const connectionTree = readFileSync("apps/desktop/src/components/sidebar/ConnectionTree.vue", "utf8");
 const connectionStore = readFileSync("apps/desktop/src/stores/connectionStore.ts", "utf8");
-
+const localTableSearch = readFileSync("apps/desktop/src/lib/sidebar/localTableSearch.ts", "utf8");
 
 test("complex tree changes retain the full rebuild fallback", () => {
   assert.match(connectionTree, /const filteredNodes = computed/);
@@ -64,11 +64,23 @@ test("async tree expansion does not restore a stale rendered clone state", () =>
 });
 
 test("tree filters retain a temporary expansion state", () => {
-  assert.match(connectionTree, /return \{ \.\.\.node, children: matchingChildren \};/);
-  assert.doesNotMatch(connectionTree, /children: matchingChildren,\s*isExpanded:\s*true/);
+  assert.match(connectionTree, /filterLocallySearchedTables\(nodes,\s*\{/);
+  assert.match(connectionTree, /enabled: settingsStore\.editorSettings\.sidebarTableSearchLocal/);
+  assert.match(connectionTree, /indexedResults: localTableSearchResults\.value/);
+  assert.match(localTableSearch, /return \{ \.\.\.node, children: matchingChildren \};/);
+  assert.doesNotMatch(localTableSearch, /children: matchingChildren,\s*isExpanded:\s*true/);
   assert.match(connectionTree, /function onSearchToggle\(node: TreeNode\) \{\s*if \(!isTreeSearchFiltering\.value \|\| !node\.children\) return;/);
   assert.match(connectionTree, /function onNodeToggled\(node: TreeNode, expanded: boolean\) \{\s*if \(isTreeSearchFiltering\.value\) return;\s*syncSidebarTreeNodeExpansion\(store\.treeNodes, node, expanded\)/);
   assert.match(runtimeHost, /shouldRunTreeNodeRowAction\(action, clickDetail, isGroupLabel\(node\)\)/);
+});
+
+test("local table index snapshots cannot resurrect old names after metadata refresh", () => {
+  assert.match(connectionTree, /const epoch = store\.sidebarTableSearchIndexEpoch/);
+  assert.match(connectionTree, /if \(epoch !== store\.sidebarTableSearchIndexEpoch\) return;/);
+  assert.match(connectionTree, /epoch: store\.sidebarTableSearchIndexEpoch/);
+  assert.match(localTableSearch, /snapshot && snapshot\.epoch === options\.epoch/);
+  const refresh = connectionStore.slice(connectionStore.indexOf("async function refreshObjectListTreeNode"), connectionStore.indexOf("function isSchemaAwareDatabase"));
+  assert.match(refresh, /finally\s*\{[\s\S]*sidebarTableSearchIndexEpoch\.value \+= 1/);
 });
 
 test("tree rebuilds keep a context menu only while its target row remains visible", () => {

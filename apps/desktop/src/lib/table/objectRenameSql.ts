@@ -11,7 +11,9 @@ export interface BuildRenameObjectSqlOptions {
   newName: string;
 }
 
-const postgresLikeRenameTypes = new Set<DatabaseType>(["postgres"]);
+// openGauss supports direct relation renames; routine rebuild/rename remains
+// separately gated and is deliberately not enabled by this capability.
+const postgresLikeRenameTypes = new Set<DatabaseType>(["postgres", "opengauss"]);
 
 export function supportsObjectRename(databaseType: DatabaseType | undefined, objectType: RenameableObjectType): boolean {
   if (!databaseType) return false;

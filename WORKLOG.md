@@ -1397,3 +1397,50 @@ buildGroupedObjectTreeNodes 生成的触发器节点，覆盖无注释、带注�
 预算守卫通过。Rust core 全量 1192 项通过、11 项 ignored；workspace clippy/fmt、
 frontend typecheck/lint/build 通过。tygl_biz 只读验证 pg_job 布尔状态 SQL 可执行，
 该库当前无作业行；未创建/启停真实作业，未操作用户桌面。
+
+---
+
+## 44. 选择性适配上游高相关修复与小功能（待发版）
+
+根据用户要求，从 fork 后的 DBX 更新中选择六项与 openGauss、导出安全和现有侧栏
+直接相关的改动，按当前代码结构手工适配；不是整仓 merge/cherry-pick，不引入上游
+crate 拆分、多数据库、CLI/MCP、市场或凭据迁移，也不覆盖已有 AI、同义词和触发器定制。
+
+| 上游提交 | 本次适配 |
+| --- | --- |
+| `2766a5bc` | 数据库 SQL 导出的 openGauss 字符串仅转义单引号，不重复转义反斜杠；Postgres、MySQL 和未知目标原有分支保持不变 |
+| `4e686bd0` | 在真正读取 `pg_get_tabledef` 的 JDBC/外部元数据路径修复生成的单行 COMMENT 注释单引号，处理后再追加触发器源码；原生自建 DDL 路径不改 |
+| `6f05afc0e` | CSV/TSV 共享单元格写入器中和危险公式前缀，覆盖表头、分页导出及结果导出；防护置于单元格边界，不破坏 JSON 分片输出 |
+| `c7797b4b` | 开放 openGauss 表、视图、物化视图的直接重命名入口；现有后端已支持这些 SQL，不开放函数/过程的源码重建式重命名 |
+| `235a2d2d` | 真实 TreeItem 展示函数、过程等已有注释并支持完整悬停说明，保留触发器“所属表 — 注释”、禁用样式及说明显示设置 |
+| `4a997fe6` | 本地表搜索同时匹配名称与注释，覆盖已加载节点、索引和失败回退，保留既有大小写不敏感/缩写/正则匹配及真实节点身份 |
+
+**适配与安全边界**：
+
+- 重命名捕获不可变对象目标，使用实际 objectName/tableName 而非带 schema 的显示
+  label；校验连接身份/只读状态，异步构造 SQL 后复核，生产确认结束、执行前再检查
+  只读。取消返回 undefined 时不提示成功、不刷新、不改固定项；已有例程多语句
+  路径也在取消后立即停止，但不宣称该多语句路径具备原子性或已全面审计。
+- DDL 注释修复保留已有合法转义、E-string、引号标识符、CRLF/缩进、DEFAULT
+  表达式与 dollar/block 内容；不猜测多行坏注释，遇到该格式保守保留原 DDL。
+  测试覆盖单引号、中文、反斜杠、幂等和 SQL 语句形态的注释内容。
+- CSV/TSV 对危险文本添加 `'` 前缀，补充空白/控制字符、BOM/零宽前缀及全角触发字符。
+  JSON Number 负数、NULL 和 RFC4180 引号规则保持原行为；危险文本字段的原始字节
+  会变化，不能把防护 CSV 当成原始保真备份（可用 SQL/JSON）。普通 CSV 导入没有
+  自动剥除前缀；配对逆函数仅供明确经过该编码的单元格使用，不猜测用户字面撇号。
+- 表搜索索引持久化 comment（支持 null/缺省），独立缓存后缀升级为
+  table-search-index-v2，避免误用旧的完整名称索引；重刷索引后可搜索未加载表的注释。
+  抽取实际 ConnectionTree 过滤函数以验证索引/回退分支，并保留展开、加载和子节点。
+  对象列表刷新后版本化内存索引快照：更名后的旧索引退回当前已加载节点，不再重建
+  旧名称；跨版本的异步读取不覆盖结果或抢焦，旧索引查询结果不写持久缓存。
+- 未新增 TreeItem computed，性能预算守卫通过。实际挂载组件验证三种注释模式、
+  长注释 tooltip 和无注释；happy-dom 的固定宽度/hover 模拟只用于分支与内容验收，
+  不宣称真实浏览器几何验证。触发器所属表、禁用名称/图标即时重绘测试仍通过。
+
+**最终验证**：完整 pnpm check 的格式、lint、typecheck 通过；5367 项测试、643 个
+套件通过，仅既有 5 个本机 `No such built-in module: node:` 套件未能加载，整体
+check 仍非全绿。Rust core 全量 1209 项通过、11 项 ignored；CI 同款 workspace
+clippy（locked/all-targets/no-default-features/system-fonts/offline）、cargo fmt 与
+frontend build 通过。只读核对测试库 standard_conforming_strings=on；没有执行真实
+数据库重命名或其他写操作，也没有启动或自动化桌面 UI。本批仅合入代码并本地提交，
+未升版本、推送或发版。
