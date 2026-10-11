@@ -1485,7 +1485,7 @@ frontend build 通过。只读核对测试库 standard_conforming_strings=on；�
 
 ---
 
-## 46. SQL 格式化新增「FROM/WHERE 与内容同行」选项（待提交）
+## 46. SQL 格式化新增「FROM/WHERE 与内容同行」「JOIN 与 FROM 对齐」选项（v0.2.48 已发版）
 
 用户确认：from/where 关键字与内容换行此前**写死不可配**——底层 sql-formatter
 不提供该选项，实测表达式宽度 50→120 输出不变。新增 `clauseInline` 设置
