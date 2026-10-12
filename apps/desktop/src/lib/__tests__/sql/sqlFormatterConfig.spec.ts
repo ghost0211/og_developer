@@ -33,16 +33,45 @@ describe("sqlFormatterConfig shortcut storage", () => {
     const options = sqlFormatterOptions({ clauseInline: true, dedentJoin: true });
     expect(options).not.toHaveProperty("clauseInline");
     expect(options).not.toHaveProperty("dedentJoin");
+    expect(options).not.toHaveProperty("keywordAlignment");
   });
 
   it("round-trips clauseInline/dedentJoin through config export/import and rejects invalid values", () => {
     const serialized = serializeSqlFormatterConfig({ clauseInline: true, dedentJoin: true });
     const parsed = parseSqlFormatterConfig(serialized);
-    expect(parsed).toEqual({ ok: true, settings: { ...DEFAULT_SQL_FORMATTER_SETTINGS, clauseInline: true, dedentJoin: true } });
+    expect(parsed).toEqual({ ok: true, settings: { ...DEFAULT_SQL_FORMATTER_SETTINGS, clauseInline: true, dedentJoin: true, keywordAlignment: "left" } });
 
     const invalid = parseSqlFormatterConfig(JSON.stringify({ version: 1, formatter: "sql-formatter", options: { dedentJoin: "yes" } }));
     expect(invalid.ok).toBe(false);
     if (!invalid.ok) expect(invalid.message).toBe("Invalid formatter option value: dedentJoin.");
+  });
+
+  it("keeps the default layout and migrates only the enabled legacy JOIN/inline combination", () => {
+    expect(DEFAULT_SQL_FORMATTER_SETTINGS.keywordAlignment).toBe("none");
+    expect(normalizeSqlFormatterSettings({}).keywordAlignment).toBe("none");
+    expect(normalizeSqlFormatterSettings({ clauseInline: true }).keywordAlignment).toBe("none");
+    expect(normalizeSqlFormatterSettings({ dedentJoin: true }).keywordAlignment).toBe("none");
+    expect(normalizeSqlFormatterSettings({ clauseInline: true, dedentJoin: true }).keywordAlignment).toBe("left");
+    expect(normalizeSqlFormatterSettings({ options: { clauseInline: true, dedentJoin: true } }).keywordAlignment).toBe("left");
+    expect(normalizeSqlFormatterSettings({ keywordAlignment: "none", clauseInline: true, dedentJoin: true }).keywordAlignment).toBe("none");
+    expect(normalizeSqlFormatterSettings({ keywordAlignment: "right", clauseInline: true, dedentJoin: true }).keywordAlignment).toBe("right");
+    expect(normalizeSqlFormatterSettings({ keywordAlignment: "invalid" }).keywordAlignment).toBe("none");
+  });
+
+  it.each(["none", "left", "right"] as const)("round-trips %s alignment without dropping underlying settings", (keywordAlignment) => {
+    const settings = normalizeSqlFormatterSettings({ keywordAlignment, indentStyle: "tabularRight", logicalOperatorNewline: "after", clauseInline: true });
+    expect(parseSqlFormatterConfig(serializeSqlFormatterConfig(settings))).toEqual({ ok: true, settings });
+  });
+
+  it.each(["center", true, 1, null])("rejects invalid keywordAlignment %s on import", (keywordAlignment) => {
+    expect(parseSqlFormatterConfig(JSON.stringify({ version: 1, formatter: "sql-formatter", options: { keywordAlignment } }))).toEqual({ ok: false, message: "Invalid formatter option value: keywordAlignment." });
+  });
+
+  it("active alignment overrides only the library layout inputs without mutating stored choices", () => {
+    const stored = normalizeSqlFormatterSettings({ keywordAlignment: "right", indentStyle: "tabularLeft", logicalOperatorNewline: "after", clauseInline: false });
+    expect(sqlFormatterOptions(stored)).toMatchObject({ indentStyle: "standard", logicalOperatorNewline: "before" });
+    expect(stored).toMatchObject({ indentStyle: "tabularLeft", logicalOperatorNewline: "after", clauseInline: false });
+    expect(sqlFormatterOptions({ ...stored, keywordAlignment: "none" })).toMatchObject({ indentStyle: "tabularLeft", logicalOperatorNewline: "after" });
   });
 
   it("merges DBX custom parameter types with user paramTypes", () => {

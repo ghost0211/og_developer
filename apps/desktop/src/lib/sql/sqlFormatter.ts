@@ -1,5 +1,6 @@
 import { DEFAULT_SQL_FORMATTER_SETTINGS, sqlFormatterOptions, sqlFormatterOptionSettings, type SqlFormatterSettings } from "@/lib/sql/sqlFormatterConfig";
 import { looksLikeXml } from "@/lib/sql/autoFormat";
+import { alignSqlKeywords } from "@/lib/sql/sqlKeywordAlignment";
 
 export type SqlFormatDialect = "mysql" | "postgres" | "sqlite" | "sqlserver" | "clickhouse" | "generic";
 
@@ -90,6 +91,7 @@ export async function formatSqlText(sql: string, dialect: SqlFormatDialect = "ge
   const options = sqlFormatterOptions(normalized);
   const language = formatterLanguage(dialect);
   let formatted: string;
+  let alignmentDialect = dialect;
   try {
     formatted = format(sql, { language, ...options });
   } catch (err) {
@@ -100,13 +102,15 @@ export async function formatSqlText(sql: string, dialect: SqlFormatDialect = "ge
     if (language === "postgresql") throw err;
     try {
       formatted = format(sql, { language: "postgresql", ...options });
+      alignmentDialect = "postgres";
     } catch {
       throw err;
     }
   }
-  if (normalized.clauseInline) {
+  if (normalized.keywordAlignment !== "none") {
+    formatted = alignSqlKeywords(formatted, normalized.keywordAlignment, normalized, alignmentDialect);
+  } else if (normalized.clauseInline) {
     formatted = inlineClauseContents(formatted, normalized);
-    if (normalized.dedentJoin) formatted = dedentJoinLines(formatted, normalized);
   }
   return formatted;
 }
@@ -164,59 +168,6 @@ export function inlineClauseContents(sql: string, options: { useTabs?: boolean; 
           }
         }
       }
-    }
-    out.push(line);
-  }
-  return out.join("\n");
-}
-
-const JOIN_LINE_RE = /^(?:(?:inner|left|right|full|cross)(?:\s+outer)?\s+join|join|straight_join)\b/i;
-const JOIN_CONTINUATION_RE = /^(?:and|or)\b/i;
-const FROM_REGION_RE = /^(\s*)from\b/i;
-
-/**
- * Dedent JOIN lines (and their ON/derived-table continuation) so they align
- * with the FROM keyword instead of sitting one level under it:
- *
- *   from ddd.t1             from ddd.t1
- *     join ddd.t2 on ...  →   join ddd.t2 on ...
- *
- * Only meaningful together with {@link inlineClauseContents} (clauseInline);
- * callers gate it on that option. sql-formatter always indents JOINs one level
- * under FROM and has no option for this.
- *
- * Implementation: track a stack of FROM regions (indentation = nesting depth,
- * so subqueries open their own region). Inside a region, a JOIN-keyword line
- * at exactly one indent unit below the FROM line opens a join block; from
- * then on every enclosing region that is inside a join block strips one unit
- * from the line. Stripping per enclosing region keeps nested subqueries
- * consistent: an inner FROM/WHERE inside `join ( select ... )` shifts together
- * with the whole block, and an inner JOIN additionally aligns with its own
- * inner FROM. Lines that end the clause (WHERE, closing parens below the FROM
- * indent, next statement) pop regions, so WHERE-body AND/OR lines are never
- * touched. Comma-separated table lists are not JOINs and keep their indent.
- */
-export function dedentJoinLines(sql: string, options: { useTabs?: boolean; tabWidth?: number } = {}): string {
-  const unit = options.useTabs ? "\t" : " ".repeat(options.tabWidth === 4 ? 4 : 2);
-  const lines = sql.split("\n");
-  const regions: { indent: string; inJoin: boolean }[] = [];
-  const out: string[] = [];
-  for (const rawLine of lines) {
-    let line = rawLine;
-    if (line.trim().length > 0) {
-      // Pop regions this line has exited (WHERE/closing parens/new statement).
-      while (regions.length > 0 && !line.startsWith(regions[regions.length - 1].indent + unit)) regions.pop();
-      for (const region of regions) {
-        if (!line.startsWith(region.indent + unit)) break;
-        const rest = line.slice(region.indent.length + unit.length);
-        if (rest.length > 0 && !/^\s/.test(rest)) {
-          if (JOIN_LINE_RE.test(rest)) region.inJoin = true;
-          else if (!(region.inJoin && (JOIN_CONTINUATION_RE.test(rest) || rest.startsWith(")")))) region.inJoin = false;
-        }
-        if (region.inJoin) line = region.indent + rest;
-      }
-      const fromMatch = FROM_REGION_RE.exec(line);
-      if (fromMatch) regions.push({ indent: fromMatch[1], inJoin: false });
     }
     out.push(line);
   }

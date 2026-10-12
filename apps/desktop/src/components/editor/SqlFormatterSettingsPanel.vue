@@ -20,6 +20,7 @@ import {
   type SqlFormatterCase,
   type SqlFormatterExpressionWidth,
   type SqlFormatterIndentStyle,
+  type SqlFormatterKeywordAlignment,
   type SqlFormatterLinesBetweenQueries,
   type SqlFormatterLogicalOperatorNewline,
   type SqlFormatterOptionSettings,
@@ -71,13 +72,11 @@ const settings = computed(() => normalizeSqlFormatterSettings(props.modelValue))
 
 // OG Developer: live sample preview — tweak options and watch a real openGauss
 // snippet reformat, instead of imagining what a dropdown value means.
-const DEFAULT_FORMATTER_SAMPLE = `create or replace procedure emp_pkg.raise_salary(emp_id in integer, amount in numeric) as
-begin
-update ogdev_emp set salary=salary+amount where id=emp_id and active=true;
-if amount>1000 then
-call gms_output.put_line('raise over 1000 for emp '||emp_id);
-end if;
-end;`;
+const DEFAULT_FORMATTER_SAMPLE = `select t1.domain_code,t1.datatype_name,t1.suffix_code,t2.physical_type_code
+from ddd.ldm_datatype t1
+join ddd.pdm_typemapping t2 on t1.datatype_id=t2.datatype_id
+where t1.delete_flag=0 and t2.delete_flag=0
+and (t1.suffix_code like 'txt' or t2.physical_type_code='text');`;
 const formatterSample = ref(DEFAULT_FORMATTER_SAMPLE);
 const formattedSample = ref("");
 let formatterSampleTimer: ReturnType<typeof setTimeout> | undefined;
@@ -118,6 +117,12 @@ const indentStyleOptions: { value: SqlFormatterIndentStyle; labelKey: string }[]
   { value: "tabularRight", labelKey: "settings.sqlFormatterIndentStyleTabularRight" },
 ];
 
+const keywordAlignmentOptions: { value: SqlFormatterKeywordAlignment; labelKey: string }[] = [
+  { value: "none", labelKey: "settings.sqlFormatterKeywordAlignmentNone" },
+  { value: "left", labelKey: "settings.sqlFormatterKeywordAlignmentLeft" },
+  { value: "right", labelKey: "settings.sqlFormatterKeywordAlignmentRight" },
+];
+
 const tabWidthOptions: SqlFormatterTabWidth[] = [2, 4];
 const expressionWidthOptions: SqlFormatterExpressionWidth[] = [50, 80, 120];
 const linesBetweenQueriesOptions: SqlFormatterLinesBetweenQueries[] = [0, 1, 2];
@@ -136,6 +141,7 @@ const sqlFormatterOptionLabelKeys: Record<keyof SqlFormatterOptionSettings, stri
   newlineBeforeSemicolon: "settings.sqlFormatterNewlineBeforeSemicolon",
   clauseInline: "settings.sqlFormatterClauseInline",
   dedentJoin: "settings.sqlFormatterDedentJoin",
+  keywordAlignment: "settings.sqlFormatterKeywordAlignment",
   paramTypes: "settings.sqlFormatterParamTypes",
 };
 const sqlFormatterConfigErrorKeys: Record<string, string> = {
@@ -216,6 +222,10 @@ function onIdentifierCase(value: any) {
 
 function onIndentStyle(value: any) {
   if (value === "standard" || value === "tabularLeft" || value === "tabularRight") updateOption("indentStyle", value);
+}
+
+function onKeywordAlignment(value: any) {
+  if (value === "none" || value === "left" || value === "right") updateOption("keywordAlignment", value);
 }
 
 function onLogicalOperatorNewline(value: any) {
@@ -634,7 +644,7 @@ onBeforeUnmount(() => {
 
           <div class="space-y-2">
             <Label>{{ t("settings.sqlFormatterIndentStyle") }}</Label>
-            <Select :model-value="settings.indentStyle" @update:model-value="onIndentStyle">
+            <Select :model-value="settings.indentStyle" :disabled="settings.keywordAlignment !== 'none'" @update:model-value="onIndentStyle">
               <SelectTrigger class="w-full">
                 <SelectValue />
               </SelectTrigger>
@@ -650,7 +660,7 @@ onBeforeUnmount(() => {
         <div class="grid gap-4 md:grid-cols-3">
           <div class="space-y-2">
             <Label>{{ t("settings.sqlFormatterLogicalOperatorNewline") }}</Label>
-            <Select :model-value="settings.logicalOperatorNewline" @update:model-value="onLogicalOperatorNewline">
+            <Select :model-value="settings.logicalOperatorNewline" :disabled="settings.keywordAlignment !== 'none'" @update:model-value="onLogicalOperatorNewline">
               <SelectTrigger class="w-full">
                 <SelectValue />
               </SelectTrigger>
@@ -691,6 +701,21 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
+        <div class="space-y-2">
+          <Label for="sql-formatter-keyword-alignment">{{ t("settings.sqlFormatterKeywordAlignment") }}</Label>
+          <Select :model-value="settings.keywordAlignment" @update:model-value="onKeywordAlignment">
+            <SelectTrigger id="sql-formatter-keyword-alignment" class="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem v-for="option in keywordAlignmentOptions" :key="option.value" :value="option.value">
+                {{ t(option.labelKey) }}
+              </SelectItem>
+            </SelectContent>
+          </Select>
+          <p class="text-xs text-muted-foreground">{{ t("settings.sqlFormatterKeywordAlignmentHint") }}</p>
+        </div>
+
         <div class="grid gap-3 md:grid-cols-2">
           <div class="flex items-center justify-between gap-4 rounded-md border bg-muted/20 px-3 py-2">
             <Label for="sql-formatter-dense-operators">{{ t("settings.sqlFormatterDenseOperators") }}</Label>
@@ -708,14 +733,7 @@ onBeforeUnmount(() => {
             <Label for="sql-formatter-clause-inline">
               {{ t("settings.sqlFormatterClauseInline") }}
             </Label>
-            <Switch id="sql-formatter-clause-inline" :model-value="settings.clauseInline" @update:model-value="(value: boolean) => updateOption('clauseInline', value)" />
-          </div>
-
-          <div class="flex items-center justify-between gap-4 rounded-md border bg-muted/20 px-3 py-2">
-            <Label for="sql-formatter-dedent-join">
-              {{ t("settings.sqlFormatterDedentJoin") }}
-            </Label>
-            <Switch id="sql-formatter-dedent-join" :model-value="settings.dedentJoin" :disabled="!settings.clauseInline" @update:model-value="(value: boolean) => updateOption('dedentJoin', value)" />
+            <Switch id="sql-formatter-clause-inline" :model-value="settings.clauseInline" :disabled="settings.keywordAlignment !== 'none'" @update:model-value="(value: boolean) => updateOption('clauseInline', value)" />
           </div>
         </div>
 

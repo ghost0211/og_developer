@@ -3,6 +3,7 @@ export const SQL_FORMATTER_CONFIG_FORMATTER = "sql-formatter";
 
 const CASE_VALUES = ["preserve", "upper", "lower"] as const;
 const INDENT_STYLE_VALUES = ["standard", "tabularLeft", "tabularRight"] as const;
+const KEYWORD_ALIGNMENT_VALUES = ["none", "left", "right"] as const;
 const LOGICAL_OPERATOR_NEWLINE_VALUES = ["before", "after"] as const;
 const TAB_WIDTH_VALUES = [2, 4] as const;
 const EXPRESSION_WIDTH_VALUES = [50, 80, 120] as const;
@@ -13,6 +14,7 @@ const SQL_FORMATTER_LEGACY_OPTION_KEYS = new Set(["params"]);
 
 export type SqlFormatterCase = (typeof CASE_VALUES)[number];
 export type SqlFormatterIndentStyle = (typeof INDENT_STYLE_VALUES)[number];
+export type SqlFormatterKeywordAlignment = (typeof KEYWORD_ALIGNMENT_VALUES)[number];
 export type SqlFormatterLogicalOperatorNewline = (typeof LOGICAL_OPERATOR_NEWLINE_VALUES)[number];
 export type SqlFormatterTabWidth = (typeof TAB_WIDTH_VALUES)[number];
 export type SqlFormatterExpressionWidth = (typeof EXPRESSION_WIDTH_VALUES)[number];
@@ -51,9 +53,11 @@ export interface SqlFormatterOptionSettings {
   /** DBX-only post-processing: put FROM/WHERE content on the keyword's line.
    * Not passed to sql-formatter (it has no such option). */
   clauseInline: boolean;
-  /** DBX-only post-processing: align JOIN lines with FROM. Applied only when
-   * clauseInline is enabled. */
+  /** @deprecated Compatibility marker for v0.2.48 configs. Missing
+   * keywordAlignment + clauseInline/dedentJoin both true migrates to left. */
   dedentJoin: boolean;
+  /** Whole-query keyword alignment; none retains the library layout. */
+  keywordAlignment: SqlFormatterKeywordAlignment;
   paramTypes: SqlFormatterParamTypes | null;
 }
 
@@ -82,6 +86,7 @@ export const DEFAULT_SQL_FORMATTER_SETTINGS: SqlFormatterSettings = {
   newlineBeforeSemicolon: false,
   clauseInline: false,
   dedentJoin: false,
+  keywordAlignment: "none",
   paramTypes: null,
 };
 
@@ -100,6 +105,7 @@ const SQL_FORMATTER_OPTION_KEYS = new Set<keyof SqlFormatterOptionSettings>([
   "newlineBeforeSemicolon",
   "clauseInline",
   "dedentJoin",
+  "keywordAlignment",
   "paramTypes",
 ]);
 
@@ -118,6 +124,7 @@ const SQL_FORMATTER_OPTION_VALIDATORS: Record<keyof SqlFormatterOptionSettings, 
   newlineBeforeSemicolon: (value) => typeof value === "boolean",
   clauseInline: (value) => typeof value === "boolean",
   dedentJoin: (value) => typeof value === "boolean",
+  keywordAlignment: (value) => isStringChoice(value, KEYWORD_ALIGNMENT_VALUES),
   paramTypes: isSqlFormatterParamTypes,
 };
 
@@ -185,6 +192,16 @@ function normalizeParamTypes(value: unknown, fallback: SqlFormatterParamTypes | 
 
 export function sqlFormatterOptionSettings(settings: unknown): SqlFormatterOptionSettings {
   const input = isObject(settings) ? settings : {};
+  const hasKeywordAlignment = "keywordAlignment" in input && input.keywordAlignment !== undefined;
+  let keywordAlignment: SqlFormatterKeywordAlignment;
+  if (hasKeywordAlignment) {
+    keywordAlignment = normalizeChoice(input.keywordAlignment, KEYWORD_ALIGNMENT_VALUES, DEFAULT_SQL_FORMATTER_SETTINGS.keywordAlignment);
+  } else if (input.clauseInline === true && input.dedentJoin === true) {
+    keywordAlignment = "left";
+  } else {
+    keywordAlignment = DEFAULT_SQL_FORMATTER_SETTINGS.keywordAlignment;
+  }
+
   return {
     keywordCase: normalizeChoice(input.keywordCase, CASE_VALUES, DEFAULT_SQL_FORMATTER_SETTINGS.keywordCase),
     dataTypeCase: normalizeChoice(input.dataTypeCase, CASE_VALUES, DEFAULT_SQL_FORMATTER_SETTINGS.dataTypeCase),
@@ -200,6 +217,7 @@ export function sqlFormatterOptionSettings(settings: unknown): SqlFormatterOptio
     newlineBeforeSemicolon: normalizeBoolean(input.newlineBeforeSemicolon, DEFAULT_SQL_FORMATTER_SETTINGS.newlineBeforeSemicolon),
     clauseInline: normalizeBoolean(input.clauseInline, DEFAULT_SQL_FORMATTER_SETTINGS.clauseInline),
     dedentJoin: normalizeBoolean(input.dedentJoin, DEFAULT_SQL_FORMATTER_SETTINGS.dedentJoin),
+    keywordAlignment,
     paramTypes: normalizeParamTypes(input.paramTypes, DEFAULT_SQL_FORMATTER_SETTINGS.paramTypes),
   };
 }
@@ -259,15 +277,16 @@ export function syncSqlFormatterConfigDraft(text: string, syncSettings: (setting
 export function sqlFormatterOptions(settings: unknown) {
   const normalized = sqlFormatterOptionSettings(settings);
   const paramTypes = normalized.paramTypes ?? {};
+  const isKeywordAligned = normalized.keywordAlignment !== "none";
   return {
     keywordCase: normalized.keywordCase,
     dataTypeCase: normalized.dataTypeCase,
     functionCase: normalized.functionCase,
     identifierCase: normalized.identifierCase,
-    indentStyle: normalized.indentStyle,
+    indentStyle: isKeywordAligned ? ("standard" as const) : normalized.indentStyle,
     useTabs: normalized.useTabs,
     tabWidth: normalized.tabWidth,
-    logicalOperatorNewline: normalized.logicalOperatorNewline,
+    logicalOperatorNewline: isKeywordAligned ? ("before" as const) : normalized.logicalOperatorNewline,
     expressionWidth: normalized.expressionWidth,
     linesBetweenQueries: normalized.linesBetweenQueries,
     denseOperators: normalized.denseOperators,

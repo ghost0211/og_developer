@@ -1536,3 +1536,39 @@ where a = 1;
 已一并处理。新增 7 项测试：多 JOIN、多行 ON 续行、JOIN 子查询整块平移、内层
 JOIN 与内层 FROM 对齐、逗号表不受损、开关依赖（仅 clauseInline 开启才生效）、
 Tab 缩进，均逐行精确断言。
+
+---
+
+## 47. SQL 格式化：整体关键词左/右对齐（已实现，未发版）
+
+用户提供两张图，要求将「JOIN 与 FROM 对齐」扩展为整体查询关键词风格：
+
+- **左对齐**：SELECT 独占一行，字段换行缩进；FROM/JOIN/WHERE/AND/OR 等
+  关键词在当前查询层级靠左，布尔分组仍保留括号但不另起括号空行。
+- **右对齐**：按当前查询实际出现的最长关键词计算右边缘，首个字段紧跟 SELECT，
+  后续字段仍换行并与首字段对齐（不是把所有字段压到同一行）。GROUP BY、
+  HAVING、ORDER BY、LIMIT、UNION ALL 与完整的 LEFT OUTER JOIN 等复合关键词
+  同样参与测量；每个子查询、CTE 与 UNION 分支独立计算。
+
+内置 tabularRight 固定按 9 字符填充且长复合关键词只对齐第一个词，不符合需求。
+新增 `keywordAlignment: none|left|right`（默认 none，保留原布局），面板使用下拉框
+替代 JOIN-only 开关，并用用户 SQL 作为实时预览样例。选定新模式后暂停缩进风格、
+逻辑运算符换行及 clauseInline 三个冲突控件，但不清除底层值；回到默认布局可继续
+使用它们。旧 `clauseInline=true && dedentJoin=true` 且缺少新键的配置迁移到 left；
+显式新值（含 none）优先。保留旧键用于配置文件/持久化兼容，不再执行旧 JOIN pass。
+
+实现 `sqlKeywordAlignment.ts`：以底层标准布局、AND/OR 行首为输入，使用独立词法
+扫描识别查询、CASE、括号与注释/字面量边界；按查询测量列宽，将子查询主体及闭括号
+锚定到实际渲染后的开括号行（含右对齐填充、SELECT 字段和 CASE 层级）。布尔分组仅
+在没有子查询且无行注释风险时收拢括号空行，运算符及括号的原顺序不变。多行字符串、
+引号标识符、dollar quote、E-string、MySQL/ClickHouse 反斜杠转义、嵌套块注释受保护，
+跨行不透明 token 涉及的整行保守保持原样。CRLF 行终止符单独保存，合并行不产生行内
+CR；尊重 sql-formatter-disable 区域。最终再次扫描并检查所有非空白 token 的类型及
+原文一致，如不一致就退回底层输出，避免文字或注释吞行。非 SELECT 片段沿用底层布局。
+
+验证：截图两种布局逐行精确断言、完整格式化重复执行稳定、长复合 JOIN、GROUP/
+HAVING/ORDER、派生/标量/EXISTS/CASE 子查询、CTE/UNION、多语句宽度隔离、BETWEEN
+与 CASE 内 AND 不误对齐、注释及多行字面量保护、CRLF、ClickHouse 转义、Tab/4 空格、
+其他方言、旧配置迁移/新键显式优先/导入导出/非法值拒绝、控件绑定守卫均通过。
+定向 88 项通过；完整 pnpm check 格式/lint/typecheck 通过，5445 项测试、645 个套件
+通过，仅既有 5 个本机 `node:` 加载器套件失败；frontend build 通过。未操作桌面 UI。
