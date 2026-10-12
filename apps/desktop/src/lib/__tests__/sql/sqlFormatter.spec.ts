@@ -120,13 +120,13 @@ describe("sqlFormatter", () => {
     expect(tabWidth4).toBe("from ddd.t1");
   });
 
-  it("is a no-op for tabular indent styles where content is already inline", async () => {
+  it("maps legacy tabular styles to the new compact alignment independently of clauseInline", async () => {
     const sql = "select a from t1 where a = 1;";
     const withoutInline = await formatSqlText(sql, "postgres", { keywordCase: "lower", indentStyle: "tabularLeft" });
     const withInline = await formatSqlText(sql, "postgres", { keywordCase: "lower", indentStyle: "tabularLeft", clauseInline: true });
 
     expect(withInline).toBe(withoutInline);
-    expect(withInline).toContain("from      t1");
+    expect(withInline).toBe("select\n  a\nfrom t1\nwhere a = 1;");
   });
 
   it("keeps keyword case from the formatter output when inlining", async () => {

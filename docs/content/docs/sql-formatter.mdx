@@ -33,7 +33,7 @@ Open **Settings → SQL Formatter**. Form mode exposes:
 | Option | Values or behavior |
 | --- | --- |
 | Keyword, data type, function, and identifier case | `upper`, `lower`, or `preserve` |
-| Indent style | `standard`, `tabularLeft`, or `tabularRight` |
+| Keyword alignment | Standard (nested indentation), left, or right |
 | Indentation | Spaces or tabs |
 | Tab width | `2` or `4` |
 | Logical operator newline | Before or after the operator |
@@ -41,9 +41,35 @@ Open **Settings → SQL Formatter**. Form mode exposes:
 | Lines between queries | `0`, `1`, or `2` |
 | Dense operators | Reduces spaces around operators |
 | Newline before semicolon | Places a statement-ending semicolon on a new line |
+| Inline FROM/WHERE content | Places FROM/WHERE beside their first content line in standard mode |
 | Parameter types | Recognizes positional, numbered, named, quoted, or custom-regex parameters |
 
 **Restore Defaults** restores the formatter settings defined by the current OG Developer build. Click **Apply** in the settings dialog to persist changes.
+
+### Keyword Alignment
+
+**Left alignment** uses one space between a keyword and its content, with SELECT fields indented on new lines:
+
+```sql
+select
+  a,
+  b
+from t
+where a = 1
+and b = 2;
+```
+
+**Right alignment** measures the longest keyword in each query. That keyword starts at the current nesting level's left edge; the first SELECT field stays inline and other fields align on new lines:
+
+```sql
+select a,
+       b
+  from t
+ where a = 1
+   and b = 2;
+```
+
+Composite keywords such as LEFT OUTER JOIN are measured as a whole. Subqueries use independent widths and retain nesting. Left/right alignment controls logical operator newline and inline clause settings. Legacy JSON values `indentStyle: tabularLeft/tabularRight` migrate to `keywordAlignment: left/right` rather than using the library's fixed-width layout. The form has only one alignment control.
 
 ## JSON Mode and Import / Export
 
@@ -66,6 +92,9 @@ JSON mode is useful for exact editing, copying, or moving formatter settings. Th
     "linesBetweenQueries": 1,
     "denseOperators": false,
     "newlineBeforeSemicolon": false,
+    "clauseInline": false,
+    "dedentJoin": false,
+    "keywordAlignment": "none",
     "paramTypes": null
   }
 }
@@ -79,7 +108,7 @@ The JSON editor validates the draft continuously. OG Developer blocks apply or i
 - `options` contains an unknown field; or
 - a value is outside the range accepted by the current build.
 
-**Export Config** downloads `dbx-sql-formatter.json`. Import replaces only SQL formatter options; it does not change connections, editor shortcuts, or other OG Developer settings.
+**Export Config** downloads `ogdeveloper-sql-formatter.json`. Import replaces only SQL formatter options; it does not change connections, editor shortcuts, or other OG Developer settings.
 
 ## Parameter Recognition
 

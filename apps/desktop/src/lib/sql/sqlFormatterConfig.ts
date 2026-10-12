@@ -42,6 +42,8 @@ export interface SqlFormatterOptionSettings {
   dataTypeCase: SqlFormatterCase;
   functionCase: SqlFormatterCase;
   identifierCase: SqlFormatterCase;
+  /** Legacy import key. Tabular styles migrate to keywordAlignment;
+   * normalized/exported settings always use standard. */
   indentStyle: SqlFormatterIndentStyle;
   useTabs: boolean;
   tabWidth: SqlFormatterTabWidth;
@@ -56,7 +58,7 @@ export interface SqlFormatterOptionSettings {
   /** @deprecated Compatibility marker for v0.2.48 configs. Missing
    * keywordAlignment + clauseInline/dedentJoin both true migrates to left. */
   dedentJoin: boolean;
-  /** Whole-query keyword alignment; none retains the library layout. */
+  /** Whole-query keyword alignment; none retains standard clause indentation. */
   keywordAlignment: SqlFormatterKeywordAlignment;
   paramTypes: SqlFormatterParamTypes | null;
 }
@@ -193,13 +195,16 @@ function normalizeParamTypes(value: unknown, fallback: SqlFormatterParamTypes | 
 export function sqlFormatterOptionSettings(settings: unknown): SqlFormatterOptionSettings {
   const input = isObject(settings) ? settings : {};
   const hasKeywordAlignment = "keywordAlignment" in input && input.keywordAlignment !== undefined;
-  let keywordAlignment: SqlFormatterKeywordAlignment;
-  if (hasKeywordAlignment) {
-    keywordAlignment = normalizeChoice(input.keywordAlignment, KEYWORD_ALIGNMENT_VALUES, DEFAULT_SQL_FORMATTER_SETTINGS.keywordAlignment);
-  } else if (input.clauseInline === true && input.dedentJoin === true) {
+  const legacyIndentStyle = normalizeChoice(input.indentStyle, INDENT_STYLE_VALUES, DEFAULT_SQL_FORMATTER_SETTINGS.indentStyle);
+  let keywordAlignment = normalizeChoice(input.keywordAlignment, KEYWORD_ALIGNMENT_VALUES, DEFAULT_SQL_FORMATTER_SETTINGS.keywordAlignment);
+  // v0.2.49 exposed two competing alignment controls. Even explicit "none"
+  // may accompany an actively chosen tabular style (the reported screenshots).
+  // Translate that legacy choice once and canonicalize indentStyle to standard
+  // so selecting "none" later cannot accidentally restore fixed-width padding.
+  if (keywordAlignment === "none" && legacyIndentStyle !== "standard") {
+    keywordAlignment = legacyIndentStyle === "tabularLeft" ? "left" : "right";
+  } else if (!hasKeywordAlignment && input.clauseInline === true && input.dedentJoin === true) {
     keywordAlignment = "left";
-  } else {
-    keywordAlignment = DEFAULT_SQL_FORMATTER_SETTINGS.keywordAlignment;
   }
 
   return {
@@ -207,7 +212,7 @@ export function sqlFormatterOptionSettings(settings: unknown): SqlFormatterOptio
     dataTypeCase: normalizeChoice(input.dataTypeCase, CASE_VALUES, DEFAULT_SQL_FORMATTER_SETTINGS.dataTypeCase),
     functionCase: normalizeChoice(input.functionCase, CASE_VALUES, DEFAULT_SQL_FORMATTER_SETTINGS.functionCase),
     identifierCase: normalizeChoice(input.identifierCase, CASE_VALUES, DEFAULT_SQL_FORMATTER_SETTINGS.identifierCase),
-    indentStyle: normalizeChoice(input.indentStyle, INDENT_STYLE_VALUES, DEFAULT_SQL_FORMATTER_SETTINGS.indentStyle),
+    indentStyle: "standard",
     useTabs: normalizeBoolean(input.useTabs, DEFAULT_SQL_FORMATTER_SETTINGS.useTabs),
     tabWidth: normalizeNumberChoice(input.tabWidth, TAB_WIDTH_VALUES, DEFAULT_SQL_FORMATTER_SETTINGS.tabWidth),
     logicalOperatorNewline: normalizeChoice(input.logicalOperatorNewline, LOGICAL_OPERATOR_NEWLINE_VALUES, DEFAULT_SQL_FORMATTER_SETTINGS.logicalOperatorNewline),
@@ -283,7 +288,7 @@ export function sqlFormatterOptions(settings: unknown) {
     dataTypeCase: normalized.dataTypeCase,
     functionCase: normalized.functionCase,
     identifierCase: normalized.identifierCase,
-    indentStyle: isKeywordAligned ? ("standard" as const) : normalized.indentStyle,
+    indentStyle: normalized.indentStyle,
     useTabs: normalized.useTabs,
     tabWidth: normalized.tabWidth,
     logicalOperatorNewline: isKeywordAligned ? ("before" as const) : normalized.logicalOperatorNewline,

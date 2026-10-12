@@ -712,6 +712,17 @@ test("normalizes saved SQL formatter settings", () => {
   );
 });
 
+test("migrates saved tabular formatter settings through editor-settings normalization", () => {
+  for (const [indentStyle, keywordAlignment] of [["tabularLeft", "left"], ["tabularRight", "right"]] as const) {
+    const normalized = normalizeEditorSettings({ sqlFormatter: { ...DEFAULT_SQL_FORMATTER_SETTINGS, indentStyle, keywordAlignment: "none" } });
+    assert.equal(normalized.sqlFormatter.indentStyle, "standard");
+    assert.equal(normalized.sqlFormatter.keywordAlignment, keywordAlignment);
+    const reset = normalizeEditorSettings({ sqlFormatter: { ...normalized.sqlFormatter, keywordAlignment: "none" } });
+    assert.equal(reset.sqlFormatter.keywordAlignment, "none");
+    assert.equal(reset.sqlFormatter.indentStyle, "standard");
+  }
+});
+
 test("keeps SQL formatter default objects distinct", () => {
   const normalized = normalizeEditorSettings({});
 

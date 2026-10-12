@@ -42,6 +42,22 @@ describe("SQL whole-query keyword alignment", () => {
   it("matches screenshot 2: actual longest keyword column, first SELECT field inline", async () => {
     expect(await format(screenshotSql, "right")).toBe(rightScreenshot);
   });
+  it.each([
+    ["tabularLeft", leftScreenshot],
+    ["tabularRight", rightScreenshot],
+  ] as const)("repairs the user's legacy %s setting with default keyword alignment", async (indentStyle, expected) => {
+    for (const keywordAlignment of [undefined, "none"] as const) {
+      const output = await formatSqlText(leftScreenshot, "postgres", { keywordCase: "lower", indentStyle, keywordAlignment, clauseInline: true });
+      expect(output).toBe(expected);
+      expect(output.startsWith("select")).toBe(true);
+      expect(output).not.toMatch(/^(?:from|join|where|and|or) {2,}/m);
+    }
+  });
+  it("legacy right alignment leaves the actual longest composite keyword at column zero", async () => {
+    const output = await formatSqlText("select a,b from t1 left outer join t2 on t1.id=t2.id where a=1;", "postgres", { keywordCase: "lower", indentStyle: "tabularRight", keywordAlignment: "none" });
+    expect(output).toContain("\nleft outer join t2 on t1.id = t2.id\n");
+    expect(output).not.toMatch(/^ +left outer join/m);
+  });
   it.each(["left", "right"] as const)("is idempotent for screenshot mode %s", async (mode) => {
     const first = await format(screenshotSql, mode);
     expect(await format(first, mode)).toBe(first);

@@ -5566,10 +5566,11 @@ export default {
     sqlFormatterClauseInline: "Inline FROM/WHERE clause content",
     sqlFormatterDedentJoin: "Align JOIN with FROM (requires inline)",
     sqlFormatterKeywordAlignment: "Keyword alignment",
-    sqlFormatterKeywordAlignmentNone: "Default layout",
+    sqlFormatterKeywordAlignmentNone: "Standard layout (nested indentation)",
     sqlFormatterKeywordAlignmentLeft: "Left align (SELECT fields indented on new lines)",
     sqlFormatterKeywordAlignmentRight: "Right align (first SELECT field inline)",
-    sqlFormatterKeywordAlignmentHint: "Left alignment covers SELECT/FROM/JOIN/WHERE/AND/OR; right alignment pads to the longest keyword per query (first field inline, others aligned on new lines). When enabled, this takes over indent style, logical operator newline, and inline clause settings.",
+    sqlFormatterKeywordAlignmentHint:
+      "Left: one space after keywords, SELECT fields indented on new lines. Right: the longest keyword starts at the query's left edge, with the first field inline and other fields aligned on new lines. Subqueries retain nesting. Left/right alignment controls logical operator newline and inline clause settings.",
     sqlFormatterAdvancedOptions: "Advanced options",
     sqlFormatterParams: "Params",
     sqlFormatterParamTypes: "Param types",

@@ -19,7 +19,6 @@ import {
   syncSqlFormatterConfigDraft,
   type SqlFormatterCase,
   type SqlFormatterExpressionWidth,
-  type SqlFormatterIndentStyle,
   type SqlFormatterKeywordAlignment,
   type SqlFormatterLinesBetweenQueries,
   type SqlFormatterLogicalOperatorNewline,
@@ -109,12 +108,6 @@ const caseOptions: { value: SqlFormatterCase; labelKey: string }[] = [
 const logicalOperatorOptions: { value: SqlFormatterLogicalOperatorNewline; labelKey: string }[] = [
   { value: "before", labelKey: "settings.sqlFormatterLogicalBefore" },
   { value: "after", labelKey: "settings.sqlFormatterLogicalAfter" },
-];
-
-const indentStyleOptions: { value: SqlFormatterIndentStyle; labelKey: string }[] = [
-  { value: "standard", labelKey: "settings.sqlFormatterIndentStyleStandard" },
-  { value: "tabularLeft", labelKey: "settings.sqlFormatterIndentStyleTabularLeft" },
-  { value: "tabularRight", labelKey: "settings.sqlFormatterIndentStyleTabularRight" },
 ];
 
 const keywordAlignmentOptions: { value: SqlFormatterKeywordAlignment; labelKey: string }[] = [
@@ -218,10 +211,6 @@ function onCaseOption(key: "keywordCase" | "functionCase" | "dataTypeCase", valu
 
 function onIdentifierCase(value: any) {
   if (value === "upper" || value === "lower" || value === "preserve") updateOption("identifierCase", value);
-}
-
-function onIndentStyle(value: any) {
-  if (value === "standard" || value === "tabularLeft" || value === "tabularRight") updateOption("indentStyle", value);
 }
 
 function onKeywordAlignment(value: any) {
@@ -615,7 +604,7 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <div class="grid gap-4 md:grid-cols-[minmax(0,1fr)_10rem_12rem]">
+        <div class="grid gap-4 md:grid-cols-[minmax(0,1fr)_8rem_minmax(0,1fr)]">
           <div class="space-y-2">
             <Label>{{ t("settings.sqlFormatterIndent") }}</Label>
             <div class="grid grid-cols-2 gap-2">
@@ -643,19 +632,20 @@ onBeforeUnmount(() => {
           </div>
 
           <div class="space-y-2">
-            <Label>{{ t("settings.sqlFormatterIndentStyle") }}</Label>
-            <Select :model-value="settings.indentStyle" :disabled="settings.keywordAlignment !== 'none'" @update:model-value="onIndentStyle">
-              <SelectTrigger class="w-full">
+            <Label for="sql-formatter-keyword-alignment">{{ t("settings.sqlFormatterKeywordAlignment") }}</Label>
+            <Select :model-value="settings.keywordAlignment" @update:model-value="onKeywordAlignment">
+              <SelectTrigger id="sql-formatter-keyword-alignment" class="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem v-for="option in indentStyleOptions" :key="option.value" :value="option.value">
+                <SelectItem v-for="option in keywordAlignmentOptions" :key="option.value" :value="option.value">
                   {{ t(option.labelKey) }}
                 </SelectItem>
               </SelectContent>
             </Select>
           </div>
         </div>
+        <p class="text-xs text-muted-foreground">{{ t("settings.sqlFormatterKeywordAlignmentHint") }}</p>
 
         <div class="grid gap-4 md:grid-cols-3">
           <div class="space-y-2">
@@ -699,21 +689,6 @@ onBeforeUnmount(() => {
               </SelectContent>
             </Select>
           </div>
-        </div>
-
-        <div class="space-y-2">
-          <Label for="sql-formatter-keyword-alignment">{{ t("settings.sqlFormatterKeywordAlignment") }}</Label>
-          <Select :model-value="settings.keywordAlignment" @update:model-value="onKeywordAlignment">
-            <SelectTrigger id="sql-formatter-keyword-alignment" class="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem v-for="option in keywordAlignmentOptions" :key="option.value" :value="option.value">
-                {{ t(option.labelKey) }}
-              </SelectItem>
-            </SelectContent>
-          </Select>
-          <p class="text-xs text-muted-foreground">{{ t("settings.sqlFormatterKeywordAlignmentHint") }}</p>
         </div>
 
         <div class="grid gap-3 md:grid-cols-2">
