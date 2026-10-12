@@ -1575,7 +1575,7 @@ HAVING/ORDER、派生/标量/EXISTS/CASE 子查询、CTE/UNION、多语句宽度
 
 ---
 
-## 48. SQL 格式化：统一对齐入口，淘汰旧固定列宽布局（已实现，未发版）
+## 48. SQL 格式化：统一对齐入口，淘汰旧固定列宽布局（v0.2.50）
 
 用户反馈左对齐关键词后空白过宽，右对齐最长词 SELECT 前仍有空白。截图明确显示
 上方 `indentStyle=tabularLeft/tabularRight`，下方新 `keywordAlignment=none`；上版
