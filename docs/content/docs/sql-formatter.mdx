@@ -71,6 +71,12 @@ select a,
 
 Composite keywords such as LEFT OUTER JOIN are measured as a whole. Subqueries use independent widths and retain nesting. Left/right alignment controls logical operator newline and inline clause settings. Legacy JSON values `indentStyle: tabularLeft/tabularRight` migrate to `keywordAlignment: left/right` rather than using the library's fixed-width layout. The form has only one alignment control.
 
+### Procedural Block Layout
+
+For non-dollar-quoted PostgreSQL / openGauss procedural blocks, OG Developer restores structural indentation after the base formatter runs: `AS DECLARE` remains the routine declaration header, variables start on indented lines, statements inside `BEGIN...END` are indented as a block, nested blocks gain another level, and extra blank lines produced by “lines between queries” are removed inside the block. Strings, comments, CASE expressions, `END IF` / `END LOOP`, and top-level cursor declarations are not mistaken for procedural block boundaries.
+
+A dollar-quoted routine body such as `AS $$ ... $$` is an opaque text region to this structural pass; its bytes are not rewritten.
+
 ## JSON Mode and Import / Export
 
 JSON mode is useful for exact editing, copying, or moving formatter settings. The current file contains only `version`, `formatter`, and `options`:

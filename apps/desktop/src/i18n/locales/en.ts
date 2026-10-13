@@ -2780,6 +2780,7 @@ export default {
     renameObjectTitle: "Rename Object",
     renameObjectNamePlaceholder: "New name",
     renameObjectSuccess: '"{oldName}" renamed to "{newName}"',
+    renameDatabaseNeedsOtherDatabase: "Cannot rename: this connection has no other database available to run ALTER DATABASE. Connect to another database first.",
     confirmDropTableTitle: "Drop Table",
     confirmDropTableMessage: 'Are you sure you want to drop "{name}"? This will permanently delete the table and all its data.',
     dropTableCascade: "Use CASCADE",

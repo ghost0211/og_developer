@@ -2784,6 +2784,7 @@ export const zhCNMessages = {
     renameObjectTitle: "重命名对象",
     renameObjectNamePlaceholder: "新名称",
     renameObjectSuccess: "已将「{oldName}」重命名为「{newName}」",
+    renameDatabaseNeedsOtherDatabase: "无法重命名：当前连接没有可用的其他数据库用于执行 ALTER DATABASE。请先切换到其他数据库连接。",
     confirmDropTableTitle: "删除表",
     confirmDropTableMessage: "确定要删除「{name}」吗？这将永久删除表及其所有数据。",
     dropTableCascade: "使用 CASCADE 强制删除",

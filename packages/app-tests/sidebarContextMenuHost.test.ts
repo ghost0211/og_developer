@@ -75,6 +75,7 @@ test("object rename uses captured identity, read-only checks and cancellation-aw
   const host = readFileSync("apps/desktop/src/components/sidebar/SidebarTreeRuntimeHost.vue", "utf8");
   const confirm = functionBody(host, "confirmRenameObject");
   const preview = functionBody(host, "refreshRenameObjectPreviewSql");
+  const previewOptions = functionBody(host, "renameObjectPreviewOptions");
   const open = functionBody(host, "openRenameObjectDialog");
   assert.match(confirm, /createSidebarActionTarget\(sidebarFormTarget\.value \?\? activeNode\.value\)/);
   assert.match(confirm, /read_only/);
@@ -82,9 +83,12 @@ test("object rename uses captured identity, read-only checks and cancellation-aw
   assert.match(confirm, /executeTreeNodeSqlWithProductionGuard\(target, sql/);
   assert.match(confirm, /beforeExecute: assertWritable/);
   assert.match(confirm, /if \(executed === undefined\) return;/);
+  assert.match(confirm, /renameObjectExecutionDatabase\(target\)/);
   assert.match(preview, /const node = sidebarFormTarget\.value \?\? activeNode\.value/);
-  assert.match(preview, /oldName: treeNodeDataObjectName\(node\)/);
+  assert.match(preview, /renameObjectPreviewOptions\(node, objectType, dbType, newName\)/);
+  assert.match(previewOptions, /oldName: treeNodeRenameObjectName\(node\)/);
   assert.match(open, /if \(!canRenameObject\.value\) return;/);
+  assert.match(open, /treeNodeRenameObjectName\(sidebarFormTarget\.value \?\? activeNode\.value\)/);
   assert.match(host, /execute: \(\) => \{\s*options\.beforeExecute\?\.\(\);/);
 });
 

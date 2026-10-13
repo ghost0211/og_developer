@@ -1,6 +1,7 @@
 import { DEFAULT_SQL_FORMATTER_SETTINGS, sqlFormatterOptions, sqlFormatterOptionSettings, type SqlFormatterSettings } from "@/lib/sql/sqlFormatterConfig";
 import { looksLikeXml } from "@/lib/sql/autoFormat";
 import { alignSqlKeywords } from "@/lib/sql/sqlKeywordAlignment";
+import { formatProceduralSqlBlocks } from "@/lib/sql/sqlProceduralFormat";
 
 export type SqlFormatDialect = "mysql" | "postgres" | "sqlite" | "sqlserver" | "clickhouse" | "generic";
 
@@ -107,6 +108,7 @@ export async function formatSqlText(sql: string, dialect: SqlFormatDialect = "ge
       throw err;
     }
   }
+  formatted = formatProceduralSqlBlocks(formatted, normalized, alignmentDialect);
   if (normalized.keywordAlignment !== "none") {
     formatted = alignSqlKeywords(formatted, normalized.keywordAlignment, normalized, alignmentDialect);
   } else if (normalized.clauseInline) {

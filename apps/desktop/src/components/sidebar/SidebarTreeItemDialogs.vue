@@ -8,6 +8,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import CreateJobDialog from "@/components/objects/CreateJobDialog.vue";
+import { treeNodeRenameObjectName } from "@/lib/sidebar/treeNodeContext";
 
 const props = defineProps<{ controller: Record<string, any> }>();
 const emit = defineEmits<{ closed: [] }>();
@@ -126,6 +127,8 @@ const {
   canEditDatabaseCharsetCollation,
   updateEditDatabaseCharset,
 } = toRefs(props.controller);
+
+const renameObjectCurrentName = computed(() => (node?.value ? treeNodeRenameObjectName(node.value) : ""));
 
 const showCreateJobDialog = computed({
   get: () => !!props.controller.showCreateJobDialog,
@@ -268,7 +271,7 @@ watch(
       </div>
       <DialogFooter>
         <Button variant="outline" @click="showRenameObjectDialog = false">{{ t("dangerDialog.cancel") }}</Button>
-        <Button :disabled="!renameObjectName.trim() || renameObjectName.trim() === node.label" @click="confirmRenameObject">
+        <Button :disabled="!renameObjectName.trim() || renameObjectName.trim() === renameObjectCurrentName" @click="confirmRenameObject">
           {{ t("contextMenu.renameObject") }}
         </Button>
       </DialogFooter>

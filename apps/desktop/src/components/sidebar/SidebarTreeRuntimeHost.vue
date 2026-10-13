@@ -117,16 +117,16 @@ import {
   type DropObjectSqlOptions,
   type TableChildObjectType,
 } from "@/lib/database/dbAdminSql";
-import { buildRenameObjectSql, supportsObjectRename, type RenameableObjectType } from "@/lib/table/objectRenameSql";
+import { buildRenameObjectSql, renameObjectRequiresSignature, renameObjectRequiresTableContext, renameObjectTypeForTreeNode, supportsObjectRename, type RenameableObjectType } from "@/lib/table/objectRenameSql";
 import { buildEditableObjectSource, buildRoutineRenameObjectSourceStatements, supportsSourceBackedRoutineRename } from "@/lib/table/objectSourceEditor";
 import { loadEditableObjectSourceForEditor } from "@/lib/table/objectSourceLoad";
 import { buildViewDdl } from "@/lib/table/viewDdl";
 import { formatSqlForDisplay, sqlFormatDialectForDbType } from "@/lib/sql/sqlFormatter";
 import { getTableStructureCapabilities } from "@/lib/table/tableStructureCapabilities";
 import { connectionObjectTreeNodeSchema, connectionObjectTreeQuerySchema, connectionUsesDatabaseObjectTreeMode, effectiveDatabaseTypeForConnection, tableStructureDatabaseTypeForConnection } from "@/lib/database/jdbcDialect";
-import { hasTreeNodeDatabaseContext, treeNodeDataObjectName } from "@/lib/sidebar/treeNodeContext";
+import { hasTreeNodeDatabaseContext, treeNodeDataObjectName, treeNodeRenameObjectName } from "@/lib/sidebar/treeNodeContext";
 import { isTreeNodeDisabled } from "@/lib/sidebar/treeNodeStatus";
-import { executeObjectRename } from "@/lib/sidebar/objectRenameActions";
+import { canRenameTreeNodeObject, executeObjectRename, renamedObjectTreeNode } from "@/lib/sidebar/objectRenameActions";
 import { buildTriggerEnabledSql, canChangeTriggerEnabledMode, executeTriggerEnabledChange, normalizeTriggerEnabledMode } from "@/lib/sidebar/triggerActions";
 import { defaultPasteTableMode, pasteTableModeCopiesData, supportsWholeRowTableDataCopy, tableClipboardMatchesTarget, tableClipboardMenuState, tableClipboardSourceContext, tableDataCopyColumnOptions, type TableClipboardContext, type TableClipboardTableContext } from "@/lib/table/tableClipboard";
 import { selectedTreeNodesInVisibleOrder as orderSelectedTreeNodes } from "@/lib/sidebar/sidebarTreeSelection";
@@ -1804,25 +1804,20 @@ function requestDropSelectedNode(): boolean {
 }
 
 function nodeRenameObjectType(node: TreeNode = activeNode.value): RenameableObjectType | null {
-  if (node.type === "table") return "TABLE";
-  if (node.type === "view") return "VIEW";
-  if (node.type === "materialized_view") return "MATERIALIZED_VIEW";
-  if (node.type === "procedure") return "PROCEDURE";
-  if (node.type === "function") return "FUNCTION";
-  return null;
+  return renameObjectTypeForTreeNode(node.type);
 }
 
 const canRenameObject = computed(() => {
-  const objectType = nodeRenameObjectType();
-  const config = activeNode.value.connectionId ? connectionStore.getConfig(activeNode.value.connectionId) : undefined;
-  return !config?.read_only && !!objectType && (supportsObjectRename(currentDatabaseType(), objectType) || supportsSourceBackedRoutineRename(currentDatabaseType(), objectType as any));
+  const node = activeNode.value;
+  const config = node.connectionId ? connectionStore.getConfig(node.connectionId) : undefined;
+  return canRenameTreeNodeObject(node, config);
 });
 
 function openRenameObjectDialog() {
   if (!canRenameObject.value) return;
   claimTreeItemDialogOwnership();
   routeTreeItemDialogController();
-  renameObjectName.value = treeNodeDataObjectName(sidebarFormTarget.value ?? activeNode.value);
+  renameObjectName.value = treeNodeRenameObjectName(sidebarFormTarget.value ?? activeNode.value);
   renameObjectError.value = "";
   renameObjectPreviewSql.value = "";
   showRenameObjectDialog.value = true;
@@ -1845,43 +1840,94 @@ async function executeTreeNodeSqlWithProductionGuard(node: Pick<TreeNode, "conne
 
 let renameObjectPreviewRequestId = 0;
 
+function renameObjectPreviewOptions(node: TreeNode, objectType: RenameableObjectType, dbType: ReturnType<typeof databaseTypeForNode>, newName: string) {
+  return {
+    databaseType: dbType,
+    objectType,
+    schema: node.schema,
+    oldName: treeNodeRenameObjectName(node),
+    newName,
+    signature: renameObjectRequiresSignature(objectType) ? (node.signature ?? "") : undefined,
+    tableName: renameObjectRequiresTableContext(objectType) ? node.tableName : undefined,
+  };
+}
+
 async function refreshRenameObjectPreviewSql() {
   const node = sidebarFormTarget.value ?? activeNode.value;
   const requestId = ++renameObjectPreviewRequestId;
   const objectType = nodeRenameObjectType(node);
   const dbType = databaseTypeForNode(node);
   const newName = renameObjectName.value.trim();
-  if (!showRenameObjectDialog.value || !objectType || !newName || newName === treeNodeDataObjectName(node)) {
+  if (!showRenameObjectDialog.value || !objectType || !newName || newName === treeNodeRenameObjectName(node)) {
     renameObjectPreviewSql.value = "";
     return;
   }
-  if (supportsSourceBackedRoutineRename(dbType, objectType as any)) {
-    renameObjectPreviewSql.value = `-- Recreate ${objectType} from source, then drop the original object.`;
+  if (!supportsObjectRename(dbType, objectType)) {
+    if (supportsSourceBackedRoutineRename(dbType, objectType as any)) {
+      renameObjectPreviewSql.value = `-- Recreate ${objectType} from source, then drop the original object.`;
+    } else {
+      renameObjectPreviewSql.value = "";
+    }
     return;
   }
   try {
-    const sql = await buildRenameObjectSql({
-      databaseType: dbType,
-      objectType,
-      schema: node.schema,
-      oldName: treeNodeDataObjectName(node),
-      newName,
-    });
+    const sql = await buildRenameObjectSql(renameObjectPreviewOptions(node, objectType, dbType, newName));
     if (requestId === renameObjectPreviewRequestId) renameObjectPreviewSql.value = sql;
   } catch {
     if (requestId === renameObjectPreviewRequestId) renameObjectPreviewSql.value = "";
   }
 }
 
-watch([showRenameObjectDialog, renameObjectName, () => activeNode.value.label, () => activeNode.value.schema, () => activeNode.value.type, () => currentDatabaseType()], () => {
+watch([showRenameObjectDialog, renameObjectName, () => activeNode.value.label, () => activeNode.value.schema, () => activeNode.value.tableName, () => activeNode.value.objectName, () => activeNode.value.type, () => currentDatabaseType()], () => {
   void refreshRenameObjectPreviewSql();
 });
+
+/**
+ * `ALTER DATABASE ... RENAME` cannot run on the database being renamed, so pick
+ * the configured default database or a sibling database node instead.
+ */
+function renameObjectExecutionDatabase(target: TreeNode): string {
+  if (target.type !== "database") return target.database ?? "";
+  const oldName = treeNodeRenameObjectName(target);
+  const configured = (target.connectionId ? connectionStore.getConfig(target.connectionId)?.database : "")?.trim() ?? "";
+  if (configured && configured !== oldName) return configured;
+  const siblings = flattenTree(connectionStore.treeNodes)
+    .map((item) => item.node)
+    .filter((candidate) => candidate.type === "database" && candidate.connectionId === target.connectionId)
+    .map((candidate) => (candidate.database ?? "").trim())
+    .filter((name) => name && name !== oldName);
+  const maintenanceDatabase = siblings.find((name) => name === "postgres") ?? siblings[0];
+  if (maintenanceDatabase) return maintenanceDatabase;
+  // openGauss/PostgreSQL always ship a `postgres` maintenance database; only
+  // fall back to it when it is not the database being renamed.
+  if (oldName !== "postgres") return "postgres";
+  throw new Error(t("contextMenu.renameDatabaseNeedsOtherDatabase"));
+}
+
+async function refreshAfterObjectRename(target: TreeNode, appliedName: string) {
+  if (!target.connectionId) return;
+  if (target.type === "database") {
+    const config = connectionStore.getConfig(target.connectionId);
+    if (config?.database === treeNodeRenameObjectName(target)) {
+      // Keep the connection usable after its default database is renamed.
+      await connectionStore.updateConnection({ ...config, database: appliedName });
+      return;
+    }
+    await connectionStore.refreshDatabaseTreeNode(target.connectionId, appliedName);
+    return;
+  }
+  if (target.type === "schema") {
+    await connectionStore.refreshDatabaseTreeNode(target.connectionId, target.database ?? "");
+    return;
+  }
+  await refreshTableList(target);
+}
 
 async function confirmRenameObject() {
   const node = createSidebarActionTarget(sidebarFormTarget.value ?? activeNode.value);
   const objectType = nodeRenameObjectType(node);
   const newName = renameObjectName.value.trim();
-  if (!objectType || !newName || newName === treeNodeDataObjectName(node) || !node.connectionId || !node.database) return;
+  if (!objectType || !newName || newName === treeNodeRenameObjectName(node) || !node.connectionId || !node.database) return;
   renameObjectError.value = "";
   let renameApplied = false;
   const assertWritable = () => {
@@ -1889,24 +1935,24 @@ async function confirmRenameObject() {
   };
   const onExecuted = async (target: TreeNode, appliedName: string) => {
     renameApplied = true;
-    toast(t("contextMenu.renameObjectSuccess", { oldName: treeNodeDataObjectName(target), newName: appliedName }), 3000);
+    toast(t("contextMenu.renameObjectSuccess", { oldName: treeNodeRenameObjectName(target), newName: appliedName }), 3000);
     showRenameObjectDialog.value = false;
-    const renamedNode: TreeNode = { ...target, label: appliedName, objectName: appliedName, tableName: appliedName };
-    await refreshTableList(target);
+    const renamedNode = renamedObjectTreeNode(target, appliedName);
+    await refreshAfterObjectRename(target, appliedName);
     connectionStore.replacePinnedTreeNode(target, renamedNode);
   };
   try {
     assertWritable();
     const dbType = databaseTypeForNode(node);
     await connectionStore.ensureConnected(node.connectionId);
-    if (supportsSourceBackedRoutineRename(dbType, objectType as any)) {
+    if (!supportsObjectRename(dbType, objectType) && supportsSourceBackedRoutineRename(dbType, objectType as any)) {
       const schema = node.schema || node.database;
-      const source = await api.getObjectSource(node.connectionId, node.database, schema, treeNodeDataObjectName(node), objectType as any, node.signature);
+      const source = await api.getObjectSource(node.connectionId, node.database, schema, treeNodeRenameObjectName(node), objectType as any, node.signature);
       const statements = await buildRoutineRenameObjectSourceStatements({
         databaseType: dbType!,
         objectType: objectType as any,
         schema,
-        name: treeNodeDataObjectName(node),
+        name: treeNodeRenameObjectName(node),
         newName,
         source: source.source,
       });
@@ -1920,7 +1966,12 @@ async function confirmRenameObject() {
         node,
         newName,
         getConnection: () => connectionStore.getConfig(node.connectionId!),
-        execute: (sql, target) => executeTreeNodeSqlWithProductionGuard(target, sql, { database: target.database, schema: target.schema, beforeExecute: assertWritable }),
+        execute: (sql, target) =>
+          executeTreeNodeSqlWithProductionGuard(target, sql, {
+            database: renameObjectExecutionDatabase(target),
+            schema: target.schema,
+            beforeExecute: assertWritable,
+          }),
         onExecuted,
       });
     }
@@ -3597,6 +3648,14 @@ function buildDatabaseSidebarMenu(context: SidebarMenuFactoryContext): boolean {
       items.push({ label: "", separator: true });
     }
     items.push({ label: t("contextMenu.copyName"), action: copyName, icon: Copy, shortcut: shortcutCopyName.value });
+    if (canRenameObject.value) {
+      items.push({
+        label: t("contextMenu.renameObject"),
+        action: openRenameObjectDialog,
+        icon: Pencil,
+        shortcut: shortcutRename,
+      });
+    }
     items.push({ label: "", separator: true });
     if (canOpenObjectBrowser.value) {
       items.push({ label: t("contextMenu.openObjectBrowser"), action: openObjectBrowser, icon: TableProperties });
@@ -3830,6 +3889,14 @@ function buildObjectSidebarMenu(context: SidebarMenuFactoryContext): boolean {
   // 7. Column
   if (node.type === "column") {
     items.push({ label: t("contextMenu.copyName"), action: copyName, icon: Copy, shortcut: shortcutCopyName.value });
+    if (canRenameObject.value) {
+      items.push({
+        label: t("contextMenu.renameObject"),
+        action: openRenameObjectDialog,
+        icon: Pencil,
+        shortcut: shortcutRename,
+      });
+    }
     const columnActions: ContextMenuItem[] = [];
     if (canOpenStructureEditor.value) {
       columnActions.push({ label: t("contextMenu.editColumn"), action: openStructureEditor, icon: PencilRuler });
@@ -3854,8 +3921,16 @@ function buildObjectSidebarMenu(context: SidebarMenuFactoryContext): boolean {
     return true;
   }
 
-  if (node.type === "index" || node.type === "fkey" || (node.type === "trigger" && !!node.tableName)) {
+  if (node.type === "index" || node.type === "fkey" || node.type === "constraint" || (node.type === "trigger" && !!node.tableName)) {
     items.push({ label: t("contextMenu.copyName"), action: copyName, icon: Copy, shortcut: shortcutCopyName.value });
+    if (canRenameObject.value) {
+      items.push({
+        label: t("contextMenu.renameObject"),
+        action: openRenameObjectDialog,
+        icon: Pencil,
+        shortcut: shortcutRename,
+      });
+    }
     if (node.type === "trigger") {
       items.push({ label: t("contextMenu.viewSource"), action: () => openObjectSourceDialog(false), icon: Code2 });
       const config = node.connectionId ? connectionStore.getConfig(node.connectionId) : undefined;
@@ -3918,6 +3993,14 @@ function buildObjectSidebarMenu(context: SidebarMenuFactoryContext): boolean {
   if (node.type === "sequence") {
     items.push({ label: t("contextMenu.viewSource"), action: () => openObjectSourceDialog(false), icon: Code2 });
     items.push({ label: t("contextMenu.copyName"), action: copyName, icon: Copy, shortcut: shortcutCopyName.value });
+    if (canRenameObject.value) {
+      items.push({
+        label: t("contextMenu.renameObject"),
+        action: openRenameObjectDialog,
+        icon: Pencil,
+        shortcut: shortcutRename,
+      });
+    }
     items.push({ label: t("contextMenu.changeOpenMode"), action: () => emit("open-settings", "navigation"), icon: Settings2 });
     items.push({ label: "", separator: true });
     items.push({
@@ -3995,6 +4078,14 @@ function buildObjectSidebarMenu(context: SidebarMenuFactoryContext): boolean {
   if (node.type === "trigger" || node.type === "type" || node.type === "type-body") {
     items.push({ label: t("contextMenu.viewSource"), action: () => openObjectSourceDialog(false), icon: Code2 });
     items.push({ label: t("contextMenu.copyName"), action: copyName, icon: Copy, shortcut: shortcutCopyName.value });
+    if (canRenameObject.value) {
+      items.push({
+        label: t("contextMenu.renameObject"),
+        action: openRenameObjectDialog,
+        icon: Pencil,
+        shortcut: shortcutRename,
+      });
+    }
     items.push({ label: t("contextMenu.changeOpenMode"), action: () => emit("open-settings", "navigation"), icon: Settings2 });
     // openGauss has no DROP TYPE BODY; only types get delete items.
     if (node.type === "type") {

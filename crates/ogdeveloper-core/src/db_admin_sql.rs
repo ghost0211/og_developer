@@ -32,16 +32,45 @@ pub enum TableChildObjectType {
     Trigger,
 }
 
+/// Objects that can be renamed through a direct `ALTER ... RENAME TO` statement.
+/// Kept separate from [`DatabaseObjectType`] because synonym/package/job have no
+/// native rename and table children (column/constraint) need parent-table context.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum RenameObjectType {
+    Database,
+    Schema,
+    Table,
+    View,
+    MaterializedView,
+    Sequence,
+    Type,
+    Function,
+    Procedure,
+    Trigger,
+    Index,
+    Column,
+    Constraint,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RenameObjectSqlOptions {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub database_type: Option<DatabaseType>,
-    pub object_type: DatabaseObjectType,
+    pub object_type: RenameObjectType,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub schema: Option<String>,
     pub old_name: String,
     pub new_name: String,
+    /// PostgreSQL/openGauss routine identity argument list (without parentheses),
+    /// e.g. `integer, text` or `""` for a zero-argument routine. Required for
+    /// FUNCTION/PROCEDURE so overloaded routines resolve deterministically.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signature: Option<String>,
+    /// Parent table for table-scoped objects (COLUMN/CONSTRAINT/TRIGGER).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub table_name: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -518,20 +547,11 @@ pub fn build_copy_table_data_sql(options: CopyTableDataSqlOptions) -> String {
     format!("INSERT INTO {target} ({column_list}){postgres_override} SELECT {column_list} FROM {source};")
 }
 
-pub fn supports_object_rename(database_type: Option<DatabaseType>, object_type: DatabaseObjectType) -> bool {
-    let Some(database_type) = database_type else {
-        return false;
-    };
-    if matches!(object_type, DatabaseObjectType::Procedure | DatabaseObjectType::Function) {
-        return false;
-    }
-    if is_postgres_like_rename(database_type) || is_oracle_like_rename(database_type) {
-        return matches!(
-            object_type,
-            DatabaseObjectType::Table | DatabaseObjectType::View | DatabaseObjectType::MaterializedView
-        );
-    }
-    false
+pub fn supports_object_rename(database_type: Option<DatabaseType>, _object_type: RenameObjectType) -> bool {
+    // openGauss and PostgreSQL share the same `ALTER ... RENAME TO` family for
+    // every type exposed by [`RenameObjectType`]. Synonym/package/job are
+    // deliberately absent: openGauss has no native rename for them.
+    database_type.is_some_and(is_postgres_like_rename)
 }
 
 pub fn build_rename_object_sql(options: RenameObjectSqlOptions) -> Result<String, String> {
@@ -539,35 +559,97 @@ pub fn build_rename_object_sql(options: RenameObjectSqlOptions) -> Result<String
     if !supports_object_rename(database_type, options.object_type) {
         return Err(format!(
             "Renaming {} is not supported for {}.",
-            object_type_keyword(options.object_type),
+            rename_object_type_keyword(options.object_type),
             database_label(database_type)
         ));
     }
 
-    if database_type
-        .is_some_and(|database_type| is_postgres_like_rename(database_type) || is_oracle_like_rename(database_type))
-    {
-        return Ok(format!(
-            "ALTER {} {} RENAME TO {};",
-            object_type_keyword(options.object_type),
-            qualified_name(database_type, options.schema.as_deref(), &options.old_name),
-            quote_admin_identifier(database_type, &options.new_name)
-        ));
-    }
+    let new_name = quote_admin_identifier(database_type, &options.new_name);
+    let old_name = options.old_name.as_str();
+    let schema = options.schema.as_deref();
+    let table_name = || {
+        options.table_name.as_deref().map(str::trim).filter(|table| !table.is_empty()).ok_or_else(|| {
+            format!("Renaming {} requires the parent table name.", rename_object_type_keyword(options.object_type))
+        })
+    };
 
-    Err(format!(
-        "Renaming {} is not supported for {}.",
-        object_type_keyword(options.object_type),
-        database_label(database_type)
-    ))
+    match options.object_type {
+        RenameObjectType::Database => {
+            Ok(format!("ALTER DATABASE {} RENAME TO {new_name};", quote_admin_identifier(database_type, old_name)))
+        }
+        RenameObjectType::Schema => {
+            Ok(format!("ALTER SCHEMA {} RENAME TO {new_name};", quote_admin_identifier(database_type, old_name)))
+        }
+        RenameObjectType::Table => {
+            Ok(format!("ALTER TABLE {} RENAME TO {new_name};", qualified_name(database_type, schema, old_name)))
+        }
+        RenameObjectType::View => {
+            Ok(format!("ALTER VIEW {} RENAME TO {new_name};", qualified_name(database_type, schema, old_name)))
+        }
+        RenameObjectType::MaterializedView => Ok(format!(
+            "ALTER MATERIALIZED VIEW {} RENAME TO {new_name};",
+            qualified_name(database_type, schema, old_name)
+        )),
+        RenameObjectType::Sequence => {
+            Ok(format!("ALTER SEQUENCE {} RENAME TO {new_name};", qualified_name(database_type, schema, old_name)))
+        }
+        RenameObjectType::Type => {
+            Ok(format!("ALTER TYPE {} RENAME TO {new_name};", qualified_name(database_type, schema, old_name)))
+        }
+        RenameObjectType::Function | RenameObjectType::Procedure => {
+            let signature = options.signature.as_deref().ok_or_else(|| {
+                format!(
+                    "Renaming {} requires the routine argument signature.",
+                    rename_object_type_keyword(options.object_type)
+                )
+            })?;
+            Ok(format!(
+                "ALTER {} {}({signature}) RENAME TO {new_name};",
+                rename_object_type_keyword(options.object_type),
+                qualified_name(database_type, schema, old_name)
+            ))
+        }
+        RenameObjectType::Trigger => Ok(format!(
+            "ALTER TRIGGER {} ON {} RENAME TO {new_name};",
+            quote_admin_identifier(database_type, old_name),
+            qualified_name(database_type, schema, table_name()?)
+        )),
+        RenameObjectType::Index => {
+            Ok(format!("ALTER INDEX {} RENAME TO {new_name};", qualified_name(database_type, schema, old_name)))
+        }
+        RenameObjectType::Column => Ok(format!(
+            "ALTER TABLE {} RENAME COLUMN {} TO {new_name};",
+            qualified_name(database_type, schema, table_name()?),
+            quote_admin_identifier(database_type, old_name)
+        )),
+        RenameObjectType::Constraint => Ok(format!(
+            "ALTER TABLE {} RENAME CONSTRAINT {} TO {new_name};",
+            qualified_name(database_type, schema, table_name()?),
+            quote_admin_identifier(database_type, old_name)
+        )),
+    }
 }
 
 fn is_postgres_like_rename(database_type: DatabaseType) -> bool {
     matches!(database_type, DatabaseType::Postgres | DatabaseType::Opengauss)
 }
 
-fn is_oracle_like_rename(database_type: DatabaseType) -> bool {
-    matches!(database_type, DatabaseType::Opengauss)
+fn rename_object_type_keyword(object_type: RenameObjectType) -> &'static str {
+    match object_type {
+        RenameObjectType::Database => "DATABASE",
+        RenameObjectType::Schema => "SCHEMA",
+        RenameObjectType::Table => "TABLE",
+        RenameObjectType::View => "VIEW",
+        RenameObjectType::MaterializedView => "MATERIALIZED VIEW",
+        RenameObjectType::Sequence => "SEQUENCE",
+        RenameObjectType::Type => "TYPE",
+        RenameObjectType::Function => "FUNCTION",
+        RenameObjectType::Procedure => "PROCEDURE",
+        RenameObjectType::Trigger => "TRIGGER",
+        RenameObjectType::Index => "INDEX",
+        RenameObjectType::Column => "COLUMN",
+        RenameObjectType::Constraint => "CONSTRAINT",
+    }
 }
 
 fn supports_duplicate_table_comment(database_type: DatabaseType) -> bool {
@@ -633,22 +715,30 @@ mod tests {
         );
     }
 
+    fn rename_options(object_type: RenameObjectType) -> RenameObjectSqlOptions {
+        RenameObjectSqlOptions {
+            database_type: Some(DatabaseType::Opengauss),
+            object_type,
+            schema: Some("App\"Schema".to_string()),
+            old_name: "旧表\"; DROP TABLE other; --".to_string(),
+            new_name: "New\"Name".to_string(),
+            signature: None,
+            table_name: None,
+        }
+    }
+
     #[test]
     fn opengauss_direct_relation_renames_preserve_identifier_quoting() {
         for (object_type, keyword) in [
-            (DatabaseObjectType::Table, "TABLE"),
-            (DatabaseObjectType::View, "VIEW"),
-            (DatabaseObjectType::MaterializedView, "MATERIALIZED VIEW"),
+            (RenameObjectType::Table, "TABLE"),
+            (RenameObjectType::View, "VIEW"),
+            (RenameObjectType::MaterializedView, "MATERIALIZED VIEW"),
+            (RenameObjectType::Sequence, "SEQUENCE"),
+            (RenameObjectType::Type, "TYPE"),
+            (RenameObjectType::Index, "INDEX"),
         ] {
             assert!(supports_object_rename(Some(DatabaseType::Opengauss), object_type));
-            let sql = build_rename_object_sql(RenameObjectSqlOptions {
-                database_type: Some(DatabaseType::Opengauss),
-                object_type,
-                schema: Some("App\"Schema".to_string()),
-                old_name: "旧表\"; DROP TABLE other; --".to_string(),
-                new_name: "New\"Name".to_string(),
-            })
-            .unwrap();
+            let sql = build_rename_object_sql(rename_options(object_type)).unwrap();
             assert_eq!(
                 sql,
                 format!(
@@ -656,9 +746,127 @@ mod tests {
                 )
             );
         }
-        for object_type in [DatabaseObjectType::Function, DatabaseObjectType::Procedure] {
-            assert!(!supports_object_rename(Some(DatabaseType::Opengauss), object_type));
-        }
+    }
+
+    #[test]
+    fn opengauss_database_schema_and_routine_renames_include_required_context() {
+        assert_eq!(
+            build_rename_object_sql(RenameObjectSqlOptions {
+                database_type: Some(DatabaseType::Opengauss),
+                object_type: RenameObjectType::Database,
+                schema: None,
+                old_name: "app_db".to_string(),
+                new_name: "app_db_v2".to_string(),
+                signature: None,
+                table_name: None,
+            })
+            .unwrap(),
+            "ALTER DATABASE app_db RENAME TO app_db_v2;"
+        );
+        assert_eq!(
+            build_rename_object_sql(RenameObjectSqlOptions {
+                database_type: Some(DatabaseType::Opengauss),
+                object_type: RenameObjectType::Schema,
+                schema: None,
+                old_name: "app".to_string(),
+                new_name: "app_v2".to_string(),
+                signature: None,
+                table_name: None,
+            })
+            .unwrap(),
+            "ALTER SCHEMA app RENAME TO app_v2;"
+        );
+        assert_eq!(
+            build_rename_object_sql(RenameObjectSqlOptions {
+                database_type: Some(DatabaseType::Opengauss),
+                object_type: RenameObjectType::Procedure,
+                schema: Some("app".to_string()),
+                old_name: "add_role_user".to_string(),
+                new_name: "add_role_user_v2".to_string(),
+                signature: Some("integer[]".to_string()),
+                table_name: None,
+            })
+            .unwrap(),
+            "ALTER PROCEDURE app.add_role_user(integer[]) RENAME TO add_role_user_v2;"
+        );
+        assert!(build_rename_object_sql(RenameObjectSqlOptions {
+            database_type: Some(DatabaseType::Opengauss),
+            object_type: RenameObjectType::Function,
+            schema: Some("app".to_string()),
+            old_name: "f".to_string(),
+            new_name: "g".to_string(),
+            signature: None,
+            table_name: None,
+        })
+        .is_err());
+    }
+
+    #[test]
+    fn opengauss_table_child_renames_use_parent_table_context() {
+        assert_eq!(
+            build_rename_object_sql(RenameObjectSqlOptions {
+                database_type: Some(DatabaseType::Opengauss),
+                object_type: RenameObjectType::Column,
+                schema: Some("app".to_string()),
+                old_name: "old_col".to_string(),
+                new_name: "new_col".to_string(),
+                signature: None,
+                table_name: Some("users".to_string()),
+            })
+            .unwrap(),
+            "ALTER TABLE app.users RENAME COLUMN old_col TO new_col;"
+        );
+        assert_eq!(
+            build_rename_object_sql(RenameObjectSqlOptions {
+                database_type: Some(DatabaseType::Opengauss),
+                object_type: RenameObjectType::Constraint,
+                schema: Some("app".to_string()),
+                old_name: "users_org_fkey".to_string(),
+                new_name: "users_org_fk".to_string(),
+                signature: None,
+                table_name: Some("users".to_string()),
+            })
+            .unwrap(),
+            "ALTER TABLE app.users RENAME CONSTRAINT users_org_fkey TO users_org_fk;"
+        );
+        assert_eq!(
+            build_rename_object_sql(RenameObjectSqlOptions {
+                database_type: Some(DatabaseType::Opengauss),
+                object_type: RenameObjectType::Trigger,
+                schema: Some("app".to_string()),
+                old_name: "users_audit".to_string(),
+                new_name: "users_audit_v2".to_string(),
+                signature: None,
+                table_name: Some("users".to_string()),
+            })
+            .unwrap(),
+            "ALTER TRIGGER users_audit ON app.users RENAME TO users_audit_v2;"
+        );
+        assert!(build_rename_object_sql(RenameObjectSqlOptions {
+            database_type: Some(DatabaseType::Opengauss),
+            object_type: RenameObjectType::Column,
+            schema: Some("app".to_string()),
+            old_name: "old_col".to_string(),
+            new_name: "new_col".to_string(),
+            signature: None,
+            table_name: None,
+        })
+        .is_err());
+    }
+
+    #[test]
+    fn unsupported_rename_dialects_are_rejected() {
+        assert!(!supports_object_rename(Some(DatabaseType::Jdbc), RenameObjectType::Table));
+        assert!(build_rename_object_sql(RenameObjectSqlOptions {
+            database_type: Some(DatabaseType::Jdbc),
+            object_type: RenameObjectType::Table,
+            schema: None,
+            old_name: "t".to_string(),
+            new_name: "t2".to_string(),
+            signature: None,
+            table_name: None,
+        })
+        .is_err());
     }
 
     #[test]

@@ -12,6 +12,25 @@ export function treeNodeDataObjectName(node: Pick<TreeNode, "label" | "tableName
   return node.tableName?.trim() || node.objectName?.trim() || node.label;
 }
 
+/**
+ * Real object name for rename dialogs and DDL. Unlike {@link treeNodeDataObjectName}
+ * this never falls back to the parent table for table children, and it prefers the
+ * real `database`/`schema` identity over a display label.
+ */
+export function treeNodeRenameObjectName(node: TreeNode): string {
+  if (node.type === "database") return (node.database ?? "").trim() || node.label.trim();
+  if (node.type === "schema") return (node.schema ?? "").trim() || node.label.trim();
+  if (node.type === "column" || node.type === "index" || node.type === "fkey" || node.type === "constraint") {
+    const metaName = (node.meta as { name?: unknown } | undefined)?.name;
+    if (typeof metaName === "string" && metaName.trim()) return metaName.trim();
+    return node.label.replace(/\s+\(.+\)$/, "").trim();
+  }
+  if (node.type === "trigger") {
+    return (node.objectName ?? "").trim() || node.label.replace(/\s+\(.+\)$/, "").trim();
+  }
+  return node.objectName?.trim() || node.label.trim();
+}
+
 export function hasTreeNodeDatabaseContext(node: Pick<TreeNode, "database">): node is Pick<TreeNode, "database"> & {
   database: string;
 } {

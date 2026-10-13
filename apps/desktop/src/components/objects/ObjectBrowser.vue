@@ -78,8 +78,8 @@ import {
   type TableAdminSqlOptions,
 } from "@/lib/database/dbAdminSql";
 import { useToast } from "@/composables/useToast";
-import { buildExecutableObjectSourceStatements, buildRoutineRenameObjectSourceStatements, executeObjectSourceSave, formatObjectSourceSaveError, supportsSourceBackedRoutineRename } from "@/lib/table/objectSourceEditor";
-import { buildRenameObjectSql, supportsObjectRename } from "@/lib/table/objectRenameSql";
+import { buildExecutableObjectSourceStatements, executeObjectSourceSave, formatObjectSourceSaveError } from "@/lib/table/objectSourceEditor";
+import { buildRenameObjectSql, renameObjectRequiresSignature, renameObjectRequiresTableContext, supportsObjectRename, type RenameableObjectType } from "@/lib/table/objectRenameSql";
 import { isTauriRuntime } from "@/lib/backend/tauriRuntime";
 import { generateDatabaseExportId } from "@/lib/export/databaseExport";
 import { copyToClipboard, eventTargetAllowsAppClipboardShortcut } from "@/lib/common/clipboard";
@@ -805,8 +805,45 @@ function togglePartitionParent(row: ObjectBrowserRow) {
   expandedPartitionParentIds.value = next;
 }
 
+function objectBrowserRenameType(row: ObjectBrowserRow): RenameableObjectType | null {
+  switch (row.type) {
+    case "TABLE":
+      return "TABLE";
+    case "VIEW":
+      return "VIEW";
+    case "MATERIALIZED_VIEW":
+      return "MATERIALIZED_VIEW";
+    case "SEQUENCE":
+      return "SEQUENCE";
+    case "TYPE":
+      return "TYPE";
+    case "FUNCTION":
+      return "FUNCTION";
+    case "PROCEDURE":
+      return "PROCEDURE";
+    case "TRIGGER":
+      return "TRIGGER";
+    default:
+      return null;
+  }
+}
+
 function canRename(row: ObjectBrowserRow) {
-  return supportsObjectRename(effectiveDatabaseType.value, row.type) || supportsSourceBackedRoutineRename(effectiveDatabaseType.value, row.type as ObjectSourceKind);
+  const objectType = objectBrowserRenameType(row);
+  if (!objectType || !supportsObjectRename(effectiveDatabaseType.value, objectType)) return false;
+  return !renameObjectRequiresTableContext(objectType) || !!(row.partitionParentName ?? "").trim();
+}
+
+function renameObjectBrowserRowSql(row: ObjectBrowserRow, objectType: RenameableObjectType, newName: string): Promise<string> {
+  return buildRenameObjectSql({
+    databaseType: effectiveDatabaseType.value,
+    objectType,
+    schema: row.schema || selectedSchema.value,
+    oldName: row.name,
+    newName,
+    signature: renameObjectRequiresSignature(objectType) ? (row.signature ?? "") : undefined,
+    tableName: renameObjectRequiresTableContext(objectType) ? row.partitionParentName : undefined,
+  });
 }
 
 function sourceTitle(row: ObjectBrowserRow | null) {
@@ -1265,22 +1302,13 @@ async function refreshRenamePreviewSql() {
   const requestId = ++renamePreviewRequestId;
   const row = renameTarget.value;
   const newName = renameInput.value.trim();
-  if (!showRenameDialog.value || !row || !newName || newName === row.name) {
+  const objectType = row ? objectBrowserRenameType(row) : null;
+  if (!showRenameDialog.value || !row || !objectType || !newName || newName === row.name || !canRename(row)) {
     renamePreviewSqlText.value = "";
     return;
   }
-  if (supportsSourceBackedRoutineRename(effectiveDatabaseType.value, row.type as ObjectSourceKind)) {
-    renamePreviewSqlText.value = `-- Recreate ${row.type} from source, then drop the original object.`;
-    return;
-  }
   try {
-    const sql = await buildRenameObjectSql({
-      databaseType: effectiveDatabaseType.value,
-      objectType: row.type,
-      schema: row.schema || selectedSchema.value,
-      oldName: row.name,
-      newName,
-    });
+    const sql = await renameObjectBrowserRowSql(row, objectType, newName);
     if (requestId === renamePreviewRequestId) renamePreviewSqlText.value = sql;
   } catch {
     if (requestId === renamePreviewRequestId) renamePreviewSqlText.value = "";
@@ -1294,41 +1322,17 @@ watch([showRenameDialog, renameTarget, renameInput, selectedSchema], () => {
 async function confirmRename() {
   const row = renameTarget.value;
   const newName = renameInput.value.trim();
-  if (!row || !newName || newName === row.name) return;
+  const objectType = row ? objectBrowserRenameType(row) : null;
+  if (!row || !objectType || !newName || newName === row.name || !canRename(row)) return;
   renameError.value = "";
   const oldPinnedNode = pinnedTreeNodeForObjectBrowserRow(row);
   const oldLegacyPinnedNodes = legacyPinnedTreeNodesForObjectBrowserRow(row);
   let renameApplied = false;
   try {
     const schema = row.schema || selectedSchema.value || props.database;
-    if (supportsSourceBackedRoutineRename(effectiveDatabaseType.value, row.type as ObjectSourceKind)) {
-      const source = await api.getObjectSource(props.connection.id, props.database, schema, row.name, row.type as ObjectSourceKind, row.signature ?? undefined);
-      const statements = await buildRoutineRenameObjectSourceStatements({
-        databaseType: effectiveDatabaseType.value,
-        objectType: row.type as ObjectSourceKind,
-        schema,
-        name: row.name,
-        newName,
-        source: source.source,
-      });
-      const executed = await executeObjectBrowserSqlWithProductionGuard(statements.join(";\n"), async () => {
-        for (const sql of statements) {
-          await api.executeQuery(props.connection.id, props.database, sql, schema);
-        }
-        return true;
-      });
-      if (!executed) return;
-    } else {
-      const sql = await buildRenameObjectSql({
-        databaseType: effectiveDatabaseType.value,
-        objectType: row.type,
-        schema,
-        oldName: row.name,
-        newName,
-      });
-      const executed = await executeObjectBrowserSqlWithProductionGuard(sql, () => api.executeQuery(props.connection.id, props.database, sql, schema));
-      if (!executed) return;
-    }
+    const sql = await renameObjectBrowserRowSql(row, objectType, newName);
+    const executed = await executeObjectBrowserSqlWithProductionGuard(sql, () => api.executeQuery(props.connection.id, props.database, sql, schema));
+    if (!executed) return;
     renameApplied = true;
     toast(t("contextMenu.renameObjectSuccess", { oldName: row.name, newName }));
     showRenameDialog.value = false;

@@ -1598,3 +1598,86 @@ HAVING/ORDER、派生/标量/EXISTS/CASE 子查询、CTE/UNION、多语句宽度
 验证：格式化、配置与面板 97 项定向测试通过；完整 pnpm check 格式/lint/typecheck
 通过，5455 项测试、645 个套件通过，仅既有 5 个本机 `node:` 加载器套件失败；
 frontend build 通过。未启动或自动化用户桌面 UI。
+
+---
+
+## 49. SQL 格式化：修复 openGauss 过程块 DECLARE 与 BEGIN...END 结构缩进
+
+用户反馈：openGauss 存储过程/函数格式化后，`DECLARE` 后的第一个变量仍留在关键字
+同一行，`BEGIN...END` 主体没有整体缩进；同时底层库会把例程属性末尾的 `AS`
+合并到前一行。实测 sql-formatter v15.8.0 的 PostgreSQL 语法把裸过程体中的
+`DECLARE`、`BEGIN`、`END` 当成彼此独立的顶层命令，不理解 openGauss A 兼容风格
+`AS DECLARE ... BEGIN ... END`，因此只调整查询表达式而不恢复过程块骨架。
+
+**实现**：新增 `sqlProceduralFormat.ts`，在底层 PostgreSQL 格式化之后、查询关键词
+对齐/FROM/WHERE 同行后处理之前运行结构化过程块后处理：
+
+- 保留 openGauss 常用 `AS DECLARE` 声明头，但把 `AS` 从前一条 `SET ...` 行分离；
+  `DECLARE` 后的变量换行并缩进一个单位，多个变量持续处于声明区。
+- 非事务型 `BEGIN...END` 主体整体缩进，嵌套 `BEGIN` 继续加深一层；`END` 回到
+  所属块层级。`CASE` 与 `BEGIN` 使用同一词法栈配对，避免 CASE 分支内嵌套块的
+  `END` 被误配对；`END IF` / `END LOOP` / `END CASE` 不关闭外层 BEGIN。
+- 块内由 `linesBetweenQueries` 生成的多余空行会被移除；Tab 与 2/4 空格缩进沿用
+  当前设置；完整 `formatSqlText` 管线重复执行保持稳定。
+- PostgreSQL/openGauss 词法扫描保护单双引号、E-string、dollar-quoted 文本、行注释
+  和嵌套块注释；dollar-quoted 例程体视为不透明文本，不改写其中字节。结构关键字
+  与内容之间有行内注释时保守跳过该拆分，不会吞掉注释 token。
+- 顶层 `DECLARE cursor CURSOR FOR ...` 与事务 `BEGIN;` 不当作过程块。最终重新
+  扫描输出并比较所有 token 的种类和原文；任何非空白内容变化都会回退到底层库输出。
+
+**验证**：新增 `sqlProceduralFormat.spec.ts` 12 项测试，覆盖用户截图过程的精确
+输出、函数 `AS DECLARE`、匿名块多个变量、嵌套 BEGIN、CASE/END IF/END LOOP 配对、
+行内注释保护、字符串/引号标识符、dollar-quoted 例程体保持不变、顶层游标/事务
+不受影响、Tab、关键词对齐和 FROM/WHERE 同行组合、完整管线幂等。相关格式化定向
+165+ 项通过。完整 `pnpm check` 格式、lint、typecheck 通过；5467 项测试、646 个
+套件通过，仅既有 5 个本机 `node:` 加载器套件失败；frontend build 通过。未启动或
+自动化用户桌面 UI，未连接数据库。
+
+---
+
+## 50. 资源树多对象重命名：openGauss/PostgreSQL 全对象直连 RENAME
+
+用户反馈资源树只有表有右键「重命名」，而 openGauss 几乎所有对象都支持改名。
+核对 openGauss 6.0 官方文档与 `openGauss-server` 的 `gram.y`：DATABASE、SCHEMA、
+TABLE、VIEW、MATERIALIZED VIEW、SEQUENCE、TYPE、FUNCTION、PROCEDURE、TRIGGER、
+INDEX、COLUMN、CONSTRAINT 均有 `ALTER ... RENAME TO`；SYNONYM、PACKAGE、
+PACKAGE BODY、TYPE BODY、JOB、SCHEDULER 没有原生 RENAME（仅 OWNER/COMPILE），
+因此这些对象不显示重命名入口。
+
+**后端**：`db_admin_sql.rs` 新增 `RenameObjectType` 枚举（与删除用的
+`DatabaseObjectType` 解耦，避免把列/约束塞进 DROP 路径），`RenameObjectSqlOptions`
+增加可选 `signature`（例程身份参数表，零参例程用空串）和 `tableName`（列/约束/
+触发器的父表）。按对象生成：DATABASE/SCHEMA 用裸名，关系/类型/序列/索引用
+`schema.name`，函数与过程必须带 `(signature)`，触发器为
+`ALTER TRIGGER name ON schema.table RENAME TO`，列为 `ALTER TABLE ... RENAME COLUMN`，
+约束为 `ALTER TABLE ... RENAME CONSTRAINT`；新名始终只允许裸标识符并走既有
+PG 标识符引号规则。
+
+**前端**：`objectRenameSql.ts` 定义独立 `RenameableObjectType`、方言能力与树节点
+映射；`treeNodeContext.ts` 新增 `treeNodeRenameObjectName`，对 database/schema 优先
+真实身份、对列/索引/外键/约束/触发器不误用父表名；`objectRenameActions.ts` 统一
+能力校验、`executeObjectRename` 传参与 `renamedObjectTreeNode` 身份更新。
+`SidebarTreeRuntimeHost.vue` 在 database/schema、column、index/fkey/constraint/
+trigger、sequence、type、function/procedure 菜单挂载重命名；预览与执行复用同一
+SQL 构造。重命名 database 时自动选择配置默认库或兄弟库执行 `ALTER DATABASE`，
+若重命名的正是连接默认库则同步更新连接配置，避免连接失效；schema 走数据库节点
+刷新，其余走对象列表刷新。`ObjectBrowser.vue` 同步支持表/视图/物化视图/序列/
+类型/函数/过程/触发器，并传入签名与触发器父表。
+
+**验证**：Rust `db_admin_sql` 8 项测试通过，`cargo check --workspace` 与
+`cargo clippy -p ogdeveloper-core -D warnings` 通过。前端定向 46 项、侧边栏目录
+221 项通过；完整 `pnpm check` 格式/lint/typecheck 通过，5485 项测试、646 个套件
+通过，仅既有 5 个本机 `node:` 加载器套件失败；frontend build 通过。未启动或自动化
+用户桌面 UI，未连接数据库做写操作。
+
+---
+
+## 51. 发布 v0.2.51
+
+版本号同步 `package.json`、`src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json`
+与 `Cargo.lock`（0.2.51）。本次包含 §49 的 openGauss 过程块 DECLARE/BEGIN...END
+结构化缩进修复，以及 §50 的资源树多对象重命名（database/schema/sequence/type/
+function/procedure/trigger/index/column/constraint 直连 RENAME）。发布前完整
+`pnpm check` 通过（仅既有 5 个本机 `node:` 加载器套件失败），`pnpm build`、
+`cargo test -p ogdeveloper-core --lib`、`cargo check --workspace` 与
+`cargo clippy -p ogdeveloper-core -D warnings` 均通过。

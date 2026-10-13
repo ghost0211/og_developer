@@ -71,6 +71,12 @@ select a,
 
 复合关键词（如 LEFT OUTER JOIN）作为一个整体测量；子查询单独计算并保留层级缩进。左/右对齐会接管逻辑操作符换行和同行设置。旧 JSON 中的 `indentStyle: tabularLeft/tabularRight` 自动迁移为对应的 `keywordAlignment: left/right`，不会继续使用旧库的固定列宽布局；界面只保留一个对齐入口。
 
+### 过程块布局
+
+PostgreSQL / openGauss 的非 dollar-quoted 过程块会额外恢复结构缩进：`AS DECLARE` 保持为例程声明头，变量从下一行开始缩进；`BEGIN...END` 中的语句整体缩进，嵌套块继续加深一级，并移除块内由“查询间空行”产生的多余空行。字符串、注释、CASE 表达式、`END IF` / `END LOOP` 和顶层游标声明不会被误当作过程块边界。
+
+dollar-quoted 例程体（如 `AS $$ ... $$`）是不透明文本区域，该结构化后处理不会改写其中的字节。
+
 ## JSON 模式与导入导出
 
 JSON 模式适合精确编辑、复制或迁移格式化器配置。当前配置文件只包含 `version`、`formatter` 和 `options`：
