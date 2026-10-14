@@ -3098,19 +3098,68 @@ pub(crate) fn opengauss_type_attributes_sql() -> &'static str {
      ORDER BY a.attnum"
 }
 
-/// Objects referenced by a view/materialized view (its rewrite rules depend on
-/// tables/views; the rewrite itself is excluded).
+/// Actual dependencies of a view/materialized view's rewrite rules. Do not
+/// infer synonym dependencies from matching names in pg_get_viewdef: that text
+/// describes resolved objects, not other aliases pointing at the same target.
+/// Both catalog IDs matter — OIDs can overlap between unrelated catalogs.
 #[allow(dead_code)]
-pub(crate) fn opengauss_view_references_sql() -> &'static str {
-    "SELECT DISTINCT n.nspname, c.relname, c.relkind::text \
-     FROM pg_catalog.pg_depend d \
-     JOIN pg_catalog.pg_rewrite rw ON rw.oid = d.objid \
-     JOIN pg_catalog.pg_class v ON v.oid = rw.ev_class \
-     JOIN pg_catalog.pg_class c ON c.oid = d.refobjid AND c.oid <> v.oid \
-     JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
-     WHERE v.relname = $1 \
-       AND v.relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = $2) \
-       AND d.refclassid = 'pg_catalog.pg_class'::regclass"
+pub(crate) fn opengauss_view_references_sql(has_gs_package: bool, has_pg_synonym: bool) -> String {
+    let dependencies = "FROM pg_catalog.pg_depend d \
+                        JOIN pg_catalog.pg_rewrite rw ON rw.oid = d.objid \
+                            AND d.classid = 'pg_catalog.pg_rewrite'::regclass \
+                        JOIN pg_catalog.pg_class v ON v.oid = rw.ev_class";
+    let view_filter = "v.relname = $1 \
+                       AND v.relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = $2)";
+    let mut parts = vec![format!(
+        "SELECT DISTINCT n.nspname, c.relname, c.relkind::text \
+         {dependencies} \
+         JOIN pg_catalog.pg_class c ON c.oid = d.refobjid AND c.oid <> v.oid \
+         JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
+         WHERE {view_filter} AND d.refclassid = 'pg_catalog.pg_class'::regclass"
+    )];
+
+    // Source parsing used to supplement the relation query with function/type
+    // candidates. Keep those genuine dependencies without name-based guessing.
+    let (routine_name, package_join) = if has_gs_package {
+        (
+            "COALESCE(pkg.pkgname || '.', '') || p.proname",
+            "LEFT JOIN pg_catalog.gs_package pkg ON pkg.oid = p.propackageid",
+        )
+    } else {
+        ("p.proname", "")
+    };
+    parts.push(format!(
+        "SELECT DISTINCT n.nspname, {routine_name}, \
+                CASE p.prokind WHEN 'p' THEN 'procedure' ELSE 'function' END \
+         {dependencies} \
+         JOIN pg_catalog.pg_proc p ON p.oid = d.refobjid \
+         JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace \
+         {package_join} \
+         WHERE {view_filter} AND d.refclassid = 'pg_catalog.pg_proc'::regclass \
+           AND n.nspname NOT IN ('pg_catalog', 'information_schema')"
+    ));
+    parts.push(format!(
+        "SELECT DISTINCT n.nspname, t.typname, 'type' \
+         {dependencies} \
+         JOIN pg_catalog.pg_type t ON t.oid = d.refobjid \
+         JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace \
+         LEFT JOIN pg_catalog.pg_class relation_type ON relation_type.oid = t.typrelid \
+         WHERE {view_filter} AND d.refclassid = 'pg_catalog.pg_type'::regclass \
+           AND (t.typtype <> 'c' OR relation_type.relkind = 'c') \
+           AND n.nspname NOT IN ('pg_catalog', 'information_schema')"
+    ));
+    if has_pg_synonym {
+        // Include a synonym only when the server actually records a direct
+        // dependency on its catalog OID. Sharing a target is not a dependency.
+        parts.push(format!(
+            "SELECT DISTINCT n.nspname, s.synname, 'synonym' \
+             {dependencies} \
+             JOIN pg_catalog.pg_synonym s ON s.oid = d.refobjid \
+             JOIN pg_catalog.pg_namespace n ON n.oid = s.synnamespace \
+             WHERE {view_filter} AND d.refclassid = 'pg_catalog.pg_synonym'::regclass"
+        ));
+    }
+    parts.join(" UNION ")
 }
 
 /// Query matching candidate database objects by name across system catalogs
@@ -8109,6 +8158,34 @@ mod tests {
         assert!(sql.contains("LEFT JOIN pg_catalog.pg_class c"));
         assert!(sql.contains("LEFT JOIN pg_catalog.pg_proc p"));
         assert!(sql.contains("s.synname = $1"));
+    }
+
+    #[test]
+    fn opengauss_view_references_sql_uses_catalog_identity_not_synonym_names() {
+        for (has_package, has_synonym) in [(false, false), (false, true), (true, false), (true, true)] {
+            let sql = opengauss_view_references_sql(has_package, has_synonym);
+            let branches: Vec<_> = sql.split(" UNION ").collect();
+            assert_eq!(branches.len(), if has_synonym { 4 } else { 3 });
+            for branch in &branches {
+                assert!(branch.contains("d.classid = 'pg_catalog.pg_rewrite'::regclass"));
+                assert!(branch.contains("d.refclassid = 'pg_catalog."));
+                assert!(branch.contains("v.relname = $1"));
+                assert!(branch.contains("nspname = $2"));
+            }
+            assert!(sql.contains("c.oid = d.refobjid AND c.oid <> v.oid"));
+            assert!(sql.contains("p.oid = d.refobjid"));
+            assert!(sql.contains("t.oid = d.refobjid"));
+            assert_eq!(sql.contains("pg_catalog.gs_package"), has_package);
+            assert_eq!(sql.contains("pg_catalog.pg_synonym"), has_synonym);
+            if has_synonym {
+                assert!(sql.contains("s.oid = d.refobjid"));
+                assert!(sql.contains("d.refclassid = 'pg_catalog.pg_synonym'::regclass"));
+            }
+            assert!(!sql.contains("synobjschema"));
+            assert!(!sql.contains("synobjname"));
+            assert!(!sql.contains("ANY($1)"));
+            assert!(!sql.contains("lower(s.synname)"));
+        }
     }
 
     #[test]

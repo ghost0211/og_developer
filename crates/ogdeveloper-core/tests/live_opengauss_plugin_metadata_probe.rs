@@ -214,6 +214,46 @@ async fn live_plugin_metadata_probe() {
     assert_eq!(mv_prod_menu.len(), 1, "materialized view references must dedupe: {mv_refs:?}");
     assert_eq!(mv_prod_menu[0].object_type, "table", "raw relkind must be normalized: {mv_refs:?}");
 
+    // Both views reference yi_prod.prod_menu directly, not the same-named
+    // yi_ddd.prod_menu synonym. Source candidates used to invent that second
+    // relationship because it belongs to the view's own schema.
+    assert_eq!(view_refs.len(), 1, "view must not infer synonym aliases: {view_refs:?}");
+    assert_eq!(mv_refs.len(), 1, "materialized view must not infer synonym aliases: {mv_refs:?}");
+    for (object_type, object_name) in [("view", "ogt_v_probe"), ("materialized_view", "ogt_mv_probe")] {
+        let jdbc_refs = ogdeveloper_core::schema::list_object_references_core(
+            &state,
+            "live",
+            &database,
+            "yi_ddd",
+            object_type,
+            object_name,
+            "references",
+        )
+        .await
+        .expect("JDBC session view references through metadata pool");
+        assert_eq!(jdbc_refs.len(), 1, "{object_type}: must not infer synonym aliases: {jdbc_refs:?}");
+        assert_eq!(jdbc_refs[0].schema, "yi_prod");
+        assert_eq!(jdbc_refs[0].name, "prod_menu");
+        assert_eq!(jdbc_refs[0].object_type, "table");
+        assert!(jdbc_refs[0].detail.is_none());
+    }
+    // Genuine synonym -> table dependencies must remain available.
+    let synonym_refs = ogdeveloper_core::schema::list_object_references_core(
+        &state,
+        "live-native",
+        &database,
+        "yi_ddd",
+        "synonym",
+        "prod_menu",
+        "references",
+    )
+    .await
+    .expect("synonym target reference");
+    assert_eq!(synonym_refs.len(), 1, "synonym reference must be retained: {synonym_refs:?}");
+    assert_eq!(synonym_refs[0].schema, "yi_prod");
+    assert_eq!(synonym_refs[0].name, "prod_menu");
+    assert_eq!(synonym_refs[0].object_type, "table");
+
     // 3c) Column-type dropdown: the catalog query must exclude array types
     // (typcategory 'A', `_`-prefixed) and table/sequence row types. This test
     // database has `app_role_user` (table row type) and `seq_auth_user_account`

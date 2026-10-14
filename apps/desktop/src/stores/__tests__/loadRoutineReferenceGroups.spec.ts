@@ -115,7 +115,7 @@ describe("reference results keep one dependency level", () => {
     vi.mocked(api.listTypeAttributes).mockResolvedValue([column]);
   });
 
-  async function referenceResult(objectType: string, direction: "references" | "referencedBy" = "references") {
+  async function referenceResult(objectType: string, direction: "references" | "referencedBy" = "references", detail = "dependency detail") {
     const store = useConnectionStore();
     store.addEphemeralConnection(ogConfig);
     const root = procedureNode();
@@ -124,11 +124,12 @@ describe("reference results keep one dependency level", () => {
     const liveRoot = store.treeNodes[0]!;
     expect(liveRoot.children?.filter((child) => child.referenceDirection).map((child) => child.referenceDirection)).toEqual(["references", "referencedBy"]);
     const group = liveRoot.children!.find((child) => child.referenceDirection === direction)!;
-    vi.mocked(api.listObjectReferences).mockResolvedValue([{ schema: "hr_app", name: "test_proc", objectType, detail: "dependency detail" }]);
+    vi.mocked(api.listObjectReferences).mockResolvedValue([{ schema: "hr_app", name: "test_proc", objectType, detail }]);
     await store.loadTreeNodeChildren(group);
     const result = group.children![0]!;
     expect(result.isReferenceResult).toBe(true);
-    expect(result.label).toBe("hr_app.test_proc (dependency detail)");
+    expect(result.label).toBe("hr_app.test_proc");
+    expect(result.comment).toBe(`${objectType} · ${detail}`);
     return { store, result };
   }
 
@@ -171,9 +172,15 @@ describe("reference results keep one dependency level", () => {
     expectNoReferenceGroups(result);
   });
 
-  it("resolves synonym targets using the object name and retains their columns", async () => {
+  it("keeps synonym target descriptions out of the label and resolves the real object name", async () => {
     vi.mocked(api.resolveSynonymTarget).mockResolvedValue({ targetSchema: "public", targetName: "actual_table", targetKind: "r" });
-    const { store, result } = await referenceResult("synonym");
+    const { store, result } = await referenceResult("synonym", "references", "FOR public.actual_table");
+    expect(result.label).toBe("hr_app.test_proc");
+    expect(result.label).not.toContain("(");
+    expect(result.comment).toBe("synonym · FOR public.actual_table");
+    expect(result.objectName).toBe("test_proc");
+    expect(result.tableName).toBe("test_proc");
+    expect(result.targetName).toBe("test_proc");
     await store.loadTreeNodeChildren(result);
     expect(api.resolveSynonymTarget).toHaveBeenCalledWith("og-1", "db", "hr_app", "test_proc");
     const columns = result.children!.find((child) => child.type === "group-columns")!;

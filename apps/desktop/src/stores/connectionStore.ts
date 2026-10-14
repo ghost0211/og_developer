@@ -3906,7 +3906,7 @@ export const useConnectionStore = defineStore("connection", () => {
         targetNode,
         refs.map((ref) => ({
           id: `${node.id}:${ref.schema}:${ref.name}:${ref.objectType}`,
-          label: `${ref.schema}.${ref.name}${ref.detail ? ` (${ref.detail})` : ""}`,
+          label: `${ref.schema}.${ref.name}`,
           type: referenceResultNodeType(ref.objectType),
           isReferenceResult: true,
           connectionId: node.connectionId,
@@ -3918,7 +3918,9 @@ export const useConnectionStore = defineStore("connection", () => {
           targetName: ref.name,
           targetKind: ref.objectType,
           isExpanded: false,
-          comment: ref.objectType,
+          // Dependency/target descriptions are secondary text, not part of
+          // the object's identity (e.g. a synonym's "FOR schema.target").
+          comment: ref.detail ? `${ref.objectType} · ${ref.detail}` : ref.objectType,
         })),
       );
       targetNode.isExpanded = true;

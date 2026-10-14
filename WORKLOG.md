@@ -1928,7 +1928,9 @@ CI 不受影响）；`pnpm build` 通过；`cargo check --locked` 校验 Cargo.l
 `_` 开头的条目。openGauss 中 `_uuid`/`_regclass` 等是数组类型
 （pg_type.typcategory='A'，每个基类型自动生成的“元素数组”），
 `app_role_user`/`seq_auth_user_account` 等是每张表/序列自动生成的组合行类型
-（typtype='c', typcategory='C'）——**都不是合法的列类型**，属于 bug。
+（typtype='c', typcategory='C'）。这些内部目录名不应与常规/独立自定义字段类型
+混列。注意数组本身是支持的类型（例如 `uuid[]`），过滤内部条目并不表示引擎
+不支持数组或复合类型。
 
 **根因**：`list_data_types_core` 的 pg_type 查询只按 schema 过滤
 （`nspname = schema`），不过滤类型类别，数组类型与行类型全部泄漏进下拉；
@@ -1973,7 +1975,96 @@ JDBC 插件 `listDataTypes` 用 `getMetaData().getTypeInfo()`，openGauss 驱动
 发布前检查：Rust 核心 lib 1225 项通过；CI 等价 clippy（-D warnings）与
 cargo fmt 通过；契约测试 13 项通过；真实 openGauss 回归（native/JDBC-only
 类型列表、视图/物化视图 DDL、缺失对象报错、引用去重）通过；完整
-`pnpm check` 与 `pnpm build` 结果见下方记录。
+`pnpm check` 的 format/lint/typecheck 通过、5497 项测试通过，仅 5 个既有本机
+`node:` 加载器套件失败；`pnpm build` 通过。
 
-发布按「先推 main，再单独推 v0.2.55 标签」顺序触发 CI / Release；安装包、
-签名和 `latest.json` 的最终状态以 GitHub Actions / Release 为准。
+提交 `b3f456d76`，先推 main，再单独推 v0.2.55 标签。CI `38528304468`、
+Release `38528309813`、Nix hash `38528304509` 均成功。正式 Release 为最新
+稳定版，EXE（22296077 B）、MSI（25395200 B）及各自签名、`latest.json`
+均 uploaded；公共 updater 清单版本 0.2.55、安装包 URL、签名与资产一致，
+清单 SHA256 与 GitHub digest 一致，两种安装包下载 HEAD 均 HTTP 200。
+
+---
+
+## 62. SQL 编辑器 DDL 悬浮窗移出/关闭标签后残留（v0.2.56）
+
+**现象**：悬停表名显示 DDL 后，移开鼠标、切换甚至关闭编辑标签，浮窗仍覆盖
+编辑区。不能操作用户桌面；以隔离 DOM/CodeMirror 运行测试验证。
+
+**根因**：异步 `resolveSqlHoverTooltip` 无请求失效令牌，鼠标移走或标签失活后
+元数据返回仍可生成浮层；CodeMirror 原生 `mouseleave` 不取消尚未返回的 hover
+请求。大浮层在全局 portal 中、可挡住编辑器鼠标事件，不能仅依赖编辑器收到
+后续 mousemove；KeepAlive 暂停逻辑只关闭函数签名提示，未关闭 DDL hover。
+
+**修复**：
+- 新增 `apps/desktop/src/lib/editor/sqlHoverTooltip.ts`，按编辑器实例管理请求
+  版本、文档快照、指针位置及生命周期；取消单个请求即使没有新 hover，也会
+  使其失效。窗口失焦/移出、编辑器滚动、Escape、右键菜单、失活/卸载均关闭
+  hover；每次异步加载返回以及 CodeMirror source 返回前均检查有效性。
+- 浮层自身 mouseleave 与 document pointermove 处理离开；在浮层内可滚动、
+  选中/复制，不会因为浮层覆盖编辑区而立即消失。新浮层先挂载、旧浮层后销毁
+  时不误清理新浮层的监听器。
+- `QueryEditor.vue` 在 KeepAlive 暂停与卸载时显式关闭 hover，保留实际 portal
+  host 引用（编辑器被移入 KeepAlive 隐藏容器后仍能清理）；仅删除标有本实例
+  ID 的 hover DOM，不影响其他编辑器或函数签名浮层。通过公开 ViewPlugin
+  销毁生命周期处理 EditorView 销毁，不依赖不存在的 `isDestroyed` 属性。
+
+**测试**：新增 20 项 DOM/运行测试，包含真正接入 CodeMirror hover extension
+的异步结果延迟返回、移出、blur、pause→resume、unmount、EditorView destroy、
+文档修改、portal DOM 清理和浮层交互。定向相关 69 项通过；完整 `pnpm check`
+format/lint/typecheck 通过，5517 项测试通过，仅 5 个既有本机 `node:` 加载器
+套件失败；`pnpm build` 通过。
+
+---
+
+## 63. 视图误报同义词引用及引用节点名称附加括号（v0.2.56）
+
+**现象**：`yi_ddd.ogt_v_probe` / `ogt_mv_probe` 实际只引用
+`yi_prod.prod_menu`，却同时显示 `yi_ddd.prod_menu` 同义词；名称还带
+`(FOR yi_prod.prod_menu)`，目标说明错误地成为名称的一部分。
+
+**根因**：pg_depend 的真实依赖之外，源码解析把 `FROM yi_prod.prod_menu`
+提取为裸名 prod_menu，再查询同名对象；`plsql_candidate_schema_matches`
+无条件接受源 schema/public 候选，误加同名同义词。视图和同义词拥有相同
+目标，不表示二者存在直接引用关系。前端将 ref.detail 拼入了 label。
+
+**修复**：
+- `postgres.rs::opengauss_view_references_sql` 改为仅查询 pg_depend/pg_rewrite
+  中的目录身份；同时约束 d.classid 与 d.refclassid，避免跨目录 OID 碰撞。
+  覆盖真实 relation、用户 routine（可选包成员）、用户 type 依赖；同义词
+  只在 pg_depend 确有到 pg_synonym OID 的直接依赖时返回，绝不因同名或共享
+  目标而添加。无包/同义词目录时不引用相应 catalog，保持 PG 兼容。
+- `schema.rs::list_object_references_core` 对 view/materialized_view 直接返回
+  真实目录结果（含空结果），不再用候选源码解析补猜测关系；目录查询失败
+  正常报错，不悄悄回退错误候选。query_reference_rows 输出完整 PG 错误。
+- `connectionStore.ts` 的引用节点 label 只含 schema.name；detail 移到 comment
+  次要文字，objectName/tableName/targetName 保持原始名称；实际同义词引用仍
+  可展开/定位。
+
+**测试**：新增目录 SQL 身份约束及可选目录测试；真实库 read-only 回归确认
+普通视图/物化视图各只有一条 yi_prod.prod_menu（native 与 JDBC 会话的原生
+元数据桥接路径），同义词自身到目标表的真实引用保留；前端真实 store 测试
+验证无括号名称、说明分离、对象定位及展开未损坏。Rust core 1226 通过，
+契约 13 通过，CI 等价 clippy（-D warnings）通过；前端结果见 §62。
+
+---
+
+## 64. 发布 v0.2.56
+
+用户确认发版。版本号同步 `package.json`、`src-tauri/Cargo.toml`、
+`src-tauri/tauri.conf.json` 与 `Cargo.lock`（0.2.56）。本次包含：
+
+- §62 SQL 编辑器 DDL hover 生命周期修复：移出、窗口失焦、标签切换/关闭
+  后清理浮窗并使异步请求失效，保留浮窗内滚动、选择与复制功能。
+- §63 视图/物化视图引用只取目录中的真实依赖，不再误报同名同义词；
+  引用节点名称只含 schema.name，目标/依赖说明改为次要文字。
+
+发布前检查：Rust core lib 1226 项通过（11 ignored），契约测试 13 项通过；
+CI 等价 clippy（-D warnings）、cargo fmt 与 `cargo check --locked` 通过。
+完整 `pnpm check` 的 format/lint/typecheck 通过，5517 项前端测试通过，仅
+5 个既有本机 `node:` 加载器套件失败；`pnpm build` 通过。真实 openGauss
+read-only 探针通过：普通视图/物化视图的 native/JDBC 元数据引用均只有
+`yi_prod.prod_menu`，同义词自身目标引用、DDL、缺失对象报错、类型列表仍正常。
+
+发布按「先推 main，再单独推 v0.2.56 标签」顺序触发 CI / Release；安装包、
+签名与 `latest.json` 最终状态以工作流和公开发布资产复核结果为准。

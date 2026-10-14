@@ -1504,8 +1504,8 @@ async fn query_reference_rows(
     object_name: &str,
     schema: &str,
 ) -> Result<Vec<ObjectReferenceInfo>, String> {
-    let stmt = client.prepare_cached(sql).await.map_err(|e| e.to_string())?;
-    let rows = client.query(&stmt, &[&object_name, &schema]).await.map_err(|e| e.to_string())?;
+    let stmt = client.prepare_cached(sql).await.map_err(db::postgres::pg_error_to_string)?;
+    let rows = client.query(&stmt, &[&object_name, &schema]).await.map_err(db::postgres::pg_error_to_string)?;
     Ok(rows
         .iter()
         .map(|row| {
@@ -1708,22 +1708,21 @@ pub async fn list_object_references_core(
             .collect());
     }
 
+    if object_type == "view" || object_type == "materialized_view" {
+        // Stored views have authoritative rewrite dependencies. The deparsed
+        // SELECT can qualify a table while the old candidate matcher still
+        // accepted any same-named synonym in the view's schema. Never augment
+        // these rows with same-name guesses (including after an empty result).
+        let sql = db::postgres::opengauss_view_references_sql(has_gs_package, has_pg_synonym);
+        let mut results = query_reference_rows(&client, &sql, object_name, schema).await?;
+        results.sort_by(|a, b| {
+            a.object_type.cmp(&b.object_type).then_with(|| a.schema.cmp(&b.schema)).then_with(|| a.name.cmp(&b.name))
+        });
+        return Ok(results);
+    }
+
     let mut results: Vec<ObjectReferenceInfo> = Vec::new();
     let mut seen_keys = HashSet::new();
-
-    if object_type == "view" || object_type == "materialized_view" {
-        if let Ok(dep_rows) =
-            query_reference_rows(&client, db::postgres::opengauss_view_references_sql(), object_name, schema).await
-        {
-            for r in dep_rows {
-                let key = (r.schema.clone(), r.name.clone(), r.object_type.clone());
-                if !seen_keys.contains(&key) {
-                    seen_keys.insert(key);
-                    results.push(r);
-                }
-            }
-        }
-    }
 
     if let Some(source) =
         opengauss_fetch_raw_object_source(&client, schema, object_name, object_type, has_gs_package, has_gs_source)

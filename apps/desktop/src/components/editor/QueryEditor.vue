@@ -65,6 +65,7 @@ import {
   type SqlObjectNavigationTarget,
 } from "@/lib/sql/sqlNavigation";
 import { buildHoverTableSql, ddlForHoverPreview, hoverTableMatchesScope, quoteQualifiedName, reformatHoverDdl, scopeHoverTables, type HoverTableScope } from "@/lib/editor/hoverTableSql";
+import { createSqlHoverController, createSqlHoverDom } from "@/lib/editor/sqlHoverTooltip";
 import { lineColumnToOffset, parseSqlErrorLocation } from "@/lib/sql/sqlDiagnostics";
 import {
   DBX_TABLE_REFERENCE_MIME,
@@ -478,6 +479,12 @@ const loadedColumnsByTable = new Set<string>();
 
 // Hover tooltip shares the persisted object cache with the DDL and structure views.
 let hoverSqlHighlighter: SqlHighlighter | null = null;
+let queryEditorTooltipHost: HTMLElement | null = null;
+const sqlHoverController = createSqlHoverController({
+  isActive: () => editorIsActive,
+  // Keep the actual portal host after KeepAlive moves the editor out of #root.
+  getTooltipHost: () => queryEditorTooltipHost,
+});
 
 function sqlCompletionDialectOptions() {
   return {
@@ -1988,54 +1995,25 @@ async function ensureForeignKeysForTables(tables: Array<{ name: string; database
 }
 
 function createHoverDom(title: string, detail: string, sqlContent?: string, rows: string[] = []) {
-  const dom = document.createElement("div");
-  dom.className = "rounded-md border bg-popover px-3 py-2 text-xs text-popover-foreground shadow-md";
-
-  const heading = document.createElement("div");
-  heading.className = "font-medium";
-  heading.textContent = title;
-  dom.appendChild(heading);
-
-  const detailNode = document.createElement("div");
-  detailNode.className = "mt-1 text-muted-foreground";
-  detailNode.textContent = detail;
-  dom.appendChild(detailNode);
-
-  if (sqlContent) {
-    const separator = document.createElement("div");
-    separator.className = "mt-2 border-t border-border/60";
-    dom.appendChild(separator);
-
-    const sqlContainer = document.createElement("div");
-    sqlContainer.className = "mt-1.5 max-h-64 overflow-y-auto text-[11px] leading-5 whitespace-pre font-mono";
-
-    if (hoverSqlHighlighter) {
-      sqlContainer.innerHTML = hoverSqlHighlighter(sqlContent, isDark.value ? "dark" : "light");
-    } else {
-      sqlContainer.className += " text-muted-foreground";
-      sqlContainer.textContent = sqlContent;
-    }
-
-    dom.appendChild(sqlContainer);
-  }
-
-  for (const row of rows) {
-    const rowNode = document.createElement("div");
-    rowNode.className = "mt-1 font-mono text-muted-foreground";
-    rowNode.textContent = row;
-    dom.appendChild(rowNode);
-  }
-
-  return dom;
+  return createSqlHoverDom({
+    title,
+    detail,
+    sqlContent,
+    rows,
+    isDark: isDark.value,
+    highlighter: hoverSqlHighlighter ?? undefined,
+    editorId: sqlHoverController.editorId,
+  });
 }
 
 async function resolveSqlHoverTooltip(currentView: EditorViewType, pos: number) {
-  if (!props.connectionId || props.database == null || contextMenuOpen.value) return null;
+  if (!props.connectionId || props.database == null || contextMenuOpen.value || !editorIsActive) return null;
 
   const sql = currentView.state.doc.toString();
   const range = identifierRangeAt(sql, pos);
   if (!range) return null;
 
+  const requestId = sqlHoverController.beginRequest(pos, range, currentView);
   const identifier = range.text;
   const parts = splitQualifiedIdentifier(identifier);
   const name = parts[parts.length - 1] ?? identifier;
@@ -2073,6 +2051,7 @@ async function resolveSqlHoverTooltip(currentView: EditorViewType, pos: number) 
       const loadedTables = usesLocalOnlyCompletionMetadata()
         ? connectionStore.lookupLocalCompletionTables(props.connectionId, hoverScope.database, tableLookupName, MAX_COMPLETION_TABLES, hoverScope.schema, hoverScope.catalog)
         : await connectionStore.listCompletionTables(props.connectionId, hoverScope.database, tableLookupName, MAX_COMPLETION_TABLES, hoverScope.schema, false, hoverScope.schema, hoverScope.catalog);
+      if (!sqlHoverController.isValid(requestId, currentView, range)) return null;
       hoverTables = scopeHoverTables(loadedTables, hoverScope);
       cachedTables = mergeCompletionTables(cachedTables, hoverTables);
     }
@@ -2080,6 +2059,7 @@ async function resolveSqlHoverTooltip(currentView: EditorViewType, pos: number) 
     let table = matchTable(qualifiedTableLookup, hoverTables) ?? matchTable(tableLookupName, hoverTables) ?? matchTable(identifier, hoverTables) ?? matchTable(name, hoverTables);
     if (!table && !usesLocalOnlyCompletionMetadata()) {
       const loadedTables = await connectionStore.listCompletionTables(props.connectionId, hoverScope.database, tableLookupName, MAX_COMPLETION_TABLES, hoverScope.schema, false, hoverScope.schema, hoverScope.catalog);
+      if (!sqlHoverController.isValid(requestId, currentView, range)) return null;
       const remoteHoverTables = scopeHoverTables(loadedTables, hoverScope);
       hoverTables = mergeCompletionTables(hoverTables, remoteHoverTables);
       cachedTables = mergeCompletionTables(cachedTables, remoteHoverTables);
@@ -2104,6 +2084,7 @@ async function resolveSqlHoverTooltip(currentView: EditorViewType, pos: number) 
       // views. Hover only removes PostgreSQL's appended access-control tail.
       try {
         const { ddl } = await loadObjectDdl(objectMetadataRequest);
+        if (!sqlHoverController.isValid(requestId, currentView, range)) return null;
         const rawDdl = ddlForHoverPreview(ddl);
         if (rawDdl && rawDdl.trim()) {
           sqlContent = reformatHoverDdl(rawDdl, quoteQualifiedName(hoverQualifiedName));
@@ -2123,6 +2104,7 @@ async function resolveSqlHoverTooltip(currentView: EditorViewType, pos: number) 
             loadObjectMetadataFacet(objectMetadataRequest, "columns", () => api.getColumns(props.connectionId!, hoverDatabase, hoverSchema, table.name, hoverScope.catalog)),
             loadObjectMetadataFacet(objectMetadataRequest, "indexes", () => api.listIndexes(props.connectionId!, hoverDatabase, hoverSchema, table.name, hoverScope.catalog).catch(() => [])),
           ]);
+          if (!sqlHoverController.isValid(requestId, currentView, range)) return null;
           fullColumns = columnsResult.value;
           fullIndexes = indexesResult.value;
         } catch (error) {
@@ -2132,6 +2114,7 @@ async function resolveSqlHoverTooltip(currentView: EditorViewType, pos: number) 
         if (!metadataLoadFailed) {
           try {
             const commentResult = await loadObjectMetadataFacet(objectMetadataRequest, "comment", () => api.getTableComment(props.connectionId!, hoverDatabase, hoverSchema, table.name, hoverScope.catalog));
+            if (!sqlHoverController.isValid(requestId, currentView, range)) return null;
             if (commentResult.value) tableComment = commentResult.value;
           } catch (error) {
             console.warn(`[ogdeveloper] Failed to load table comment for ${hoverDatabase}.${hoverSchema}.${table.name}:`, error);
@@ -2145,13 +2128,11 @@ async function resolveSqlHoverTooltip(currentView: EditorViewType, pos: number) 
       // Re-check after async metadata load — the context menu may have opened
       // while the DDL request was in flight, and we must not display a hover
       // tooltip on top of an open context menu.
-      if (contextMenuOpen.value) return null;
+      if (contextMenuOpen.value || !sqlHoverController.isValid(requestId, currentView, range)) return null;
       return {
         pos: range.from,
         end: range.to,
-        create: () => ({
-          dom: createHoverDom(table.name, sqlObjectHoverDetail(table), sqlContent, metadataLoadFailed ? ["Failed to load table structure — check connection"] : undefined),
-        }),
+        create: (view: EditorViewType) => sqlHoverController.attachTooltipView(view, createHoverDom(table.name, sqlObjectHoverDetail(table), sqlContent, metadataLoadFailed ? ["Failed to load table structure — check connection"] : undefined), { from: range.from, to: range.to }),
       };
     }
 
@@ -2168,16 +2149,17 @@ async function resolveSqlHoverTooltip(currentView: EditorViewType, pos: number) 
         })) ?? [];
       if (columns.length === 0) {
         await ensureColumnsForTable(refTable);
+        if (!sqlHoverController.isValid(requestId, currentView, range)) return null;
         columns.push(...(cachedColumnsByTable.get(completionCacheKey(refTable)) ?? []));
       }
       const column = columns.find((col) => col.name.toLowerCase() === name.toLowerCase());
       if (!column) continue;
+      if (contextMenuOpen.value || !sqlHoverController.isValid(requestId, currentView, range)) return null;
       return {
         pos: range.from,
         end: range.to,
-        create: () => ({
-          dom: createHoverDom(column.name, column.dataType || "column", undefined, [column.schema ? `${column.schema}.${column.table}` : column.table, ...(column.comment?.trim() ? [column.comment.trim()] : [])]),
-        }),
+        create: (view: EditorViewType) =>
+          sqlHoverController.attachTooltipView(view, createHoverDom(column.name, column.dataType || "column", undefined, [column.schema ? `${column.schema}.${column.table}` : column.table, ...(column.comment?.trim() ? [column.comment.trim()] : [])]), { from: range.from, to: range.to }),
       };
     }
   } catch {
@@ -4208,6 +4190,7 @@ onMounted(async () => {
   const editorElement = editorRef.value;
   if (!editorElement) return;
   const tooltipParent = editorElement.closest<HTMLElement>("#root")?.querySelector<HTMLElement>("#ogdeveloper-query-editor-tooltip-root") ?? editorElement;
+  queryEditorTooltipHost = tooltipParent;
   const state = EditorState.create({
     doc: props.modelValue,
     selection: normalizedEditorSelection(props.initialSelection, props.modelValue.length),
@@ -4301,7 +4284,7 @@ onMounted(async () => {
           return true;
         }),
       ),
-      hoverTooltip((currentView, pos) => resolveSqlHoverTooltip(currentView, pos)),
+      ...sqlHoverController.createExtension(hoverTooltip, (currentView, pos) => resolveSqlHoverTooltip(currentView, pos)),
       sqlSignatureComp.of(buildSqlSignatureExtension()),
       diagnosticComp.of(buildSqlDiagnosticExtension()),
       createInsertValueHintsExtension({
@@ -4318,6 +4301,7 @@ onMounted(async () => {
           {
             key: "Escape",
             run: () => {
+              sqlHoverController.dismiss(view.value);
               return searchPanelRef.value?.closeSearch() ?? false;
             },
           },
@@ -4913,6 +4897,7 @@ function dismissSqlSignatureTooltip(currentView: EditorViewType | undefined = vi
 
 function pauseQueryEditorBackgroundWork() {
   dismissSqlSignatureTooltip();
+  sqlHoverController.pause(view.value);
   sqlSignaturePrefetcher?.dispose();
   sqlSignaturePrefetcher = null;
   flushEditorViewport();
@@ -4927,6 +4912,7 @@ function pauseQueryEditorBackgroundWork() {
 
 function resumeQueryEditorBackgroundWork() {
   editorIsActive = true;
+  sqlHoverController.resume();
   registerTableReferenceDropListener();
   scheduleSemanticDiagnostics();
   restoreEditorSelection();
@@ -4982,6 +4968,7 @@ onDeactivated(pauseQueryEditorBackgroundWork);
 
 onBeforeUnmount(() => {
   pauseQueryEditorBackgroundWork();
+  sqlHoverController.destroy(view.value);
   window.removeEventListener("ogdeveloper-editor-command", handleMenuEditorCommand);
   if (viewportEmitFrame !== null) {
     cancelAnimationFrame(viewportEmitFrame);
@@ -5138,6 +5125,7 @@ function focusLine(lineNumber: number) {
 }
 
 function closeHoverOnContextMenu() {
+  sqlHoverController.dismiss(view.value);
   if (!view.value || !hoverCloseEffect) return;
   view.value.dispatch({ effects: hoverCloseEffect });
 }

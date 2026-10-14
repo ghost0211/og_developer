@@ -94,7 +94,9 @@ test("reference group children render from listObjectReferences", async () => {
   assert.equal(live.type, "group-referenced-by");
   const children = live.children ?? [];
   assert.equal(children.length, 1, `expected 1 child, got ${JSON.stringify(children)}`);
-  assert.equal(children[0].label, "public.mv_emp (view definition)");
+  assert.equal(children[0].label, "public.mv_emp");
+  assert.equal(children[0].comment, "materialized_view · view definition");
+  assert.equal(children[0].objectName, "mv_emp");
   assert.equal(children[0].type, "materialized_view");
   assert.equal(apiMock.listObjectReferences.mock.calls[0][3], "table");
   assert.equal(apiMock.listObjectReferences.mock.calls[0][4], "ogdev_emp");
@@ -171,9 +173,12 @@ test("routine references and package references render correctly with appropriat
   const live = store.treeNodes[0].children[0];
   assert.equal(live.children?.length, 3);
   assert.equal(live.children?.[0].type, "table");
-  assert.equal(live.children?.[0].label, "public.ogdev_emp (表/视图操作)");
+  assert.equal(live.children?.[0].label, "public.ogdev_emp");
+  assert.equal(live.children?.[0].comment, "table · 表/视图操作");
   assert.equal(live.children?.[1].type, "package");
-  assert.equal(live.children?.[1].label, "pkg_service.gms_output (包引用)");
+  assert.equal(live.children?.[1].label, "pkg_service.gms_output");
+  assert.equal(live.children?.[1].comment, "package · 包引用");
   assert.equal(live.children?.[2].type, "function");
-  assert.equal(live.children?.[2].label, "public.calc_tax (例程调用)");
+  assert.equal(live.children?.[2].label, "public.calc_tax");
+  assert.equal(live.children?.[2].comment, "function · 例程调用");
 });
