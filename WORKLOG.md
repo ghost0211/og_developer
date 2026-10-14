@@ -1754,7 +1754,7 @@ CI 等价 clippy 通过；`pnpm check` 格式/lint/typecheck 通过，5493 项�
 
 ---
 
-## 55. 视图/物化视图 DDL 形态修复，PG 兼容模式物化视图清单补全（未发布）
+## 55. 视图/物化视图 DDL 形态修复，PG 兼容模式物化视图清单补全（v0.2.53）
 
 **复现与根因**：在 openGauss 6.0.0 的 PG 兼容模式测试库 `tygl_pg`，
 使用隔离 JDBC 插件会话读取测试 schema `yi_ddd`：旧插件 `listTables` 能返回
@@ -1800,6 +1800,28 @@ CI 等价 clippy 通过；`pnpm check` 格式/lint/typecheck 通过，5493 项�
   `pnpm check` 格式/lint/typecheck 通过，**5495 项测试通过**，仍只有既有
   5 个本机 `Error: No such built-in module: node:` 套件失败；`pnpm build` 通过。
 
-**状态**：本地修复完成，应用版本仍为 v0.2.52；未提交、未推送、未发布。
+**状态**：修复提交 `9dd98ca78`；用户已确认收录至 v0.2.53 发布。
 本次真实库验证是 openGauss PG 兼容模式，未声称已在独立 vanilla PostgreSQL
 实例做 live 验证（共享目录 SQL/分组已由单测覆盖）。
+
+---
+
+## 56. 发布 v0.2.53
+
+用户确认发版。版本号同步 `package.json`、`src-tauri/Cargo.toml`、
+`src-tauri/tauri.conf.json` 与 `Cargo.lock`（0.2.53）。本次包含：
+
+- §54 查看 DDL 左下角「显示注释」开关（默认关闭、切换不重查、复制随显示）；
+- §55 视图/物化视图真实定义与注释修复、PG 兼容模式物化视图清单补全；
+- JDBC 插件 0.1.32 与重新打包的安装资源 ZIP；DDL 缓存前缀 v4。
+
+发布前重新执行完整 `pnpm check`：format/lint/typecheck 通过，5495 项测试
+通过，仍仅既有 5 个本机 `node:` 加载器套件失败，未宣称全绿。
+`pnpm build`、Rust core lib（1220 passed / 11 ignored）、workspace
+`cargo check`、CI 等价 `cargo clippy -D warnings` 与 `cargo fmt --check`
+均通过；Java 86 项测试重新执行通过，插件包 manifest 0.1.32 与构建 jar
+SHA256 一致。最终 ZIP 的隔离 live 视图/物化视图/JDBC fallback 与既有
+同义词回归均通过，未操作桌面 UI。
+
+发布按「先推 main，再单独推 v0.2.53 标签」顺序触发 CI / Release；
+安装包、签名和 `latest.json` 的最终状态以 GitHub Actions / Release 为准。
