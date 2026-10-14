@@ -15,4 +15,12 @@ describe("DdlViewDialog layout", () => {
     expect(source).toContain(".ddl-view-editor :deep(.cm-editor),");
     expect(source).toContain("height: 100%;");
   });
+
+  it("offers a show-comments toggle that re-renders from the cached raw DDL without refetching", () => {
+    expect(source).toContain('v-model="showComments"');
+    expect(source).toContain('t("contextMenu.showComments")');
+    expect(source).toContain("stripCommentOnStatements");
+    // Toggling must not trigger a reload: the watcher only re-renders locally.
+    expect(source).toMatch(/watch\(showComments, \(\) => \{\s*if \(ddlLoading\.value \|\| !rawDdl\.value \|\| !props\.open\) return;/);
+  });
 });

@@ -2798,6 +2798,7 @@ export default {
     changeOpenMode: "Change open mode",
     viewDdl: "View DDL",
     viewDdlLoading: "Loading DDL...",
+    showComments: "Show comments",
     ddlCopied: "DDL copied",
     dropObject: "Drop Object",
     dropView: "Drop View",

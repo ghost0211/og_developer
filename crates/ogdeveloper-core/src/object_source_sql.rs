@@ -347,7 +347,7 @@ fn executable_postgres_view_ddl(source: &str) -> Option<String> {
     None
 }
 
-fn leading_sql_statement_start(source: &str) -> usize {
+pub(crate) fn leading_sql_statement_start(source: &str) -> usize {
     let mut index = 0;
     loop {
         index = skip_sql_whitespace(source, index);

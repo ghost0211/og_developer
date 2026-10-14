@@ -1845,6 +1845,21 @@ public final class OgdeveloperJdbcPlugin {
                 true
             );
         }
+        if (isOpenGaussConnection(connection)) {
+            // The openGauss JDBC driver does not report MATERIALIZED VIEW in
+            // getTableTypes()/getTables(), which silently drops materialized
+            // views from the sidebar. List relations from pg_class instead so
+            // every relkind is covered in any compatibility mode.
+            return filterMetadataNodes(
+                (ArrayNode) openGaussListTables(conn, schema, false),
+                filter,
+                limit,
+                offset,
+                objectTypes,
+                "table_type",
+                true
+            );
+        }
         DatabaseMetaData meta = conn.getMetaData();
         String[] types = constrainedJdbcTableTypes(jdbcTableTypes(meta), objectTypes);
         if (types.length == 0) {
@@ -1888,12 +1903,18 @@ public final class OgdeveloperJdbcPlugin {
         if (kingbase) {
             result.addAll((ArrayNode) kingbaseListTables(conn, schema, true));
         }
+        // Same pg_class-based listing as listTables: the driver metadata query
+        // would otherwise lose materialized views here too.
+        boolean openGauss = isOpenGaussConnection(connection);
+        if (openGauss) {
+            result.addAll((ArrayNode) openGaussListTables(conn, schema, true));
+        }
         DatabaseMetaData meta = conn.getMetaData();
         JdbcDriverQuirks quirks = driverQuirks(connection);
         String catalog = metadataCatalog(database, quirks);
         String schemaPattern = resolveSchemaPattern(meta, database, schema, quirks);
 
-        if (!kingbase) {
+        if (!kingbase && !openGauss) {
             String[] tableTypes = constrainedJdbcTableTypes(jdbcTableTypes(meta), objectTypes);
             if (tableTypes.length > 0) {
                 appendTableObjects(result, meta, catalog, schemaPattern, schema, tableTypes);
@@ -2529,6 +2550,59 @@ public final class OgdeveloperJdbcPlugin {
                 AND c.relkind IN ('r', 'p', 'v', 'm', 'f')
             ORDER BY c.relname
             """;
+    }
+
+    private static String openGaussTablesSql() {
+        return """
+            SELECT CAST(c.relname AS varchar(256)) AS table_name,
+                CASE c.relkind
+                    WHEN 'v' THEN 'VIEW'
+                    WHEN 'm' THEN 'MATERIALIZED_VIEW'
+                    WHEN 'f' THEN 'FOREIGN TABLE'
+                    ELSE 'TABLE'
+                END AS table_type,
+                CAST(obj_description(c.oid) AS varchar(4000)) AS remarks
+            FROM pg_catalog.pg_class c
+            JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = ?
+                AND c.relkind IN ('r', 'p', 'v', 'm', 'f')
+            ORDER BY c.relname
+            """;
+    }
+
+    private static String openGaussEffectiveSchema(Connection conn, String schema) {
+        String effectiveSchema = emptyToNull(schema);
+        if (effectiveSchema != null) {
+            return effectiveSchema;
+        }
+        try {
+            effectiveSchema = emptyToNull(conn.getSchema());
+        } catch (SQLException | AbstractMethodError | UnsupportedOperationException ignored) {
+        }
+        return effectiveSchema == null ? "public" : effectiveSchema;
+    }
+
+    private static JsonNode openGaussListTables(Connection conn, String schema, boolean objectNodes) throws SQLException {
+        ArrayNode result = MAPPER.createArrayNode();
+        String effectiveSchema = openGaussEffectiveSchema(conn, schema);
+        try (PreparedStatement ps = conn.prepareStatement(openGaussTablesSql())) {
+            ps.setString(1, effectiveSchema);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    ObjectNode item = MAPPER.createObjectNode();
+                    item.put("name", rs.getString("table_name"));
+                    if (objectNodes) {
+                        item.put("object_type", rs.getString("table_type"));
+                        item.put("schema", effectiveSchema);
+                    } else {
+                        item.put("table_type", rs.getString("table_type"));
+                    }
+                    putNullable(item, "comment", rs.getString("remarks"));
+                    result.add(item);
+                }
+            }
+        }
+        return result;
     }
 
     private static String kingbaseCastSafeTablesSql() {

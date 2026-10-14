@@ -1684,6 +1684,34 @@ function/procedure/trigger/index/column/constraint 直连 RENAME）。发布前�
 
 ---
 
+## 54. 查看 DDL：弹窗新增「显示注释」勾选，后端 DDL 携带 COMMENT ON
+
+**问题**：查看表 DDL 的弹窗内容不含表/列注释（native 路径自拼 CREATE TABLE
+丢了 `pg_description` 里的注释；JDBC 路径的 `pg_get_tabledef` 本来就带）。
+
+**修复**：
+
+- 后端 `opengauss_table_ddl` 末尾追加 `COMMENT ON TABLE/COLUMN ... IS '...'`
+  语句（`obj_description`/`col_description`），与 pg_dump / pg_get_tabledef
+  的注释形态一致；relkind 映射 COMMENT 关键字（view→`COMMENT ON VIEW`、
+  mview→`MATERIALIZED VIEW`、sequence→`SEQUENCE`）。注释探测失败静默回落，
+  绝不影响结构 DDL。语句拼装为纯函数 `append_comment_statements` 可单测。
+- 前端 `DdlViewDialog` 左下角新增「显示注释」勾选框（`contextMenu.showComments`）：
+  勾选状态只做展示层过滤，用新增的 `stripCommentOnStatements`
+  （`lib/sql/sqlCommentStatements.ts`）按语句级拆分剥离 `COMMENT ON`，
+  字面量/引号/美元引号/块注释均不会误切；切换即时生效，不重新查询数据库。
+  未勾选（默认）保持现状视图，勾选后显示含注释的完整 DDL，复制内容随显示。
+- `objectDdlCache` 前缀 v2→v3：旧缓存没有注释，勾选后应能立即看到内容。
+
+**验证**：`yi_prod.prod_menu`（带中英文表/列注释）live 端到端断言 DDL 尾部
+含 `COMMENT ON TABLE ... IS '产品服务模型-菜单权限点定义...'` 与各列注释；
+同义词路径输出同步带目标表注释。核心 lib 1215 项测试通过；新增剥离模块
+7 项单测（分号/换行/伪装 SQL 行的注释文本安全剥离，MySQL 行内 COMMENT 不动）；
+CI 等价 clippy 通过；`pnpm check` 格式/lint/typecheck 通过，5493 项测试通过
+（仅既有 5 个本机 `node:` 加载器套件失败）；`pnpm build` 通过。
+
+---
+
 ## 52. 查看 DDL：openGauss 同义词返回真实定义而不是空表 DDL
 
 **问题**：编辑器中右击同义词（如 `yi_ddd.prod_menu`）选择「查看 DDL」，对话框
@@ -1723,3 +1751,55 @@ function/procedure/trigger/index/column/constraint 直连 RENAME）。发布前�
 与 `Cargo.lock`（0.2.52）。本次为 §52 的同义词「查看 DDL」修复。发布前完整
 `pnpm check` 通过（仅既有 5 个本机 `node:` 加载器套件失败），`pnpm build`、
 `cargo test -p ogdeveloper-core --lib` 与 CI 等价 `cargo clippy` 均通过。
+
+---
+
+## 55. 视图/物化视图 DDL 形态修复，PG 兼容模式物化视图清单补全（未发布）
+
+**复现与根因**：在 openGauss 6.0.0 的 PG 兼容模式测试库 `tygl_pg`，
+使用隔离 JDBC 插件会话读取测试 schema `yi_ddd`：旧插件 `listTables` 能返回
+`ogt_v_probe`（VIEW）但漏掉 `ogt_mv_probe`（relkind=m）；同时两者的
+「查看 DDL」均被 `opengauss_table_ddl` 按列清单拼成 `CREATE TABLE`。
+根因不是前端分组，而是 openGauss JDBC 的 DatabaseMetaData 清单漏掉物化视图。
+该库同时缺少 `pg_matviews` 与 `pg_class.relispopulated`，不可依赖这两项目录。
+
+**修复**：
+
+- 插件 openGauss `listTables` / `listObjects` 改查 `pg_catalog.pg_class` 与
+  `pg_namespace`，覆盖 r/p/v/m/f，m 返回 `MATERIALIZED_VIEW`，保留注释、
+  schema 大小写与既有过滤/分页。普通 PostgreSQL native 清单已有 m，无需改动。
+- native DDL 按真实 relkind 探测视图：v → `CREATE OR REPLACE VIEW ... AS`，
+  m → `CREATE MATERIALIZED VIEW ... AS`，定义来自 `pg_get_viewdef`。
+  `relispopulated` 只对物化视图做可选读取；存在时保留 WITH DATA/NO DATA，
+  缺列时省略，不再让所有普通表请求触发缺列错误。
+- JDBC-only DDL 路径也先辨认视图，再考虑 `pg_get_tabledef`，共用同一组装函数，
+  同步携带视图/列注释；不因错误的表形态返回成功而漏过视图分支。
+- 保留服务器返回的完整 CREATE VIEW/MATERIALIZED VIEW 定义（包含
+  INCREMENTAL、前置注释与服务器选项），不再二次包裹 CREATE。
+  引号标识符、SQL 字面量不变；缺失定义报错，避免输出虚假 DDL。
+- 同义词目标为视图时复用相同 DDL 路径，保留目标注释；嵌套调用前归还 client，
+  避免持有连接再向同池检出。前端 DDL 缓存升级到 `object-ddl:v4`，退役旧视图
+  CREATE TABLE 缓存（含 §54 的注释缓存升级）。
+- JDBC 插件版本 0.1.31 → 0.1.32（build.gradle / manifest 同步），重新生成
+  **`src-tauri/resources/jdbc-plugin.zip`**：这是安装包实际携带的资源，
+  启动时按新版本自动同步插件。ZIP 内 manifest 与构建 jar 的 SHA256 已核对。
+
+**验证**：
+
+- 从最终 ZIP 解包到隔离插件目录，live 回归通过：JDBC/native 都列出物化视图，
+  对象浏览器清单也含 m；视图/物化视图 DDL 形态、SELECT 定义与注释正确，
+  真实表仍为 CREATE TABLE。将测试进程的 native 端点指向关闭的 localhost
+  端口，纯 JDBC fallback 输出与 native（含注释）完全一致。
+- 测试 fixtures 为测试库 `yi_ddd.ogt_v_probe` / `ogt_mv_probe`；
+  回归测试本身仅做 SELECT，连接存储先复制到临时目录，不迁移桌面 profile，
+  不修改用户已安装的插件。既有同义词 live 回归也通过。
+- Rust core lib **1220 passed / 11 ignored**，新增 5 项视图组装/状态/SQL 回归；
+  Java 插件 **86 项测试通过**（新增 3 项清单形状/schema/顶层 RPC 路由回归）；
+  CI 等价 workspace clippy 与 cargo fmt 通过。
+- 前端新增 2 项 MATERIALIZED_VIEW / MATERIALIZED VIEW 分组回归；完整
+  `pnpm check` 格式/lint/typecheck 通过，**5495 项测试通过**，仍只有既有
+  5 个本机 `Error: No such built-in module: node:` 套件失败；`pnpm build` 通过。
+
+**状态**：本地修复完成，应用版本仍为 v0.2.52；未提交、未推送、未发布。
+本次真实库验证是 openGauss PG 兼容模式，未声称已在独立 vanilla PostgreSQL
+实例做 live 验证（共享目录 SQL/分组已由单测覆盖）。

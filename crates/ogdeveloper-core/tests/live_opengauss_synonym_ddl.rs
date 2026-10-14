@@ -103,4 +103,14 @@ async fn live_opengauss_synonym_ddl_shows_definition_and_target_table() {
         !table_ddl.to_uppercase().contains("SYNONYM"),
         "real table DDL must not pick up synonym output:\n{table_ddl}"
     );
+    // The fixture carries table/column comments; the DDL must end with
+    // COMMENT ON statements (the dialog hides them via its display toggle).
+    assert!(
+        table_ddl.contains("COMMENT ON TABLE \"yi_prod\".\"prod_menu\" IS '产品服务模型-菜单权限点定义"),
+        "table DDL must carry the table comment:\n{table_ddl}"
+    );
+    assert!(
+        table_ddl.contains("COMMENT ON COLUMN \"yi_prod\".\"prod_menu\".\"menu_name\" IS '菜单名称';"),
+        "table DDL must carry column comments:\n{table_ddl}"
+    );
 }

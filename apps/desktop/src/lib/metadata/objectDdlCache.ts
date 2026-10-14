@@ -3,9 +3,14 @@ import type { ObjectSourceKind } from "@/types/database";
 import type { MetadataCacheInvalidation } from "./metadataResultCache";
 import { invalidateObjectMetadataCache } from "./objectMetadataCache";
 
-// v2: synonym-aware DDL replaced the bogus empty CREATE TABLE emitted for
-// openGauss synonyms; the prefix bump retires those cached wrong entries.
-const OBJECT_DDL_CACHE_PREFIX = "object-ddl:v2";
+// v4: view/materialized view DDL is now view-shaped (CREATE OR REPLACE VIEW /
+// CREATE MATERIALIZED VIEW) instead of the bogus CREATE TABLE built from the
+// view's column list; v3 entries may still hold the bogus table shape.
+// v3: backend DDL now carries COMMENT ON statements (the dialog's "show
+// comments" toggle filters them client-side); v2 entries lack comments and
+// would show nothing when comments are enabled. v2 itself retired the bogus
+// empty CREATE TABLE cached for openGauss synonyms.
+const OBJECT_DDL_CACHE_PREFIX = "object-ddl:v4";
 const MAX_PERSISTED_DDL_CHARS = 5 * 1024 * 1024;
 
 interface ObjectDdlCacheEnvelope {

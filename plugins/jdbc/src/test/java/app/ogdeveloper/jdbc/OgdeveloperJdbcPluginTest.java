@@ -1496,6 +1496,209 @@ final class OgdeveloperJdbcPluginTest {
     }
 
     @Test
+    void openGaussListTablesDiscoversTablesViewsAndMaterializedViewsWithComments() throws Exception {
+        Method method = OgdeveloperJdbcPlugin.class.getDeclaredMethod("openGaussListTables", Connection.class, String.class, boolean.class);
+        method.setAccessible(true);
+        List<String> sqlList = new ArrayList<>();
+        List<String> paramList = new ArrayList<>();
+        String[] columns = { "table_name", "table_type", "remarks" };
+        Object[][] rows = {
+            { "orders", "TABLE", "All customer orders" },
+            { "v_active_orders", "VIEW", "Active orders view" },
+            { "mv_monthly_summary", "MATERIALIZED_VIEW", "Materialized monthly summary" },
+            { "ft_foreign_archive", "FOREIGN TABLE", null }
+        };
+
+        Connection conn = openGaussMockConnection(sqlList, paramList, columns, rows, "public");
+        JsonNode result = (JsonNode) method.invoke(null, conn, "sales_schema", false);
+
+        assertEquals(4, result.size());
+
+        // Normal table shape and comments
+        assertEquals("orders", result.path(0).path("name").asText());
+        assertEquals("TABLE", result.path(0).path("table_type").asText());
+        assertEquals("All customer orders", result.path(0).path("comment").asText());
+        assertFalse(result.path(0).has("object_type"));
+        assertFalse(result.path(0).has("schema"));
+
+        // Regular view shape and comments
+        assertEquals("v_active_orders", result.path(1).path("name").asText());
+        assertEquals("VIEW", result.path(1).path("table_type").asText());
+        assertEquals("Active orders view", result.path(1).path("comment").asText());
+        assertFalse(result.path(1).has("object_type"));
+        assertFalse(result.path(1).has("schema"));
+
+        // Materialized view shape and comments
+        assertEquals("mv_monthly_summary", result.path(2).path("name").asText());
+        assertEquals("MATERIALIZED_VIEW", result.path(2).path("table_type").asText());
+        assertEquals("Materialized monthly summary", result.path(2).path("comment").asText());
+        assertFalse(result.path(2).has("object_type"));
+        assertFalse(result.path(2).has("schema"));
+
+        // Foreign table with null comment
+        assertEquals("ft_foreign_archive", result.path(3).path("name").asText());
+        assertEquals("FOREIGN TABLE", result.path(3).path("table_type").asText());
+        assertTrue(result.path(3).path("comment").isNull());
+        assertFalse(result.path(3).has("object_type"));
+        assertFalse(result.path(3).has("schema"));
+
+        // Verify schema parameter binding
+        assertEquals(List.of("1=sales_schema"), paramList);
+
+        // Verify SQL invariants: uses pg_class, relkind with 'm', no pg_matviews/relispopulated
+        assertEquals(1, sqlList.size());
+        String querySql = sqlList.get(0);
+        assertTrue(querySql.contains("FROM pg_catalog.pg_class c"));
+        assertTrue(querySql.contains("JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace"));
+        assertTrue(querySql.contains("c.relkind IN ('r', 'p', 'v', 'm', 'f')"));
+        assertTrue(querySql.contains("'m' THEN 'MATERIALIZED_VIEW'"));
+        assertTrue(querySql.contains("n.nspname = ?"));
+        assertFalse(querySql.contains("pg_matviews"));
+        assertFalse(querySql.contains("relispopulated"));
+        assertFalse(querySql.contains("sys_catalog"));
+        assertFalse(querySql.contains("sys_matviews"));
+    }
+
+    @Test
+    void openGaussListTablesObjectNodesPreservesTypeSchemaAndCasing() throws Exception {
+        Method method = OgdeveloperJdbcPlugin.class.getDeclaredMethod("openGaussListTables", Connection.class, String.class, boolean.class);
+        method.setAccessible(true);
+        String[] columns = { "table_name", "table_type", "remarks" };
+        Object[][] rows = {
+            { "orders", "TABLE", "All customer orders" },
+            { "mv_monthly_summary", "MATERIALIZED_VIEW", "Materialized monthly summary" }
+        };
+
+        // 1. Explicit mixed-case schema with objectNodes=true
+        List<String> sqlList1 = new ArrayList<>();
+        List<String> paramList1 = new ArrayList<>();
+        Connection conn1 = openGaussMockConnection(sqlList1, paramList1, columns, rows, "default_schema");
+        JsonNode result1 = (JsonNode) method.invoke(null, conn1, "CustomMixedCaseSchema", true);
+
+        assertEquals(2, result1.size());
+        assertEquals("orders", result1.path(0).path("name").asText());
+        assertEquals("TABLE", result1.path(0).path("object_type").asText());
+        assertEquals("CustomMixedCaseSchema", result1.path(0).path("schema").asText());
+        assertEquals("All customer orders", result1.path(0).path("comment").asText());
+        assertFalse(result1.path(0).has("table_type"));
+
+        assertEquals("mv_monthly_summary", result1.path(1).path("name").asText());
+        assertEquals("MATERIALIZED_VIEW", result1.path(1).path("object_type").asText());
+        assertEquals("CustomMixedCaseSchema", result1.path(1).path("schema").asText());
+        assertEquals("Materialized monthly summary", result1.path(1).path("comment").asText());
+        assertFalse(result1.path(1).has("table_type"));
+
+        assertEquals(List.of("1=CustomMixedCaseSchema"), paramList1);
+
+        // 2. Null schema uses Connection.getSchema() and preserves casing
+        List<String> paramList2 = new ArrayList<>();
+        Connection conn2 = openGaussMockConnection(null, paramList2, columns, rows, "ConnMixedCaseSchema");
+        JsonNode result2 = (JsonNode) method.invoke(null, conn2, null, true);
+
+        assertEquals("ConnMixedCaseSchema", result2.path(0).path("schema").asText());
+        assertEquals("ConnMixedCaseSchema", result2.path(1).path("schema").asText());
+        assertEquals(List.of("1=ConnMixedCaseSchema"), paramList2);
+
+        // 3. Null schema with null Connection.getSchema() falls back to "public"
+        List<String> paramList3 = new ArrayList<>();
+        Connection conn3 = openGaussMockConnection(null, paramList3, columns, rows, null);
+        JsonNode result3 = (JsonNode) method.invoke(null, conn3, null, true);
+
+        assertEquals("public", result3.path(0).path("schema").asText());
+        assertEquals(List.of("1=public"), paramList3);
+
+        // Also verify openGaussEffectiveSchema helper directly
+        Method effectiveSchemaMethod = OgdeveloperJdbcPlugin.class.getDeclaredMethod("openGaussEffectiveSchema", Connection.class, String.class);
+        effectiveSchemaMethod.setAccessible(true);
+        assertEquals("CustomMixedCaseSchema", effectiveSchemaMethod.invoke(null, conn1, "CustomMixedCaseSchema"));
+        assertEquals("ConnMixedCaseSchema", effectiveSchemaMethod.invoke(null, conn2, null));
+        assertEquals("public", effectiveSchemaMethod.invoke(null, conn3, null));
+    }
+
+    @Test
+    void openGaussListTablesAndObjectsTopLevelRoutingBypassesDatabaseMetaData() throws Exception {
+        String url = "jdbc:opengauss://dbx-og-meta-route:5432/testdb";
+        List<String> sqlList = new ArrayList<>();
+        List<String> paramList = new ArrayList<>();
+        String[] columns = { "table_name", "table_type", "remarks" };
+        Object[][] rows = {
+            { "orders", "TABLE", "All orders table" },
+            { "mv_sales_summary", "MATERIALIZED_VIEW", "Materialized sales report" }
+        };
+
+        Connection mockConn = openGaussMockConnection(sqlList, paramList, columns, rows, "public");
+        Driver driver = new OpenGaussMetadataDriver("jdbc:opengauss://dbx-og-meta-route:", mockConn);
+        DriverManager.registerDriver(driver);
+        try {
+            // Test listTables top-level route
+            JsonNode tablesResponse = request("listTables", """
+                {
+                  "connection": {
+                    "connection_string": "%s",
+                    "connect_timeout_secs": 30
+                  },
+                  "schema": "public"
+                }
+                """.formatted(url));
+
+            assertFalse(tablesResponse.has("error"), tablesResponse.toString());
+            JsonNode tableItems = tablesResponse.path("result");
+            assertEquals(2, tableItems.size());
+            assertEquals("orders", tableItems.path(0).path("name").asText());
+            assertEquals("TABLE", tableItems.path(0).path("table_type").asText());
+            assertEquals("All orders table", tableItems.path(0).path("comment").asText());
+            assertEquals("mv_sales_summary", tableItems.path(1).path("name").asText());
+            assertEquals("MATERIALIZED_VIEW", tableItems.path(1).path("table_type").asText());
+            assertEquals("Materialized sales report", tableItems.path(1).path("comment").asText());
+
+            // Test listObjects top-level route
+            JsonNode objectsResponse = request("listObjects", """
+                {
+                  "connection": {
+                    "connection_string": "%s",
+                    "connect_timeout_secs": 30
+                  },
+                  "schema": "public"
+                }
+                """.formatted(url));
+
+            assertFalse(objectsResponse.has("error"), objectsResponse.toString());
+            JsonNode objectItems = objectsResponse.path("result");
+            assertEquals(2, objectItems.size());
+            assertEquals("orders", objectItems.path(0).path("name").asText());
+            assertEquals("TABLE", objectItems.path(0).path("object_type").asText());
+            assertEquals("public", objectItems.path(0).path("schema").asText());
+            assertEquals("All orders table", objectItems.path(0).path("comment").asText());
+            assertEquals("mv_sales_summary", objectItems.path(1).path("name").asText());
+            assertEquals("MATERIALIZED_VIEW", objectItems.path(1).path("object_type").asText());
+            assertEquals("public", objectItems.path(1).path("schema").asText());
+            assertEquals("Materialized sales report", objectItems.path(1).path("comment").asText());
+            assertFalse(objectItems.path(1).has("table_type"));
+
+            // Verify SQL statements captured from openGaussTablesSql()
+            assertFalse(sqlList.isEmpty());
+            for (String query : sqlList) {
+                assertTrue(query.contains("c.relkind IN ('r', 'p', 'v', 'm', 'f')"));
+                assertTrue(query.contains("'m' THEN 'MATERIALIZED_VIEW'"));
+                assertFalse(query.contains("pg_matviews"));
+                assertFalse(query.contains("relispopulated"));
+            }
+        } finally {
+            try {
+                request("close", """
+                    {
+                      "connection": {
+                        "connection_string": "%s"
+                      }
+                    }
+                    """.formatted(url));
+            } catch (Exception ignored) {
+            }
+            DriverManager.deregisterDriver(driver);
+        }
+    }
+
+    @Test
     void columnIsNullablePrefersIsNullableStringWhenNullableCodeIsWrong() throws Exception {
         Method method = OgdeveloperJdbcPlugin.class.getDeclaredMethod("columnIsNullable", ResultSet.class);
         method.setAccessible(true);
@@ -2513,6 +2716,104 @@ final class OgdeveloperJdbcPluginTest {
                 default -> defaultValue(method.getReturnType());
             }
         );
+    }
+
+    private static Connection openGaussMockConnection(
+        List<String> sqlList,
+        List<String> paramList,
+        String[] columns,
+        Object[][] rows,
+        String schemaName
+    ) {
+        return (Connection) Proxy.newProxyInstance(
+            OgdeveloperJdbcPluginTest.class.getClassLoader(),
+            new Class<?>[] { Connection.class },
+            (proxy, method, args) -> switch (method.getName()) {
+                case "prepareStatement" -> {
+                    if (sqlList != null) {
+                        sqlList.add(String.valueOf(args[0]));
+                    }
+                    yield (PreparedStatement) Proxy.newProxyInstance(
+                        OgdeveloperJdbcPluginTest.class.getClassLoader(),
+                        new Class<?>[] { PreparedStatement.class },
+                        (psProxy, psMethod, psArgs) -> switch (psMethod.getName()) {
+                            case "setString" -> {
+                                if (paramList != null) {
+                                    paramList.add(psArgs[0] + "=" + psArgs[1]);
+                                }
+                                yield null;
+                            }
+                            case "executeQuery" -> rowsResultSet(columns, rows);
+                            case "close" -> null;
+                            default -> defaultValue(psMethod.getReturnType());
+                        }
+                    );
+                }
+                case "createStatement" -> (Statement) Proxy.newProxyInstance(
+                    OgdeveloperJdbcPluginTest.class.getClassLoader(),
+                    new Class<?>[] { Statement.class },
+                    (sProxy, sMethod, sArgs) -> defaultValue(sMethod.getReturnType())
+                );
+                case "getSchema" -> schemaName;
+                case "getMetaData" -> (DatabaseMetaData) Proxy.newProxyInstance(
+                    OgdeveloperJdbcPluginTest.class.getClassLoader(),
+                    new Class<?>[] { DatabaseMetaData.class },
+                    (metaProxy, metaMethod, metaArgs) -> switch (metaMethod.getName()) {
+                        case "getTables" -> throw new AssertionError("DatabaseMetaData.getTables must not be called for openGauss");
+                        case "getProcedures", "getFunctions" -> rowsResultSet(new String[0], new Object[0][]);
+                        default -> defaultValue(metaMethod.getReturnType());
+                    }
+                );
+                case "isClosed" -> false;
+                case "close" -> null;
+                default -> defaultValue(method.getReturnType());
+            }
+        );
+    }
+
+    private static final class OpenGaussMetadataDriver implements Driver {
+        private final String urlPrefix;
+        private final Connection connection;
+
+        private OpenGaussMetadataDriver(String urlPrefix, Connection connection) {
+            this.urlPrefix = urlPrefix;
+            this.connection = connection;
+        }
+
+        @Override
+        public Connection connect(String url, Properties info) {
+            return acceptsURL(url) ? connection : null;
+        }
+
+        @Override
+        public boolean acceptsURL(String url) {
+            return url != null && url.startsWith(urlPrefix);
+        }
+
+        @Override
+        public DriverPropertyInfo[] getPropertyInfo(String url, Properties info) {
+            return new DriverPropertyInfo[0];
+        }
+
+        @Override
+        public int getMajorVersion() {
+            return 1;
+        }
+
+        @Override
+        public int getMinorVersion() {
+            return 0;
+        }
+
+        @Override
+        public boolean jdbcCompliant() {
+            return false;
+        }
+
+        @Override
+        public java.util.logging.Logger getParentLogger() {
+            return java.util.logging.Logger.getGlobal();
+        }
     }
 
     private static final class BrokenResultSetDriver implements Driver {

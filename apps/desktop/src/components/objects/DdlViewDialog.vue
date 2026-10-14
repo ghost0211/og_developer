@@ -9,6 +9,7 @@ import { loadEditorTheme, editorFontTheme } from "@/lib/editor/editorThemes";
 import { createDbxCodeMirrorSqlDialect, type CodeMirrorSqlDialectName } from "@/lib/editor/codemirrorSqlDialect";
 import { copyToClipboard } from "@/lib/common/clipboard";
 import { formatSqlForDisplay, type SqlFormatDialect } from "@/lib/sql/sqlFormatter";
+import { stripCommentOnStatements } from "@/lib/sql/sqlCommentStatements";
 import { loadObjectDdl } from "@/lib/metadata/objectDdlCache";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -45,11 +46,19 @@ const { isDark, themePalette } = useTheme();
 const settingsStore = useSettingsStore();
 
 const ddlContent = ref("");
+const rawDdl = ref("");
+const showComments = ref(false);
 const ddlLoading = ref(false);
 const ddlError = ref("");
 const ddlEditorContainer = ref<HTMLDivElement>();
 const ddlSearchPanelRef = ref<InstanceType<typeof EditorSearchPanel>>();
 const ddlEditorView = shallowRef<EditorView | null>(null);
+
+/** Apply the comment toggle to the raw backend DDL and format for display. */
+async function renderDdlContent() {
+  const source = showComments.value ? rawDdl.value : stripCommentOnStatements(rawDdl.value);
+  ddlContent.value = await formatSqlForDisplay(source, props.formatDialect ?? props.dialect, settingsStore.editorSettings.sqlFormatter);
+}
 
 async function loadDdl(force = false) {
   ddlError.value = "";
@@ -68,7 +77,8 @@ async function loadDdl(force = false) {
       },
       { force },
     );
-    ddlContent.value = await formatSqlForDisplay(ddl, props.formatDialect ?? props.dialect, settingsStore.editorSettings.sqlFormatter);
+    rawDdl.value = ddl;
+    await renderDdlContent();
   } catch (e: any) {
     ddlError.value = e?.message || String(e);
   } finally {
@@ -171,6 +181,17 @@ watch(ddlLoading, (loading) => {
   }
 });
 
+// Toggling comments is display-only: re-render from the cached raw DDL
+// without querying the database again.
+watch(showComments, () => {
+  if (ddlLoading.value || !rawDdl.value || !props.open) return;
+  void (async () => {
+    await renderDdlContent();
+    await nextTick();
+    initDdlEditor(ddlContent.value);
+  })();
+});
+
 // Destroy CodeMirror when the dialog hides, so the editor's event listeners
 // and DOM aren't consuming resources while the dialog is closed.
 // The editor is re-created on next open via the ddlLoading watch.
@@ -220,6 +241,10 @@ function onClose() {
         </div>
       </div>
       <DialogFooter>
+        <label class="flex cursor-pointer select-none items-center gap-2 text-xs text-muted-foreground sm:mr-auto">
+          <input v-model="showComments" type="checkbox" class="h-3.5 w-3.5 accent-primary" />
+          <span>{{ t("contextMenu.showComments") }}</span>
+        </label>
         <Button variant="outline" @click="onClose">{{ t("common.close") }}</Button>
         <Button variant="outline" :disabled="ddlLoading" :title="t('structureEditor.refresh')" @click="loadDdl(true)">
           <RefreshCw class="h-4 w-4" />

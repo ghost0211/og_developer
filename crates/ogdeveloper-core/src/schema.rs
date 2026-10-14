@@ -1837,6 +1837,11 @@ async fn external_opengauss_table_ddl(
     schema: &str,
     table: &str,
 ) -> Result<String, String> {
+    // Detect views before pg_get_tabledef: some drivers/servers return a
+    // table-shaped definition rather than failing for a view.
+    if let Some(ddl) = external_opengauss_view_ddl(session.clone(), config, database, schema, table).await? {
+        return Ok(ddl);
+    }
     let ddl = external_opengauss_query_text(
         session.clone(),
         config,
@@ -1883,6 +1888,79 @@ fn append_opengauss_trigger_definitions(mut ddl: String, trigger_definitions: &[
 pub fn opengauss_table_ddl_sql(schema: &str, table: &str) -> String {
     let qualified_name = format!("{}.{}", pg_ident(schema), pg_ident(table));
     format!("SELECT pg_get_tabledef({})", sql_string(&qualified_name))
+}
+
+/// Same relation-kind detection and DDL assembly when native metadata is
+/// unavailable. Comment reads are best effort, just like the native path.
+async fn external_opengauss_view_ddl(
+    session: std::sync::Arc<crate::plugins::PluginDriverSession>,
+    config: &ConnectionConfig,
+    database: &str,
+    schema: &str,
+    table: &str,
+) -> Result<Option<String>, String> {
+    let schema_expr = sql_string(schema);
+    let table_expr = sql_string(table);
+    let metadata = external_opengauss_query(
+        session.clone(),
+        config,
+        database,
+        Some(schema),
+        &postgres_view_metadata_sql(&schema_expr, &table_expr),
+        1,
+    )
+    .await?;
+    let Some(row) = metadata.rows.first() else { return Ok(None) };
+    let relkind = row.first().and_then(serde_json::Value::as_str).unwrap_or_default();
+    let source = row.get(1).and_then(serde_json::Value::as_str).unwrap_or_default();
+    let populated = if relkind == "m" {
+        external_opengauss_query(
+            session.clone(),
+            config,
+            database,
+            Some(schema),
+            &postgres_view_populated_sql(&schema_expr, &table_expr),
+            1,
+        )
+        .await
+        .ok()
+        .and_then(|result| result.rows.first().and_then(|row| row.first()).and_then(serde_json::Value::as_bool))
+    } else {
+        None
+    };
+    let mut ddl = format_postgres_view_ddl(schema, table, relkind, source, populated)?;
+    let relation_comment = external_opengauss_query(
+        session.clone(),
+        config,
+        database,
+        Some(schema),
+        &postgres_relation_comment_sql_inner(&schema_expr, &table_expr),
+        1,
+    )
+    .await
+    .ok()
+    .and_then(|result| {
+        result.rows.first().and_then(|row| row.get(1)).and_then(serde_json::Value::as_str).map(str::to_string)
+    });
+    let column_comments = external_opengauss_query(
+        session,
+        config,
+        database,
+        Some(schema),
+        &postgres_column_comments_sql_inner(&schema_expr, &table_expr),
+        10_000,
+    )
+    .await
+    .map(|result| {
+        result
+            .rows
+            .into_iter()
+            .filter_map(|row| Some((row.first()?.as_str()?.to_string(), row.get(1)?.as_str()?.to_string())))
+            .collect::<Vec<_>>()
+    })
+    .unwrap_or_default();
+    append_comment_statements(&mut ddl, relkind, schema, table, relation_comment.as_deref(), &column_comments);
+    Ok(Some(ddl))
 }
 
 pub async fn get_table_ddl_core(
@@ -2764,32 +2842,16 @@ async fn opengauss_synonym_ddl(pool: &deadpool_postgres::Pool, schema: &str, tab
             .ok()
             .and_then(|rows| rows.first().map(|row| row.get::<_, String>(0)));
         match target_kind.as_deref() {
-            // Table-like target: recurse into the regular table DDL path. The
-            // target relation exists, so the synonym pre-check passes through.
-            Some("r") | Some("p") | Some("f") => {
+            // Real relation target: use the same relkind-aware DDL path so
+            // views/materialized views also retain their relation comments.
+            Some("r") | Some("p") | Some("f") | Some("v") | Some("m") => {
+                // Return the client before the nested DDL path checks out one.
+                drop(client);
                 // Box::pin breaks the async recursion cycle (synonym_ddl ->
                 // table_ddl -> synonym_ddl) so the future stays sized.
                 if let Ok(target_ddl) = Box::pin(opengauss_table_ddl(pool, &target_schema, &target_name)).await {
                     ddl.push_str("\n\n");
                     ddl.push_str(&target_ddl);
-                }
-                return Some(ddl);
-            }
-            Some("v") | Some("m") => {
-                let kind = if target_kind.as_deref() == Some("m") {
-                    db::ObjectSourceKind::MaterializedView
-                } else {
-                    db::ObjectSourceKind::View
-                };
-                if let Ok(source) =
-                    postgres_object_source(pool, &target_schema, &target_name, &kind, None, None, false).await
-                {
-                    let source = source.trim_end();
-                    ddl.push_str("\n\n");
-                    ddl.push_str(source);
-                    if !source.ends_with(';') {
-                        ddl.push(';');
-                    }
                 }
                 return Some(ddl);
             }
@@ -2811,9 +2873,118 @@ async fn opengauss_synonym_ddl(pool: &deadpool_postgres::Pool, schema: &str, tab
     }
 }
 
+/// relkind-aware pre-check for `opengauss_table_ddl`: views and materialized
+/// views also have pg_class/pg_attribute rows, so the generic table path would
+/// emit a bogus `CREATE TABLE ... (...)` for them. Build the view-shaped DDL
+/// from pg_get_viewdef instead. Returns `Ok(None)` for tables and absent
+/// relations so those keep the original path.
+async fn opengauss_view_ddl(
+    pool: &deadpool_postgres::Pool,
+    schema: &str,
+    table: &str,
+) -> Result<Option<String>, String> {
+    let client = db::postgres::checkout_postgres_client(pool, None, db::connection_timeout()).await?;
+    let rows = client
+        .query(&postgres_view_metadata_sql("$1", "$2"), &[&schema, &table])
+        .await
+        .map_err(db::postgres::pg_error_to_string)?;
+    let Some(row) = rows.first() else { return Ok(None) };
+    let relkind = row.try_get::<_, String>(0).map_err(|err| err.to_string())?;
+    let source = row.try_get::<_, String>(1).map_err(|err| err.to_string())?;
+    // Only materialized views need this optional catalog field. Older
+    // openGauss lacks it: omit WITH DATA rather than break views/tables or
+    // generate a missing-column error for every ordinary-table DDL request.
+    let populated = if relkind == "m" {
+        client
+            .query(&postgres_view_populated_sql("$1", "$2"), &[&schema, &table])
+            .await
+            .ok()
+            .and_then(|rows| rows.first().and_then(|row| row.try_get::<_, bool>(0).ok()))
+    } else {
+        None
+    };
+    let mut ddl = format_postgres_view_ddl(schema, table, &relkind, &source, populated)?;
+    // Return the client before comment loading checks out another one.
+    drop(client);
+    append_relation_comments(pool, schema, table, &mut ddl).await;
+    Ok(Some(ddl))
+}
+
+fn postgres_view_metadata_sql(schema_expr: &str, table_expr: &str) -> String {
+    format!(
+        "SELECT c.relkind::text, pg_get_viewdef(c.oid)::text \
+         FROM pg_catalog.pg_class c \
+         JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
+         WHERE n.nspname = {schema_expr} AND c.relname = {table_expr} AND c.relkind IN ('v','m') \
+         ORDER BY c.oid LIMIT 1"
+    )
+}
+
+fn postgres_view_populated_sql(schema_expr: &str, table_expr: &str) -> String {
+    format!(
+        "SELECT c.relispopulated FROM pg_catalog.pg_class c \
+         JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
+         WHERE n.nspname = {schema_expr} AND c.relname = {table_expr} AND c.relkind = 'm' \
+         ORDER BY c.oid LIMIT 1"
+    )
+}
+
+fn format_postgres_view_ddl(
+    schema: &str,
+    name: &str,
+    relkind: &str,
+    source: &str,
+    populated: Option<bool>,
+) -> Result<String, String> {
+    let source = source.trim();
+    if source.is_empty() {
+        return Err("View definition not found".to_string());
+    }
+    // Some openGauss versions return a complete CREATE MATERIALIZED VIEW
+    // statement, not just a SELECT. Preserve that definition (including any
+    // server-specific options) rather than wrap it with a second CREATE.
+    let statement_start = crate::object_source_sql::leading_sql_statement_start(source);
+    let mut words = source[statement_start..].split_ascii_whitespace();
+    if words.next().is_some_and(|word| word.eq_ignore_ascii_case("CREATE")) {
+        let mut next = words.next();
+        if next.is_some_and(|word| word.eq_ignore_ascii_case("OR")) {
+            if !words.next().is_some_and(|word| word.eq_ignore_ascii_case("REPLACE")) {
+                return Err("Invalid view definition".to_string());
+            }
+            next = words.next();
+        }
+        if next.is_some_and(|word| word.eq_ignore_ascii_case("INCREMENTAL")) {
+            next = words.next();
+        }
+        if next.is_some_and(|word| word.eq_ignore_ascii_case("MATERIALIZED")) {
+            next = words.next();
+        }
+        if next.is_some_and(|word| word.eq_ignore_ascii_case("VIEW")) {
+            return Ok(if source.ends_with(';') { source.to_string() } else { format!("{source};") });
+        }
+        return Err("Invalid view definition".to_string());
+    }
+    let source = source.strip_suffix(';').unwrap_or(source).trim_end();
+    let mut ddl = match relkind {
+        "m" => format!("CREATE MATERIALIZED VIEW {}.{} AS\n{source}", pg_ident(schema), pg_ident(name)),
+        "v" => format!("CREATE OR REPLACE VIEW {}.{} AS\n{source}", pg_ident(schema), pg_ident(name)),
+        _ => return Err("Object is not a view".to_string()),
+    };
+    if relkind == "m" {
+        if let Some(populated) = populated {
+            ddl.push_str(if populated { "\nWITH DATA" } else { "\nWITH NO DATA" });
+        }
+    }
+    ddl.push(';');
+    Ok(ddl)
+}
+
 pub async fn opengauss_table_ddl(pool: &deadpool_postgres::Pool, schema: &str, table: &str) -> Result<String, String> {
     if let Some(synonym_ddl) = opengauss_synonym_ddl(pool, schema, table).await {
         return Ok(synonym_ddl);
+    }
+    if let Some(view_ddl) = opengauss_view_ddl(pool, schema, table).await? {
+        return Ok(view_ddl);
     }
     let columns = db::postgres::get_columns(pool, schema, table).await?;
     let indexes = db::postgres::list_indexes(pool, schema, table).await.unwrap_or_default();
@@ -2860,7 +3031,111 @@ pub async fn opengauss_table_ddl(pool: &deadpool_postgres::Pool, schema: &str, t
         }
     }
 
+    // Mirror pg_dump / pg_get_tabledef: trailing COMMENT ON statements carry the
+    // table and column comments. Display layers strip them when the user hides
+    // comments (DDL dialog "show comments" toggle).
+    append_relation_comments(pool, schema, table, &mut ddl).await;
+
     Ok(ddl)
+}
+
+fn postgres_relation_comment_sql_inner(schema_expr: &str, table_expr: &str) -> String {
+    format!(
+        "SELECT c.relkind::text, obj_description(c.oid, 'pg_class')::text \
+         FROM pg_catalog.pg_class c \
+         JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
+         WHERE n.nspname = {schema_expr} AND c.relname = {table_expr} \
+         ORDER BY c.oid LIMIT 1"
+    )
+}
+
+fn postgres_column_comments_sql_inner(schema_expr: &str, table_expr: &str) -> String {
+    format!(
+        "SELECT a.attname::text, col_description(a.attrelid, a.attnum)::text \
+         FROM pg_catalog.pg_attribute a \
+         JOIN pg_catalog.pg_class c ON c.oid = a.attrelid \
+         JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
+         WHERE n.nspname = {schema_expr} AND c.relname = {table_expr} \
+           AND a.attnum > 0 AND NOT a.attisdropped \
+           AND col_description(a.attrelid, a.attnum) IS NOT NULL \
+         ORDER BY a.attnum"
+    )
+}
+
+/// COMMENT ON keyword for a pg_class relkind (COMMENT ON TABLE is not valid
+/// for views/materialized views/sequences on openGauss).
+fn comment_on_keyword(relkind: &str) -> &'static str {
+    match relkind {
+        "v" => "VIEW",
+        "m" => "MATERIALIZED VIEW",
+        "S" => "SEQUENCE",
+        _ => "TABLE",
+    }
+}
+
+/// Append `COMMENT ON ...` statements for the relation comment and its column
+/// comments. Pure string assembly so the exact output stays unit-testable.
+fn append_comment_statements(
+    ddl: &mut String,
+    relkind: &str,
+    schema: &str,
+    table: &str,
+    table_comment: Option<&str>,
+    column_comments: &[(String, String)],
+) {
+    if let Some(comment) = table_comment.filter(|comment| !comment.is_empty()) {
+        ddl.push_str(&format!(
+            "\nCOMMENT ON {} {}.{} IS {};",
+            comment_on_keyword(relkind),
+            pg_ident(schema),
+            pg_ident(table),
+            sql_string(comment)
+        ));
+    }
+    for (column, comment) in column_comments {
+        if column.is_empty() || comment.is_empty() {
+            continue;
+        }
+        ddl.push_str(&format!(
+            "\nCOMMENT ON COLUMN {}.{}.{} IS {};",
+            pg_ident(schema),
+            pg_ident(table),
+            pg_ident(column),
+            sql_string(comment)
+        ));
+    }
+}
+
+/// Fetch table/column comments and append them to the DDL. Best effort: a
+/// comment probe failure must never break the structural DDL.
+async fn append_relation_comments(pool: &deadpool_postgres::Pool, schema: &str, table: &str, ddl: &mut String) {
+    let Ok(client) = db::postgres::checkout_postgres_client(pool, None, db::connection_timeout()).await else {
+        return;
+    };
+    let relation = client
+        .query(&postgres_relation_comment_sql_inner("$1", "$2"), &[&schema, &table])
+        .await
+        .ok()
+        .and_then(|rows| {
+            rows.first().map(|row| {
+                (row.try_get::<_, String>(0).unwrap_or_default(), row.try_get::<_, Option<String>>(1).ok().flatten())
+            })
+        });
+    let Some((relkind, table_comment)) = relation else { return };
+    let column_comments: Vec<(String, String)> = client
+        .query(&postgres_column_comments_sql_inner("$1", "$2"), &[&schema, &table])
+        .await
+        .map(|rows| {
+            rows.iter()
+                .filter_map(|row| {
+                    let name = row.try_get::<_, String>(0).unwrap_or_default();
+                    let comment = row.try_get::<_, Option<String>>(1).ok().flatten();
+                    comment.map(|comment| (name, comment))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    append_comment_statements(ddl, &relkind, schema, table, table_comment.as_deref(), &column_comments);
 }
 
 #[cfg(test)]
@@ -2878,6 +3153,96 @@ mod tests {
             format_opengauss_synonym_ddl_line("App", "Weird\"Syn", "Yi_Prod", "Menu"),
             "CREATE OR REPLACE SYNONYM \"App\".\"Weird\"\"Syn\" FOR \"Yi_Prod\".\"Menu\";"
         );
+    }
+
+    #[test]
+    fn test_view_ddl_quotes_identifiers_and_preserves_select_body() {
+        assert_eq!(
+            format_postgres_view_ddl("App", "Weird\"View", "v", " SELECT 'O''Brien; ' AS name; \n", None).unwrap(),
+            "CREATE OR REPLACE VIEW \"App\".\"Weird\"\"View\" AS\nSELECT 'O''Brien; ' AS name;"
+        );
+    }
+
+    #[test]
+    fn test_materialized_view_ddl_populated_state_and_missing_catalog_field() {
+        for (populated, suffix) in [(Some(true), "\nWITH DATA;"), (Some(false), "\nWITH NO DATA;"), (None, ";")] {
+            let ddl = format_postgres_view_ddl("app", "mv", "m", "SELECT 1;", populated).unwrap();
+            assert_eq!(ddl, format!("CREATE MATERIALIZED VIEW \"app\".\"mv\" AS\nSELECT 1{suffix}"));
+        }
+        assert_eq!(
+            format_postgres_view_ddl("app", "v", "v", "SELECT 1", Some(false)).unwrap(),
+            "CREATE OR REPLACE VIEW \"app\".\"v\" AS\nSELECT 1;"
+        );
+    }
+
+    #[test]
+    fn test_view_ddl_preserves_complete_server_definition_without_double_create() {
+        for source in [
+            "CREATE MATERIALIZED VIEW app.mv TABLESPACE space1 AS SELECT 1 WITH DATA;",
+            "create materialized view app.mv as select 1 with no data",
+            "CREATE OR REPLACE VIEW app.v AS SELECT 1;",
+            "CREATE INCREMENTAL MATERIALIZED VIEW app.mv AS SELECT 1;",
+            "-- server definition\n/* outer /* nested */ comment */ CREATE MATERIALIZED VIEW app.mv AS SELECT 1;",
+        ] {
+            let expected = if source.ends_with(';') { source.to_string() } else { format!("{source};") };
+            assert_eq!(format_postgres_view_ddl("app", "mv", "m", source, Some(true)).unwrap(), expected);
+        }
+    }
+
+    #[test]
+    fn test_view_ddl_rejects_missing_definition_and_non_view_kind() {
+        assert!(format_postgres_view_ddl("app", "v", "v", " \n", None).is_err());
+        assert!(format_postgres_view_ddl("app", "t", "r", "SELECT 1", None).is_err());
+        assert!(format_postgres_view_ddl("app", "v", "v", "CREATE TABLE app.v (id int)", None).is_err());
+    }
+
+    #[test]
+    fn test_view_metadata_probe_avoids_optional_catalogs_and_escapes_jdbc_literals() {
+        let sql = postgres_view_metadata_sql("$1", "$2");
+        assert!(sql.contains("c.relkind IN ('v','m')"));
+        assert!(!sql.contains("relispopulated"));
+        assert!(!sql.contains("pg_matviews"));
+        let sql = postgres_view_metadata_sql(&sql_string("weird'$2"), &sql_string("v'iew"));
+        assert!(sql.contains("n.nspname = 'weird''$2'"));
+        assert!(sql.contains("c.relname = 'v''iew'"));
+    }
+
+    #[test]
+    fn test_append_comment_statements_full_and_keyword_mapping() {
+        let mut ddl = "CREATE TABLE \"app\".\"t\" (\n  \"id\" int\n);".to_string();
+        append_comment_statements(
+            &mut ddl,
+            "r",
+            "app",
+            "t",
+            Some("table 注释 'quoted'"),
+            &[("id".to_string(), "主键".to_string()), ("note".to_string(), "多行\n注释".to_string())],
+        );
+        assert!(ddl.contains("COMMENT ON TABLE \"app\".\"t\" IS 'table 注释 ''quoted''';"));
+        assert!(ddl.contains("COMMENT ON COLUMN \"app\".\"t\".\"id\" IS '主键';"));
+        assert!(ddl.contains("COMMENT ON COLUMN \"app\".\"t\".\"note\" IS '多行\n注释';"));
+
+        let mut view_ddl = String::new();
+        append_comment_statements(&mut view_ddl, "v", "app", "v_t", Some("view comment"), &[]);
+        assert_eq!(view_ddl, "\nCOMMENT ON VIEW \"app\".\"v_t\" IS 'view comment';");
+
+        let mut mview_ddl = String::new();
+        append_comment_statements(&mut mview_ddl, "m", "app", "mv_t", Some("mv comment"), &[]);
+        assert_eq!(mview_ddl, "\nCOMMENT ON MATERIALIZED VIEW \"app\".\"mv_t\" IS 'mv comment';");
+    }
+
+    #[test]
+    fn test_append_comment_statements_skips_empty_comments() {
+        let mut ddl = String::new();
+        append_comment_statements(
+            &mut ddl,
+            "r",
+            "app",
+            "t",
+            Some(""),
+            &[("".to_string(), "x".to_string()), ("c".to_string(), "".to_string())],
+        );
+        assert_eq!(ddl, "");
     }
 
     #[test]

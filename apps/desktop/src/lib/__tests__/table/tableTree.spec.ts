@@ -56,6 +56,25 @@ describe("case-sensitive database objects", () => {
   });
 });
 
+describe("materialized view metadata grouping", () => {
+  it.each(["MATERIALIZED_VIEW", "MATERIALIZED VIEW"])("routes %s to the materialized-view group, not tables or views", (tableType) => {
+    const objects = mergeTableInfosIntoObjects(
+      [],
+      [
+        { name: "orders", table_type: "TABLE", comment: null },
+        { name: "v_orders", table_type: "VIEW", comment: null },
+        { name: "mv_orders", table_type: tableType, comment: "缓存订单" },
+      ],
+      "app",
+    );
+    const groups = buildGroupedObjectTreeNodes({ ...context, schema: "app", objects });
+    const materializedViews = groups.find((node) => node.type === "group-materialized-views");
+    expect(materializedViews?.children?.map(({ label, type, comment }) => ({ label, type, comment }))).toEqual([{ label: "mv_orders", type: "materialized_view", comment: "缓存订单" }]);
+    expect(groups.find((node) => node.type === "group-tables")?.children?.map((node) => node.label)).toEqual(["orders"]);
+    expect(groups.find((node) => node.type === "group-views")?.children?.map((node) => node.label)).toEqual(["v_orders"]);
+  });
+});
+
 describe("PostgreSQL overloaded routines", () => {
   it("keeps routines with the same name distinct by identity arguments", () => {
     const objects: ObjectInfo[] = [

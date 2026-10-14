@@ -2802,6 +2802,7 @@ export const zhCNMessages = {
     changeOpenMode: "修改打开方式",
     viewDdl: "查看 DDL",
     viewDdlLoading: "正在读取 DDL...",
+    showComments: "显示注释",
     ddlCopied: "DDL 已复制",
     dropObject: "删除对象",
     dropView: "删除视图",
