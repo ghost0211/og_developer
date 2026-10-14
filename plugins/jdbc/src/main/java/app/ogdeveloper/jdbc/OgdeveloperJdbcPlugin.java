@@ -1962,6 +1962,17 @@ public final class OgdeveloperJdbcPlugin {
 
     private static JsonNode listDataTypes(JsonNode connection, String database) throws SQLException {
         Connection conn = openConnection(connection);
+        if (isOpenGaussConnection(connection)) {
+            // The openGauss JDBC driver's getTypeInfo() leaks pg_type rows that
+            // are not usable column types: array types ("_uuid", "_regclass")
+            // and the composite row types of every table/sequence. Query
+            // pg_type with the column-type filter instead.
+            try {
+                return openGaussListDataTypes(conn);
+            } catch (SQLException | AbstractMethodError | UnsupportedOperationException ignored) {
+                // Fall back to DatabaseMetaData.getTypeInfo() below.
+            }
+        }
         JdbcDriverQuirks quirks = driverQuirks(connection);
         String catalog = metadataCatalog(database, quirks);
         if (catalog != null) {
@@ -2550,6 +2561,44 @@ public final class OgdeveloperJdbcPlugin {
                 AND c.relkind IN ('r', 'p', 'v', 'm', 'f')
             ORDER BY c.relname
             """;
+    }
+
+    private static String openGaussDataTypesSql() {
+        return """
+            SELECT DISTINCT CAST(t.typname AS varchar(256)) AS type_name
+            FROM pg_catalog.pg_type t
+            JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace
+            WHERE t.typtype IN ('b', 'e', 'd', 'c')
+                AND t.typcategory <> 'A'
+                AND (t.typtype <> 'c'
+                    OR EXISTS (SELECT 1 FROM pg_catalog.pg_class c
+                        WHERE c.oid = t.typrelid AND c.relkind = 'c'))
+                AND ((n.nspname = 'pg_catalog' AND t.typtype = 'b')
+                    OR (n.nspname NOT LIKE 'pg\\_%' ESCAPE '\\'
+                        AND n.nspname NOT IN ('information_schema', 'cstore', 'dbe_perf',
+                            'dbe_pldebugger', 'pkg_service', 'pkg_util', 'db4ai',
+                            'snapshot', 'sqladvisor', 'dbe_sql_util')))
+            ORDER BY t.typname
+            """;
+    }
+
+    private static JsonNode openGaussListDataTypes(Connection conn) throws SQLException {
+        ArrayNode result = MAPPER.createArrayNode();
+        Set<String> seen = new HashSet<>();
+        try (PreparedStatement ps = conn.prepareStatement(openGaussDataTypesSql());
+                ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                String name = rs.getString("type_name");
+                if (name == null || name.isBlank()) {
+                    continue;
+                }
+                String trimmed = name.trim();
+                if (seen.add(trimmed.toLowerCase(Locale.ROOT))) {
+                    result.add(trimmed);
+                }
+            }
+        }
+        return result;
     }
 
     private static String openGaussTablesSql() {
@@ -3204,7 +3253,7 @@ public final class OgdeveloperJdbcPlugin {
         try (Statement stmt = conn.createStatement();
              ResultSet rs = stmt.executeQuery("SELECT username FROM all_users ORDER BY username")) {
             while (rs.next()) {
-                String name = rs.getString(1);
+                String name = rs.getString("type_name");
                 if (name != null && !name.isBlank()) {
                     result.add(name);
                 }

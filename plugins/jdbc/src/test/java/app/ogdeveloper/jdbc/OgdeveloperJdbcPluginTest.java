@@ -1699,6 +1699,69 @@ final class OgdeveloperJdbcPluginTest {
     }
 
     @Test
+    void openGaussListDataTypesUsesColumnTypeCatalogFilter() throws Exception {
+        Method method = OgdeveloperJdbcPlugin.class.getDeclaredMethod("openGaussListDataTypes", Connection.class);
+        method.setAccessible(true);
+        List<String> sqlList = new ArrayList<>();
+        String[] columns = { "type_name" };
+        Object[][] rows = {
+            { "int4" }, { "uuid" }, { "text" }, { "UUID" }, { " uuid " }
+        };
+
+        Connection conn = openGaussMockConnection(sqlList, null, columns, rows, "public");
+        JsonNode result = (JsonNode) method.invoke(null, conn);
+
+        assertEquals(1, sqlList.size());
+        String sql = sqlList.get(0);
+        assertTrue(sql.contains("pg_catalog.pg_type"), sql);
+        assertTrue(sql.contains("t.typtype IN ('b', 'e', 'd', 'c')"), sql);
+        assertTrue(sql.contains("t.typcategory <> 'A'"), sql);
+        assertTrue(sql.contains("c.relkind = 'c'"), sql);
+        assertTrue(sql.contains("NOT LIKE 'pg\\_%'"), sql);
+        assertTrue(sql.contains("'information_schema'"), sql);
+
+        // Case-insensitive dedupe and trimming.
+        assertEquals(3, result.size());
+        assertEquals("int4", result.path(0).asText());
+        assertEquals("uuid", result.path(1).asText());
+        assertEquals("text", result.path(2).asText());
+    }
+
+    @Test
+    void listDataTypesTopLevelRoutingBypassesGetTypeInfoForOpenGauss() throws Exception {
+        String url = "jdbc:opengauss://dbx-og-types-route:5432/testdb";
+        List<String> sqlList = new ArrayList<>();
+        String[] columns = { "type_name" };
+        Object[][] rows = { { "int4" }, { "uuid" }, { "text" } };
+
+        Connection mockConn = openGaussMockConnection(sqlList, null, columns, rows, "public");
+        Driver driver = new OpenGaussMetadataDriver("jdbc:opengauss://dbx-og-types-route:", mockConn);
+        DriverManager.registerDriver(driver);
+        try {
+            JsonNode response = request("listDataTypes", """
+                {
+                  "connection": {
+                    "connection_string": "%s",
+                    "connect_timeout_secs": 30
+                  },
+                  "database": "testdb"
+                }
+                """.formatted(url));
+
+            assertFalse(response.has("error"), response.toString());
+            JsonNode items = response.path("result");
+            assertEquals(3, items.size());
+            assertEquals("int4", items.path(0).asText());
+            assertEquals("uuid", items.path(1).asText());
+            // Exactly one catalog SQL ran; DatabaseMetaData.getTypeInfo would throw.
+            assertEquals(1, sqlList.size());
+            assertTrue(sqlList.get(0).contains("pg_catalog.pg_type"), sqlList.get(0));
+        } finally {
+            DriverManager.deregisterDriver(driver);
+        }
+    }
+
+    @Test
     void columnIsNullablePrefersIsNullableStringWhenNullableCodeIsWrong() throws Exception {
         Method method = OgdeveloperJdbcPlugin.class.getDeclaredMethod("columnIsNullable", ResultSet.class);
         method.setAccessible(true);
@@ -2760,6 +2823,7 @@ final class OgdeveloperJdbcPluginTest {
                     new Class<?>[] { DatabaseMetaData.class },
                     (metaProxy, metaMethod, metaArgs) -> switch (metaMethod.getName()) {
                         case "getTables" -> throw new AssertionError("DatabaseMetaData.getTables must not be called for openGauss");
+                        case "getTypeInfo" -> throw new AssertionError("DatabaseMetaData.getTypeInfo must not be called for openGauss");
                         case "getProcedures", "getFunctions" -> rowsResultSet(new String[0], new Object[0][]);
                         default -> defaultValue(metaMethod.getReturnType());
                     }

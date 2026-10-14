@@ -3049,6 +3049,28 @@ pub(crate) fn postgres_relation_kind_sql() -> &'static str {
      ORDER BY c.oid LIMIT 1"
 }
 
+/// Column-type dropdown entries for openGauss/PostgreSQL: built-in base types
+/// plus user-defined enums/domains/standalone composite types. Array types
+/// (typcategory 'A', the `_`-prefixed names) and table/sequence row types
+/// (typtype 'c' tied to a non-'c' pg_class entry) are excluded: they are not
+/// meaningful column type choices and would bury the real types. Database-wide
+/// on purpose — a table can live in any schema, so the dropdown is not limited
+/// to one schema's types.
+pub(crate) fn postgres_data_type_names_sql() -> &'static str {
+    "SELECT DISTINCT t.typname \
+     FROM pg_catalog.pg_type t \
+     JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace \
+     WHERE t.typtype IN ('b','e','d','c') \
+       AND t.typcategory <> 'A' \
+       AND (t.typtype <> 'c' \
+            OR EXISTS (SELECT 1 FROM pg_catalog.pg_class c \
+                       WHERE c.oid = t.typrelid AND c.relkind = 'c')) \
+       AND ((n.nspname = 'pg_catalog' AND t.typtype = 'b') \
+            OR (n.nspname NOT LIKE 'pg\\_%' ESCAPE '\\' \
+                AND n.nspname NOT IN ('information_schema','cstore','dbe_perf','dbe_pldebugger','pkg_service','pkg_util','db4ai','snapshot','sqladvisor','dbe_sql_util'))) \
+     ORDER BY t.typname"
+}
+
 pub(crate) async fn postgres_relation_kind(
     client: &deadpool_postgres::Client,
     schema: &str,
@@ -7396,6 +7418,19 @@ mod tests {
         assert!(!POSTGRES_INDEXES_COMPAT_SQL.contains("WITH ORDINALITY"));
         assert!(POSTGRES_INDEXES_COMPAT_SQL.contains("generate_series"));
         assert!(POSTGRES_INDEXES_COMPAT_SQL.contains("string_to_array(ix.indkey::text, ' ')"));
+    }
+
+    #[test]
+    fn postgres_data_type_names_sql_excludes_arrays_and_relation_rowtypes() {
+        let sql = postgres_data_type_names_sql();
+        assert!(sql.contains("t.typtype IN ('b','e','d','c')"));
+        assert!(sql.contains("t.typcategory <> 'A'"));
+        assert!(sql.contains("c.relkind = 'c'"));
+        assert!(sql.contains("n.nspname = 'pg_catalog' AND t.typtype = 'b'"));
+        assert!(sql.contains("NOT LIKE 'pg\\_%'"));
+        assert!(sql.contains("'information_schema'"));
+        // No schema filter: the dropdown lists database-wide column types.
+        assert!(!sql.contains("n.nspname = $1"));
     }
 
     #[test]

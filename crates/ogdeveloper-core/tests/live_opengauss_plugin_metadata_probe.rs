@@ -214,6 +214,16 @@ async fn live_plugin_metadata_probe() {
     assert_eq!(mv_prod_menu.len(), 1, "materialized view references must dedupe: {mv_refs:?}");
     assert_eq!(mv_prod_menu[0].object_type, "table", "raw relkind must be normalized: {mv_refs:?}");
 
+    // 3c) Column-type dropdown: the catalog query must exclude array types
+    // (typcategory 'A', `_`-prefixed) and table/sequence row types. This test
+    // database has `app_role_user` (table row type) and `seq_auth_user_account`
+    // (sequence row type) which the unfiltered pg_type scan leaked into the
+    // structure editor dropdown.
+    let native_types = ogdeveloper_core::schema::list_data_types_core(&state, "live-native", &database, "public", None)
+        .await
+        .expect("native data types");
+    assert_column_type_list(&native_types, "native");
+
     // 5) Missing relations fail on both metadata paths; they must not turn
     // into an empty CREATE TABLE shell in the DDL dialog or structure editor.
     let missing = "ogt_missing_relation_probe";
@@ -253,4 +263,36 @@ async fn live_plugin_metadata_probe() {
     assert_eq!(jdbc_view_ddl, view_ddl, "JDBC fallback must preserve view definition and comments");
     assert_eq!(jdbc_mv_ddl, mv_ddl, "JDBC fallback must preserve materialized view definition and comments");
     println!("JDBC-only view/materialized view DDL matches native output");
+
+    // JDBC-only listDataTypes: the plugin must use the pg_type catalog query,
+    // not the driver's getTypeInfo() (which leaks `_`-arrays and row types).
+    let jdbc_types = ogdeveloper_core::schema::list_data_types_core(&state, "live", &database, "public", None)
+        .await
+        .expect("JDBC-only data types");
+    assert_column_type_list(&jdbc_types, "jdbc");
+}
+
+fn assert_column_type_list(types: &[String], label: &str) {
+    println!("{label} data types: {} entries", types.len());
+    for expected in ["int4", "uuid", "text", "varchar", "tsvector"] {
+        assert!(types.iter().any(|t| t == expected), "{label}: missing base type {expected}: {types:?}");
+    }
+    assert!(
+        !types.iter().any(|t| t.starts_with('_')),
+        "{label}: array types (`_` prefix) must be filtered out: {:?}",
+        types.iter().filter(|t| t.starts_with('_')).collect::<Vec<_>>()
+    );
+    for leaked in [
+        "app_role_user",
+        "app_system",
+        "auth_user_account",
+        "seq_auth_user_account",
+        "snapshot_name",
+        "cardinal_number",
+    ] {
+        assert!(
+            !types.iter().any(|t| t == leaked),
+            "{label}: row type / internal domain {leaked} must be filtered out"
+        );
+    }
 }

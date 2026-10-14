@@ -459,17 +459,16 @@ pub async fn list_data_types_core(
     state: &AppState,
     connection_id: &str,
     database: &str,
-    schema: &str,
+    _schema: &str,
     _catalog: Option<&str>,
 ) -> Result<Vec<String>, String> {
     let pool = get_schema_pool(state, connection_id, database).await?;
     match pool {
         PoolKind::Postgres(p) => {
-            let sql = format!(
-                "SELECT typname FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace WHERE n.nspname = {}",
-                sql_string(schema)
-            );
-            let res = db::postgres::execute_query(&p, &sql).await?;
+            // Column-type dropdown: built-in base types + user-defined
+            // enums/domains/standalone composite types, database-wide. Array
+            // types and table/sequence row types are filtered out by the SQL.
+            let res = db::postgres::execute_query(&p, db::postgres::postgres_data_type_names_sql()).await?;
             Ok(res
                 .rows
                 .into_iter()
@@ -478,10 +477,27 @@ pub async fn list_data_types_core(
                 .collect())
         }
         PoolKind::ExternalDriver { config, session, .. } => {
+            let db_config = connection_config(state, connection_id).await;
+            if db_config.as_ref().is_some_and(is_opengauss_family_config) {
+                // The openGauss JDBC driver's getTypeInfo() leaks array types
+                // and table/sequence row types; prefer the native catalog
+                // query and fall back to the plugin when native is down.
+                let pool_key =
+                    state.get_or_create_metadata_pool_for_session(connection_id, Some(database), None).await?;
+                if let Ok(Some(p)) = opengauss_metadata_postgres_pool(state, connection_id, database, &pool_key).await {
+                    let res = db::postgres::execute_query(&p, db::postgres::postgres_data_type_names_sql()).await?;
+                    return Ok(res
+                        .rows
+                        .into_iter()
+                        .filter_map(|r| r.into_iter().next())
+                        .filter_map(|v| v.as_str().map(str::to_string))
+                        .collect());
+                }
+            }
             session
                 .invoke_with_timeout::<Vec<String>>(
                     "listDataTypes",
-                    serde_json::json!({ "connection": config.as_ref(), "database": database, "schema": schema }),
+                    serde_json::json!({ "connection": config.as_ref(), "database": database, "schema": _schema }),
                     agent_metadata_timeout(Some(config.as_ref())),
                 )
                 .await

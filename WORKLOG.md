@@ -1919,3 +1919,61 @@ CI 不受影响）；`pnpm build` 通过；`cargo check --locked` 校验 Cargo.l
 
 发布按「先推 main，再单独推 v0.2.54 标签」顺序触发 CI / Release；安装包、
 签名和 `latest.json` 的最终状态以 GitHub Actions / Release 为准。
+
+---
+
+## 60. 表结构编辑器类型下拉混入数组/行类型（2026-10-14）已修复（v0.2.55）
+
+**现象**：表上右击“编辑表结构”，字段类型下拉框出现表名、序列名和大量
+`_` 开头的条目。openGauss 中 `_uuid`/`_regclass` 等是数组类型
+（pg_type.typcategory='A'，每个基类型自动生成的“元素数组”），
+`app_role_user`/`seq_auth_user_account` 等是每张表/序列自动生成的组合行类型
+（typtype='c', typcategory='C'）——**都不是合法的列类型**，属于 bug。
+
+**根因**：`list_data_types_core` 的 pg_type 查询只按 schema 过滤
+（`nspname = schema`），不过滤类型类别，数组类型与行类型全部泄漏进下拉；
+JDBC 插件 `listDataTypes` 用 `getMetaData().getTypeInfo()`，openGauss 驱动
+同样返回数组类型与行类型。
+
+**修复**：
+- `crates/ogdeveloper-core/src/db/postgres.rs` 新增
+  `postgres_data_type_names_sql()`：仅保留 typtype ∈ {b 基类型, e 枚举, d 域,
+  c 组合} 且 typcategory ≠ 'A'（排除数组）；组合类型仅保留 relkind='c' 的
+  独立 CREATE TYPE（排除表/序列行类型）；pg_catalog 只取基类型；其余 schema
+  排除 pg_% 与 information_schema/cstore/dbe_perf 等系统 schema。改为按数据库
+  范围查询（不再限单 schema，用户自定义类型在任何 schema 都可见）。
+- `crates/ogdeveloper-core/src/schema.rs::list_data_types_core`：Postgres 路径
+  改用新 SQL；ExternalDriver 路径对 openGauss 家族连接优先走原生元数据连接
+  （复用既有原生连接材料），失败再回退插件 RPC。
+- JDBC 插件 `OgdeveloperJdbcPlugin`：openGauss 连接改用同样的 pg_type 目录查询
+  （`openGaussDataTypesSql`/`openGaussListDataTypes`），非 openGauss 驱动保持
+  getTypeInfo；版本升至 **0.1.33**（build.gradle + manifest.json），
+  `src-tauri/resources/jdbc-plugin.zip` 已重新生成。
+
+**测试**：
+- Rust 单测断言 SQL 形状（typtype 白名单、typcategory<>'A'、relkind='c' 限定、
+  schema 黑名单）；真实库直跑最终 SQL 得 75 个干净类型名。
+- 插件新增 2 个测试：目录过滤 SQL 断言 + 大小写去重/trim；顶层路由断言绕过
+  getTypeInfo（共享 mock 对 getTypeInfo 调用抛 AssertionError 防回归）。
+- live 探针：重建了被删的 ogt_v_probe/ogt_mv_probe/同义词夹具（同义词未被删）
+  后，新增 native 与 JDBC-only 两条 listDataTypes 断言（各 75 个干净类型，无
+  `_` 前缀、无表/序列行类型）通过；契约测试 13 通过；core lib 1225 通过；
+  CI 等价 clippy（-D warnings）干净。
+
+---
+
+## 61. 发布 v0.2.55
+
+用户确认发版。版本号同步 `package.json`、`src-tauri/Cargo.toml`、
+`src-tauri/tauri.conf.json` 与 `Cargo.lock`（0.2.55）。本次包含：
+
+- §60 表结构编辑器类型下拉过滤：数组类型（`_` 前缀）与表/序列行类型不再
+  出现在字段类型选项中；native 与 JDBC-only 路径同时修复；JDBC 插件 0.1.33。
+
+发布前检查：Rust 核心 lib 1225 项通过；CI 等价 clippy（-D warnings）与
+cargo fmt 通过；契约测试 13 项通过；真实 openGauss 回归（native/JDBC-only
+类型列表、视图/物化视图 DDL、缺失对象报错、引用去重）通过；完整
+`pnpm check` 与 `pnpm build` 结果见下方记录。
+
+发布按「先推 main，再单独推 v0.2.55 标签」顺序触发 CI / Release；安装包、
+签名和 `latest.json` 的最终状态以 GitHub Actions / Release 为准。
