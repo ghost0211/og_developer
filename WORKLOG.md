@@ -1825,3 +1825,12 @@ SHA256 一致。最终 ZIP 的隔离 live 视图/物化视图/JDBC fallback 与�
 
 发布按「先推 main，再单独推 v0.2.53 标签」顺序触发 CI / Release；
 安装包、签名和 `latest.json` 的最终状态以 GitHub Actions / Release 为准。
+
+**远端 CI 补充**：首次 CI（`38514997056`）的 Linux-only
+`external_driver_schema_and_query_contract_includes_connection` 失败：测试模拟
+插件把新的双列视图元数据探测返回成旧的单列 `SELECT 1;`，导致
+`View definition not found`。已补齐普通表空匹配、视图/物化视图双列响应、
+填充状态及注释响应，并新增 JDBC-only DDL 形态/注释断言。
+实际 fixture 在 POSIX shell 下 8 项 SQL 路由 smoke 检查通过，Windows 可运行
+契约测试 13 项通过；完整 Linux 契约测试由修正后的 CI 验证。
+这是仅测试/文档修正，v0.2.53 应用代码和标签（`93b3dbc84`）保持不变。

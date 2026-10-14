@@ -482,6 +482,28 @@ while IFS= read -r line; do
     executeQuery)
       sql=$(printf '%s' "$line" | sed -E 's/.*"sql":"([^"]+)".*/\1/')
       case "$sql" in
+        *'SELECT c.relkind::text, pg_get_viewdef'*)
+          case "$sql" in
+            *"c.relname = 'v1'"*)
+              printf '{{"jsonrpc":"2.0","id":%s,"result":{{"columns":["relkind","viewdef"],"column_types":["text","text"],"rows":[["v","SELECT 1;"]],"affected_rows":0,"execution_time_ms":0}}}}\n' "$id"
+              ;;
+            *"c.relname = 'mv1'"*)
+              printf '{{"jsonrpc":"2.0","id":%s,"result":{{"columns":["relkind","viewdef"],"column_types":["text","text"],"rows":[["m","SELECT 2;"]],"affected_rows":0,"execution_time_ms":0}}}}\n' "$id"
+              ;;
+            *)
+              printf '{{"jsonrpc":"2.0","id":%s,"result":{{"columns":["relkind","viewdef"],"column_types":["text","text"],"rows":[],"affected_rows":0,"execution_time_ms":0}}}}\n' "$id"
+              ;;
+          esac
+          ;;
+        *'SELECT c.relispopulated FROM pg_catalog.pg_class'*)
+          printf '{{"jsonrpc":"2.0","id":%s,"result":{{"columns":["relispopulated"],"column_types":["bool"],"rows":[[false]],"affected_rows":0,"execution_time_ms":0}}}}\n' "$id"
+          ;;
+        *col_description*)
+          printf '{{"jsonrpc":"2.0","id":%s,"result":{{"columns":["column_name","comment"],"column_types":["text","text"],"rows":[["value","Column comment"]],"affected_rows":0,"execution_time_ms":0}}}}\n' "$id"
+          ;;
+        *obj_description*)
+          printf '{{"jsonrpc":"2.0","id":%s,"result":{{"columns":["relkind","comment"],"column_types":["text","text"],"rows":[["v","Relation comment"]],"affected_rows":0,"execution_time_ms":0}}}}\n' "$id"
+          ;;
         *pg_get_tabledef*)
           printf '{{"jsonrpc":"2.0","id":%s,"result":{{"columns":["val"],"column_types":["text"],"rows":[["CREATE TABLE public.t1 (id integer);"]],"affected_rows":0,"execution_time_ms":0}}}}\n' "$id"
           ;;
@@ -677,6 +699,20 @@ done
         .await
         .expect("get_table_ddl_core succeeds");
     assert!(ddl.contains("CREATE TABLE"));
+
+    // 13b. The JDBC-only view probe has two columns, while a table has no
+    // matching view row. Keep the mock faithful to that metadata contract.
+    let view_ddl = ogdeveloper_core::schema::get_table_ddl_core(&state, &config.id, "postgres", "public", "v1", None)
+        .await
+        .expect("JDBC-only view DDL succeeds");
+    assert!(view_ddl.starts_with("CREATE OR REPLACE VIEW \"public\".\"v1\" AS\nSELECT 1;"));
+    assert!(view_ddl.contains("COMMENT ON VIEW \"public\".\"v1\" IS 'Relation comment';"));
+    assert!(view_ddl.contains("COMMENT ON COLUMN \"public\".\"v1\".\"value\" IS 'Column comment';"));
+    let mv_ddl = ogdeveloper_core::schema::get_table_ddl_core(&state, &config.id, "postgres", "public", "mv1", None)
+        .await
+        .expect("JDBC-only materialized view DDL succeeds");
+    assert!(mv_ddl.starts_with("CREATE MATERIALIZED VIEW \"public\".\"mv1\" AS\nSELECT 2\nWITH NO DATA;"));
+    assert!(mv_ddl.contains("COMMENT ON MATERIALIZED VIEW \"public\".\"mv1\" IS 'Relation comment';"));
 
     // 14. Verify get_object_source_core sends "connection"
     let src = ogdeveloper_core::schema::get_object_source_core(
