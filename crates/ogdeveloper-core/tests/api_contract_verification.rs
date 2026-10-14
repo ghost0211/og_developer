@@ -482,6 +482,16 @@ while IFS= read -r line; do
     executeQuery)
       sql=$(printf '%s' "$line" | sed -E 's/.*"sql":"([^"]+)".*/\1/')
       case "$sql" in
+        *"c.relkind IN ('r','v','m','f','p','S')"*)
+          case "$sql" in
+            *"c.relname = 't1'"*)
+              printf '{{"jsonrpc":"2.0","id":%s,"result":{{"columns":["relkind"],"column_types":["text"],"rows":[["r"]],"affected_rows":0,"execution_time_ms":0}}}}\n' "$id"
+              ;;
+            *)
+              printf '{{"jsonrpc":"2.0","id":%s,"result":{{"columns":["relkind"],"column_types":["text"],"rows":[],"affected_rows":0,"execution_time_ms":0}}}}\n' "$id"
+              ;;
+          esac
+          ;;
         *'SELECT c.relkind::text, pg_get_viewdef'*)
           case "$sql" in
             *"c.relname = 'v1'"*)
@@ -713,6 +723,14 @@ done
         .expect("JDBC-only materialized view DDL succeeds");
     assert!(mv_ddl.starts_with("CREATE MATERIALIZED VIEW \"public\".\"mv1\" AS\nSELECT 2\nWITH NO DATA;"));
     assert!(mv_ddl.contains("COMMENT ON MATERIALIZED VIEW \"public\".\"mv1\" IS 'Relation comment';"));
+
+    // 13c. A missing relation must fail instead of producing an empty table
+    // shell from the DDL fallback.
+    let missing =
+        ogdeveloper_core::schema::get_table_ddl_core(&state, &config.id, "postgres", "public", "missing_t", None)
+            .await
+            .expect_err("missing relation must fail");
+    assert!(missing.contains("Relation \"public\".\"missing_t\" not found"), "unexpected error: {missing}");
 
     // 14. Verify get_object_source_core sends "connection"
     let src = ogdeveloper_core::schema::get_object_source_core(

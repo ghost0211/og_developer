@@ -3,6 +3,8 @@ import type { ObjectSourceKind } from "@/types/database";
 import type { MetadataCacheInvalidation } from "./metadataResultCache";
 import { invalidateObjectMetadataCache } from "./objectMetadataCache";
 
+// v5 retires the bogus empty CREATE TABLE cached for missing openGauss relations
+// (DDL now checks pg_class and reports the object as not found).
 // v4: view/materialized view DDL is now view-shaped (CREATE OR REPLACE VIEW /
 // CREATE MATERIALIZED VIEW) instead of the bogus CREATE TABLE built from the
 // view's column list; v3 entries may still hold the bogus table shape.
@@ -10,7 +12,7 @@ import { invalidateObjectMetadataCache } from "./objectMetadataCache";
 // comments" toggle filters them client-side); v2 entries lack comments and
 // would show nothing when comments are enabled. v2 itself retired the bogus
 // empty CREATE TABLE cached for openGauss synonyms.
-const OBJECT_DDL_CACHE_PREFIX = "object-ddl:v4";
+const OBJECT_DDL_CACHE_PREFIX = "object-ddl:v5";
 const MAX_PERSISTED_DDL_CHARS = 5 * 1024 * 1024;
 
 interface ObjectDdlCacheEnvelope {

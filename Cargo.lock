@@ -4359,7 +4359,7 @@ dependencies = [
 
 [[package]]
 name = "ogdeveloper"
-version = "0.2.53"
+version = "0.2.54"
 dependencies = [
  "anyhow",
  "axum",

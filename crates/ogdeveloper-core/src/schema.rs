@@ -1466,6 +1466,22 @@ fn plsql_candidate_is_self(
         && candidate_name.as_bytes().get(object_name.len()) == Some(&b'.')
 }
 
+/// pg_depend reference rows carry the raw pg_class relkind code. Normalize to
+/// the friendly kinds used by the source-parsed candidate path so both paths
+/// dedupe to one entry — otherwise a view's table shows up twice ("r" and
+/// "table"), and the raw code is not actionable for navigation.
+fn normalize_reference_object_type(object_type: &str) -> String {
+    match object_type {
+        "r" | "p" | "f" => "table",
+        "v" => "view",
+        "m" => "materialized_view",
+        "S" | "L" | "z" | "Z" => "sequence",
+        "c" => "type",
+        other => other,
+    }
+    .to_string()
+}
+
 async fn query_reference_rows(
     client: &deadpool_postgres::Client,
     sql: &str,
@@ -1476,11 +1492,14 @@ async fn query_reference_rows(
     let rows = client.query(&stmt, &[&object_name, &schema]).await.map_err(|e| e.to_string())?;
     Ok(rows
         .iter()
-        .map(|row| ObjectReferenceInfo {
-            schema: row.try_get::<_, String>(0).unwrap_or_default(),
-            name: row.try_get::<_, String>(1).unwrap_or_default(),
-            object_type: row.try_get::<_, String>(2).unwrap_or_default(),
-            detail: None,
+        .map(|row| {
+            let object_type = row.try_get::<_, String>(2).unwrap_or_default();
+            ObjectReferenceInfo {
+                schema: row.try_get::<_, String>(0).unwrap_or_default(),
+                name: row.try_get::<_, String>(1).unwrap_or_default(),
+                object_type: normalize_reference_object_type(&object_type),
+                detail: None,
+            }
         })
         .collect())
 }
@@ -1841,6 +1860,9 @@ async fn external_opengauss_table_ddl(
     // table-shaped definition rather than failing for a view.
     if let Some(ddl) = external_opengauss_view_ddl(session.clone(), config, database, schema, table).await? {
         return Ok(ddl);
+    }
+    if external_opengauss_relation_kind(session.clone(), config, database, schema, table).await?.is_none() {
+        return Err(missing_relation_error(schema, table));
     }
     let ddl = external_opengauss_query_text(
         session.clone(),
@@ -2929,6 +2951,53 @@ fn postgres_view_populated_sql(schema_expr: &str, table_expr: &str) -> String {
     )
 }
 
+fn postgres_relation_kind_sql_inner(schema_expr: &str, table_expr: &str) -> String {
+    format!(
+        "SELECT c.relkind::text FROM pg_catalog.pg_class c \
+         JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
+         WHERE n.nspname = {schema_expr} AND c.relname = {table_expr} \
+           AND c.relkind IN ('r','v','m','f','p','S') \
+         ORDER BY c.oid LIMIT 1"
+    )
+}
+
+fn missing_relation_error(schema: &str, table: &str) -> String {
+    format!("Relation {}.{} not found", pg_ident(schema), pg_ident(table))
+}
+
+async fn require_opengauss_relation(
+    pool: &deadpool_postgres::Pool,
+    schema: &str,
+    table: &str,
+) -> Result<String, String> {
+    let client = db::postgres::checkout_postgres_client(pool, None, db::connection_timeout()).await?;
+    db::postgres::postgres_relation_kind(&client, schema, table)
+        .await
+        .map_err(db::postgres::pg_error_to_string)?
+        .ok_or_else(|| missing_relation_error(schema, table))
+}
+
+async fn external_opengauss_relation_kind(
+    session: std::sync::Arc<crate::plugins::PluginDriverSession>,
+    config: &ConnectionConfig,
+    database: &str,
+    schema: &str,
+    table: &str,
+) -> Result<Option<String>, String> {
+    external_opengauss_query(
+        session,
+        config,
+        database,
+        Some(schema),
+        &postgres_relation_kind_sql_inner(&sql_string(schema), &sql_string(table)),
+        1,
+    )
+    .await
+    .map(|result| {
+        result.rows.first().and_then(|row| row.first()).and_then(serde_json::Value::as_str).map(str::to_string)
+    })
+}
+
 fn format_postgres_view_ddl(
     schema: &str,
     name: &str,
@@ -2986,6 +3055,11 @@ pub async fn opengauss_table_ddl(pool: &deadpool_postgres::Pool, schema: &str, t
     if let Some(view_ddl) = opengauss_view_ddl(pool, schema, table).await? {
         return Ok(view_ddl);
     }
+    // pg_attribute queries return no rows for a missing relation, which would
+    // otherwise be assembled into a bogus empty CREATE TABLE. Check pg_class
+    // once so editor/right-click DDL reports the same missing-object error as
+    // opening table data.
+    require_opengauss_relation(pool, schema, table).await?;
     let columns = db::postgres::get_columns(pool, schema, table).await?;
     let indexes = db::postgres::list_indexes(pool, schema, table).await.unwrap_or_default();
     let foreign_keys = db::postgres::list_foreign_keys(pool, schema, table).await.unwrap_or_default();
@@ -3243,6 +3317,39 @@ mod tests {
             &[("".to_string(), "x".to_string()), ("c".to_string(), "".to_string())],
         );
         assert_eq!(ddl, "");
+    }
+
+    #[test]
+    fn test_reference_object_type_normalizes_relkind_codes() {
+        assert_eq!(normalize_reference_object_type("r"), "table");
+        assert_eq!(normalize_reference_object_type("p"), "table");
+        assert_eq!(normalize_reference_object_type("f"), "table");
+        assert_eq!(normalize_reference_object_type("v"), "view");
+        assert_eq!(normalize_reference_object_type("m"), "materialized_view");
+        for code in ["S", "L", "z", "Z"] {
+            assert_eq!(normalize_reference_object_type(code), "sequence");
+        }
+        assert_eq!(normalize_reference_object_type("c"), "type");
+        // Unknown codes and already-friendly kinds pass through unchanged.
+        assert_eq!(normalize_reference_object_type("i"), "i");
+        assert_eq!(normalize_reference_object_type("table"), "table");
+    }
+
+    #[test]
+    fn test_relation_kind_probe_limits_supported_kinds_and_escapes_literals() {
+        let sql = postgres_relation_kind_sql_inner("$1", "$2");
+        assert!(sql.contains("c.relkind::text"));
+        assert!(sql.contains("c.relkind IN ('r','v','m','f','p','S')"));
+        assert!(sql.contains("LIMIT 1"));
+        let jdbc_sql = postgres_relation_kind_sql_inner(&sql_string("weird'$1"), &sql_string("v'iew"));
+        assert!(jdbc_sql.contains("n.nspname = 'weird''$1'"));
+        assert!(jdbc_sql.contains("c.relname = 'v''iew'"));
+    }
+
+    #[test]
+    fn test_missing_relation_error_quotes_relation() {
+        assert_eq!(missing_relation_error("yi_ddd", "cdm_module"), "Relation \"yi_ddd\".\"cdm_module\" not found");
+        assert_eq!(missing_relation_error("App", "Weird\"Table"), "Relation \"App\".\"Weird\"\"Table\" not found");
     }
 
     #[test]

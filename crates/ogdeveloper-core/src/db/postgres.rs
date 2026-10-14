@@ -3035,11 +3035,29 @@ pub(crate) fn opengauss_synonym_target_sql() -> &'static str {
        AND s.synnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = $2)"
 }
 
-#[allow(dead_code)]
 pub(crate) fn opengauss_synonym_target_kind_sql() -> &'static str {
     "SELECT c.relkind::text FROM pg_catalog.pg_class c \
      JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
      WHERE n.nspname = $1 AND c.relname = $2"
+}
+
+pub(crate) fn postgres_relation_kind_sql() -> &'static str {
+    "SELECT c.relkind::text FROM pg_catalog.pg_class c \
+     JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
+     WHERE n.nspname = $1 AND c.relname = $2 \
+       AND c.relkind IN ('r','v','m','f','p','S') \
+     ORDER BY c.oid LIMIT 1"
+}
+
+pub(crate) async fn postgres_relation_kind(
+    client: &deadpool_postgres::Client,
+    schema: &str,
+    relation: &str,
+) -> Result<Option<String>, tokio_postgres::Error> {
+    client
+        .query_opt(postgres_relation_kind_sql(), &[&schema, &relation])
+        .await
+        .map(|row| row.and_then(|row| row.try_get::<_, String>(0).ok()))
 }
 
 /// Column/attribute definitions of an openGauss composite or enum type
@@ -7378,6 +7396,14 @@ mod tests {
         assert!(!POSTGRES_INDEXES_COMPAT_SQL.contains("WITH ORDINALITY"));
         assert!(POSTGRES_INDEXES_COMPAT_SQL.contains("generate_series"));
         assert!(POSTGRES_INDEXES_COMPAT_SQL.contains("string_to_array(ix.indkey::text, ' ')"));
+    }
+
+    #[test]
+    fn postgres_relation_kind_sql_matches_supported_kinds() {
+        let sql = postgres_relation_kind_sql();
+        assert!(sql.contains("c.relkind::text"));
+        assert!(sql.contains("c.relkind IN ('r','v','m','f','p','S')"));
+        assert!(sql.contains("LIMIT 1"));
     }
 
     #[test]

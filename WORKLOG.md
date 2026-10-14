@@ -1834,3 +1834,88 @@ SHA256 一致。最终 ZIP 的隔离 live 视图/物化视图/JDBC fallback 与�
 实际 fixture 在 POSIX shell 下 8 项 SQL 路由 smoke 检查通过，Windows 可运行
 契约测试 13 项通过；完整 Linux 契约测试由修正后的 CI 验证。
 这是仅测试/文档修正，v0.2.53 应用代码和标签（`93b3dbc84`）保持不变。
+
+---
+
+## 57. 不存在对象 DDL / 表结构报错（v0.2.54）
+
+**问题**：编辑器里右键一个不存在的表，选择「查看 DDL」会显示空壳
+`CREATE TABLE "schema"."name" ();`；选择「查看表结构」会打开空白编辑器。
+只有 Ctrl+点击打开数据才正确报 `relation ... does not exist`。
+
+**根因**：openGauss/PostgreSQL 列元数据查询对缺失关系返回 0 行，native
+DDL 路径把空列列表直接拼成 `CREATE TABLE`；JDBC fallback 在
+`pg_get_tabledef` 前没有统一的 `pg_class` 存在性检查。表结构编辑器又把
+空列结果作为合法 metadata facet 持久化，后续刷新仍显示空结构。
+
+**修复**：
+- `crates/ogdeveloper-core/src/schema.rs`：新增 pg_class relkind 存在性检查。
+  native `opengauss_table_ddl` 在 synonym/view 预检后、列查询前执行；JDBC-only
+  `external_opengauss_table_ddl` 在 view 预检后、`pg_get_tabledef` 前执行。
+  缺失关系统一返回 `Relation "schema"."table" not found`，不再生成空 DDL。
+- `crates/ogdeveloper-core/src/db/postgres.rs`：共享
+  `postgres_relation_kind_sql` / `postgres_relation_kind`。
+- `TableStructureEditor.vue`：openGauss/PostgreSQL 连接加载到空列列表时，
+  先经 DDL 端点确认对象存在，再把空结果写入结构编辑器/元数据缓存；其他
+  数据库不增加额外请求。
+- 新增 `lib/table/tableStructureMissingObject.ts` 控制该守卫范围。
+- `objectDdlCache` 前缀升级到 `object-ddl:v5`，退役旧版本可能缓存的空壳
+  `CREATE TABLE ... ();`。
+
+**测试**：
+- `live_opengauss_plugin_metadata_probe` 新增缺失关系断言：native 与 JDBC-only
+  均返回同一个 not-found 错误；真实表/视图/物化视图及注释仍正常。
+- Linux-only JDBC contract mock 补齐 relkind 存在性响应并新增缺失关系断言。
+- 新增 `tableStructureMissingObject.spec.ts`；核心 Rust 1223 项、前端相关
+  14 项、clippy 与格式检查通过。
+
+**兼容性**：仅收紧缺失对象行为；空列但真实存在的表经 DDL 存在性验证后仍正常打开。
+
+---
+
+## 58. 视图/物化视图「引用」重复行修复（v0.2.54）
+
+**问题**：视图/物化视图的「引用」分组里，同一张表出现两行——一行后缀是
+裸 relkind `r`，一行是 `table` 且标签带「(表/视图操作)」。
+
+**根因**：`list_object_references_core` 对视图/物化视图走两条路径：
+`pg_depend`/`pg_rewrite` 权威路径返回原始 `relkind`（如 `r`），视图源码解析
+路径返回映射后的友好类型（`table`）并附加「表/视图操作」明细。去重键包含
+object_type，两种写法不同导致同一对象叠加显示。裸 `r` 行在引用面板里还无法
+跳转（只认 `table`/`view`/`materialized_view`）。
+
+**修复**：`query_reference_rows` 统一把 relkind 归一化为友好类型
+（r/p/f→table、v→view、m→materialized_view、S/L/z/Z→sequence、c→type）。
+归一化后两条路径的去重键一致：视图/物化视图的权威 pg_depend 行先入库，
+保留 `table` 且无明细后缀；源码解析行被去重跳过。例程引用路径同样受益
+（源码解析先行，pg_depend 重复行不再追加裸 relkind 行）。前端无需改动，
+`referenceResultNodeType` 本就同时兼容两种写法。
+
+**测试**：
+- 新增 `test_reference_object_type_normalizes_relkind_codes` 单元测试。
+- `live_opengauss_plugin_metadata_probe` 新增真实库断言：`ogt_v_probe` 与
+  `ogt_mv_probe` 的引用中 `yi_prod.prod_menu` 恰好一行，`object_type = "table"`、
+  无明细后缀；同库 synonym 行（不同对象）不受影响。
+- Rust 核心 1224 项通过，clippy/fmt 通过；真实库 live 回归通过。
+
+---
+
+## 59. 发布 v0.2.54
+
+用户确认发版。版本号同步 `package.json`、`src-tauri/Cargo.toml`、
+`src-tauri/tauri.conf.json` 与 `Cargo.lock`（0.2.54）。本次包含：
+
+- §57 不存在对象的「查看 DDL / 查看表结构」统一报 `Relation ... not found`，
+  不再生成空壳 `CREATE TABLE` 或空白结构页；DDL 缓存前缀升级 v5。
+- §58 视图/物化视图「引用」去重：pg_depend 路径 relkind 归一化为友好类型，
+  同一对象只保留一行 `table`，不再出现裸 `r` 行与「(表/视图操作)」后缀。
+
+发布前检查：Rust 核心 lib 1224 项通过；CI 等价 clippy（-D warnings）与
+cargo fmt 通过；完整 `pnpm check` 的 format/lint/typecheck 通过，5497 项
+前端测试通过，仅 5 个既有本机 `node:` 加载器套件失败（与本次改动无关，
+CI 不受影响）；`pnpm build` 通过；`cargo check --locked` 校验 Cargo.lock
+一致。真实 openGauss 回归：native/JDBC-only 缺失对象均报错，真实表/视图/
+物化视图 DDL 与注释正常，视图/物化视图引用去重生效。
+
+发布按「先推 main，再单独推 v0.2.54 标签」顺序触发 CI / Release；安装包、
+签名和 `latest.json` 的最终状态以 GitHub Actions / Release 为准。

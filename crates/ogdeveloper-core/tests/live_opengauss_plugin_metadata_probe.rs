@@ -175,6 +175,60 @@ async fn live_plugin_metadata_probe() {
     assert!(native_tables.iter().any(|table| table.name == "ogt_mv_probe" && table.table_type == "MATERIALIZED_VIEW"));
     assert!(native_tables.iter().any(|table| table.name == "ogt_v_probe" && table.table_type == "VIEW"));
 
+    // 3b) View/materialized view "references" must list each referenced
+    // relation exactly once with the friendly kind. The pg_depend path used to
+    // return the raw relkind ("r") while the source-parse path returned
+    // "table" with a detail suffix, so the same table appeared twice.
+    let view_refs = ogdeveloper_core::schema::list_object_references_core(
+        &state,
+        "live-native",
+        &database,
+        "yi_ddd",
+        "view",
+        "ogt_v_probe",
+        "references",
+    )
+    .await
+    .expect("view references");
+    println!("view references: {view_refs:?}");
+    let prod_menu_refs: Vec<_> = view_refs.iter().filter(|r| r.schema == "yi_prod" && r.name == "prod_menu").collect();
+    assert_eq!(prod_menu_refs.len(), 1, "referenced table must appear exactly once: {view_refs:?}");
+    assert_eq!(prod_menu_refs[0].object_type, "table", "raw relkind must be normalized: {view_refs:?}");
+    assert!(
+        prod_menu_refs[0].detail.is_none(),
+        "authoritative pg_depend row must win without a detail suffix: {view_refs:?}"
+    );
+
+    let mv_refs = ogdeveloper_core::schema::list_object_references_core(
+        &state,
+        "live-native",
+        &database,
+        "yi_ddd",
+        "materialized_view",
+        "ogt_mv_probe",
+        "references",
+    )
+    .await
+    .expect("materialized view references");
+    let mv_prod_menu: Vec<_> = mv_refs.iter().filter(|r| r.schema == "yi_prod" && r.name == "prod_menu").collect();
+    assert_eq!(mv_prod_menu.len(), 1, "materialized view references must dedupe: {mv_refs:?}");
+    assert_eq!(mv_prod_menu[0].object_type, "table", "raw relkind must be normalized: {mv_refs:?}");
+
+    // 5) Missing relations fail on both metadata paths; they must not turn
+    // into an empty CREATE TABLE shell in the DDL dialog or structure editor.
+    let missing = "ogt_missing_relation_probe";
+    let missing_native =
+        ogdeveloper_core::schema::get_table_ddl_core(&state, "live-native", &database, "yi_ddd", missing, None)
+            .await
+            .expect_err("missing relation must fail through the native path");
+    println!("native missing relation error: {missing_native}");
+    assert!(missing_native.contains("not found"), "unexpected native error: {missing_native}");
+    let missing_jdbc = ogdeveloper_core::schema::get_table_ddl_core(&state, "live", &database, "yi_ddd", missing, None)
+        .await
+        .expect_err("missing relation must fail through the JDBC-only path");
+    println!("JDBC-only missing relation error: {missing_jdbc}");
+    assert_eq!(missing_jdbc, "Relation \"yi_ddd\".\"ogt_missing_relation_probe\" not found");
+
     // 4) Make only native metadata attempt a closed localhost endpoint. The
     // already-open external session retains its original endpoint/config.
     // This covers JDBC-only DDL without changing the desktop profile or DB.

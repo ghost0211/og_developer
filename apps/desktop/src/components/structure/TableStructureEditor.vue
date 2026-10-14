@@ -29,6 +29,7 @@ import { safeLocalStorageGet, safeLocalStorageSet } from "@/lib/backend/safeStor
 import { invalidateObjectDdl, loadObjectDdl } from "@/lib/metadata/objectDdlCache";
 import { loadObjectMetadataFacet, type ObjectMetadataFacet } from "@/lib/metadata/objectMetadataCache";
 import { invalidateTableMetadataCache } from "@/lib/metadata/tableMetadataCache";
+import { shouldCheckEmptyColumnsObjectExistence } from "@/lib/table/tableStructureMissingObject";
 import { type BuildTableStructureChangeSqlOptions, type EditableStructureColumn, type EditableStructureForeignKey, type EditableStructureIndex, type EditableStructureTrigger } from "@/lib/table/tableStructureEditorSql";
 import { PRESET_FIELDS_TEMPLATE_ID, createTableColumnTemplateDrafts } from "@/lib/table/tableColumnTemplates";
 import { getPostgresDataTypeHelp } from "@/lib/table/postgresDataTypeHelp";
@@ -1120,7 +1121,16 @@ async function loadStructure(silent = false, scope: TableStructureRefreshScope =
 
     const metadataRequest = ddlRequest();
     const forceMetadata = options.forceMetadata === true;
-    const columnsPromise = scope.columns ? loadObjectMetadataFacet(metadataRequest, "columns", () => api.getColumns(connectionId, database, schema, tableName, catalog), { force: forceMetadata }).then((result) => result.value) : Promise.resolve(undefined);
+    const columnsLoader = () =>
+      api.getColumns(connectionId, database, schema, tableName, catalog).then(async (nextColumns) => {
+        // A missing relation returns an empty pg_attribute/JDBC metadata row
+        // set. Verify the object before caching or hydrating that empty result,
+        // otherwise a right-clicked nonexistent table opens a blank editor.
+        if (nextColumns.length > 0 || !shouldCheckEmptyColumnsObjectExistence(connection.value)) return nextColumns;
+        await loadObjectDdl(metadataRequest, { force: forceMetadata });
+        return nextColumns;
+      });
+    const columnsPromise = scope.columns ? loadObjectMetadataFacet(metadataRequest, "columns", columnsLoader, { force: forceMetadata }).then((result) => result.value) : Promise.resolve(undefined);
     const indexesPromise = scope.indexes
       ? tableMetadataCapabilities.value.indexes
         ? loadObjectMetadataFacet(metadataRequest, "indexes", () => api.listIndexes(connectionId, database, schema, tableName, catalog).catch(() => []), { force: forceMetadata }).then((result) => result.value)
