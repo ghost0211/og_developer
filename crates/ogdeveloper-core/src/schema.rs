@@ -2703,7 +2703,118 @@ pub async fn pg_ddl(pool: &deadpool_postgres::Pool, schema: &str, table: &str) -
     opengauss_table_ddl(pool, schema, table).await
 }
 
+/// One `CREATE OR REPLACE SYNONYM` line for a resolved synonym hop.
+fn format_opengauss_synonym_ddl_line(schema: &str, synonym: &str, target_schema: &str, target_name: &str) -> String {
+    format!(
+        "CREATE OR REPLACE SYNONYM {}.{} FOR {}.{};",
+        pg_ident(schema),
+        pg_ident(synonym),
+        pg_ident(target_schema),
+        pg_ident(target_name)
+    )
+}
+
+/// Build DDL for an openGauss synonym: the synonym definition itself followed
+/// by the resolved target object's DDL when the target is a table, view or
+/// materialized view. Synonym chains emit one definition line per hop.
+///
+/// Returns `None` when the name is a real relation (relations win openGauss
+/// name resolution over same-named synonyms) or when the server has no
+/// `pg_synonym` catalog (vanilla PostgreSQL), so callers keep their regular
+/// table DDL path. Probe failures also fall back to `None` — synonym
+/// detection must never break DDL for ordinary tables.
+async fn opengauss_synonym_ddl(pool: &deadpool_postgres::Pool, schema: &str, table: &str) -> Option<String> {
+    let client = db::postgres::checkout_postgres_client(pool, None, db::connection_timeout()).await.ok()?;
+    if !db::postgres::postgres_has_pg_catalog_relation(&client, "pg_synonym").await.unwrap_or(false) {
+        return None;
+    }
+    let relation_exists = client
+        .query(db::postgres::opengauss_synonym_target_kind_sql(), &[&schema, &table])
+        .await
+        .map(|rows| !rows.is_empty())
+        .unwrap_or(false);
+    if relation_exists {
+        return None;
+    }
+
+    let mut ddl = String::new();
+    let mut current_schema = schema.to_string();
+    let mut current_name = table.to_string();
+    // Synonyms can chain to other synonyms; cap resolution like resolve_synonym_target_core.
+    for _ in 0..5 {
+        let Ok(rows) =
+            client.query(db::postgres::opengauss_synonym_target_sql(), &[&current_name, &current_schema]).await
+        else {
+            break;
+        };
+        let Some(row) = rows.first() else { break };
+        let target_schema: String = row.try_get(0).unwrap_or_default();
+        let target_name: String = row.try_get(1).unwrap_or_default();
+        if target_schema.is_empty() || target_name.is_empty() {
+            break;
+        }
+        if !ddl.is_empty() {
+            ddl.push('\n');
+        }
+        ddl.push_str(&format_opengauss_synonym_ddl_line(&current_schema, &current_name, &target_schema, &target_name));
+
+        let target_kind: Option<String> = client
+            .query(db::postgres::opengauss_synonym_target_kind_sql(), &[&target_schema, &target_name])
+            .await
+            .ok()
+            .and_then(|rows| rows.first().map(|row| row.get::<_, String>(0)));
+        match target_kind.as_deref() {
+            // Table-like target: recurse into the regular table DDL path. The
+            // target relation exists, so the synonym pre-check passes through.
+            Some("r") | Some("p") | Some("f") => {
+                // Box::pin breaks the async recursion cycle (synonym_ddl ->
+                // table_ddl -> synonym_ddl) so the future stays sized.
+                if let Ok(target_ddl) = Box::pin(opengauss_table_ddl(pool, &target_schema, &target_name)).await {
+                    ddl.push_str("\n\n");
+                    ddl.push_str(&target_ddl);
+                }
+                return Some(ddl);
+            }
+            Some("v") | Some("m") => {
+                let kind = if target_kind.as_deref() == Some("m") {
+                    db::ObjectSourceKind::MaterializedView
+                } else {
+                    db::ObjectSourceKind::View
+                };
+                if let Ok(source) =
+                    postgres_object_source(pool, &target_schema, &target_name, &kind, None, None, false).await
+                {
+                    let source = source.trim_end();
+                    ddl.push_str("\n\n");
+                    ddl.push_str(source);
+                    if !source.ends_with(';') {
+                        ddl.push(';');
+                    }
+                }
+                return Some(ddl);
+            }
+            // Sequences and other relation kinds: the synonym definition is the full answer.
+            Some(_) => return Some(ddl),
+            // No pg_class row: the target is a routine or another synonym — keep
+            // resolving so chained synonyms emit one definition line per hop.
+            None => {
+                current_schema = target_schema;
+                current_name = target_name;
+            }
+        }
+    }
+
+    if ddl.is_empty() {
+        None
+    } else {
+        Some(ddl)
+    }
+}
+
 pub async fn opengauss_table_ddl(pool: &deadpool_postgres::Pool, schema: &str, table: &str) -> Result<String, String> {
+    if let Some(synonym_ddl) = opengauss_synonym_ddl(pool, schema, table).await {
+        return Ok(synonym_ddl);
+    }
     let columns = db::postgres::get_columns(pool, schema, table).await?;
     let indexes = db::postgres::list_indexes(pool, schema, table).await.unwrap_or_default();
     let foreign_keys = db::postgres::list_foreign_keys(pool, schema, table).await.unwrap_or_default();
@@ -2755,6 +2866,19 @@ pub async fn opengauss_table_ddl(pool: &deadpool_postgres::Pool, schema: &str, t
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_format_opengauss_synonym_ddl_line_quotes_each_part() {
+        assert_eq!(
+            format_opengauss_synonym_ddl_line("yi_ddd", "prod_menu", "yi_prod", "prod_menu"),
+            "CREATE OR REPLACE SYNONYM \"yi_ddd\".\"prod_menu\" FOR \"yi_prod\".\"prod_menu\";"
+        );
+        // Quoting escapes embedded double quotes so mixed-case identifiers stay safe.
+        assert_eq!(
+            format_opengauss_synonym_ddl_line("App", "Weird\"Syn", "Yi_Prod", "Menu"),
+            "CREATE OR REPLACE SYNONYM \"App\".\"Weird\"\"Syn\" FOR \"Yi_Prod\".\"Menu\";"
+        );
+    }
 
     #[test]
     fn test_table_name_filter() {

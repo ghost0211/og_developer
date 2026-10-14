@@ -1681,3 +1681,45 @@ function/procedure/trigger/index/column/constraint 直连 RENAME）。发布前�
 `pnpm check` 通过（仅既有 5 个本机 `node:` 加载器套件失败），`pnpm build`、
 `cargo test -p ogdeveloper-core --lib`、`cargo check --workspace` 与
 `cargo clippy -p ogdeveloper-core -D warnings` 均通过。
+
+---
+
+## 52. 查看 DDL：openGauss 同义词返回真实定义而不是空表 DDL
+
+**问题**：编辑器中右击同义词（如 `yi_ddd.prod_menu`）选择「查看 DDL」，对话框
+显示 `CREATE TABLE "yi_ddd"."prod_menu" ();` 这种错误定义。悬停预览同样中招。
+
+**根因**：`get_table_ddl_core` → `opengauss_table_ddl` 直接按名字查
+`pg_class`/`pg_attribute` 拼 `CREATE TABLE`；同义词不在 `pg_class` 中，列查询
+返回空集，于是拼出空列的 `CREATE TABLE ... ();`。
+
+**修复**（后端 `crates/ogdeveloper-core/src/schema.rs`）：`opengauss_table_ddl`
+开头新增 `opengauss_synonym_ddl` 检测——
+
+- vanilla PostgreSQL 无 `pg_synonym` 目录直接跳过；探测失败一律回落原表路径，
+  绝不影响普通表。
+- 同名真实关系优先（与 openGauss 名称解析顺序一致），仍走原表 DDL。
+- 确认为同义词时返回「同义词定义 + 目标对象 DDL」，如
+  `CREATE OR REPLACE SYNONYM "yi_ddd"."prod_menu" FOR "yi_prod"."prod_menu";`
+  后跟目标表完整 `CREATE TABLE`；目标是视图/物化视图时附其 source，序列等其它
+  类型只给同义词定义；同义词链每跳一行定义（上限 5 跳，同 `resolve_synonym_target_core`）。
+- 复用 `opengauss_synonym_target_sql` / `opengauss_synonym_target_kind_sql` 做目标
+  解析；`Box::pin` 打破 `synonym_ddl ↔ table_ddl` 异步递归。
+- 前端 `objectDdlCache` 前缀 v1→v2，退休旧版本缓存的错误空 DDL，升级后首次查看
+  自动重取。
+
+**验证**：核心 lib 1213 项测试通过（新增同义词语句拼接单测）；新增
+`crates/ogdeveloper-core/tests/live_opengauss_synonym_ddl.rs` 对测试库
+`tygl_pg` 做只读端到端验证——`yi_ddd.prod_menu` 返回同义词定义+目标表 DDL，
+真实表 `yi_prod.prod_menu` 输出不含 SYNONYM 且不变化。`cargo clippy`（CI 等价
+参数）通过；`pnpm check` 格式/lint/typecheck 通过，5485 项测试通过（仅既有 5 个
+本机 `node:` 加载器套件失败）；`pnpm build` 通过。未对数据库执行任何写操作。
+
+---
+
+## 53. 发布 v0.2.52
+
+版本号同步 `package.json`、`src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json`
+与 `Cargo.lock`（0.2.52）。本次为 §52 的同义词「查看 DDL」修复。发布前完整
+`pnpm check` 通过（仅既有 5 个本机 `node:` 加载器套件失败），`pnpm build`、
+`cargo test -p ogdeveloper-core --lib` 与 CI 等价 `cargo clippy` 均通过。
