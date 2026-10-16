@@ -1264,6 +1264,52 @@ fn parse_dynamic_effort_capability(
             return Some(capability);
         }
     }
+    // OpenAI-compatible gateways (agy-router and similar) advertise thinking effort
+    // via `think_efforts`: {support, valid_efforts, default_effort}.
+    let think_efforts = model.get("think_efforts").or_else(|| model.get("thinkEfforts"));
+    if think_efforts.and_then(|value| value.get("support")).and_then(serde_json::Value::as_bool) == Some(false) {
+        return Some(AiEffortCapability::Unsupported);
+    }
+    if let Some(levels) = think_efforts
+        .and_then(|value| value.get("valid_efforts").or_else(|| value.get("validEfforts")))
+        .and_then(serde_json::Value::as_array)
+    {
+        if let Some(mut capability) = crate::ai_effort::dynamic_enum_capability(
+            levels.iter().filter_map(serde_json::Value::as_str),
+            source.clone(),
+        ) {
+            // Prefer the gateway-advertised default over the first listed value,
+            // which may legitimately be "none" (thinking disabled).
+            let advertised_default = think_efforts
+                .and_then(|value| value.get("default_effort").or_else(|| value.get("defaultEffort")))
+                .and_then(serde_json::Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty());
+            if let (AiEffortCapability::Enum { options, default, .. }, Some(advertised_default)) =
+                (&mut capability, advertised_default)
+            {
+                let selection = AiEffortSelection::Enum(advertised_default.to_string());
+                if options.iter().any(|option| option.selection == selection) {
+                    *default = selection;
+                }
+            }
+            return Some(capability);
+        }
+    }
+    // models.dev-style `reasoning_options`: [{type: "effort", values: [...]}].
+    if let Some(reasoning_options) =
+        model.get("reasoning_options").or_else(|| model.get("reasoningOptions")).and_then(serde_json::Value::as_array)
+    {
+        let levels = reasoning_options
+            .iter()
+            .filter(|entry| entry.get("type").and_then(serde_json::Value::as_str) == Some("effort"))
+            .filter_map(|entry| entry.get("values").and_then(serde_json::Value::as_array))
+            .flat_map(|values| values.iter().filter_map(serde_json::Value::as_str))
+            .collect::<Vec<_>>();
+        if let Some(capability) = crate::ai_effort::dynamic_enum_capability(levels, source.clone()) {
+            return Some(capability);
+        }
+    }
     let levels = effort
         .and_then(|value| {
             value
@@ -1754,6 +1800,22 @@ pub async fn resolve_model_effort_core(config: &AiConfig, model_id: &str) -> Res
         // Capability resolution may reuse a fresh catalog; explicit picker refresh may not.
         let mut models = list_codex_models(config, false).await.unwrap_or_default();
         decorate_model_capabilities(config, &mut models);
+        return Ok(models
+            .into_iter()
+            .find(|model| model.id == model_id)
+            .and_then(|model| model.effort_capability)
+            .or_else(|| crate::ai_effort::static_effort_capability(config, model_id))
+            .unwrap_or(AiEffortCapability::Unsupported));
+    }
+
+    if matches!(config.provider, AiProvider::OpenaiCompatible | AiProvider::Custom)
+        && !uses_anthropic_messages_api(config)
+    {
+        // OpenAI-compatible gateways are the authority on their models' effort levels:
+        // resolve from the live catalog (which already layers static routed hints via
+        // decorate_model_capabilities), then degrade to static hints for manually
+        // entered slugs or unreachable endpoints.
+        let models = list_models_core(config).await.unwrap_or_default();
         return Ok(models
             .into_iter()
             .find(|model| model.id == model_id)
@@ -6364,6 +6426,64 @@ mod tests {
         );
     }
 
+    #[test]
+    fn parses_gateway_think_efforts_with_advertised_default() {
+        let capability = parse_dynamic_effort_capability(
+            &serde_json::json!({
+                "id": "routed/gemini-9.9-flash",
+                "think_efforts": {
+                    "default_effort": "high",
+                    "support": true,
+                    "valid_efforts": ["low", "medium", "high", "tiered"]
+                }
+            }),
+            AiCapabilitySource::ProviderApi,
+        )
+        .unwrap();
+        let AiEffortCapability::Enum { options, default, source } = capability else {
+            panic!("expected enum capability");
+        };
+
+        assert_eq!(source, AiCapabilitySource::ProviderApi);
+        assert_eq!(
+            options.iter().map(|option| option.id.as_str()).collect::<Vec<_>>(),
+            ["low", "medium", "high", "tiered"]
+        );
+        assert_eq!(default, AiEffortSelection::Enum("high".to_string()));
+    }
+
+    #[test]
+    fn think_efforts_support_false_maps_to_unsupported() {
+        let capability = parse_dynamic_effort_capability(
+            &serde_json::json!({ "think_efforts": { "support": false, "valid_efforts": [] } }),
+            AiCapabilitySource::ProviderApi,
+        )
+        .unwrap();
+
+        assert!(matches!(capability, AiEffortCapability::Unsupported));
+    }
+
+    #[test]
+    fn parses_models_dev_reasoning_options_effort_values() {
+        let capability = parse_dynamic_effort_capability(
+            &serde_json::json!({
+                "reasoning_options": [
+                    { "type": "effort", "values": ["none", "low", "high", "max"] },
+                    { "type": "budget", "values": [1024, 2048] }
+                ]
+            }),
+            AiCapabilitySource::ProviderApi,
+        )
+        .unwrap();
+        let AiEffortCapability::Enum { options, default, .. } = capability else {
+            panic!("expected enum capability");
+        };
+
+        assert_eq!(options.iter().map(|option| option.id.as_str()).collect::<Vec<_>>(), ["none", "low", "high", "max"]);
+        // No advertised default: the first listed value stays the fallback default.
+        assert_eq!(default, AiEffortSelection::Enum("none".to_string()));
+    }
+
     #[tokio::test]
     async fn claude_effort_capability_propagates_model_api_errors() {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -6474,6 +6594,51 @@ mod tests {
         let capability = resolve_model_effort_core(&config, "vendor/model").await.unwrap();
 
         assert!(matches!(capability, AiEffortCapability::FreeText { source: AiCapabilitySource::Custom, .. }));
+    }
+
+    fn openai_compatible_test_config(endpoint: String, model: &str) -> AiConfig {
+        let mut config = claude_http_test_request(endpoint).config;
+        config.provider = AiProvider::OpenaiCompatible;
+        config.auth_method = AiAuthMethod::Bearer;
+        config.model = model.to_string();
+        config
+    }
+
+    #[tokio::test]
+    async fn openai_compatible_effort_resolves_from_gateway_metadata() {
+        let response_body = r#"{"data":[{"id":"routed/gemini-9.9-flash","think_efforts":{"default_effort":"high","support":true,"valid_efforts":["low","medium","high","tiered"]}}]}"#;
+        let (origin, server) = spawn_get_response_server("200 OK", response_body).await;
+        let config = openai_compatible_test_config(format!("{origin}/v1/chat/completions"), "routed/gemini-9.9-flash");
+
+        let capability = resolve_model_effort_core(&config, "routed/gemini-9.9-flash").await.unwrap();
+
+        let AiEffortCapability::Enum { options, default, source } = capability else {
+            panic!("expected dynamic enum capability, got {capability:?}");
+        };
+        assert_eq!(source, AiCapabilitySource::ProviderApi);
+        assert_eq!(
+            options.iter().map(|option| option.id.as_str()).collect::<Vec<_>>(),
+            ["low", "medium", "high", "tiered"]
+        );
+        assert_eq!(default, AiEffortSelection::Enum("high".to_string()));
+        let request = server.await.unwrap();
+        assert!(request.starts_with("GET /v1/models "));
+    }
+
+    #[tokio::test]
+    async fn openai_compatible_effort_falls_back_to_static_hints_when_discovery_fails() {
+        let config = openai_compatible_test_config(
+            "http://127.0.0.1:1/v1/chat/completions".to_string(),
+            "vendor/deepseek-v4.1-flash",
+        );
+
+        let capability = resolve_model_effort_core(&config, "vendor/deepseek-v4.1-flash").await.unwrap();
+
+        let AiEffortCapability::Enum { options, source, .. } = capability else {
+            panic!("expected static routed enum capability, got {capability:?}");
+        };
+        assert_eq!(source, AiCapabilitySource::Custom);
+        assert!(options.iter().any(|option| option.id == "high"));
     }
 
     #[test]

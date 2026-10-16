@@ -335,9 +335,23 @@ pub fn validate_runtime_effort(config: &AiConfig) -> Result<(), String> {
     }
 
     let capability = static_effort_capability(config, &config.model).unwrap_or(AiEffortCapability::Unsupported);
-    is_selection_supported(&capability, selection)
-        .then_some(())
-        .ok_or_else(|| format!("Invalid effort selection for model '{}'", config.model))
+    if is_selection_supported(&capability, selection) {
+        return Ok(());
+    }
+    // OpenAI-compatible gateways resolve effort dynamically at the endpoint, so the
+    // static registry is only a hint. Accept well-formed selections and let the
+    // gateway reject values it does not support.
+    if matches!(config.provider, AiProvider::OpenaiCompatible | AiProvider::Custom)
+        && config.api_style != AiApiStyle::AnthropicMessages
+    {
+        return match selection {
+            AiEffortSelection::Enum(value) if !value.trim().is_empty() => Ok(()),
+            AiEffortSelection::Text(value) if valid_custom_effort(value) => Ok(()),
+            AiEffortSelection::Boolean(_) | AiEffortSelection::Disabled => Ok(()),
+            _ => Err(format!("Invalid effort selection for model '{}'", config.model)),
+        };
+    }
+    Err(format!("Invalid effort selection for model '{}'", config.model))
 }
 
 fn is_selection_supported(capability: &AiEffortCapability, selection: &AiEffortSelection) -> bool {
@@ -991,6 +1005,32 @@ mod tests {
         let mut body = json!({});
         apply_runtime_effort(&mut body, &config);
         assert_eq!(body["output_config"]["effort"], "custom-level");
+    }
+
+    #[test]
+    fn openai_compatible_accepts_dynamic_enum_effort_beyond_static_hints() {
+        // Gateway-advertised levels (e.g. "tiered") are not in the static registry,
+        // which only offers a FreeText hint for this routed model family.
+        let mut config = config(AiProvider::OpenaiCompatible, "routed/gemini-9.9-flash");
+        config.runtime_effort = Some(AiEffortSelection::Enum("tiered".to_string()));
+        assert!(validate_runtime_effort(&config).is_ok());
+
+        config.runtime_effort = Some(AiEffortSelection::Disabled);
+        assert!(validate_runtime_effort(&config).is_ok());
+
+        config.runtime_effort = Some(AiEffortSelection::Enum("   ".to_string()));
+        assert!(validate_runtime_effort(&config).is_err());
+
+        config.runtime_effort = Some(AiEffortSelection::Integer(1024));
+        assert!(validate_runtime_effort(&config).is_err());
+    }
+
+    #[test]
+    fn anthropic_style_custom_provider_still_rejects_enum_effort() {
+        let mut config = config(AiProvider::Custom, "gateway-model");
+        config.api_style = AiApiStyle::AnthropicMessages;
+        config.runtime_effort = Some(AiEffortSelection::Enum("high".to_string()));
+        assert!(validate_runtime_effort(&config).is_err());
     }
 
     #[test]
