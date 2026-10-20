@@ -744,6 +744,16 @@ export function objectTypesForGroupNode(type: TreeNodeType): DatabaseObjectTreeK
   return groupDefs.find((def) => def.nodeType === type)?.objectTypes ?? null;
 }
 
+/**
+ * Group rows that render their loaded object count as a badge. Keep this in
+ * sync with objectGroupNodeTypes so newly added object groups (e.g. triggers)
+ * get the badge automatically; group-partitions is a schema-level inventory
+ * group outside groupDefs.
+ */
+export function objectGroupShowsCountBadge(type: TreeNodeType): boolean {
+  return objectGroupNodeTypes.has(type) || type === "group-partitions";
+}
+
 export function buildGroupedObjectTreeNodes({ nodeId, connectionId, database, schema, objects }: { nodeId: string; connectionId: string; database: string; schema?: string; objects: ObjectInfo[] }): TreeNode[] {
   const buckets = new Map<string, ObjectInfo[]>();
   const seen = new Set<string>();

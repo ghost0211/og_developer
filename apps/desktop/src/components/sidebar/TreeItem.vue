@@ -56,6 +56,7 @@ import { effectiveDatabaseTypeForConnection } from "@/lib/database/jdbcDialect";
 import { connectionDisplayUrlScheme } from "@/lib/connection/connectionPresentation";
 import { hexToRgba } from "@/lib/common/color";
 import { sidebarDisplayTableName } from "@/lib/sidebar/sidebarTableNameDisplay";
+import { objectGroupShowsCountBadge } from "@/lib/table/tableTree";
 import { synonymIconInfoForTargetKind } from "@/lib/sidebar/treeNodeIcon";
 import { isTreeNodeDisabled } from "@/lib/sidebar/treeNodeStatus";
 import { shouldMeasureSidebarLabelOverflow } from "@/lib/sidebar/sidebarLabelTooltip";
@@ -205,7 +206,7 @@ function getIconInfo(node: TreeNode): { icon: any; colorClass: string } | null {
     case "database":
       return { icon: Database, colorClass: "text-yellow-500" };
     case "schema":
-      return { icon: FolderOpen, colorClass: "text-sky-400" };
+      return { icon: node.isExpanded ? FolderOpen : FolderClosed, colorClass: "text-sky-400" };
     case "table":
       return { icon: Table, colorClass: "text-green-500" };
     case "view":
@@ -1169,24 +1170,7 @@ function onKeydown(event: KeyboardEvent) {
             </button>
             <Pin v-else-if="isPinned" class="h-3 w-3 shrink-0 fill-current text-primary" aria-hidden="true" />
             <ProductionContextBadge v-if="showProductionBadge" compact />
-            <span
-              v-if="
-                (node.type === 'group-tables' ||
-                  node.type === 'group-views' ||
-                  node.type === 'group-materialized-views' ||
-                  node.type === 'group-procedures' ||
-                  node.type === 'group-functions' ||
-                  node.type === 'group-sequences' ||
-                  node.type === 'group-synonyms' ||
-                  node.type === 'group-packages' ||
-                  node.type === 'group-package-bodies' ||
-                  node.type === 'group-types' ||
-                  node.type === 'group-jobs' ||
-                  node.type === 'group-schedulers' ||
-                  node.type === 'group-partitions') &&
-                node.objectCount != null
-              "
-              class="text-muted-foreground text-[10px] shrink-0"
+            <span v-if="objectGroupShowsCountBadge(node.type) && node.objectCount != null" class="text-muted-foreground text-[10px] shrink-0"
               >{{ node.objectCount }}<span v-if="hasActiveTableNameFilter(node)"> · {{ t("tree.tableNameFilterActive") }}</span></span
             >
             <Badge v-if="isNodeDefaultDatabase" variant="secondary" class="h-4 px-1.5 text-[10px]">

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { appendTableTreeLoadMoreNode, buildGroupedObjectTreeNodes, buildSimpleObjectTreeNodes, buildTableTreeNodes, mergeTableInfosIntoObjects, mergeTableTreePageChildren, tablePartitionGroups, withoutTableTreeLoadMoreNodes } from "@/lib/table/tableTree";
+import { appendTableTreeLoadMoreNode, buildGroupedObjectTreeNodes, buildSimpleObjectTreeNodes, buildTableTreeNodes, mergeTableInfosIntoObjects, mergeTableTreePageChildren, objectGroupShowsCountBadge, tablePartitionGroups, withoutTableTreeLoadMoreNodes } from "@/lib/table/tableTree";
 import type { ObjectInfo, TableInfo, TreeNode } from "@/types/database";
 
 const context = {
@@ -316,5 +316,20 @@ describe("TDengine table hierarchy", () => {
     });
 
     expect(nodes[0].children?.[0]).toMatchObject({ label: "tree.partitions", isExpanded: false });
+  });
+});
+
+describe("objectGroupShowsCountBadge", () => {
+  it("covers every schema object group including triggers and partitions", () => {
+    const badgeTypes = ["group-tables", "group-views", "group-materialized-views", "group-procedures", "group-functions", "group-triggers", "group-sequences", "group-synonyms", "group-packages", "group-package-bodies", "group-types", "group-jobs", "group-schedulers", "group-partitions"] as const;
+    for (const type of badgeTypes) {
+      expect(objectGroupShowsCountBadge(type)).toBe(true);
+    }
+  });
+
+  it("excludes table structure groups and leaf object types", () => {
+    for (const type of ["group-columns", "group-indexes", "group-fkeys", "group-constraints", "trigger", "function"] as const) {
+      expect(objectGroupShowsCountBadge(type)).toBe(false);
+    }
   });
 });
