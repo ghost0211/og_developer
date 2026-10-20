@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { alignedCommentLeadingWidth, alignedSidebarCommentLabelWidths, canTreeNodeShowExpander, sidebarTreeNaturalContentWidth, trailingCommentAvailableWidth, treeLabelWidthClass, usesFullWidthTreeLabel } from "@/lib/sidebar/sidebarTreeItemLayout";
+import { alignedCommentLeadingWidth, alignedSidebarCommentLabelWidths, canTreeNodeShowExpander, sidebarObjectDetailTooltip, sidebarTreeNaturalContentWidth, trailingCommentAvailableWidth, treeLabelWidthClass, usesFullWidthTreeLabel } from "@/lib/sidebar/sidebarTreeItemLayout";
+import type { TreeNode } from "@/types/database";
 
 describe("sidebar tree item layout", () => {
   it("keeps a table row constrained when it displays a comment", () => {
@@ -68,5 +69,30 @@ describe("sidebar tree item layout", () => {
 
   it("returns zero when no tree row uses natural width", () => {
     expect(sidebarTreeNaturalContentWidth([{ depth: 2, label: "commented", usesNaturalWidth: false }], (text) => text.length * 7)).toBe(0);
+  });
+});
+
+describe("sidebarObjectDetailTooltip", () => {
+  function node(partial: Partial<TreeNode> & Pick<TreeNode, "type">): TreeNode {
+    return { id: partial.type, label: partial.type, ...partial } as TreeNode;
+  }
+
+  it("gates uncommented objects on label overflow with an empty comment row", () => {
+    expect(sidebarObjectDetailTooltip(node({ type: "function" }))).toEqual({ comment: "", alwaysShow: false });
+    expect(sidebarObjectDetailTooltip(node({ type: "function", comment: "   ", label: "list_dict_options(p_dict_code character varying)" }))).toEqual({ comment: "", alwaysShow: false });
+  });
+
+  it("keeps commented objects always-on with the trimmed comment", () => {
+    expect(sidebarObjectDetailTooltip(node({ type: "procedure", comment: " 校验用户账号 " }))).toEqual({ comment: "校验用户账号", alwaysShow: true });
+  });
+
+  it("reads column comments from column metadata", () => {
+    expect(sidebarObjectDetailTooltip(node({ type: "column", meta: { comment: "主键" } as TreeNode["meta"] }))).toEqual({ comment: "主键", alwaysShow: true });
+    expect(sidebarObjectDetailTooltip(node({ type: "column", meta: {} as TreeNode["meta"] }))).toEqual({ comment: "", alwaysShow: false });
+  });
+
+  it("leaves connections and unsupported node types to their own tooltip paths", () => {
+    expect(sidebarObjectDetailTooltip(node({ type: "connection", comment: "prod" }))).toBeNull();
+    expect(sidebarObjectDetailTooltip(node({ type: "group-functions" }))).toBeNull();
   });
 });

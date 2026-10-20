@@ -48,7 +48,7 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import LightTooltip from "@/components/ui/LightTooltip.vue";
 import type { ColumnInfo, ConnectionConfig, DatabaseType, TreeNode } from "@/types/database";
-import { alignedCommentLeadingWidth, canTreeNodePin, canTreeNodeShowExpander, isSidebarCommentSupportedType, sidebarTreeNodeComment, trailingCommentAvailableWidth, trailingCommentGapPx, treeItemPaddingLeft, treeLabelWidthClass, usesFullWidthTreeLabel } from "@/lib/sidebar/sidebarTreeItemLayout";
+import { alignedCommentLeadingWidth, canTreeNodePin, canTreeNodeShowExpander, sidebarObjectDetailTooltip, sidebarTreeNodeComment, trailingCommentAvailableWidth, trailingCommentGapPx, treeItemPaddingLeft, treeLabelWidthClass, usesFullWidthTreeLabel } from "@/lib/sidebar/sidebarTreeItemLayout";
 import { clearActiveTableReferencePayload, createTableReferencePayload, createTableReferenceDropEvent, setActiveTableReferencePayload, type QueryEditorTableReferencePayload } from "@/lib/editor/queryEditorTableDrop";
 import { formatSidebarObjectStorage } from "@/lib/sidebar/sidebarDatabaseStorage";
 import { dataTabOpenModeFromTreeClick } from "@/lib/sidebar/dataTabOpenPolicy";
@@ -403,20 +403,23 @@ const detailTooltip = computed(() => {
       { label: t("connection.databaseInfo.productVersion"), value: cleanTooltipValue(config.database_info?.productVersion) },
       { label: t("connection.note"), value: cleanTooltipValue(config.note), multiline: true },
     ].filter((row) => row.value);
-    return { rows };
+    return { rows, alwaysShow: rows.length > 0 };
   }
-  const comment = node.type === "column" && node.meta && "comment" in node.meta ? (node.meta as ColumnInfo).comment : node.comment;
-  if (!comment || !isSidebarCommentSupportedType(node.type)) return null;
+  // 无注释的对象也用 popover 卡片（注释行留空），仅在名称被截断时弹出。
+  const objectTooltip = sidebarObjectDetailTooltip(node);
+  if (!objectTooltip) return null;
   const rows: DetailTooltipRow[] = [
     { label: t("connection.name"), value: visibleLabel(node) },
-    { label: t("structureEditor.comment"), value: cleanTooltipValue(comment), multiline: true },
-  ].filter((row) => row.value);
-  return { rows };
+    { label: t("structureEditor.comment"), value: objectTooltip.comment, multiline: true },
+  ];
+  return { rows, alwaysShow: objectTooltip.alwaysShow };
 });
 
 function isTooltipDisabled(): boolean {
-  if (detailTooltip.value?.rows.length) return isRenamingGroup.value;
-  return isRenamingGroup.value || !labelOverflowing.value;
+  if (isRenamingGroup.value) return true;
+  const tooltip = detailTooltip.value;
+  if (!tooltip) return !labelOverflowing.value;
+  return !tooltip.alwaysShow && !labelOverflowing.value;
 }
 
 function visibleTreeNodes(): TreeNode[] {
@@ -746,7 +749,7 @@ watch(
 
 function shouldMeasureLabelOverflow(): boolean {
   return shouldMeasureSidebarLabelOverflow({
-    hasDetailTooltip: !!detailTooltip.value?.rows.length,
+    hasDetailTooltip: !!detailTooltip.value?.alwaysShow,
     isRenaming: isRenamingGroup.value,
     usesFullWidthLabel: usesFullWidthLabel.value,
   });

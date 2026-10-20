@@ -110,6 +110,19 @@ export function isSidebarCommentSupportedType(type: TreeNodeType): boolean {
   return commentTypes.has(type);
 }
 
+/**
+ * Detail-tooltip model for sidebar object rows. Every comment-supported object
+ * gets a popover card; rows with a real comment show on every hover, while
+ * uncommented rows carry an empty comment line and stay gated on label overflow
+ * (so truncated names still reveal their full signature in the same card style).
+ * Connection nodes build their own multi-row tooltip and return null here.
+ */
+export function sidebarObjectDetailTooltip(node: TreeNode): { comment: string; alwaysShow: boolean } | null {
+  if (node.type === "connection" || !isSidebarCommentSupportedType(node.type)) return null;
+  const comment = (sidebarTreeNodeComment(node) ?? "").trim();
+  return { comment, alwaysShow: comment.length > 0 };
+}
+
 export function isSidebarCommentAlignableNode(node: TreeNode): boolean {
   return isSidebarCommentSupportedType(node.type);
 }
