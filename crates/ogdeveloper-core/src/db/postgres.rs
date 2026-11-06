@@ -2357,7 +2357,7 @@ pub async fn completion_assistant_search(
         if !table.is_empty() {
             // Unqualified PostgreSQL objects resolve through search_path, so column
             // metadata must use the same visible relation instead of assuming public.
-            let resolved_schema = match schema {
+            let mut resolved_schema = match schema {
                 Some(schema) => Some(schema.to_string()),
                 None => postgres_query_cached(&client, postgres_visible_table_schema_sql(), &[&table])
                     .await
@@ -2365,16 +2365,46 @@ pub async fn completion_assistant_search(
                     .first()
                     .map(|row| pg_row_try_string(row, 0)),
             };
+            let column_limit = (limit - candidates.len()) as i64;
+            let mut rows = Vec::new();
+            if let Some(resolved) = &resolved_schema {
+                rows = postgres_query_cached(
+                    &client,
+                    postgres_completion_columns_sql(),
+                    &[resolved, &table, &pattern, &column_limit],
+                )
+                .await
+                .map_err(|e| e.to_string())?;
+            }
+            // openGauss synonyms have no pg_class/pg_attribute rows: when the name does not
+            // resolve to a real relation, follow the synonym to its target and read the
+            // target's columns. Candidates keep the synonym's own schema/name as parent so the
+            // editor still matches them to the alias that was typed.
+            if rows.is_empty() {
+                let has_pg_synonym = postgres_has_pg_catalog_relation(&client, "pg_synonym").await.unwrap_or(false);
+                if has_pg_synonym {
+                    let synonym_rows =
+                        postgres_query_cached(&client, postgres_completion_synonym_target_sql(), &[&schema, &table])
+                            .await
+                            .map_err(|e| e.to_string())?;
+                    if let Some(synonym_row) = synonym_rows.first() {
+                        let synonym_schema = pg_row_try_string(synonym_row, 0);
+                        let target_schema = pg_row_try_string(synonym_row, 1);
+                        let target_name = pg_row_try_string(synonym_row, 2);
+                        rows = postgres_query_cached(
+                            &client,
+                            postgres_completion_columns_sql(),
+                            &[&target_schema, &target_name, &pattern, &column_limit],
+                        )
+                        .await
+                        .map_err(|e| e.to_string())?;
+                        resolved_schema = Some(synonym_schema);
+                    }
+                }
+            }
             let Some(resolved_schema) = resolved_schema else {
                 return Ok(CompletionAssistantResponse { incomplete: false, candidates, fallback_used: false });
             };
-            let rows = postgres_query_cached(
-                &client,
-                postgres_completion_columns_sql(),
-                &[&resolved_schema, &table, &pattern, &((limit - candidates.len()) as i64)],
-            )
-            .await
-            .map_err(|e| e.to_string())?;
             for row in rows {
                 candidates.push(CompletionAssistantCandidate {
                     name: pg_row_try_string(&row, 0),
@@ -2457,6 +2487,18 @@ fn postgres_completion_columns_sql() -> &'static str {
      WHERE n.nspname = $1 AND c.relname = $2 AND a.attnum > 0 AND NOT a.attisdropped \
        AND ($3 = '%%' OR a.attname ILIKE $3 ESCAPE '~') \
      ORDER BY a.attnum LIMIT $4"
+}
+
+/// Resolves an openGauss synonym to (synonym schema, target schema, target name).
+/// `$1` is the optional schema; when NULL the synonym is looked up through search_path.
+fn postgres_completion_synonym_target_sql() -> &'static str {
+    "SELECT n.nspname::text, s.synobjschema::text, s.synobjname::text \
+     FROM pg_catalog.pg_synonym s \
+     JOIN pg_catalog.pg_namespace n ON n.oid = s.synnamespace \
+     WHERE s.synname = $2 \
+       AND ($1::text IS NOT NULL AND n.nspname = $1 \
+            OR $1::text IS NULL AND n.nspname = ANY (current_schemas(false))) \
+     LIMIT 1"
 }
 
 fn postgres_visible_table_schema_sql() -> &'static str {
