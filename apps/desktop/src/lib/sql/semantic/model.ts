@@ -468,6 +468,11 @@ function parseTableFunctionSource(state: ParseState, nameIndex: number, introduc
       aliasSpan: alias.aliasSpan,
       sourceSpan: { start: qualified.name.span.start, end: state.tokens[alias.nextIndex - 1]?.span.end ?? alias.aliasSpan?.end ?? state.tokens[safeClose]?.span.end ?? qualified.name.span.end },
       columns: alias.columns,
+      metadataTarget: {
+        database: qualifierParts.length >= 2 ? qualifierParts[qualifierParts.length - 2] : undefined,
+        schema: qualifierParts[qualifierParts.length - 1],
+        table: name,
+      },
       unresolved: close < 0,
     },
     nextIndex: alias.nextIndex,

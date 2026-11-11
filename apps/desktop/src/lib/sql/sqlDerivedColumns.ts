@@ -2,7 +2,17 @@ import type { SqlCompletionColumn, SqlCompletionContext, SqlCompletionReferenced
 import type { SqlSemanticDerivedQuery, SqlSemanticRowSource } from "@/lib/sql/semantic/types";
 
 function referenceForSource(source: SqlSemanticRowSource): SqlCompletionReferencedTable {
-  return { name: source.name, alias: source.alias, schema: source.metadataTarget?.schema ?? source.qualifierParts[source.qualifierParts.length - 1], database: source.metadataTarget?.database, columns: source.columns, derivedQuery: source.derivedQuery, columnAliases: source.columnAliases };
+  const schema = source.metadataTarget?.schema ?? source.qualifierParts[source.qualifierParts.length - 1];
+  return {
+    name: source.name,
+    alias: source.alias,
+    schema,
+    database: source.metadataTarget?.database,
+    ...(source.kind === "table_function" ? { tableFunction: { name: source.metadataTarget?.table ?? source.name, database: source.metadataTarget?.database, schema } } : {}),
+    columns: source.columns,
+    derivedQuery: source.derivedQuery,
+    columnAliases: source.columnAliases,
+  };
 }
 
 function wildcardSources(query: SqlSemanticDerivedQuery, qualifier: string[]): SqlSemanticRowSource[] {

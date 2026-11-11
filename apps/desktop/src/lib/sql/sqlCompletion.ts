@@ -1465,6 +1465,8 @@ export interface SqlCompletionReferencedTable {
   schema?: string;
   schemaQuoted?: boolean;
   alias?: string;
+  /** Original routine identity when this visible row source is a table function. */
+  tableFunction?: { name: string; database?: string; schema?: string };
   columns?: string[];
   derivedQuery?: SqlSemanticDerivedQuery;
   columnAliases?: string[];
@@ -1725,6 +1727,10 @@ function isColumnCompletionExpressionStart(beforeCursor: string): boolean {
 }
 
 export function isSqlCompletionSuppressedContext(sql: string, cursor: number): boolean {
+  // A scheduled/explicit requery may still arrive after the user has finished
+  // the statement with ";". Treat that boundary like comments and literals so
+  // the previous completion session cannot reopen with generic functions.
+  if (sql[cursor - 1] === ";") return true;
   const context = getSqlLexicalContext(sql, cursor);
   return context.inLineComment || context.inBlockComment || context.inStringLiteral;
 }

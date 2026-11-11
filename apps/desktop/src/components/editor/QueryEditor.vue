@@ -46,6 +46,7 @@ import {
 } from "@/lib/sql/sqlCompletion";
 import { sqlCompletionContextFromSemantic, sqlSemanticSelectStarIsOnlyProjection, sqlSemanticSelectStarQualifierSql, sqlSemanticSelectStarTableSource } from "@/lib/sql/semantic/completion";
 import { getSqlCompletionColumnMetadataTables } from "@/lib/sql/sqlDerivedColumns";
+import { loadTableFunctionCompletionColumns } from "@/lib/sql/tableFunctionCompletion";
 import { buildSqlSemanticModel } from "@/lib/sql/semantic/model";
 import { mergeSqlSemanticReferenceAnalysis, resolveSqlSemanticNavigationTarget } from "@/lib/sql/semantic/references";
 import { mergeSqlCompletionQualifierNames, resolveSqlCompletionRoutineLookupTarget, resolveSqlCompletionSchemaLookupDatabase, resolveSqlCompletionScope, resolveSqlCompletionTableLookupTarget, type SqlCompletionScope } from "@/lib/sql/sqlCompletionLookupTarget";
@@ -493,7 +494,9 @@ function sqlCompletionDialectOptions() {
   };
 }
 
-function completionColumnRequestContext(reference?: Pick<SqlCompletionReferencedTable, "nameQuoted" | "schemaQuoted">) {
+type CompletionColumnReference = Pick<SqlCompletionReferencedTable, "nameQuoted" | "schemaQuoted" | "tableFunction">;
+
+function completionColumnRequestContext(reference?: CompletionColumnReference) {
   return {
     clientSessionId: props.clientSessionId,
     version: props.completionContextVersion,
@@ -502,11 +505,22 @@ function completionColumnRequestContext(reference?: Pick<SqlCompletionReferenced
   };
 }
 
-async function listCompletionColumnsForEditor(connectionId: string, database: string, table: string, schema?: string, catalog = props.catalog, reference?: Pick<SqlCompletionReferencedTable, "nameQuoted" | "schemaQuoted">) {
+async function listCompletionColumnsForEditor(connectionId: string, database: string, table: string, schema?: string, catalog = props.catalog, reference?: CompletionColumnReference) {
+  if (reference?.tableFunction) {
+    return loadTableFunctionCompletionColumns({
+      connectionId,
+      database: reference.tableFunction.database ?? database,
+      databaseType: props.databaseType,
+      schema: reference.tableFunction.schema ?? schema,
+      functionName: reference.tableFunction.name,
+      table,
+    });
+  }
   return connectionStore.listCompletionColumns(connectionId, database, table, schema, completionColumnRequestContext(reference), catalog);
 }
 
-async function refreshCompletionColumnsForEditor(connectionId: string, database: string, table: string, schema?: string, catalog = props.catalog, reference?: Pick<SqlCompletionReferencedTable, "nameQuoted" | "schemaQuoted">) {
+async function refreshCompletionColumnsForEditor(connectionId: string, database: string, table: string, schema?: string, catalog = props.catalog, reference?: CompletionColumnReference) {
+  if (reference?.tableFunction) return listCompletionColumnsForEditor(connectionId, database, table, schema, catalog, reference);
   return connectionStore.refreshCompletionColumns(connectionId, database, table, schema, completionColumnRequestContext(reference), catalog);
 }
 
@@ -2896,6 +2910,9 @@ function isEditorComposing(currentView: EditorViewType): boolean {
 function scheduleSqlCompletionStart(currentView: EditorViewType, delayMs = 0) {
   window.setTimeout(() => {
     if (!codeMirrorStartCompletion || isEditorComposing(currentView)) return;
+    const fullDoc = currentView.state.doc.toString();
+    const position = currentView.state.selection.main.head;
+    if (!shouldAutoOpenSqlCompletion(fullDoc, position, sqlCompletionDialectOptions())) return;
     markTypedCompletionActivation();
     codeMirrorStartCompletion(currentView);
   }, delayMs);
@@ -3023,11 +3040,11 @@ function buildLocalSqlCompletionResult(completionContext: ReturnType<typeof getS
       continue;
     }
     const target = completionMetadataTarget(refTable, scope);
-    const localColumns = target ? connectionStore.lookupLocalCompletionColumns(props.connectionId, target.database, refTable.name, target.schema, target.catalog) : [];
+    const localColumns = target && !refTable.tableFunction ? connectionStore.lookupLocalCompletionColumns(props.connectionId, target.database, refTable.name, target.schema, target.catalog) : [];
     if (localColumns.length > 0) {
       columnsByTable.set(cacheKey, localColumns);
     }
-    const localForeignKeys = target ? connectionStore.lookupLocalCompletionForeignKeys(props.connectionId, target.database, refTable.name, target.schema) : [];
+    const localForeignKeys = target && !refTable.tableFunction ? connectionStore.lookupLocalCompletionForeignKeys(props.connectionId, target.database, refTable.name, target.schema) : [];
     if (localForeignKeys.length > 0) {
       cachedForeignKeysByTable.set(cacheKey, localForeignKeys);
     }
@@ -3153,7 +3170,10 @@ function scheduleCompletionMetadataRefresh(completionContext: ReturnType<typeof 
       if (!target) continue;
       void refreshCompletionColumnsForEditor(connectionId, target.database, refTable.name, target.schema, target.catalog, refTable)
         .then((columns) => {
-          if (columns.length > 0) cachedColumnsByTable.set(cacheKey, columns);
+          if (columns.length > 0) {
+            cachedColumnsByTable.set(cacheKey, columns);
+            if (refTable.tableFunction) refreshActiveSqlCompletion(fullDoc, position, completionContext);
+          }
         })
         .catch(() => {});
     }
@@ -3372,7 +3392,7 @@ async function performAsyncCompletionWithResult(epoch: number, completionContext
     }
     return rt;
   });
-  const unresolvedRefs = refs.filter((rt) => !rt.schema && !rt.columns && !isVirtualCompletionTableReference(rt));
+  const unresolvedRefs = refs.filter((rt) => !rt.tableFunction && !rt.schema && !rt.columns && !isVirtualCompletionTableReference(rt));
   if (!localOnlyMetadata && unresolvedRefs.length > 0) {
     const lookupGroups = await Promise.all(
       unresolvedRefs.map((rt) => {

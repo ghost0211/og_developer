@@ -80,6 +80,15 @@ export function sqlSemanticReferencedTables(model: SqlSemanticModel): SqlComplet
         schema: source.qualifierParts[source.qualifierParts.length - 1],
         schemaQuoted: source.qualifierParts.length > 0 ? !!identifierParts[identifierParts.length - 2]?.quote : undefined,
         alias: source.alias,
+        ...(source.kind === "table_function"
+          ? {
+              tableFunction: {
+                name: source.metadataTarget?.table ?? identifierParts[identifierParts.length - 1]?.name ?? source.name,
+                database: source.metadataTarget?.database,
+                schema: source.metadataTarget?.schema ?? source.qualifierParts[source.qualifierParts.length - 1],
+              },
+            }
+          : {}),
         columns: source.columns,
         derivedQuery: source.derivedQuery,
         columnAliases: source.columnAliases,
@@ -235,6 +244,13 @@ function semanticMutationTarget(model: SqlSemanticModel): SqlSemanticRowSource |
 
 export function sqlCompletionContextFromSemantic(model: SqlSemanticModel, base: SqlCompletionContext): SqlCompletionContext {
   if (model.cursorIntent.confidence === "low" || model.cursorIntent.kind === "suppressed") {
+    // Legacy parsing still owns some partially typed expression intents. Keep
+    // its context flags, but retain semantic row-source identities so aliases
+    // and table-function metadata are not lost on this fallback path.
+    if (base.suggestColumns) {
+      const referencedTables = sqlSemanticReferencedTables(model);
+      if (referencedTables.length > 0) return { ...base, referencedTables };
+    }
     return base;
   }
   if ((base.suggestTables || base.exclusiveTableSuggestions) && model.cursorIntent.kind !== "table" && model.cursorIntent.kind !== "schema" && model.cursorIntent.kind !== "catalog" && model.cursorIntent.kind !== "delete_target") {
