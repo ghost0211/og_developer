@@ -1678,6 +1678,7 @@ fn gaussdb_identifier_quote_from_query_result(result: &db::QueryResult) -> Optio
 
 enum KeepaliveTarget {
     Postgres(deadpool_postgres::Pool),
+    ExternalDriver { config: Arc<ConnectionConfig>, session: Arc<PluginDriverSession> },
 }
 
 #[derive(Debug)]
@@ -1701,8 +1702,13 @@ impl From<String> for KeepaliveError {
 
 impl KeepaliveTarget {
     fn matches_pool(&self, pool: &PoolKind) -> bool {
-        let _ = pool;
-        true
+        match (self, pool) {
+            (Self::Postgres(_), PoolKind::Postgres(_)) => true,
+            (Self::ExternalDriver { session, .. }, PoolKind::ExternalDriver { session: candidate, .. }) => {
+                Arc::ptr_eq(session, candidate)
+            }
+            _ => false,
+        }
     }
 }
 
@@ -1736,17 +1742,27 @@ fn keepalive_target_from_pool(pool: &PoolKind, config: &ConnectionConfig) -> Opt
     let _ = config;
     match pool {
         PoolKind::Postgres(pool) => Some(KeepaliveTarget::Postgres(pool.clone())),
-        _ => None,
+        PoolKind::ExternalDriver { config, session, .. } => {
+            Some(KeepaliveTarget::ExternalDriver { config: config.clone(), session: session.clone() })
+        }
     }
 }
 
 async fn ping_keepalive_target(target: &mut KeepaliveTarget, timeout: Duration) -> Result<(), KeepaliveError> {
-    let _ = timeout;
     match target {
         KeepaliveTarget::Postgres(pool) => {
             let client = pool.get().await.map_err(|e| format!("PostgreSQL pool error: {e}"))?;
             client.simple_query("SELECT 1").await.map(|_| ()).map_err(|error| KeepaliveError::Legacy(error.to_string()))
         }
+        KeepaliveTarget::ExternalDriver { config, session } => session
+            .invoke_with_timeout::<serde_json::Value>(
+                "testConnection",
+                serde_json::json!({ "connection": config.as_ref() }),
+                Some(timeout),
+            )
+            .await
+            .map(|_| ())
+            .map_err(KeepaliveError::Legacy),
     }
 }
 
@@ -1998,6 +2014,8 @@ fn is_original_endpoint(config: &ConnectionConfig, host: &str, port: u16) -> boo
 mod tests {
     use super::*;
     use crate::models::connection::{ConnectionConfig, DatabaseType};
+    #[cfg(unix)]
+    use crate::plugins::{InstalledPlugin, PluginDriverManifest, PluginManifest};
     use crate::storage::Storage;
 
     fn opengauss_config(database: Option<&str>) -> ConnectionConfig {
@@ -2128,5 +2146,69 @@ mod tests {
         assert_eq!(session_scoped_pool_key(base.clone(), Some("tab-1:explain")), "conn-1:testdb:session:tab-1_explain");
         assert_eq!(session_scoped_pool_key(base.clone(), None), base);
         assert_eq!(session_scoped_pool_key(base.clone(), Some("   ")), base);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn jdbc_keepalive_pings_the_external_driver_session() {
+        let dir = std::env::temp_dir().join(format!("dbx-jdbc-keepalive-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let executable = dir.join("plugin.sh");
+        std::fs::write(
+            &executable,
+            r#"#!/bin/sh
+while IFS= read -r line; do
+  printf '%s\n' "$line" >> requests.log
+  id=$(printf '%s\n' "$line" | sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p')
+  printf '{"id":%s,"result":{"ok":true}}\n' "$id"
+done
+"#,
+        )
+        .unwrap();
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut permissions = std::fs::metadata(&executable).unwrap().permissions();
+            permissions.set_mode(0o755);
+            std::fs::set_permissions(&executable, permissions).unwrap();
+        }
+        let plugin = InstalledPlugin {
+            manifest: PluginManifest {
+                id: "jdbc".to_string(),
+                name: "JDBC".to_string(),
+                version: "test".to_string(),
+                protocol_version: 1,
+                description: String::new(),
+                executable: Some("plugin.sh".to_string()),
+                drivers: vec![PluginDriverManifest {
+                    id: "jdbc".to_string(),
+                    label: "JDBC".to_string(),
+                    kind: "external".to_string(),
+                    database_type: Some("jdbc".to_string()),
+                }],
+            },
+            path: dir.clone(),
+        };
+        let session = Arc::new(
+            PluginDriverSession::start_for_test(plugin, "jdbc".to_string(), PluginRuntimeEnv::default())
+                .await
+                .expect("fake JDBC session should start"),
+        );
+        let mut config = opengauss_config(Some("testdb"));
+        config.driver_profile = Some(OPENGAUSS_JDBC_DRIVER_PROFILE.to_string());
+        let pool = PoolKind::ExternalDriver {
+            driver_id: "jdbc".to_string(),
+            config: Arc::new(config.clone()),
+            session: session.clone(),
+        };
+        let mut target = keepalive_target_from_pool(&pool, &config).expect("JDBC pool should support keepalive");
+
+        ping_keepalive_target(&mut target, Duration::from_secs(2)).await.expect("JDBC health probe should succeed");
+
+        let requests =
+            std::fs::read_to_string(dir.join("requests.log")).expect("fake JDBC plugin should record its request");
+        assert!(requests.contains("\"method\":\"testConnection\""), "unexpected plugin request: {requests}");
+        assert!(target.matches_pool(&pool));
+        session.shutdown().await;
+        let _ = std::fs::remove_dir_all(dir);
     }
 }
