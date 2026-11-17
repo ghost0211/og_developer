@@ -744,10 +744,10 @@ async function loadDependencies() {
     const [refs, refBy] = await Promise.all([api.listObjectReferences(props.connectionId, props.database, schema, objType, props.name, "references"), api.listObjectReferences(props.connectionId, props.database, schema, objType, props.name, "referencedBy")]);
     referencesList.value = refs;
     referencedByList.value = refBy;
-  } catch (e: unknown) {
+  } catch (e: any) {
     referencesList.value = [];
     referencedByList.value = [];
-    dependenciesError.value = e instanceof Error ? e.message : String(e);
+    dependenciesError.value = e?.message || String(e);
     console.warn("[ProgramWindow] failed to load dependencies", e);
   } finally {
     dependenciesLoading.value = false;

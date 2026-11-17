@@ -1,7 +1,7 @@
 import type { TreeNode, TreeNodeType } from "@/types/database";
 import { createSidebarLabelMatcher, type SidebarLabelMatcher } from "@/lib/sidebar/sidebarSearch";
 
-const preserveMatchedSubtreeTypes = new Set(["connection", "database", "schema", "table", "view", "package"]);
+const preserveMatchedSubtreeTypes = new Set(["connection", "database", "schema", "table", "view", "package", "mongo-db", "mongo-collection"]);
 
 const normalizedLabelCache = new WeakMap<TreeNode, { label: string; normalized: string }>();
 

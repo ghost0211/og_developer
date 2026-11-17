@@ -8,6 +8,9 @@ describe("tableMetadataCapabilities", () => {
       indexes: true,
       foreignKeys: true,
       triggers: true,
+      checks: true,
+      partitions: true,
+      options: true,
       ddl: true,
     });
     expect(getTableMetadataCapabilities("postgres")).toEqual({
@@ -15,6 +18,9 @@ describe("tableMetadataCapabilities", () => {
       indexes: true,
       foreignKeys: true,
       triggers: true,
+      checks: true,
+      partitions: false,
+      options: false,
       ddl: true,
     });
   });
