@@ -169,6 +169,7 @@ const emit = defineEmits<{
   editorUpdate: [tabId: string, value: string];
   editorSelectionChange: [value: string];
   editorCursorChange: [pos: number];
+  editorDiagnosticsCountChange: [tabId: string, count: number];
   editorViewportChange: [tabId: string, viewport: { scrollTop: number; scrollLeft: number }];
   editorSelectionStateChange: [tabId: string, selection: { anchor: number; head: number }];
   formatError: [];
@@ -821,7 +822,11 @@ function applyTableStructureChanges() {
   return tableStructureEditorRef.value?.applyChanges() ?? Promise.resolve(false);
 }
 
-defineExpose({ focusSearch, refreshData, refreshQueryEditorCompletionCache, handleModRTarget, requestQueryEditorExecute, requestQueryEditorExecuteCurrent, requestQueryEditorExecuteInNewResultTab, pasteClipboardAsSqlInCondition, applyTableStructureChanges });
+function jumpToNextDiagnostic(reverse = false): boolean {
+  return queryEditorRef.value?.jumpToNextDiagnostic(reverse) ?? false;
+}
+
+defineExpose({ focusSearch, refreshData, refreshQueryEditorCompletionCache, handleModRTarget, requestQueryEditorExecute, requestQueryEditorExecuteCurrent, requestQueryEditorExecuteInNewResultTab, pasteClipboardAsSqlInCondition, applyTableStructureChanges, jumpToNextDiagnostic });
 </script>
 
 <template>
@@ -869,6 +874,7 @@ defineExpose({ focusSearch, refreshData, refreshQueryEditorCompletionCache, hand
               @selection-change="emit('editorSelectionChange', $event)"
               @send-selection-to-ai="emit('sendSelectionToAi', $event)"
               @cursor-change="emit('editorCursorChange', $event)"
+              @diagnostics-count-change="emit('editorDiagnosticsCountChange', activeTab.id, $event)"
               @viewport-change="emit('editorViewportChange', activeTab.id, $event)"
               @selection-state-change="emit('editorSelectionStateChange', activeTab.id, $event)"
               @format-error="emit('formatError')"

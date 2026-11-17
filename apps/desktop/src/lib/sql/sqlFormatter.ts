@@ -1,7 +1,7 @@
 import { DEFAULT_SQL_FORMATTER_SETTINGS, sqlFormatterOptions, sqlFormatterOptionSettings, type SqlFormatterSettings } from "@/lib/sql/sqlFormatterConfig";
 import { looksLikeXml } from "@/lib/sql/autoFormat";
 import { alignSqlKeywords } from "@/lib/sql/sqlKeywordAlignment";
-import { formatProceduralSqlBlocks } from "@/lib/sql/sqlProceduralFormat";
+import { canFormatAsProceduralFallback, formatDollarQuotedProceduralBodies, formatPlSqlProceduralUnit, formatProceduralSqlBlocks, shouldFormatAsPlSqlUnit } from "@/lib/sql/sqlProceduralFormat";
 
 export type SqlFormatDialect = "mysql" | "postgres" | "sqlite" | "sqlserver" | "clickhouse" | "generic";
 
@@ -87,8 +87,12 @@ export async function formatSqlText(sql: string, dialect: SqlFormatDialect = "ge
     throw new UnsupportedStructuredInputError("xml");
   }
 
-  const { format } = await import("sql-formatter");
   const normalized = sqlFormatterOptionSettings(settings);
+  if (shouldFormatAsPlSqlUnit(sql, dialect)) {
+    return formatPlSqlProceduralUnit(sql, normalized, dialect === "generic" ? "postgres" : dialect);
+  }
+
+  const { format } = await import("sql-formatter");
   const options = sqlFormatterOptions(normalized);
   const language = formatterLanguage(dialect);
   let formatted: string;
@@ -100,15 +104,24 @@ export async function formatSqlText(sql: string, dialect: SqlFormatDialect = "ge
     // `::` casts, GaussDB/openGauss materialized-view DDL, T-SQL specifics, ...).
     // Retry once with the more permissive PostgreSQL grammar, which is a superset
     // that tolerates most of these, before surfacing the failure.
-    if (language === "postgresql") throw err;
+    if (language === "postgresql") {
+      if (canFormatAsProceduralFallback(sql, dialect)) {
+        return formatPlSqlProceduralUnit(sql, normalized, "postgres");
+      }
+      throw err;
+    }
     try {
       formatted = format(sql, { language: "postgresql", ...options });
       alignmentDialect = "postgres";
     } catch {
+      if (canFormatAsProceduralFallback(sql, dialect)) {
+        return formatPlSqlProceduralUnit(sql, normalized, "postgres");
+      }
       throw err;
     }
   }
   formatted = formatProceduralSqlBlocks(formatted, normalized, alignmentDialect);
+  formatted = formatDollarQuotedProceduralBodies(formatted, normalized, alignmentDialect);
   if (normalized.keywordAlignment !== "none") {
     formatted = alignSqlKeywords(formatted, normalized.keywordAlignment, normalized, alignmentDialect);
   } else if (normalized.clauseInline) {

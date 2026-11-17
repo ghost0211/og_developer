@@ -32,6 +32,15 @@ export function useSidebarTreeToolRuntime(options: SidebarTreeToolRuntimeOptions
     };
   }
 
+  function openRecycleBin() {
+    if (!activeNode.value.connectionId) return;
+    connectionStore.recycleBinSource = {
+      connectionId: activeNode.value.connectionId,
+      database: activeNode.value.database ?? "",
+      schema: activeNode.value.schema,
+    };
+  }
+
   function openDataCompare() {
     if (!activeNode.value.connectionId) return;
     connectionStore.dataCompareSource = {
@@ -131,6 +140,7 @@ export function useSidebarTreeToolRuntime(options: SidebarTreeToolRuntimeOptions
     openDiagram,
     openFieldLineage,
     openSchemaDiff,
+    openRecycleBin,
     openSqlFileExecution,
     openStructureEditor,
     openTableImport,

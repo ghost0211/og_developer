@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { Activity, AlertTriangle, ArrowDown, ArrowUp, Ban, CheckCircle2, Clock, Copy, ExternalLink, Info, Layers, Loader2, Lock, Play, RefreshCcw, Search, ShieldAlert, Trash2, X } from "@lucide/vue";
+import { Activity, AlertTriangle, ArrowDown, ArrowUp, Ban, CheckCircle2, ChevronDown, ChevronRight, Clock, Copy, ExternalLink, GitBranch, Info, Layers, List, Loader2, Lock, Play, RefreshCcw, Search, ShieldAlert, Trash2, X } from "@lucide/vue";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -16,7 +16,7 @@ import { executeWithProductionSqlGuard } from "@/lib/database/productionExecutio
 import { clampInterval, createProcessListLoadCoordinator, DEFAULT_REFRESH_SECONDS, processListExecutionError } from "@/lib/database/processListDrivers";
 import { resolveProcessListDriverForConnection, type ProcessRow } from "@/lib/database/processListDrivers";
 import ToolConnectionSelect from "@/components/common/ToolConnectionSelect.vue";
-import type { BlockingLockRow, LockDetailRow } from "@/lib/database/postgresProcessList";
+import { buildBlockingLockForest, type BlockingLockRow, type BlockingTreeNode, type LockDetailRow } from "@/lib/database/postgresProcessList";
 
 const props = defineProps<{
   connection: ConnectionConfig;
@@ -37,6 +37,8 @@ const numericKeys = computed(() => new Set(columns.value.filter((column) => colu
 
 // Active View Tab
 const activeMainTab = ref<"sessions" | "blocking" | "locks">("sessions");
+const blockingViewMode = ref<"tree" | "table">("tree");
+const collapsedBlockingPids = ref<Set<number>>(new Set());
 
 // Data States
 const rows = ref<ProcessRow[]>([]);
@@ -283,6 +285,116 @@ function isOwnSession(row: ProcessRow): boolean {
   return ownSessionId.value !== null && row.id === ownSessionId.value;
 }
 
+function isPidOwnSession(pid: number): boolean {
+  return ownSessionId.value !== null && pid === ownSessionId.value;
+}
+
+const blockingForest = computed(() => buildBlockingLockForest(blockingLocks.value, rows.value));
+
+function blockingNodeMatchesSearch(node: BlockingTreeNode, q: string): boolean {
+  const fields = [node.pid, node.user, node.db, node.state, node.query, node.incomingLock?.relation, node.incomingLock?.lockType, node.incomingLock?.grantedMode, node.incomingLock?.requestedMode];
+  if (fields.some((v) => v !== null && v !== undefined && String(v).toLowerCase().includes(q))) {
+    return true;
+  }
+  return node.children.some((child) => blockingNodeMatchesSearch(child, q));
+}
+
+const filteredBlockingRoots = computed(() => {
+  const q = search.value.trim().toLowerCase();
+  if (!q) return blockingForest.value.roots;
+  return blockingForest.value.roots.filter((root) => blockingNodeMatchesSearch(root, q));
+});
+
+const filteredBlockingTableRows = computed(() => {
+  const q = search.value.trim().toLowerCase();
+  if (!q) return blockingLocks.value;
+  return blockingLocks.value.filter((chain) =>
+    [chain.blockingPid, chain.blockingUser, chain.blockingDb, chain.blockingState, chain.blockingQuery, chain.blockedPid, chain.blockedUser, chain.blockedDb, chain.blockedState, chain.blockedQuery, chain.relation, chain.lockType, chain.grantedMode, chain.requestedMode].some(
+      (v) => v !== null && v !== undefined && String(v).toLowerCase().includes(q),
+    ),
+  );
+});
+
+interface FlattenedBlockingChild {
+  key: string;
+  node: BlockingTreeNode;
+  depth: number;
+  isLastSibling: boolean;
+  ancestorHasNext: boolean[];
+  isCollapsed: boolean;
+}
+
+function toggleBlockingNodeCollapse(pid: number) {
+  const next = new Set(collapsedBlockingPids.value);
+  if (next.has(pid)) next.delete(pid);
+  else next.add(pid);
+  collapsedBlockingPids.value = next;
+}
+
+function expandAllBlockingNodes() {
+  collapsedBlockingPids.value = new Set();
+}
+
+function collapseAllBlockingRoots() {
+  const next = new Set<number>();
+  for (const root of blockingForest.value.roots) {
+    if (root.children.length > 0) next.add(root.pid);
+  }
+  collapsedBlockingPids.value = next;
+}
+
+function flattenDownstreamNodes(root: BlockingTreeNode): FlattenedBlockingChild[] {
+  if (collapsedBlockingPids.value.has(root.pid)) return [];
+  const out: FlattenedBlockingChild[] = [];
+  const walk = (children: BlockingTreeNode[], depth: number, ancestorHasNext: boolean[], pathPrefix: string) => {
+    children.forEach((child, idx) => {
+      const isLast = idx === children.length - 1;
+      const key = `${pathPrefix}/${child.pid}`;
+      const isCollapsed = collapsedBlockingPids.value.has(child.pid);
+      out.push({
+        key,
+        node: child,
+        depth,
+        isLastSibling: isLast,
+        ancestorHasNext,
+        isCollapsed,
+      });
+      if (child.children.length > 0 && !isCollapsed) {
+        walk(child.children, depth + 1, [...ancestorHasNext, !isLast], key);
+      }
+    });
+  };
+  walk(root.children, 1, [], String(root.pid));
+  return out;
+}
+
+function toProcessRowFromBlockingNode(node: BlockingTreeNode): ProcessRow {
+  const existing = rows.value.find((r) => r.id === node.pid);
+  if (existing) return existing;
+  return {
+    id: node.pid,
+    user: node.user,
+    db: node.db,
+    state: node.state,
+    time: node.holdOrWaitSeconds,
+    query: node.query,
+  } as ProcessRow;
+}
+
+function selectBlockingNode(node: BlockingTreeNode) {
+  selectRow(toProcessRowFromBlockingNode(node));
+}
+
+function requestKillBlockingNode(node: BlockingTreeNode) {
+  if (isPidOwnSession(node.pid)) return;
+  requestKill(toProcessRowFromBlockingNode(node));
+}
+
+function requestCancelBlockingNode(node: BlockingTreeNode) {
+  if (isPidOwnSession(node.pid)) return;
+  requestCancel(toProcessRowFromBlockingNode(node));
+}
+
 function selectRow(row: ProcessRow) {
   if (selectedSession.value?.id === row.id) {
     selectedSession.value = null;
@@ -365,6 +477,7 @@ async function confirmKill() {
 
 // Cancel running query
 function requestCancel(row: ProcessRow) {
+  if (isOwnSession(row)) return;
   cancelTarget.value = row;
 }
 
@@ -437,6 +550,7 @@ watch(
     rows.value = [];
     blockingLocks.value = [];
     resourceLocks.value = [];
+    collapsedBlockingPids.value = new Set();
     truncated.value = false;
     ownSessionId.value = null;
     selectedSession.value = null;
@@ -712,35 +826,6 @@ onBeforeUnmount(stopTimer);
           </tbody>
         </table>
       </div>
-
-      <!-- Lower Session Inspector Drawer (When row selected) -->
-      <div v-if="selectedSession" class="border-t bg-muted/20 p-3 flex flex-col gap-2 shrink-0 max-h-56 overflow-hidden">
-        <div class="flex items-center justify-between">
-          <div class="flex items-center gap-2">
-            <span class="font-bold text-xs">{{ t("processList.sessionDetails", { pid: selectedSession.id }, `会话详情 (PID: ${selectedSession.id})`) }}</span>
-            <Badge variant="outline" class="text-[10px]">{{ selectedSession.user }} @ {{ selectedSession.client || selectedSession.host || "local" }}</Badge>
-            <Badge v-if="selectedSession.db" variant="secondary" class="text-[10px]">{{ selectedSession.db }}</Badge>
-            <Badge v-if="selectedSession.state" variant="outline" class="text-[10px]">{{ selectedSession.state }}</Badge>
-            <span class="text-muted-foreground text-[11px]">{{ t("processList.elapsed", "耗时") }}: {{ formatDuration(selectedSession.time) }}</span>
-          </div>
-
-          <div class="flex items-center gap-1">
-            <Button variant="ghost" size="sm" class="h-6 gap-1 px-2 text-[11px]" @click="openInSqlEditor(selectedSession.query || selectedSession.info)">
-              <ExternalLink class="h-3 w-3" />
-              <span>{{ t("processList.openInSqlEditor", "在 SQL 编辑器中打开") }}</span>
-            </Button>
-            <Button variant="ghost" size="sm" class="h-6 gap-1 px-2 text-[11px]" @click="openPreview(selectedSession.query || selectedSession.info)">
-              <Copy class="h-3 w-3" />
-              <span>{{ t("processList.copySql", "复制 SQL") }}</span>
-            </Button>
-            <Button variant="ghost" size="sm" class="h-6 w-6 p-0" @click="selectedSession = null">
-              <X class="h-3.5 w-3.5" />
-            </Button>
-          </div>
-        </div>
-
-        <pre class="flex-1 min-h-0 overflow-auto whitespace-pre-wrap break-all rounded bg-background border p-2 font-mono text-xs text-foreground leading-relaxed">{{ selectedSession.query || selectedSession.info || t("processList.noActiveSql", "-- 暂无活跃 SQL") }}</pre>
-      </div>
     </div>
 
     <!-- Main Content Area: Tab 2 - Lock & Blocking Tree -->
@@ -752,15 +837,250 @@ onBeforeUnmount(stopTimer);
       </div>
 
       <div v-else class="space-y-3">
-        <div class="rounded-md border border-destructive/40 bg-destructive/10 p-3 flex items-center justify-between">
-          <div class="flex items-center gap-2">
-            <AlertTriangle class="h-5 w-5 text-destructive" />
-            <span class="font-bold text-sm text-destructive">{{ t("processList.blockingAlert", { count: blockingLocks.length }, `检测到 ${blockingLocks.length} 条锁阻塞链路`) }}</span>
+        <!-- Summary Badges & View Switcher Header -->
+        <div class="rounded-md border border-destructive/40 bg-destructive/5 p-2.5 flex flex-wrap items-center justify-between gap-2">
+          <div class="flex flex-wrap items-center gap-2">
+            <div class="flex items-center gap-1.5 mr-1">
+              <AlertTriangle class="h-4 w-4 text-destructive shrink-0" />
+              <span class="font-bold text-xs text-destructive">{{ t("processList.blockingAlert", { count: blockingLocks.length }, `检测到 ${blockingLocks.length} 条锁阻塞链路`) }}</span>
+            </div>
+
+            <Badge variant="destructive" class="text-[11px] px-2 py-0.5 font-mono">
+              {{ t("processList.blockingTree.rootBlockersSummary", { count: blockingForest.rootBlockerCount }, `源头阻塞: ${blockingForest.rootBlockerCount}`) }}
+            </Badge>
+
+            <Badge variant="outline" class="text-[11px] px-2 py-0.5 font-mono border-amber-500/50 bg-amber-500/10 text-amber-700 dark:text-amber-300">
+              {{ t("processList.blockingTree.blockedSessionsSummary", { count: blockingForest.blockedSessionCount }, `受影响等待会话: ${blockingForest.blockedSessionCount}`) }}
+            </Badge>
+
+            <Badge variant="outline" class="text-[11px] px-2 py-0.5 font-mono">
+              {{ t("processList.blockingTree.maxWaitSummary", { duration: formatDuration(blockingForest.maxWaitTime) }, `最长等待: ${formatDuration(blockingForest.maxWaitTime)}`) }}
+            </Badge>
+
+            <Badge v-if="blockingForest.hasDeadlock" variant="destructive" class="text-[11px] px-2 py-0.5 font-semibold animate-pulse">
+              {{ t("processList.blockingTree.deadlockSummary", "检测到死锁环 (Deadlock)") }}
+            </Badge>
+
+            <Badge v-if="blockingForest.hasIdleInTransactionRoot" variant="outline" class="text-[11px] px-2 py-0.5 font-semibold border-amber-500 bg-amber-500/20 text-amber-800 dark:text-amber-200">
+              {{ t("processList.blockingTree.idleInTxSummary", { count: blockingForest.idleInTransactionRootCount }, `空闲事务持锁未提交: ${blockingForest.idleInTransactionRootCount}`) }}
+            </Badge>
           </div>
-          <span class="text-xs text-destructive/80">{{ t("processList.blockingHint", "以下会话正在等待排他锁，可选择一键终止阻塞源会话以解除阻塞。") }}</span>
+
+          <div class="flex items-center gap-2 select-none">
+            <div v-if="blockingViewMode === 'tree' && blockingForest.roots.length > 0" class="flex items-center gap-1">
+              <Button variant="ghost" size="sm" class="h-6 px-2 text-[11px]" @click="expandAllBlockingNodes">
+                {{ t("processList.blockingTree.expandAll", "展开全部") }}
+              </Button>
+              <Button variant="ghost" size="sm" class="h-6 px-2 text-[11px]" @click="collapseAllBlockingRoots">
+                {{ t("processList.blockingTree.collapseAll", "折叠全部") }}
+              </Button>
+            </div>
+
+            <div class="flex items-center gap-0.5 rounded-md border bg-muted/60 p-0.5">
+              <button type="button" class="flex items-center gap-1 rounded px-2.5 py-1 text-xs font-medium transition-all" :class="blockingViewMode === 'tree' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'" @click="blockingViewMode = 'tree'">
+                <GitBranch class="h-3.5 w-3.5 text-destructive" />
+                <span>{{ t("processList.blockingTree.viewTree", "树状链路视图") }}</span>
+              </button>
+              <button type="button" class="flex items-center gap-1 rounded px-2.5 py-1 text-xs font-medium transition-all" :class="blockingViewMode === 'table' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'" @click="blockingViewMode = 'table'">
+                <List class="h-3.5 w-3.5 text-muted-foreground" />
+                <span>{{ t("processList.blockingTree.viewTable", "明细表格视图") }}</span>
+              </button>
+            </div>
+          </div>
         </div>
 
-        <div class="w-full overflow-auto rounded-md border">
+        <!-- Mode A: Root Blocker Tree View -->
+        <div v-if="blockingViewMode === 'tree'" class="space-y-3">
+          <div class="flex items-center justify-between px-1 text-[11px] text-muted-foreground select-none">
+            <span>{{ t("processList.blockingHint", "以下会话正在等待排他锁，可选择一键终止阻塞源会话以解除阻塞。") }}</span>
+            <span>{{ t("processList.blockingTree.inspectHint", "点击任意节点可在下方查看完整 SQL 与会话详情") }}</span>
+          </div>
+
+          <div v-if="filteredBlockingRoots.length === 0" class="rounded-md border p-8 text-center text-xs text-muted-foreground">
+            {{ t("grid.noSearchResults", "无匹配搜索结果") }}
+          </div>
+
+          <div
+            v-for="root in filteredBlockingRoots"
+            :key="root.pid"
+            class="rounded-lg border shadow-xs overflow-hidden transition-all"
+            :class="[root.isDeadlockCycle ? 'border-destructive/70 bg-destructive/[0.03]' : root.isIdleInTransaction ? 'border-amber-500/70 bg-amber-500/[0.04]' : 'border-destructive/35 bg-card', selectedSession?.id === root.pid ? 'ring-1 ring-primary' : '']"
+          >
+            <!-- Root Blocker Card Header -->
+            <div
+              class="p-3 cursor-pointer transition-colors border-b"
+              :class="[root.isIdleInTransaction ? 'bg-amber-500/10 hover:bg-amber-500/15 border-amber-500/25' : 'bg-destructive/[0.06] hover:bg-destructive/10 border-border/60', selectedSession?.id === root.pid ? 'bg-primary/10' : '']"
+              @click="selectBlockingNode(root)"
+            >
+              <div class="flex flex-wrap items-start justify-between gap-2">
+                <div class="flex flex-wrap items-center gap-1.5">
+                  <button v-if="root.children.length > 0" type="button" class="inline-flex h-5 w-5 items-center justify-center rounded hover:bg-background/80 text-muted-foreground hover:text-foreground" @click.stop="toggleBlockingNodeCollapse(root.pid)">
+                    <ChevronRight v-if="collapsedBlockingPids.has(root.pid)" class="h-3.5 w-3.5" />
+                    <ChevronDown v-else class="h-3.5 w-3.5" />
+                  </button>
+
+                  <span class="font-mono font-bold text-sm text-destructive">PID: {{ root.pid }}</span>
+
+                  <Badge v-if="isPidOwnSession(root.pid)" variant="outline" class="h-4 rounded px-1 text-[9px] border-primary text-primary">
+                    {{ t("processList.self", "当前") }}
+                  </Badge>
+
+                  <Badge variant="destructive" class="text-[10px] px-1.5 py-0 font-semibold">
+                    {{ t("processList.blockingTree.rootBlockerBadge", "源头阻塞") }}
+                  </Badge>
+
+                  <Badge v-if="root.isDeadlockCycle" variant="destructive" class="text-[10px] px-1.5 py-0 font-semibold">
+                    {{ t("processList.blockingTree.deadlockCycleBadge", "死锁环") }}
+                  </Badge>
+
+                  <Badge v-if="root.isIdleInTransaction" variant="outline" class="text-[10px] px-1.5 py-0 font-semibold border-amber-500 bg-amber-500/20 text-amber-800 dark:text-amber-200">
+                    {{ t("processList.blockingTree.idleInTxBadge", "空闲事务持锁 (idle in transaction)") }}
+                  </Badge>
+                  <Badge v-else-if="root.state" variant="outline" class="text-[10px] px-1.5 py-0">
+                    {{ root.state }}
+                  </Badge>
+
+                  <Badge variant="secondary" class="text-[10px] px-1.5 py-0 font-mono">
+                    {{ t("processList.blockingTree.downstreamBlockedCount", { count: root.totalDownstreamCount }, `共阻塞 ${root.totalDownstreamCount} 个下游会话`) }}
+                  </Badge>
+
+                  <span class="text-xs text-muted-foreground font-mono ml-1">{{ root.user || "-" }} @ {{ root.db || "db" }}</span>
+                  <span class="text-xs text-muted-foreground">·</span>
+                  <span class="text-xs font-mono font-medium" :class="root.isIdleInTransaction ? 'text-amber-700 dark:text-amber-300' : 'text-foreground'">
+                    {{ t("processList.blockingTree.heldDuration", { duration: formatDuration(root.holdOrWaitSeconds) }, `持锁时长: ${formatDuration(root.holdOrWaitSeconds)}`) }}
+                  </span>
+                  <span class="text-xs text-muted-foreground">·</span>
+                  <span class="text-xs font-mono text-destructive font-semibold">
+                    {{ t("processList.blockingTree.maxDownstreamWait", { duration: formatDuration(root.maxDownstreamWaitTime) }, `下游最长等待: ${formatDuration(root.maxDownstreamWaitTime)}`) }}
+                  </span>
+                </div>
+
+                <!-- One-Click Root Blocker Actions -->
+                <div class="flex items-center gap-1.5 shrink-0" @click.stop>
+                  <Button
+                    v-if="driver?.buildCancelSql"
+                    variant="outline"
+                    size="sm"
+                    class="h-6 gap-1 px-2 text-[11px] border-amber-500/50 text-amber-700 dark:text-amber-300 hover:bg-amber-500/15 disabled:opacity-40"
+                    :disabled="isPidOwnSession(root.pid)"
+                    :title="isPidOwnSession(root.pid) ? t('processList.cannotKillSelf') : t('processList.cancelQueryTitle', '取消当前执行中的查询')"
+                    @click="requestCancelBlockingNode(root)"
+                  >
+                    <Ban class="h-3 w-3" />
+                    <span>{{ t("processList.blockingTree.cancelRootQuery", "取消查询") }}</span>
+                  </Button>
+
+                  <Button variant="destructive" size="sm" class="h-6 gap-1 px-2.5 text-[11px] disabled:opacity-40" :disabled="isPidOwnSession(root.pid)" :title="isPidOwnSession(root.pid) ? t('processList.cannotKillSelf') : t('processList.kill')" @click="requestKillBlockingNode(root)">
+                    <Trash2 class="h-3 w-3" />
+                    <span>{{ t("processList.blockingTree.killRootSession", "终止源头会话") }}</span>
+                  </Button>
+                </div>
+              </div>
+
+              <!-- Idle-in-transaction callout -->
+              <div v-if="root.isIdleInTransaction" class="mt-1.5 flex items-center gap-1.5 text-[11px] text-amber-800 dark:text-amber-300">
+                <Clock class="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
+                <span>{{ t("processList.blockingTree.idleInTxWarning", "该源头会话处于事务空闲未提交状态，持锁阻塞下游事务；建议提交/回滚事务或终止该会话") }}</span>
+              </div>
+
+              <!-- Root SQL Preview -->
+              <div class="mt-2 rounded border bg-background/90 px-2.5 py-1.5 font-mono text-[11px] text-foreground/90 truncate" :title="root.query || ''">
+                {{ root.query || t("processList.noActiveSql", "-- 暂无活跃 SQL") }}
+              </div>
+            </div>
+
+            <!-- Collapsed Downstream Indicator -->
+            <button v-if="collapsedBlockingPids.has(root.pid) && root.totalDownstreamCount > 0" type="button" class="w-full px-3 py-1.5 text-left text-xs text-muted-foreground hover:bg-muted/40 flex items-center gap-1.5" @click="toggleBlockingNodeCollapse(root.pid)">
+              <ChevronRight class="h-3.5 w-3.5" />
+              <span>{{ t("processList.blockingTree.collapsedCount", { count: root.totalDownstreamCount }, `已折叠 ${root.totalDownstreamCount} 个下游等待会话`) }}</span>
+            </button>
+
+            <!-- Multi-level Indented Waiting Tree -->
+            <div v-else-if="root.children.length > 0" class="divide-y divide-border/50 bg-background/50">
+              <div
+                v-for="item in flattenDownstreamNodes(root)"
+                :key="item.key"
+                class="flex items-stretch px-3 py-2 text-xs cursor-pointer transition-colors"
+                :class="selectedSession?.id === item.node.pid ? 'bg-primary/10 hover:bg-primary/15' : 'hover:bg-muted/40'"
+                @click="selectBlockingNode(item.node)"
+              >
+                <!-- Ancestor Continuation Guides & Branch Connector -->
+                <div class="flex items-center font-mono text-muted-foreground select-none shrink-0 pr-2">
+                  <span v-for="(hasNext, gIdx) in item.ancestorHasNext" :key="gIdx" class="inline-block w-6 text-center text-border">
+                    {{ hasNext ? "│" : " " }}
+                  </span>
+                  <span class="text-amber-600/90 dark:text-amber-400/90 whitespace-nowrap"> {{ item.isLastSibling ? "└─" : "├─" }} {{ t("processList.blockingTree.blocksConnector", "阻塞") }} ──&gt; </span>
+                </div>
+
+                <!-- Expand/Collapse Toggle for Cascading Mid-tier Blockers -->
+                <div class="flex items-start pt-0.5 mr-1.5 shrink-0">
+                  <button v-if="item.node.children.length > 0" type="button" class="inline-flex h-5 w-5 items-center justify-center rounded hover:bg-muted text-muted-foreground hover:text-foreground" @click.stop="toggleBlockingNodeCollapse(item.node.pid)">
+                    <ChevronRight v-if="item.isCollapsed" class="h-3.5 w-3.5" />
+                    <ChevronDown v-else class="h-3.5 w-3.5" />
+                  </button>
+                  <span v-else class="inline-block w-1.5" />
+                </div>
+
+                <!-- Waiting Session Details -->
+                <div class="flex-1 min-w-0 space-y-1">
+                  <div class="flex flex-wrap items-center justify-between gap-2">
+                    <div class="flex flex-wrap items-center gap-1.5">
+                      <span class="font-mono font-bold text-amber-600 dark:text-amber-400">PID: {{ item.node.pid }}</span>
+
+                      <Badge v-if="isPidOwnSession(item.node.pid)" variant="outline" class="h-4 rounded px-1 text-[9px] border-primary text-primary">
+                        {{ t("processList.self", "当前") }}
+                      </Badge>
+
+                      <span class="font-mono text-[11px] text-muted-foreground">{{ item.node.user || "-" }} @ {{ item.node.db || "db" }}</span>
+
+                      <Badge variant="outline" class="text-[10px] px-1.5 py-0 font-mono border-destructive/40 bg-destructive/10 text-destructive font-semibold">
+                        {{ t("processList.blockingTree.waitingDuration", { duration: formatDuration(item.node.incomingLock?.waitTime ?? item.node.holdOrWaitSeconds) }, `等待 ${formatDuration(item.node.incomingLock?.waitTime ?? item.node.holdOrWaitSeconds)}`) }}
+                      </Badge>
+
+                      <span v-if="item.node.incomingLock" class="inline-flex items-center gap-1 rounded border bg-muted/50 px-1.5 py-0.5 font-mono text-[10px]">
+                        <Lock class="h-2.5 w-2.5 text-amber-500 shrink-0" />
+                        <span class="font-semibold text-foreground">{{ item.node.incomingLock.relation }}</span>
+                        <span class="text-muted-foreground">({{ item.node.incomingLock.lockType }})</span>
+                        <span class="text-destructive font-semibold">{{ item.node.incomingLock.grantedMode }}</span>
+                        <span class="text-muted-foreground">-&gt;</span>
+                        <span class="text-amber-600 dark:text-amber-400 font-semibold">{{ item.node.incomingLock.requestedMode }}</span>
+                      </span>
+
+                      <Badge v-if="item.node.isDeadlockCycle" variant="destructive" class="text-[10px] px-1.5 py-0">
+                        {{ t("processList.blockingTree.deadlockCycleBadge", "死锁环") }}
+                      </Badge>
+
+                      <Badge v-if="item.node.isIdleInTransaction" variant="outline" class="text-[10px] px-1.5 py-0 border-amber-500/60 text-amber-700 dark:text-amber-300"> idle in transaction </Badge>
+
+                      <Badge v-if="item.node.totalDownstreamCount > 0" variant="secondary" class="text-[10px] px-1.5 py-0 font-mono">
+                        {{ t("processList.blockingTree.cascadingCount", { count: item.node.totalDownstreamCount }, `继续阻塞 ${item.node.totalDownstreamCount} 个会话`) }}
+                      </Badge>
+                    </div>
+
+                    <!-- Secondary Actions on Downstream Session -->
+                    <div class="flex items-center gap-1 shrink-0" @click.stop>
+                      <Button v-if="driver?.buildCancelSql" variant="ghost" size="sm" class="h-5 gap-1 px-1.5 text-[10px] text-amber-600 hover:bg-amber-500/10 hover:text-amber-600 disabled:opacity-30" :disabled="isPidOwnSession(item.node.pid)" @click="requestCancelBlockingNode(item.node)">
+                        <Ban class="h-2.5 w-2.5" />
+                        <span>{{ t("processList.cancelShort", "取消") }}</span>
+                      </Button>
+                      <Button variant="ghost" size="sm" class="h-5 gap-1 px-1.5 text-[10px] text-destructive hover:bg-destructive/10 hover:text-destructive disabled:opacity-30" :disabled="isPidOwnSession(item.node.pid)" @click="requestKillBlockingNode(item.node)">
+                        <Trash2 class="h-2.5 w-2.5" />
+                        <span>{{ t("processList.killShort", "终止") }}</span>
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div class="font-mono text-[11px] text-muted-foreground truncate" :title="item.node.query || ''">
+                    {{ item.node.query || "-" }}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Mode B: Existing Detail Table View -->
+        <div v-else class="w-full overflow-auto rounded-md border">
           <table class="w-full border-collapse text-xs">
             <thead class="bg-muted/50 border-b">
               <tr>
@@ -773,7 +1093,12 @@ onBeforeUnmount(stopTimer);
               </tr>
             </thead>
             <tbody class="divide-y font-mono">
-              <tr v-for="(chain, cIdx) in blockingLocks" :key="cIdx" class="hover:bg-muted/40 transition-colors">
+              <tr
+                v-for="(chain, cIdx) in filteredBlockingTableRows"
+                :key="cIdx"
+                class="hover:bg-muted/40 transition-colors cursor-pointer"
+                @click="selectRow(rows.find((r) => r.id === chain.blockingPid) ?? ({ id: chain.blockingPid, user: chain.blockingUser, db: chain.blockingDb, state: chain.blockingState ?? null, time: chain.blockingXactTime ?? 0, query: chain.blockingQuery } as ProcessRow))"
+              >
                 <!-- Blocking Source -->
                 <td class="py-2 px-3">
                   <div class="font-bold text-destructive flex items-center gap-1">
@@ -813,8 +1138,15 @@ onBeforeUnmount(stopTimer);
                 </td>
 
                 <!-- Action -->
-                <td class="py-2 px-3 text-right">
-                  <Button variant="destructive" size="sm" class="h-6 px-2 text-[11px]" @click="requestKill({ id: chain.blockingPid, user: chain.blockingUser } as ProcessRow)"> {{ t("processList.killBlockingSource", "终止阻塞源") }} </Button>
+                <td class="py-2 px-3 text-right" @click.stop>
+                  <Button variant="destructive" size="sm" class="h-6 px-2 text-[11px] disabled:opacity-40" :disabled="isPidOwnSession(chain.blockingPid)" @click="requestKill({ id: chain.blockingPid, user: chain.blockingUser } as ProcessRow)">
+                    {{ t("processList.killBlockingSource", "终止阻塞源") }}
+                  </Button>
+                </td>
+              </tr>
+              <tr v-if="filteredBlockingTableRows.length === 0">
+                <td colspan="6" class="py-8 px-3 text-center font-sans text-muted-foreground">
+                  {{ t("grid.noSearchResults", "无匹配搜索结果") }}
                 </td>
               </tr>
             </tbody>
@@ -869,6 +1201,35 @@ onBeforeUnmount(stopTimer);
           </tbody>
         </table>
       </div>
+    </div>
+
+    <!-- Lower Session Inspector Drawer (Shared across Sessions & Blocking tabs) -->
+    <div v-if="selectedSession && (activeMainTab === 'sessions' || activeMainTab === 'blocking')" class="border-t bg-muted/20 p-3 flex flex-col gap-2 shrink-0 max-h-56 overflow-hidden">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <span class="font-bold text-xs">{{ t("processList.sessionDetails", { pid: selectedSession.id }, `会话详情 (PID: ${selectedSession.id})`) }}</span>
+          <Badge variant="outline" class="text-[10px]">{{ selectedSession.user || "-" }} @ {{ selectedSession.client || selectedSession.host || "local" }}</Badge>
+          <Badge v-if="selectedSession.db" variant="secondary" class="text-[10px]">{{ selectedSession.db }}</Badge>
+          <Badge v-if="selectedSession.state" variant="outline" class="text-[10px]">{{ selectedSession.state }}</Badge>
+          <span class="text-muted-foreground text-[11px]">{{ t("processList.elapsed", "耗时") }}: {{ formatDuration(selectedSession.time) }}</span>
+        </div>
+
+        <div class="flex items-center gap-1">
+          <Button variant="ghost" size="sm" class="h-6 gap-1 px-2 text-[11px]" @click="openInSqlEditor(selectedSession.query || selectedSession.info)">
+            <ExternalLink class="h-3 w-3" />
+            <span>{{ t("processList.openInSqlEditor", "在 SQL 编辑器中打开") }}</span>
+          </Button>
+          <Button variant="ghost" size="sm" class="h-6 gap-1 px-2 text-[11px]" @click="openPreview(selectedSession.query || selectedSession.info)">
+            <Copy class="h-3 w-3" />
+            <span>{{ t("processList.copySql", "复制 SQL") }}</span>
+          </Button>
+          <Button variant="ghost" size="sm" class="h-6 w-6 p-0" @click="selectedSession = null">
+            <X class="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      </div>
+
+      <pre class="flex-1 min-h-0 overflow-auto whitespace-pre-wrap break-all rounded bg-background border p-2 font-mono text-xs text-foreground leading-relaxed">{{ selectedSession.query || selectedSession.info || t("processList.noActiveSql", "-- 暂无活跃 SQL") }}</pre>
     </div>
 
     <!-- Kill Session Confirmation Dialog -->

@@ -7,7 +7,7 @@ export interface SqlParameterInput {
   value: string;
 }
 
-export type SqlParameterSyntax = "positional" | "named" | "shell" | "mybatis" | "sqlserver";
+export type SqlParameterSyntax = "positional" | "postgres" | "named" | "shell" | "mybatis" | "sqlserver";
 
 export interface SqlParameterDescriptor {
   key: string;
@@ -38,6 +38,8 @@ export interface SqlParameterOptions {
 const PARAMETER_NAME_RE = /^[\p{L}_][\p{L}\p{N}_]*$/u;
 const PARAMETER_NAME_START_RE = /[\p{L}_]/u;
 const PARAMETER_NAME_CHAR_RE = /[\p{L}\p{N}_]/u;
+const POSTGRES_IDENTIFIER_OR_DOLLAR_CHAR_RE = /[\p{L}\p{N}_$]/u;
+const POSTGRES_PARAMETER_DB_TYPES = new Set<DatabaseType>(["postgres", "opengauss", "gaussdb", "kingbase", "highgo", "uxdb", "vastbase", "kwdb", "questdb", "redshift", "duckdb", "vertica", "oscar"]);
 const SQL_SERVER_TEMP_TABLE_CONTEXT_KEYWORDS = new Set(["table", "from", "join", "into", "update", "truncate"]);
 
 export function readSqlBracedParameterAt(sql: string, start: number, options?: SqlParameterOptions): SqlBracedParameter | null {
@@ -104,7 +106,14 @@ function findSqlParameterOccurrences(sql: string, options?: SqlParameterOptions)
   const occurrences: ParameterOccurrence[] = [];
   const nativeSqlServerParameters = collectNativeSqlServerParameters(sql);
   const enabledSyntaxes = options?.enabledSyntaxes ? new Set(options.enabledSyntaxes) : null;
-  const isSyntaxEnabled = (syntax: SqlParameterSyntax) => !enabledSyntaxes || enabledSyntaxes.has(syntax);
+  const isSyntaxEnabled = (syntax: SqlParameterSyntax) => {
+    if (!enabledSyntaxes) return true;
+    if (enabledSyntaxes.has(syntax)) return true;
+    if (syntax === "postgres" && options?.databaseType && POSTGRES_PARAMETER_DB_TYPES.has(options.databaseType) && enabledSyntaxes.has("positional")) {
+      return true;
+    }
+    return false;
+  };
   const complexTypeFieldSeparators = isSyntaxEnabled("named") ? collectComplexTypeFieldSeparators(sql) : new Set<number>();
   let i = 0;
   let dollarQuoteEnd = "";
@@ -210,6 +219,22 @@ function findSqlParameterOccurrences(sql: string, options?: SqlParameterOptions)
       if (marker) {
         dollarQuoteEnd = marker;
         i += marker.length;
+        continue;
+      }
+      const postgresParamEnd = readPostgresPositionalParameterEnd(sql, i);
+      if (postgresParamEnd > i) {
+        if (isSyntaxEnabled("postgres")) {
+          const token = sql.slice(i, postgresParamEnd);
+          occurrences.push({
+            key: token,
+            name: token,
+            syntax: "postgres",
+            token,
+            start: i,
+            end: postgresParamEnd,
+          });
+        }
+        i = postgresParamEnd;
         continue;
       }
     }
@@ -923,7 +948,25 @@ function previousKeyword(sql: string, start: number): string {
 
 function readDollarQuoteMarker(sql: string, start: number): string {
   const match = sql.slice(start).match(/^\$[A-Za-z_][A-Za-z0-9_]*\$|^\$\$/);
-  return match?.[0] ?? "";
+  if (match) return match[0];
+  const numericTag = sql.slice(start).match(/^\$[0-9]+\$/);
+  if (numericTag && sql.indexOf(numericTag[0], start + numericTag[0].length) !== -1) {
+    return numericTag[0];
+  }
+  return "";
+}
+
+function readPostgresPositionalParameterEnd(sql: string, start: number): number {
+  if (sql[start] !== "$") return start;
+  if (POSTGRES_IDENTIFIER_OR_DOLLAR_CHAR_RE.test(sql[start - 1] ?? "")) return start;
+  const firstDigit = sql[start + 1] ?? "";
+  if (firstDigit < "1" || firstDigit > "9") return start;
+  let end = start + 2;
+  while (end < sql.length && sql[end] >= "0" && sql[end] <= "9") {
+    end += 1;
+  }
+  if (POSTGRES_IDENTIFIER_OR_DOLLAR_CHAR_RE.test(sql[end] ?? "")) return start;
+  return end;
 }
 
 function quoteSqlString(value: string): string {

@@ -5,6 +5,9 @@ export interface TableMetadataCapabilities {
   indexes: boolean;
   foreignKeys: boolean;
   triggers: boolean;
+  checks?: boolean;
+  partitions?: boolean;
+  options?: boolean;
   ddl: boolean;
 }
 
@@ -13,12 +16,21 @@ const defaultCapabilities: TableMetadataCapabilities = {
   indexes: true,
   foreignKeys: true,
   triggers: true,
+  checks: false,
+  partitions: false,
+  options: false,
   ddl: true,
 };
 
 export function getTableMetadataCapabilities(dbType?: DatabaseType): TableMetadataCapabilities {
-  void dbType;
-  return { ...defaultCapabilities };
+  const isOpenGauss = dbType === "opengauss";
+  const isPostgres = dbType === "postgres";
+  return {
+    ...defaultCapabilities,
+    checks: isOpenGauss || isPostgres,
+    partitions: isOpenGauss,
+    options: isOpenGauss,
+  };
 }
 
 export function firstStructureMetadataTab(capabilities: TableMetadataCapabilities, isCreateMode: boolean): TableInfoTab {
@@ -28,10 +40,22 @@ export function firstStructureMetadataTab(capabilities: TableMetadataCapabilitie
   if (capabilities.indexes) return "indexes";
   if (capabilities.foreignKeys) return "foreignKeys";
   if (capabilities.triggers) return "triggers";
+  if (capabilities.checks) return "checks";
+  if (capabilities.partitions) return "partitions";
+  if (capabilities.options) return "options";
   if (!isCreateMode && capabilities.ddl) return "ddl";
   return "columns";
 }
 
 export function isStructureMetadataTabSupported(tab: TableInfoTab, capabilities: TableMetadataCapabilities, isCreateMode: boolean): boolean {
-  return (tab === "columns" && capabilities.columns) || (tab === "indexes" && capabilities.indexes) || (tab === "foreignKeys" && capabilities.foreignKeys) || (tab === "triggers" && capabilities.triggers) || (tab === "ddl" && capabilities.ddl && !isCreateMode);
+  return (
+    (tab === "columns" && capabilities.columns) ||
+    (tab === "indexes" && capabilities.indexes) ||
+    (tab === "foreignKeys" && capabilities.foreignKeys) ||
+    (tab === "triggers" && capabilities.triggers) ||
+    (tab === "checks" && !!capabilities.checks) ||
+    (tab === "partitions" && !!capabilities.partitions) ||
+    (tab === "options" && !!capabilities.options) ||
+    (tab === "ddl" && capabilities.ddl && !isCreateMode)
+  );
 }

@@ -289,7 +289,7 @@ function spanStartOffset(sql: string, span: SqlTextSpan): number | null {
 function statementIndexAt(sql: string, offset: number): number {
   let statementIndex = 0;
   for (let index = 0; index < Math.min(offset, sql.length); index++) {
-    if (sql[index] === ";") statementIndex++;
+    if (sql[index] === ";" || sql[index] === "；") statementIndex++;
   }
   return statementIndex;
 }

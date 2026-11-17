@@ -76,7 +76,9 @@ export type ShortcutActionId =
   | "editSidebarConnection"
   | "openDataInNewTab"
   | "viewTableDdl"
-  | "sendSelectionToAi";
+  | "sendSelectionToAi"
+  | "nextDiagnostic"
+  | "quickFixSql";
 
 export type ShortcutScope = "global" | "editor" | "grid" | "search" | "sidebar";
 
@@ -566,6 +568,18 @@ export const SHORTCUT_DEFINITIONS: ShortcutDefinition[] = [
     labelKey: "settings.shortcutSendSelectionToAi",
     scope: "editor",
     defaultShortcut: "Mod+Shift+A",
+  },
+  {
+    id: "nextDiagnostic",
+    labelKey: "settings.shortcutNextDiagnostic",
+    scope: "editor",
+    defaultShortcut: "F8",
+  },
+  {
+    id: "quickFixSql",
+    labelKey: "settings.shortcutQuickFixSql",
+    scope: "editor",
+    defaultShortcut: "Alt+Enter",
   },
 ];
 

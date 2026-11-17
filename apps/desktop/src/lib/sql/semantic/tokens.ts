@@ -127,10 +127,11 @@ export function tokenizeSqlSemantic(input: string, dialectId = "mysql"): SqlSema
       continue;
     }
 
-    if ("(),.;*".includes(ch)) {
-      if (ch === ")") depth = Math.max(0, depth - 1);
-      tokens.push(token("punctuation", ch, start, start + 1, depth));
-      if (ch === "(") depth += 1;
+    if ("(),.;*；，".includes(ch)) {
+      const punct = ch === "；" ? ";" : ch === "，" ? "," : ch;
+      if (punct === ")") depth = Math.max(0, depth - 1);
+      tokens.push(token("punctuation", punct, start, start + 1, depth));
+      if (punct === "(") depth += 1;
       index += 1;
       continue;
     }
@@ -154,7 +155,7 @@ export function findActiveSqlStatementSpan(sql: string, tokens: readonly SqlSema
   let start = 0;
   let end = sql.length;
   for (const item of tokens) {
-    if (item.kind !== "punctuation" || item.text !== ";" || item.depth !== 0) continue;
+    if (item.kind !== "punctuation" || (item.text !== ";" && item.text !== "；") || item.depth !== 0) continue;
     if (item.span.end <= cursor) start = item.span.end;
     if (item.span.start >= cursor) {
       end = item.span.start;

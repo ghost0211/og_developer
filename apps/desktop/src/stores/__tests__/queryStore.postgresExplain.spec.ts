@@ -5,6 +5,9 @@ const mocks = vi.hoisted(() => ({
   buildExplainSql: vi.fn(),
   parseExplainResult: vi.fn(),
   executeQuery: vi.fn(),
+  beginManualTransaction: vi.fn(),
+  executeInManualTransaction: vi.fn(),
+  rollbackManualTransaction: vi.fn(),
   closeClientSession: vi.fn(),
   saveOpenTabsState: vi.fn(),
   getConfig: vi.fn(),
@@ -20,6 +23,9 @@ vi.mock("@/lib/diagram/explainPlan", () => ({
 
 vi.mock("@/lib/backend/api", () => ({
   executeQuery: mocks.executeQuery,
+  beginManualTransaction: mocks.beginManualTransaction,
+  executeInManualTransaction: mocks.executeInManualTransaction,
+  rollbackManualTransaction: mocks.rollbackManualTransaction,
   closeClientConnectionSession: mocks.closeClientSession,
   saveOpenTabsState: mocks.saveOpenTabsState,
 }));
@@ -154,6 +160,25 @@ describe("queryStore PostgreSQL EXPLAIN ANALYZE", () => {
     expect(mocks.buildExplainSql).toHaveBeenCalledWith("opengauss", SOURCE_SQL, "json", true);
     expect(mocks.executeQuery.mock.calls[0][5]).toMatchObject({ clientSessionId: `${tabId}:explain` });
     expect(mocks.executeQuery.mock.calls[0][5].executionMode).toBeUndefined();
+    expect(mocks.parseExplainResult).toHaveBeenCalledWith("opengauss", expect.anything());
+  });
+
+  it("executes EXPLAIN ANALYZE inside a manual transaction and rolls back in sandbox mode", async () => {
+    mocks.getConfig.mockReturnValue({ id: "pg-1", name: "openGauss JDBC", db_type: "opengauss", driver_profile: "opengauss-jdbc" });
+    mocks.buildExplainSql.mockResolvedValue({ ok: true, sql: "EXPLAIN (ANALYZE, FORMAT JSON) UPDATE orders SET status = 1" });
+    mocks.beginManualTransaction.mockResolvedValue("txn-sandbox-1");
+    mocks.executeInManualTransaction.mockResolvedValue([{ columns: ["QUERY PLAN"], rows: [["[]"]], affected_rows: 0, execution_time_ms: 4 }]);
+    mocks.rollbackManualTransaction.mockResolvedValue({ columns: [], rows: [], affected_rows: 0, execution_time_ms: 1 });
+
+    const { useQueryStore } = await import("@/stores/queryStore");
+    const store = useQueryStore();
+    const tabId = store.createTab("pg-1", "shop", "Query", "query", "public");
+    await store.explainTabSql(tabId, "UPDATE orders SET status = 1", "opengauss", "sandbox");
+
+    expect(mocks.beginManualTransaction).toHaveBeenCalledWith("pg-1", "shop", "public", undefined);
+    expect(mocks.executeInManualTransaction).toHaveBeenCalledWith("txn-sandbox-1", "EXPLAIN (ANALYZE, FORMAT JSON) UPDATE orders SET status = 1", "shop", "public", 5000);
+    expect(mocks.rollbackManualTransaction).toHaveBeenCalledWith("txn-sandbox-1");
+    expect(mocks.executeQuery).not.toHaveBeenCalled();
     expect(mocks.parseExplainResult).toHaveBeenCalledWith("opengauss", expect.anything());
   });
 });

@@ -11,6 +11,7 @@ import { sqlMetadataRefreshTarget } from "@/lib/sql/sqlMetadataRefresh";
 import { isQueryExecutionErrorResult } from "@/lib/query/queryResultError";
 import { isSqlExecutionSnapshot, resolveExecutableSql, type SqlExecutionOverride, type SqlExecutionSnapshot } from "@/lib/sql/sqlExecutionTarget";
 import { splitSqlStatementRanges } from "@/lib/sql/sqlStatementRanges";
+import { normalizeSqlFullwidthPunctuation } from "@/lib/sql/sqlSyntaxLint";
 import { extractSqlParameterDescriptors, type SqlParameterDescriptor, type SqlParameterSyntax } from "@/lib/sql/sqlParameters";
 import { expandSqlVariables } from "@/lib/sql/sqlVariables";
 import { enabledSqlParameterSyntaxes, resolveSqlVariableSyntaxToggles } from "@/lib/sql/sqlVariableSyntax";
@@ -33,13 +34,13 @@ export function stripSqlComments(sql: string): string {
 
 export function isDangerousSql(sql: string, _databaseType?: DatabaseType): boolean {
   const cleaned = stripSqlComments(sql);
-  return cleaned.split(";").some((stmt) => DANGER_RE.test(stmt));
+  return cleaned.split(/[;；]/).some((stmt) => DANGER_RE.test(stmt));
 }
 
 function primarySqlOperation(sql: string): string {
   const cleaned = stripSqlComments(sql);
   const statement = cleaned
-    .split(";")
+    .split(/[;；]/)
     .map((part) => part.trim())
     .find(Boolean);
   return statement?.match(/^([a-z]+)/i)?.[1]?.toUpperCase() || "SQL";
@@ -73,7 +74,7 @@ export function useSqlExecution(deps: {
   const pendingDangerSql = ref("");
   const showDangerDialog = ref(false);
   const suppressDangerConfirm = ref(false);
-  const explainMode = ref<"explain" | "autotrace">("explain");
+  const explainMode = ref<"explain" | "autotrace" | "sandbox">("explain");
   const showSqlParameterDialog = ref(false);
   const sqlParameterSourceSql = ref("");
   const sqlParameterNames = ref<SqlParameterDescriptor[]>([]);
@@ -84,13 +85,18 @@ export function useSqlExecution(deps: {
   const pendingOpenInNewResultTab = ref(false);
 
   async function resolvedExecutableSql(source?: SqlExecutionOverride): Promise<{ sql: string; sourceOffset?: number }> {
-    const atSetEnabled = resolveSqlVariableSyntaxToggles(settingsStore.editorSettings.sqlVariableSyntaxOverrides, deps.activeConnection.value?.db_type).atSet;
+    const databaseType = deps.activeConnection.value?.db_type;
+    const toggles = resolveSqlVariableSyntaxToggles(settingsStore.editorSettings.sqlVariableSyntaxOverrides, databaseType);
+    const parameterOptions = { databaseType, enabledSyntaxes: enabledSqlParameterSyntaxes(toggles) };
+    const atSetEnabled = toggles.atSet;
     const expand = (sql: string) => (atSetEnabled ? expandSqlVariables(sql).sql : sql);
-    if (typeof source === "string") return { sql: expand(source) };
+    const normalize = (sql: string) => normalizeSqlFullwidthPunctuation(sql, parameterOptions);
+    if (typeof source === "string") return { sql: normalize(expand(source)) };
 
     const resolved = deps.resolveExecutableSql ? await deps.resolveExecutableSql(source) : isSqlExecutionSnapshot(source) ? resolveExecutableSql(source.fullSql, source.selectedSql, { cursorPos: source.cursorPos }) : deps.executableSql.value;
-    const sql = expand(resolved);
-    if (!isSqlExecutionSnapshot(source) || !source.selectedSql.trim() || sql !== resolved) return { sql };
+    const expanded = expand(resolved);
+    const sql = normalize(expanded);
+    if (!isSqlExecutionSnapshot(source) || !source.selectedSql.trim() || expanded !== resolved) return { sql };
 
     const leadingWhitespace = source.selectedSql.length - source.selectedSql.trimStart().length;
     return { sql, sourceOffset: source.selectionFrom + leadingWhitespace };
@@ -226,8 +232,16 @@ export function useSqlExecution(deps: {
       return;
     }
 
+    const op = primarySqlOperation(sql);
+    const isWriteDml = op === "INSERT" || op === "UPDATE" || op === "DELETE" || op === "MERGE";
+    let effectiveMode = explainMode.value;
+    if (effectiveMode === "autotrace" && isWriteDml) {
+      effectiveMode = "sandbox";
+      toast(t("explain.autoSandboxNotice"), 3500);
+    }
+
     deps.activeOutputView.value = "explain";
-    const result = await queryStore.explainTabSql(tab.id, sql, deps.activeConnection.value?.db_type, explainMode.value);
+    const result = await queryStore.explainTabSql(tab.id, sql, deps.activeConnection.value?.db_type, effectiveMode);
     if (!result.ok) {
       toast(explainReasonMessage(result.reason), 5000);
       return;
@@ -262,6 +276,45 @@ export function useSqlExecution(deps: {
     pendingSourceOffset.value = undefined;
     pendingOpenInNewResultTab.value = false;
     await continueExecute(sql, sourceOffset, { openInNewResultTab });
+  }
+
+  function onSqlParametersReplaceInEditor(resolvedSql: string) {
+    const tab = deps.activeTab.value;
+    const sourceSql = sqlParameterSourceSql.value;
+    const sourceOffset = pendingSourceOffset.value;
+    showSqlParameterDialog.value = false;
+    sqlParameterSourceSql.value = "";
+    sqlParameterNames.value = [];
+    sqlParameterDatabaseType.value = undefined;
+    sqlParameterEnabledSyntaxes.value = [];
+    pendingSourceOffset.value = undefined;
+    pendingOpenInNewResultTab.value = false;
+    if (!tab) return;
+    const fullSql = tab.sql;
+    if (sourceOffset !== undefined && sourceSql && fullSql.slice(sourceOffset, sourceOffset + sourceSql.length) === sourceSql) {
+      const nextSql = fullSql.slice(0, sourceOffset) + resolvedSql + fullSql.slice(sourceOffset + sourceSql.length);
+      queryStore.updateSql(tab.id, nextSql);
+    } else if (sourceSql && fullSql.includes(sourceSql)) {
+      const idx = fullSql.indexOf(sourceSql);
+      const nextSql = fullSql.slice(0, idx) + resolvedSql + fullSql.slice(idx + sourceSql.length);
+      queryStore.updateSql(tab.id, nextSql);
+    } else {
+      queryStore.updateSql(tab.id, resolvedSql);
+    }
+    toast(t("sqlParameters.replacedInEditor"), 2500);
+  }
+
+  async function openSqlParameterBuilder() {
+    const tab = deps.activeTab.value;
+    if (!tab) return false;
+    const { sql, sourceOffset } = await resolvedExecutableSql();
+    const targetSql = sql.trim() ? sql : tab.sql;
+    if (!targetSql.trim()) return false;
+    const opened = prepareSqlParameterDialog(normalizeSqlFullwidthPunctuation(targetSql), sql.trim() ? sourceOffset : 0);
+    if (!opened) {
+      toast(t("sqlParameters.noParametersFound"), 2500);
+    }
+    return opened;
   }
 
   watch(showSqlParameterDialog, (open) => {
@@ -299,6 +352,8 @@ export function useSqlExecution(deps: {
     sqlParameterDatabaseType,
     sqlParameterEnabledSyntaxes,
     onSqlParametersConfirm,
+    onSqlParametersReplaceInEditor,
+    openSqlParameterBuilder,
     explainMode,
   };
 }

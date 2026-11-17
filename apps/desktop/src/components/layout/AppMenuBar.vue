@@ -115,6 +115,7 @@ const emit = defineEmits<{
   "search-objects": [];
   "open-sessions": [];
   "open-invalid-objects": [];
+  "open-recycle-bin": [];
   "open-top-sql": [];
   "open-command-window": [];
   "open-table-import": [];
@@ -471,6 +472,10 @@ const shortcutClass = "ml-auto pl-5 text-[10px] font-mono text-muted-foreground/
         <DropdownMenuItem :disabled="!hasConnections" :class="menuItemClass" @select="emit('open-invalid-objects')">
           <Stethoscope :class="menuIconClass" class="text-primary" />
           <span>{{ t("invalidObjects.title") }}</span>
+        </DropdownMenuItem>
+        <DropdownMenuItem :disabled="!hasConnections" :class="menuItemClass" @select="emit('open-recycle-bin')">
+          <RotateCcw :class="menuIconClass" class="text-primary" />
+          <span>{{ t("recycleBin.menuTitle") }}</span>
         </DropdownMenuItem>
         <DropdownMenuItem :disabled="!hasConnections" :class="menuItemClass" @select="emit('open-top-sql')">
           <Gauge :class="menuIconClass" class="text-primary" />

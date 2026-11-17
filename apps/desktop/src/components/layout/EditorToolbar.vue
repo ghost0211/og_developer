@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
-import { Play, Loader2, Square, Check, Table2, AlignLeft, GitBranch, Save, FolderOpen, X, Download, RotateCcw, AlertTriangle, ClipboardPaste, Minimize2 } from "@lucide/vue";
+import { Play, Loader2, Square, Check, AlignLeft, GitBranch, Save, FolderOpen, Download, RotateCcw, AlertTriangle, ClipboardPaste, Minimize2, ChevronDown, Braces, CaseUpper, CaseLower } from "@lucide/vue";
 import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import EditorContextPicker from "@/components/layout/EditorContextPicker.vue";
 import { supportsSqlInListPaste, supportsTransaction as supportsTransactionFeature } from "@/lib/database/databaseCapabilities";
@@ -11,11 +12,13 @@ import { hexToRgba } from "@/lib/common/color";
 import { productionContextForDatabase } from "@/lib/database/productionSafety";
 import type { QueryTab, ConnectionConfig } from "@/types/database";
 
+export type ToolbarExplainMode = "explain" | "autotrace" | "sandbox";
+
 const props = defineProps<{
   activeTab: QueryTab;
   activeConnection?: ConnectionConfig;
   executableSql: string;
-  explainMode?: string;
+  explainMode?: ToolbarExplainMode;
   sqlKeywordCase: "preserve" | "upper" | "lower";
   databaseRequiredSignal?: number;
   autoCommit?: boolean;
@@ -27,7 +30,8 @@ const emit = defineEmits<{
   execute: [];
   cancel: [];
   explain: [];
-  "update:explainMode": [mode: "explain" | "autotrace"];
+  "update:explainMode": [mode: ToolbarExplainMode];
+  openParameters: [];
   formatSql: [];
   compressSql: [];
   toggleSqlKeywordCase: [];
@@ -58,7 +62,25 @@ const supportsExplainAnalyze = computed(() => {
   const dbType = effectiveDatabaseTypeForConnection(props.activeConnection);
   return dbType === "postgres" || dbType === "opengauss";
 });
-const explainAnalyzeTooltip = computed(() => t("toolbar.explainAnalyze"));
+const explainModeBadge = computed(() => {
+  if (!supportsExplainAnalyze.value) return "";
+  if (props.explainMode === "sandbox") return t("toolbar.explainModeSandboxShort");
+  if (props.explainMode === "autotrace") return t("toolbar.explainModeAnalyzeShort");
+  return "";
+});
+const explainPrimaryTooltip = computed(() => {
+  if (props.activeTab.isExplaining) return t("toolbar.stopExplain");
+  if (props.explainMode === "sandbox") return t("toolbar.explainPlanSandbox");
+  if (props.explainMode === "autotrace") return t("toolbar.explainAnalyze");
+  return t("toolbar.explainPlan");
+});
+
+function selectAndRunExplainMode(mode: ToolbarExplainMode) {
+  emit("update:explainMode", mode);
+  if (props.executableSql.trim() && !props.activeTab.isExecuting && !props.activeTab.isExplaining) {
+    emit("explain");
+  }
+}
 const canSaveSql = computed(() => !!props.activeTab.externalSqlPath || !!props.activeTab.sql.trim());
 const keywordCaseIsLower = computed(() => props.sqlKeywordCase === "lower");
 const keywordCaseToggleTooltip = computed(() => (keywordCaseIsLower.value ? t("toolbar.keywordCaseUpper") : t("toolbar.keywordCaseLower")));
@@ -107,75 +129,101 @@ const toolbarStyle = computed(() => {
         </TooltipTrigger>
         <TooltipContent>{{ activeTab.isExecuting ? t("toolbar.stopQuery") : t("toolbar.executeShortcut") }}</TooltipContent>
       </Tooltip>
-      <Tooltip v-if="supportsExplain">
-        <TooltipTrigger as-child>
-          <Button
-            :variant="activeTab.isExplaining ? 'destructive' : 'ghost'"
-            size="icon"
-            class="h-6 w-6"
-            :class="activeTab.isExplaining ? '' : 'text-violet-600 hover:bg-violet-500/10 hover:text-violet-700 dark:text-violet-300 dark:hover:text-violet-200'"
-            :disabled="activeTab.isExecuting || (!activeTab.isExplaining && !executableSql.trim())"
-            @click="activeTab.isExplaining ? emit('cancel') : emit('explain')"
-          >
-            <Square v-if="activeTab.isExplaining" class="h-3.5 w-3.5 fill-current" />
-            <GitBranch v-else class="h-3.5 w-3.5" />
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>{{ activeTab.isExplaining ? t("toolbar.stopExplain") : t("toolbar.explainPlan") }}</TooltipContent>
-      </Tooltip>
-      <!-- Autotrace (DM) / EXPLAIN ANALYZE (Postgres) / actual plan (SQL Server) toggle -->
-      <Tooltip v-if="supportsExplainAnalyze">
-        <TooltipTrigger as-child>
-          <Button
-            variant="ghost"
-            size="icon"
-            class="h-6 w-6"
-            :class="props.explainMode === 'autotrace' ? 'text-green-600 bg-green-100 dark:text-green-300 dark:bg-green-900/30' : 'text-muted-foreground/50'"
-            :disabled="activeTab.isExecuting"
-            :aria-label="explainAnalyzeTooltip"
-            :aria-pressed="props.explainMode === 'autotrace'"
-            @click="emit('update:explainMode', props.explainMode === 'autotrace' ? 'explain' : 'autotrace')"
-          >
-            <span class="font-bold" style="font-size: 9px">A</span>
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>{{ explainAnalyzeTooltip }}</TooltipContent>
-      </Tooltip>
-      <!-- Transaction toggle -->
-      <Tooltip v-if="supportsTransaction">
-        <TooltipTrigger as-child>
-          <Button
-            variant="ghost"
-            size="icon"
-            class="h-6 w-6"
-            :class="isTransactionActive || autoCommit === false ? 'bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-300' : 'text-orange-600/70 hover:bg-orange-500/10 hover:text-orange-700 dark:text-orange-300/70 dark:hover:text-orange-200'"
-            :disabled="activeTab.isExecuting || activeTab.isExplaining"
-            @click="emit('update:autoCommit', autoCommit === false)"
-          >
-            <span class="text-xs font-bold leading-none">Tx</span>
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>{{ transactionTooltip }}</TooltipContent>
-      </Tooltip>
-      <!-- Commit button (only when transaction is active) -->
-      <Tooltip v-if="isTransactionActive">
-        <TooltipTrigger as-child>
-          <Button variant="ghost" size="icon" class="h-6 w-6 text-green-600 hover:bg-green-500/10 hover:text-green-700 dark:text-green-300 dark:hover:text-green-200" :disabled="activeTab.isExecuting" @click="emit('commit')">
-            <Check class="h-3.5 w-3.5" />
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>{{ t("toolbar.commit") }}</TooltipContent>
-      </Tooltip>
+      <div v-if="supportsExplain" class="inline-flex items-center rounded-md" :class="explainModeBadge && !activeTab.isExplaining ? 'bg-violet-500/10 ring-1 ring-violet-500/25' : ''">
+        <Tooltip>
+          <TooltipTrigger as-child>
+            <Button
+              :variant="activeTab.isExplaining ? 'destructive' : 'ghost'"
+              size="sm"
+              class="h-6 px-1.5 gap-1"
+              :class="[
+                supportsExplainAnalyze ? 'rounded-r-none' : '',
+                activeTab.isExplaining
+                  ? ''
+                  : props.explainMode === 'sandbox'
+                    ? 'text-emerald-700 hover:bg-emerald-500/15 dark:text-emerald-300'
+                    : props.explainMode === 'autotrace'
+                      ? 'text-amber-700 hover:bg-amber-500/15 dark:text-amber-300'
+                      : 'text-violet-600 hover:bg-violet-500/10 hover:text-violet-700 dark:text-violet-300 dark:hover:text-violet-200',
+              ]"
+              :disabled="activeTab.isExecuting || (!activeTab.isExplaining && !executableSql.trim())"
+              @click="activeTab.isExplaining ? emit('cancel') : emit('explain')"
+            >
+              <Square v-if="activeTab.isExplaining" class="h-3.5 w-3.5 fill-current" />
+              <GitBranch v-else class="h-3.5 w-3.5 shrink-0" />
+              <span v-if="explainModeBadge && !activeTab.isExplaining" class="text-[10px] font-semibold leading-none">{{ explainModeBadge }}</span>
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{{ explainPrimaryTooltip }}</TooltipContent>
+        </Tooltip>
+        <DropdownMenu v-if="supportsExplainAnalyze">
+          <DropdownMenuTrigger as-child>
+            <Button variant="ghost" size="icon" class="h-6 w-4 rounded-l-none border-l border-border/50 px-0 text-muted-foreground hover:text-foreground" :disabled="activeTab.isExecuting || activeTab.isExplaining" :aria-label="t('toolbar.explainModeSelect')">
+              <ChevronDown class="h-3 w-3" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" class="w-72">
+            <DropdownMenuItem class="flex flex-col items-start gap-0.5 py-1.5 text-xs cursor-pointer" @select="selectAndRunExplainMode('explain')">
+              <div class="flex w-full items-center justify-between font-medium">
+                <span>{{ t("toolbar.explainModeEstimate") }}</span>
+                <span v-if="!props.explainMode || props.explainMode === 'explain'" class="text-primary">✓</span>
+              </div>
+              <span class="text-[11px] text-muted-foreground">{{ t("toolbar.explainModeEstimateDesc") }}</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem class="flex flex-col items-start gap-0.5 py-1.5 text-xs cursor-pointer" @select="selectAndRunExplainMode('autotrace')">
+              <div class="flex w-full items-center justify-between font-medium">
+                <span>{{ t("toolbar.explainModeAnalyze") }}</span>
+                <span v-if="props.explainMode === 'autotrace'" class="text-primary">✓</span>
+              </div>
+              <span class="text-[11px] text-muted-foreground">{{ t("toolbar.explainModeAnalyzeDesc") }}</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem class="flex flex-col items-start gap-0.5 py-1.5 text-xs cursor-pointer" @select="selectAndRunExplainMode('sandbox')">
+              <div class="flex w-full items-center justify-between font-medium text-emerald-700 dark:text-emerald-300">
+                <span>{{ t("toolbar.explainModeSandbox") }}</span>
+                <span v-if="props.explainMode === 'sandbox'" class="text-primary">✓</span>
+              </div>
+              <span class="text-[11px] text-muted-foreground">{{ t("toolbar.explainModeSandboxDesc") }}</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
 
-      <!-- Rollback button (only when transaction is active) -->
-      <Tooltip v-if="isTransactionActive">
-        <TooltipTrigger as-child>
-          <Button variant="ghost" size="icon" class="h-6 w-6 text-red-600 hover:bg-red-500/10 hover:text-red-700 dark:text-red-300 dark:hover:text-red-200" :disabled="activeTab.isExecuting" @click="emit('rollback')">
-            <RotateCcw class="h-3.5 w-3.5" />
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>{{ t("toolbar.rollback") }}</TooltipContent>
-      </Tooltip>
+      <!-- Manual Transaction controls (only shown when manual mode or uncommitted transaction is active; global toggle lives in status bar) -->
+      <template v-if="supportsTransaction && (isTransactionActive || autoCommit === false)">
+        <Tooltip>
+          <TooltipTrigger as-child>
+            <Button
+              variant="ghost"
+              size="sm"
+              class="h-6 px-1.5 gap-1 rounded text-[11px] font-medium"
+              :class="isTransactionActive ? 'bg-amber-500/15 text-amber-700 ring-1 ring-amber-500/35 dark:text-amber-300' : 'bg-orange-500/10 text-orange-700 dark:text-orange-300'"
+              :disabled="activeTab.isExecuting || activeTab.isExplaining || isTransactionActive"
+              @click="emit('update:autoCommit', true)"
+            >
+              <span class="h-1.5 w-1.5 rounded-full" :class="isTransactionActive ? 'bg-amber-500 animate-pulse' : 'bg-orange-500'" />
+              <span>{{ isTransactionActive ? t("toolbar.uncommittedTxnBadge") : t("statusBar.manualTransaction") }}</span>
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{{ isTransactionActive ? t("toolbar.uncommittedTxnTooltip") : transactionTooltip }}</TooltipContent>
+        </Tooltip>
+        <Tooltip v-if="isTransactionActive">
+          <TooltipTrigger as-child>
+            <Button variant="ghost" size="icon" class="h-6 w-6 text-green-600 hover:bg-green-500/10 hover:text-green-700 dark:text-green-300 dark:hover:text-green-200" :disabled="activeTab.isExecuting" @click="emit('commit')">
+              <Check class="h-3.5 w-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{{ t("toolbar.commit") }}</TooltipContent>
+        </Tooltip>
+        <Tooltip v-if="isTransactionActive">
+          <TooltipTrigger as-child>
+            <Button variant="ghost" size="icon" class="h-6 w-6 text-red-600 hover:bg-red-500/10 hover:text-red-700 dark:text-red-300 dark:hover:text-red-200" :disabled="activeTab.isExecuting" @click="emit('rollback')">
+              <RotateCcw class="h-3.5 w-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{{ t("toolbar.rollback") }}</TooltipContent>
+        </Tooltip>
+      </template>
+
       <Tooltip>
         <TooltipTrigger as-child>
           <Button variant="ghost" size="icon" class="h-6 w-6 text-amber-600 hover:bg-amber-500/10 hover:text-amber-700 dark:text-amber-300 dark:hover:text-amber-200" :disabled="activeTab.isExecuting || activeTab.isExplaining || !activeTab.sql.trim()" @click="emit('formatSql')">
@@ -197,15 +245,24 @@ const toolbarStyle = computed(() => {
           <Button
             variant="ghost"
             size="icon"
-            class="h-6 w-6 font-mono text-sm font-semibold leading-none"
-            :class="keywordCaseIsLower ? 'bg-amber-500/10 text-amber-700 hover:bg-amber-500/20 hover:text-amber-800 dark:text-amber-300 dark:hover:text-amber-200' : 'text-amber-600/70 hover:bg-amber-500/10 hover:text-amber-700 dark:text-amber-300/70 dark:hover:text-amber-200'"
+            class="h-6 w-6"
+            :class="keywordCaseIsLower ? 'bg-amber-500/10 text-amber-700 hover:bg-amber-500/20 hover:text-amber-800 dark:text-amber-300 dark:hover:text-amber-200' : 'text-amber-600/75 hover:bg-amber-500/10 hover:text-amber-700 dark:text-amber-300/75 dark:hover:text-amber-200'"
             :aria-label="keywordCaseToggleTooltip"
             @click="emit('toggleSqlKeywordCase')"
           >
-            {{ keywordCaseIsLower ? "a" : "A" }}
+            <CaseLower v-if="keywordCaseIsLower" class="h-3.5 w-3.5" />
+            <CaseUpper v-else class="h-3.5 w-3.5" />
           </Button>
         </TooltipTrigger>
         <TooltipContent>{{ keywordCaseToggleTooltip }}</TooltipContent>
+      </Tooltip>
+      <Tooltip>
+        <TooltipTrigger as-child>
+          <Button variant="ghost" size="icon" class="h-6 w-6 text-indigo-600 hover:bg-indigo-500/10 hover:text-indigo-700 dark:text-indigo-300 dark:hover:text-indigo-200" :disabled="activeTab.isExecuting || !activeTab.sql.trim()" @click="emit('openParameters')">
+            <Braces class="h-3.5 w-3.5" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>{{ t("sqlParameters.toolbarTooltip") }}</TooltipContent>
       </Tooltip>
       <Tooltip>
         <TooltipTrigger as-child>

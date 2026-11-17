@@ -12,6 +12,9 @@ export interface TableStructureRefreshScope {
 export function visibleTableStructureRefreshScope(activeTab: TableInfoTab): TableStructureRefreshScope {
   switch (activeTab) {
     case "columns":
+    case "checks":
+    case "partitions":
+    case "options":
       return { columns: true, indexes: false, foreignKeys: false, triggers: false, tableComment: true };
     case "indexes":
       return { columns: true, indexes: true, foreignKeys: false, triggers: false, tableComment: true };

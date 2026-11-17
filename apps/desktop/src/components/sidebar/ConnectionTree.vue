@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, shallowRef, computed, nextTick, watch, provide, onMounted, onUnmounted, type Component, type ComponentPublicInstance, type CSSProperties } from "vue";
 import { useI18n } from "vue-i18n";
-import { Search, X, ListFilter, ListOrdered, ArrowDownAZ, ArrowUpZA, CircleDot, Crosshair, Server, Database, FolderTree, Table2, Eye, RotateCcw } from "@lucide/vue";
+import { Search, X, ListFilter, ListOrdered, ArrowDownAZ, ArrowUpZA, CircleDot, Crosshair, Server, Database, FolderTree, Table2, Eye, RotateCcw, Package, Braces, Code2, Hash } from "@lucide/vue";
 import { useConnectionStore } from "@/stores/connectionStore";
 import { useQueryStore } from "@/stores/queryStore";
 import { useSettingsStore } from "@/stores/settingsStore";
@@ -110,7 +110,7 @@ const sidebarObjectSourceDatabaseType = computed(() => {
 });
 const sidebarObjectSourceDialect = computed(() => codeMirrorSqlDialect(sidebarObjectSourceDatabaseType.value));
 const sidebarObjectSourceFormatDialect = computed(() => sqlFormatDialectForDbType(sidebarObjectSourceDatabaseType.value));
-type SearchScope = "connection" | "database" | "schema" | "table" | "view";
+type SearchScope = "connection" | "database" | "schema" | "table" | "view" | "package" | "procedure" | "function" | "sequence";
 const selectedSearchScopes = ref<SearchScope[]>([]);
 const searchCollapsedIds = ref<Set<string>>(new Set());
 const searchRefreshedNodeIds = new Set<string>();
@@ -250,7 +250,11 @@ const SEARCH_SCOPE_TO_NODE_TYPES: Record<SearchScope, TreeNodeType[]> = {
   database: ["database"],
   schema: ["schema"],
   table: ["table"],
-  view: ["view"],
+  view: ["view", "materialized_view"],
+  package: ["package", "package-body"],
+  procedure: ["procedure"],
+  function: ["function"],
+  sequence: ["sequence"],
 };
 
 // Sticky-row container types. When browsing a large number of children (e.g.
@@ -274,6 +278,10 @@ const searchScopeOptions = computed(() => {
     { scope: "schema", label: t("sidebar.searchScopeSchema"), icon: FolderTree },
     { scope: "table", label: t("sidebar.searchScopeTable"), icon: Table2 },
     { scope: "view", label: t("sidebar.searchScopeView"), icon: Eye },
+    { scope: "package", label: t("sidebar.searchScopePackage"), icon: Package },
+    { scope: "procedure", label: t("sidebar.searchScopeProcedure"), icon: Code2 },
+    { scope: "function", label: t("sidebar.searchScopeFunction"), icon: Braces },
+    { scope: "sequence", label: t("sidebar.searchScopeSequence"), icon: Hash },
   ] as const satisfies ReadonlyArray<{ scope: SearchScope; label: string; icon: Component }>;
 });
 const searchScopeMenuItems = computed(() => [

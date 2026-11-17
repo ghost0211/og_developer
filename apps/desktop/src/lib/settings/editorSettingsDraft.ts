@@ -20,6 +20,7 @@ export const EDITOR_SETTINGS_DRAFT_KEYS = [
   "wordWrap",
   "vimModeEnabled",
   "autoCloseBrackets",
+  "sqlSyntaxDiagnosticsEnabled",
   "sqlSemanticDiagnosticsMode",
   "confirmDangerousSqlExecution",
   "confirmUnsavedSqlClose",

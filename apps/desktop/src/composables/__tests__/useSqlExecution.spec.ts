@@ -1,7 +1,7 @@
 import { computed, ref } from "vue";
 import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { requiresDatabaseSelection, useSqlExecution } from "../useSqlExecution";
+import { isDangerousSql, requiresDatabaseSelection, useSqlExecution } from "../useSqlExecution";
 import { useConnectionStore } from "@/stores/connectionStore";
 import { useHistoryStore } from "@/stores/historyStore";
 import { useQueryStore } from "@/stores/queryStore";
@@ -408,5 +408,34 @@ describe("useSqlExecution", () => {
     productionSafetyStore.confirm();
     await pendingExecution;
     expect(executeCurrentSql).toHaveBeenCalledTimes(1);
+  });
+
+  it("compatibly normalizes unquoted Chinese fullwidth semicolons and commas on execution while preserving string literals", async () => {
+    const rawSql = "SELECT 1， '你好，世界；' AS msg；\nSELECT 2， 3；";
+    const activeTab = ref<QueryTab | undefined>({ ...queryTab("app"), sql: rawSql });
+    const activeConnection = ref<ConnectionConfig | undefined>(connection("opengauss"));
+    const activeOutputView = ref<"result" | "output" | "summary" | "explain" | "chart">("result");
+    const queryStore = useQueryStore();
+    const executeCurrentSql = vi.spyOn(queryStore, "executeCurrentSql").mockImplementation(async () => {
+      if (activeTab.value) activeTab.value.result = { columns: ["msg"], rows: [["你好，世界；"]], affected_rows: 0, execution_time_ms: 1 };
+    });
+    vi.spyOn(useHistoryStore(), "add").mockResolvedValue(undefined);
+
+    const execution = useSqlExecution({
+      activeTab: computed(() => activeTab.value),
+      activeConnection: computed(() => activeConnection.value),
+      executableSql: computed(() => rawSql),
+      activeOutputView,
+    });
+
+    await execution.tryExecute();
+
+    expect(executeCurrentSql).toHaveBeenCalledWith("SELECT 1, '你好，世界；' AS msg;\nSELECT 2, 3;", {});
+    expect(activeOutputView.value).toBe("summary");
+    expect(activeTab.value?.sql).toBe(rawSql);
+  });
+
+  it("detects dangerous SQL statements even after a Chinese fullwidth semicolon", () => {
+    expect(isDangerousSql("SELECT 1； DROP TABLE users；", "opengauss")).toBe(true);
   });
 });

@@ -3,7 +3,7 @@
 import { EditorState } from "@codemirror/state";
 import { activateHover, EditorView, hasHoverTooltips, hoverTooltip, tooltips, type Tooltip } from "@codemirror/view";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createSqlHoverController, createSqlHoverDom, type SqlHoverController } from "../sqlHoverTooltip";
+import { createSqlDiagnosticHoverDom, createSqlHoverController, createSqlHoverDom, type SqlHoverController } from "../sqlHoverTooltip";
 
 describe("SQL Editor Hover Tooltip runtime & DOM lifecycle", () => {
   let hostElement: HTMLElement;
@@ -442,5 +442,33 @@ describe("SQL Editor Hover Tooltip runtime & DOM lifecycle", () => {
     owner[action](currentView);
     expect(hasHoverTooltips(currentView.state)).toBe(false);
     expect(hostElement.querySelector('[data-query-editor-hover-tooltip="true"]')).toBeNull();
+  });
+
+  it("renders diagnostic hover card with clickable quick-fix buttons and ownership metadata", () => {
+    const onReplaceOne = vi.fn();
+    const onReplaceAll = vi.fn();
+    const dom = createSqlDiagnosticHoverDom({
+      title: "SQL 语法提示",
+      message: '检测到中文全角分号 "；"',
+      severity: "error",
+      editorId: "editor-diag-1",
+      actions: [
+        { label: '替换为 ";"', primary: true, onSelect: onReplaceOne },
+        { label: "全部替换（2 处）", onSelect: onReplaceAll },
+      ],
+    });
+
+    expect(dom.dataset.queryEditorHoverTooltip).toBe("true");
+    expect(dom.dataset.queryEditorDiagnosticTooltip).toBe("true");
+    expect(dom.dataset.queryEditorId).toBe("editor-diag-1");
+    expect(dom.textContent).toContain("SQL 语法提示");
+    expect(dom.textContent).toContain('检测到中文全角分号 "；"');
+
+    const buttons = dom.querySelectorAll<HTMLButtonElement>('[data-diagnostic-quick-fix="true"]');
+    expect(buttons).toHaveLength(2);
+    buttons[0]!.click();
+    expect(onReplaceOne).toHaveBeenCalledTimes(1);
+    buttons[1]!.click();
+    expect(onReplaceAll).toHaveBeenCalledTimes(1);
   });
 });

@@ -107,7 +107,7 @@ export function analyzeEditableQuery(sql: string): EditableQueryInfo | null {
 
 export function analyzeEditableQueryEditability(sql: string): QueryEditability {
   const normalized = stripSqlComments(sql)
-    .replace(/;+\s*$/, "")
+    .replace(/[;；]+\s*$/, "")
     .trim();
   if (!normalized) return { editable: false, reason: "not-select" };
   if (/^\s*WITH\b/i.test(normalized)) return { editable: false, reason: "cte" };
@@ -115,7 +115,7 @@ export function analyzeEditableQueryEditability(sql: string): QueryEditability {
   if (hasTopLevelKeyword(normalized, ["UNION", "INTERSECT", "EXCEPT", "MINUS"])) {
     return { editable: false, reason: "set-operation" };
   }
-  if (normalized.includes(";")) return { editable: false, reason: "complex-source" };
+  if (normalized.includes(";") || normalized.includes("；")) return { editable: false, reason: "complex-source" };
 
   const fromIndex = findTopLevelKeyword(normalized, "FROM", 0);
   if (fromIndex < 0) return { editable: false, reason: "no-table" };

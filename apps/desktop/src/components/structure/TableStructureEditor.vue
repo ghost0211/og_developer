@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { AlertTriangle, Check, ChevronDown, ChevronUp, Copy, Database, Info, KeyRound, ListChevronsUpDown, Loader2, Maximize2, Plus, RefreshCw, Save, Search, Settings, SlidersHorizontal, Trash2, X } from "@lucide/vue";
+import { AlertTriangle, Check, ChevronDown, ChevronUp, Copy, Database, Eraser, Info, KeyRound, ListChevronsUpDown, Loader2, Maximize2, Pencil, Plus, RefreshCw, Save, Search, Settings, SlidersHorizontal, Split, Trash2, X } from "@lucide/vue";
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -64,6 +64,33 @@ import {
   splitDataType,
   toColumnNames,
 } from "@/lib/table/tableStructureEditorState";
+import {
+  augmentCreateTableSqlWithOpenGauss,
+  buildOpenGaussAlterTableStatements,
+  checkConstraintChanged,
+  createCheckConstraintDrafts,
+  createDefaultOpenGaussPartitionDraft,
+  createDefaultOpenGaussTableOptions,
+  fetchOpenGaussTableOptions,
+  fetchOpenGaussTablePartitions,
+  fetchTableCheckConstraints,
+  formatByteSize,
+  generateCheckConstraintName,
+  hasCreateModeOpenGaussOptionsChanges,
+  hasCreateModeOpenGaussPartitionChanges,
+  openGaussOptionsChanged,
+  type EditableOpenGaussPartitionDraft,
+  type EditableOpenGaussTableOptions,
+  type EditableTableCheckConstraint,
+  type OpenGaussCompression,
+  type OpenGaussCreatePartitionStrategy,
+  type OpenGaussOrientation,
+  type OpenGaussPartitionPendingOp,
+  type OpenGaussStorageType,
+  type OpenGaussTableOptionsSnapshot,
+  type OpenGaussTablePartitionMetadata,
+  type OpenGaussValidationMessages,
+} from "@/lib/table/opengaussTableStructure";
 import * as api from "@/lib/backend/api";
 
 const { t } = useI18n();
@@ -80,6 +107,9 @@ const columnsScrollerRef = ref<StructureScrollerRef>();
 const indexesScrollerRef = ref<StructureScrollerRef>();
 const foreignKeysScrollerRef = ref<StructureScrollerRef>();
 const triggersScrollerRef = ref<StructureScrollerRef>();
+const checksScrollerRef = ref<StructureScrollerRef>();
+const partitionsScrollerRef = ref<StructureScrollerRef>();
+const optionsScrollerRef = ref<StructureScrollerRef>();
 const ddlScrollerRef = ref<StructureScrollerRef>();
 const dynamicDataTypeOptionsCache = new Map<string, string[]>();
 
@@ -124,6 +154,9 @@ const sqlPreviewLoading = ref(false);
 const indexesLoading = ref(false);
 const foreignKeysLoading = ref(false);
 const triggersLoading = ref(false);
+const checksLoading = ref(false);
+const openGaussOptionsLoading = ref(false);
+const openGaussPartitionsLoading = ref(false);
 const ddlContent = ref("");
 const ddlLoading = ref(false);
 const loadedMetadataFacets = new Set<ObjectMetadataFacet>();
@@ -175,7 +208,15 @@ const warnings = ref<string[]>([]);
 const foreignKeys = ref<EditableStructureForeignKey[]>([]);
 const triggers = ref<EditableStructureTrigger[]>([]);
 const triggersLoaded = ref(false);
-const secondaryMetadataLoading = computed(() => indexesLoading.value || foreignKeysLoading.value || triggersLoading.value);
+const checks = ref<EditableTableCheckConstraint[]>([]);
+const checksLoaded = ref(false);
+const openGaussOptions = ref<EditableOpenGaussTableOptions>(createDefaultOpenGaussTableOptions());
+const originalOpenGaussOptions = ref<OpenGaussTableOptionsSnapshot | undefined>(undefined);
+const openGaussOptionsLoaded = ref(false);
+const openGaussPartitions = ref<EditableOpenGaussPartitionDraft>(createDefaultOpenGaussPartitionDraft());
+const originalOpenGaussPartitions = ref<OpenGaussTablePartitionMetadata | null>(null);
+const openGaussPartitionsLoaded = ref(false);
+const secondaryMetadataLoading = computed(() => indexesLoading.value || foreignKeysLoading.value || triggersLoading.value || checksLoading.value || openGaussOptionsLoading.value || openGaussPartitionsLoading.value);
 
 function sameList(left: string[] | null | undefined, right: string[] | null | undefined): boolean {
   const a = left ?? [];
@@ -602,8 +643,10 @@ function onIndexColResize(e: MouseEvent, col: number) {
 
 const connection = computed(() => (props.connectionId ? store.getConfig(props.connectionId) : undefined));
 const databaseType = computed(() => tableStructureDatabaseTypeForConnection(connection.value));
+const isOpenGaussStructure = computed(() => databaseType.value === "opengauss" || connection.value?.db_type === "opengauss");
+const effectiveMetadataDbType = computed(() => (isOpenGaussStructure.value ? "opengauss" : databaseType.value));
 const structureCapabilities = computed(() => getTableStructureCapabilities(databaseType.value, connection.value?.db_type, connection.value?.database_info?.productVersion));
-const tableMetadataCapabilities = computed(() => getTableMetadataCapabilities(databaseType.value));
+const tableMetadataCapabilities = computed(() => getTableMetadataCapabilities(effectiveMetadataDbType.value));
 const structureDialect = computed(() => structureCapabilities.value.dialect);
 const isTableCommentDisabled = computed(() => !structureCapabilities.value.comment);
 const dynamicDataTypeOptions = ref<string[]>([]);
@@ -749,6 +792,9 @@ function structureScrollerForTab(tab: TableInfoTab): HTMLElement | undefined {
   if (tab === "indexes") return structureScrollerElement(indexesScrollerRef.value);
   if (tab === "foreignKeys") return structureScrollerElement(foreignKeysScrollerRef.value);
   if (tab === "triggers") return structureScrollerElement(triggersScrollerRef.value);
+  if (tab === "checks") return structureScrollerElement(checksScrollerRef.value);
+  if (tab === "partitions") return structureScrollerElement(partitionsScrollerRef.value);
+  if (tab === "options") return structureScrollerElement(optionsScrollerRef.value);
   if (tab === "ddl") return structureScrollerElement(ddlScrollerRef.value);
   return undefined;
 }
@@ -795,6 +841,14 @@ function createCurrentDraft(initialized = true): TableStructureEditorDraft {
     indexes: cloneDraftValue(indexes.value),
     foreignKeys: cloneDraftValue(foreignKeys.value),
     triggers: cloneDraftValue(triggers.value),
+    checks: cloneDraftValue(checks.value),
+    checksLoaded: checksLoaded.value,
+    openGaussOptions: cloneDraftValue(openGaussOptions.value),
+    originalOpenGaussOptions: originalOpenGaussOptions.value ? cloneDraftValue(originalOpenGaussOptions.value) : undefined,
+    openGaussOptionsLoaded: openGaussOptionsLoaded.value,
+    openGaussPartitions: cloneDraftValue(openGaussPartitions.value),
+    originalOpenGaussPartitions: originalOpenGaussPartitions.value ? cloneDraftValue(originalOpenGaussPartitions.value) : null,
+    openGaussPartitionsLoaded: openGaussPartitionsLoaded.value,
     triggersLoaded: triggersLoaded.value,
     loadedMetadataFacets: [...loadedMetadataFacets],
     scrollPositions: cloneDraftValue(structureScrollPositions.value),
@@ -810,6 +864,13 @@ function syncDraftToParent() {
   syncingDraft = false;
 }
 
+function baseStructureRefreshTab(tab: TableInfoTab | undefined): "columns" | "indexes" | "foreignKeys" | "triggers" | "ddl" {
+  if (!tab || tab === "checks" || tab === "partitions" || tab === "options") {
+    return "columns";
+  }
+  return tab;
+}
+
 function restoreDraft(draft: TableStructureEditorDraft) {
   restoringDraft = true;
   draftHydrated = false;
@@ -821,13 +882,21 @@ function restoreDraft(draft: TableStructureEditorDraft) {
   indexes.value = cloneDraftValue(draft.indexes || []);
   foreignKeys.value = cloneDraftValue(draft.foreignKeys || []);
   triggers.value = cloneDraftValue(draft.triggers || []);
+  checks.value = cloneDraftValue(draft.checks || []);
+  checksLoaded.value = draft.checksLoaded ?? false;
+  openGaussOptions.value = draft.openGaussOptions ? cloneDraftValue(draft.openGaussOptions) : createDefaultOpenGaussTableOptions();
+  originalOpenGaussOptions.value = draft.originalOpenGaussOptions ? cloneDraftValue(draft.originalOpenGaussOptions) : undefined;
+  openGaussOptionsLoaded.value = draft.openGaussOptionsLoaded ?? false;
+  openGaussPartitions.value = draft.openGaussPartitions ? cloneDraftValue(draft.openGaussPartitions) : createDefaultOpenGaussPartitionDraft();
+  originalOpenGaussPartitions.value = draft.originalOpenGaussPartitions ? cloneDraftValue(draft.originalOpenGaussPartitions) : null;
+  openGaussPartitionsLoaded.value = draft.openGaussPartitionsLoaded ?? false;
   // Drafts created before lazy trigger loading always contained live trigger metadata.
   triggersLoaded.value = draft.triggersLoaded ?? true;
   loadedMetadataFacets.clear();
   if (draft.loadedMetadataFacets) {
     for (const facet of draft.loadedMetadataFacets) loadedMetadataFacets.add(facet);
   } else {
-    const activeScope = visibleTableStructureRefreshScope(draft.activeTab || "columns");
+    const activeScope = visibleTableStructureRefreshScope(baseStructureRefreshTab(draft.activeTab));
     if (activeScope.columns) loadedMetadataFacets.add("columns");
     if (activeScope.indexes || draft.indexes?.length) loadedMetadataFacets.add("indexes");
     if (activeScope.foreignKeys || draft.foreignKeys?.length) loadedMetadataFacets.add("foreign-keys");
@@ -874,12 +943,30 @@ function markDraftHydratedAndSync() {
   syncDraftToParent();
 }
 
+function hasPendingCheckChanges(): boolean {
+  if (!tableMetadataCapabilities.value.checks) return false;
+  if (isCreateMode.value) return checks.value.length > 0;
+  return checks.value.some(checkConstraintChanged);
+}
+
+function hasPendingOpenGaussOptionsChanges(): boolean {
+  if (!tableMetadataCapabilities.value.options) return false;
+  if (isCreateMode.value) return hasCreateModeOpenGaussOptionsChanges(openGaussOptions.value);
+  return openGaussOptionsChanged(openGaussOptions.value, originalOpenGaussOptions.value, Boolean(originalOpenGaussPartitions.value));
+}
+
+function hasPendingOpenGaussPartitionChanges(): boolean {
+  if (!tableMetadataCapabilities.value.partitions) return false;
+  if (isCreateMode.value) return hasCreateModeOpenGaussPartitionChanges(openGaussPartitions.value);
+  return openGaussPartitions.value.pendingOps.length > 0;
+}
+
 function hasPendingStructureChanges(): boolean {
   if (isCreateMode.value) {
-    return !!newTableName.value.trim() || !!tableComment.value.trim() || columns.value.length > 0 || indexes.value.length > 0 || foreignKeys.value.length > 0 || triggers.value.length > 0;
+    return !!newTableName.value.trim() || !!tableComment.value.trim() || columns.value.length > 0 || indexes.value.length > 0 || foreignKeys.value.length > 0 || triggers.value.length > 0 || hasPendingCheckChanges() || hasPendingOpenGaussOptionsChanges() || hasPendingOpenGaussPartitionChanges();
   }
   const scope = captureStructureRefreshScope();
-  return scope.columns || scope.indexes || scope.foreignKeys || scope.triggers || scope.tableComment;
+  return scope.columns || scope.indexes || scope.foreignKeys || scope.triggers || scope.tableComment || hasPendingCheckChanges() || hasPendingOpenGaussOptionsChanges() || hasPendingOpenGaussPartitionChanges();
 }
 
 function clearSqlPreviewState() {
@@ -913,13 +1000,13 @@ function mergeDataTypeOptions(primary: readonly string[], fallback: readonly str
 }
 
 function postgresDataTypeTooltip(option: string): string | undefined {
-  if (databaseType.value !== "postgres") return undefined;
+  if (databaseType.value !== "postgres" && databaseType.value !== "opengauss") return undefined;
   const help = getPostgresDataTypeHelp(option);
   return help ? t(`structureEditor.postgresDataTypeHelp.${help.key}`) : undefined;
 }
 
 function dataTypeTooltip(option: string): string | undefined {
-  return databaseType.value === "postgres" ? postgresDataTypeTooltip(option) : undefined;
+  return databaseType.value === "postgres" || databaseType.value === "opengauss" ? postgresDataTypeTooltip(option) : undefined;
 }
 
 async function loadDynamicDataTypeOptions() {
@@ -994,6 +1081,33 @@ function structureChangeOptions(): BuildTableStructureChangeSqlOptions {
   };
 }
 
+const openGaussValidationMessages = computed<OpenGaussValidationMessages>(() => ({
+  checkNameRequired: t("structureEditor.opengauss.warnCheckNameRequired", "CHECK 约束名称不能为空"),
+  checkExpressionRequired: t("structureEditor.opengauss.warnCheckExpressionRequired", "CHECK 约束表达式不能为空"),
+  duplicateCheckName: (name) => `${t("structureEditor.opengauss.warnDuplicateCheckName", "CHECK 约束名称重复")}: ${name}`,
+  columnUstoreIncompatible: t("structureEditor.opengauss.warnColumnUstoreIncompatible", "openGauss 列存表 (orientation = column) 不支持 USTORE 存储引擎，请切换为行存或 ASTORE"),
+  columnFillfactorIncompatible: t("structureEditor.opengauss.warnColumnFillfactorIncompatible", "openGauss 列存表 (orientation = column) 不支持设置填充因子 (fillfactor)"),
+  invalidFillfactor: t("structureEditor.opengauss.warnInvalidFillfactor", "填充因子 (fillfactor) 必须是 10 到 100 之间的整数"),
+  rowCompressionLevelIncompatible: t("structureEditor.opengauss.warnRowCompressionLevelIncompatible", "行存表压缩仅支持 no 或 yes；low / middle / high 压缩级别仅适用于列存表"),
+  partitionKeyRequired: t("structureEditor.opengauss.warnPartitionKeyRequired", "启用分区表时必须至少选择一个分区键列"),
+  partitionKeyUnknown: (col) => `${t("structureEditor.opengauss.warnPartitionKeyUnknown", "分区键列不存在于当前字段列表中")}: ${col}`,
+  columnPartitionStrategyIncompatible: t("structureEditor.opengauss.warnColumnPartitionStrategyIncompatible", "openGauss 列存表仅支持普通 RANGE 分区（不支持 LIST / HASH / INTERVAL 分区）"),
+  intervalSingleKeyRequired: t("structureEditor.opengauss.warnIntervalSingleKeyRequired", "openGauss INTERVAL 自动间隔分区仅支持单列分区键"),
+  intervalMaxvalueIncompatible: t("structureEditor.opengauss.warnIntervalMaxvalueIncompatible", "openGauss INTERVAL 自动间隔分区不支持 MAXVALUE 分区边界"),
+  initialPartitionRequired: t("structureEditor.opengauss.warnInitialPartitionRequired", "启用分区表时必须至少定义一个初始分区"),
+  partitionNameRequired: t("structureEditor.opengauss.warnPartitionNameRequired", "分区名称不能为空"),
+  partitionBoundaryRequired: (name) => `${t("structureEditor.opengauss.warnPartitionBoundaryRequired", "分区边界值不能为空")}: ${name}`,
+  duplicatePartitionName: (name) => `${t("structureEditor.opengauss.warnDuplicatePartitionName", "分区名称已存在或重复")}: ${name}`,
+  invalidHashPartitionCount: t("structureEditor.opengauss.warnInvalidHashPartitionCount", "HASH 分区数量必须是大于等于 1 的整数，或手动添加命名分区"),
+  addPartitionUnsupportedStrategy: (strategy) => `${t("structureEditor.opengauss.warnAddPartitionUnsupportedStrategy", "openGauss 不支持对该策略分区表手动执行 ADD PARTITION")}: ${strategy.toUpperCase()}`,
+  splitPartitionUnsupported: t("structureEditor.opengauss.warnSplitPartitionUnsupported", "openGauss SPLIT PARTITION 仅支持行存 RANGE / INTERVAL 分区表"),
+  splitPartitionIncomplete: (name) => `${t("structureEditor.opengauss.warnSplitPartitionIncomplete", "拆分分区需要完整填写拆分点 (AT) 及两个目标分区名称")}: ${name}`,
+  splitPartitionSameTargetName: (name) => `${t("structureEditor.opengauss.warnSplitPartitionSameTargetName", "拆分分区的两个目标分区名称不能相同")}: ${name}`,
+  renamePartitionRequired: (name) => `${t("structureEditor.opengauss.warnRenamePartitionRequired", "重命名分区的新名称不能为空")}: ${name}`,
+  renamePartitionUnchanged: (name) => `${t("structureEditor.opengauss.warnRenamePartitionUnchanged", "分区的新名称不能与原名称相同")}: ${name}`,
+  dropLastPartitionForbidden: (name) => `${t("structureEditor.opengauss.warnDropLastPartitionForbidden", "不能删除最后一个分区（openGauss 要求分区表至少保留一个分区）")}: ${name}`,
+}));
+
 async function refreshSqlPreview() {
   const requestId = ++sqlPreviewRequestId;
   if (!hasPendingStructureChanges()) {
@@ -1005,10 +1119,52 @@ async function refreshSqlPreview() {
   sqlPreviewLoading.value = true;
   const options = structureChangeOptions();
   try {
-    const result = isCreateMode.value ? await api.buildCreateTableSql(options) : await api.buildTableStructureChangeSql(options);
-    if (requestId !== sqlPreviewRequestId) return;
-    pendingStatements.value = result.statements;
-    warnings.value = result.warnings;
+    if (isCreateMode.value) {
+      const baseResult = await api.buildCreateTableSql(options);
+      if (requestId !== sqlPreviewRequestId) return;
+      if (tableMetadataCapabilities.value.checks || isOpenGaussStructure.value) {
+        const augmented = augmentCreateTableSqlWithOpenGauss({
+          baseStatements: baseResult.statements,
+          baseWarnings: baseResult.warnings,
+          databaseType: effectiveMetadataDbType.value,
+          schema: props.schema,
+          tableName: options.tableName,
+          availableColumns: availableColumnNames.value,
+          checks: tableMetadataCapabilities.value.checks ? checks.value : undefined,
+          storageOptions: isOpenGaussStructure.value ? openGaussOptions.value : undefined,
+          partitionDraft: isOpenGaussStructure.value ? openGaussPartitions.value : undefined,
+          messages: openGaussValidationMessages.value,
+        });
+        pendingStatements.value = augmented.statements;
+        warnings.value = augmented.warnings;
+      } else {
+        pendingStatements.value = baseResult.statements;
+        warnings.value = baseResult.warnings;
+      }
+    } else {
+      const baseScope = captureStructureRefreshScope();
+      const hasBaseChanges = baseScope.columns || baseScope.indexes || baseScope.foreignKeys || baseScope.triggers || baseScope.tableComment;
+      const baseResult = hasBaseChanges ? await api.buildTableStructureChangeSql(options) : { statements: [], warnings: [] };
+      if (requestId !== sqlPreviewRequestId) return;
+      if (tableMetadataCapabilities.value.checks || isOpenGaussStructure.value) {
+        const extraResult = buildOpenGaussAlterTableStatements({
+          databaseType: effectiveMetadataDbType.value,
+          schema: props.schema,
+          tableName: options.tableName,
+          checks: tableMetadataCapabilities.value.checks ? checks.value : undefined,
+          storageOptions: isOpenGaussStructure.value ? openGaussOptions.value : undefined,
+          originalStorageOptions: isOpenGaussStructure.value ? originalOpenGaussOptions.value : undefined,
+          partitionMetadata: isOpenGaussStructure.value ? originalOpenGaussPartitions.value : null,
+          partitionEditDraft: isOpenGaussStructure.value ? openGaussPartitions.value : undefined,
+          messages: openGaussValidationMessages.value,
+        });
+        pendingStatements.value = [...baseResult.statements, ...extraResult.statements];
+        warnings.value = [...baseResult.warnings, ...extraResult.warnings];
+      } else {
+        pendingStatements.value = baseResult.statements;
+        warnings.value = baseResult.warnings;
+      }
+    }
   } catch (e: any) {
     if (requestId !== sqlPreviewRequestId) return;
     pendingStatements.value = [];
@@ -1035,6 +1191,9 @@ function resetState() {
   indexesLoading.value = false;
   foreignKeysLoading.value = false;
   triggersLoading.value = false;
+  checksLoading.value = false;
+  openGaussOptionsLoading.value = false;
+  openGaussPartitionsLoading.value = false;
   errorMessage.value = "";
   columns.value = [];
   indexes.value = [];
@@ -1043,6 +1202,14 @@ function resetState() {
   foreignKeys.value = [];
   triggers.value = [];
   triggersLoaded.value = false;
+  checks.value = [];
+  checksLoaded.value = false;
+  openGaussOptions.value = createDefaultOpenGaussTableOptions();
+  originalOpenGaussOptions.value = undefined;
+  openGaussOptionsLoaded.value = false;
+  openGaussPartitions.value = createDefaultOpenGaussPartitionDraft();
+  originalOpenGaussPartitions.value = null;
+  openGaussPartitionsLoaded.value = false;
   selectedColumnId.value = null;
   ddlContent.value = "";
   ddlFetched.value = false;
@@ -1059,6 +1226,93 @@ function resetState() {
   localColumnOrderNoticeShown.value = false;
 }
 
+async function runStructureMetadataQuery(sql: string) {
+  await store.ensureConnected(props.connectionId);
+  return api.executeQuery(props.connectionId, props.database, sql, metadataSchema.value);
+}
+
+async function loadChecksMetadata(force = false) {
+  if (isCreateMode.value || !props.connectionId || !props.database || !props.tableName || !tableMetadataCapabilities.value.checks) return;
+  if (!force && (checksLoaded.value || checksLoading.value)) return;
+  const targetConn = props.connectionId;
+  const targetDb = props.database;
+  const targetSchema = metadataSchema.value;
+  const targetTable = props.tableName;
+  checksLoading.value = true;
+  try {
+    const items = await fetchTableCheckConstraints(runStructureMetadataQuery, targetSchema, targetTable);
+    if (props.connectionId !== targetConn || props.database !== targetDb || metadataSchema.value !== targetSchema || props.tableName !== targetTable) return;
+    checks.value = createCheckConstraintDrafts(items, uuid);
+    checksLoaded.value = true;
+  } catch (e) {
+    console.warn("[ogdeveloper][structure-editor:checks-load-failed]", e);
+  } finally {
+    checksLoading.value = false;
+  }
+}
+
+async function loadOpenGaussOptionsAndPartitionsMetadata(force = false) {
+  if (isCreateMode.value || !props.connectionId || !props.database || !props.tableName || !isOpenGaussStructure.value) return;
+  const needOptions = tableMetadataCapabilities.value.options && (force || !openGaussOptionsLoaded.value);
+  const needPartitions = tableMetadataCapabilities.value.partitions && (force || !openGaussPartitionsLoaded.value);
+  if (!needOptions && !needPartitions) return;
+
+  const targetConn = props.connectionId;
+  const targetDb = props.database;
+  const targetSchema = metadataSchema.value;
+  const targetTable = props.tableName;
+
+  if (needOptions) openGaussOptionsLoading.value = true;
+  if (needPartitions) openGaussPartitionsLoading.value = true;
+  try {
+    const [optsRes, partsRes] = await Promise.all([
+      needOptions ? fetchOpenGaussTableOptions(runStructureMetadataQuery, targetSchema, targetTable) : Promise.resolve(undefined),
+      needPartitions ? fetchOpenGaussTablePartitions(runStructureMetadataQuery, targetSchema, targetTable) : Promise.resolve(undefined),
+    ]);
+    if (props.connectionId !== targetConn || props.database !== targetDb || metadataSchema.value !== targetSchema || props.tableName !== targetTable) return;
+
+    if (partsRes !== undefined) {
+      originalOpenGaussPartitions.value = partsRes;
+      openGaussPartitions.value = {
+        ...createDefaultOpenGaussPartitionDraft(),
+        enableRowMovement: partsRes?.enableRowMovement ?? false,
+        updateGlobalIndex: true,
+        pendingOps: [],
+      };
+      openGaussPartitionsLoaded.value = true;
+    }
+
+    if (optsRes !== undefined) {
+      const effectiveRowMove = originalOpenGaussPartitions.value ? originalOpenGaussPartitions.value.enableRowMovement || optsRes.enableRowMovement : optsRes.enableRowMovement;
+      const snapshot: OpenGaussTableOptionsSnapshot = {
+        ...optsRes,
+        enableRowMovement: effectiveRowMove,
+        isPartitioned: Boolean(originalOpenGaussPartitions.value),
+      };
+      originalOpenGaussOptions.value = snapshot;
+      openGaussOptions.value = {
+        orientation: snapshot.orientation,
+        storageType: snapshot.storageType,
+        compression: snapshot.compression,
+        fillfactor: snapshot.fillfactor,
+        tablespace: snapshot.tablespace,
+        enableRowMovement: snapshot.enableRowMovement,
+      };
+      openGaussOptionsLoaded.value = true;
+    } else if (partsRes !== undefined && originalOpenGaussOptions.value) {
+      originalOpenGaussOptions.value = {
+        ...originalOpenGaussOptions.value,
+        isPartitioned: Boolean(partsRes),
+      };
+    }
+  } catch (e) {
+    console.warn("[ogdeveloper][structure-editor:opengauss-metadata-load-failed]", e);
+  } finally {
+    if (needOptions) openGaussOptionsLoading.value = false;
+    if (needPartitions) openGaussPartitionsLoading.value = false;
+  }
+}
+
 async function reloadStructureFromDatabase() {
   if (isCreateMode.value) return;
   draftHydrated = false;
@@ -1066,6 +1320,14 @@ async function reloadStructureFromDatabase() {
     triggers.value = [];
     triggersLoaded.value = false;
   }
+  checks.value = [];
+  checksLoaded.value = false;
+  openGaussOptions.value = createDefaultOpenGaussTableOptions();
+  originalOpenGaussOptions.value = undefined;
+  openGaussOptionsLoaded.value = false;
+  openGaussPartitions.value = createDefaultOpenGaussPartitionDraft();
+  originalOpenGaussPartitions.value = null;
+  openGaussPartitionsLoaded.value = false;
   const refreshDdl = activeTab.value === "ddl";
   const metadataMatch = { connectionId: props.connectionId, database: props.database, schema: metadataSchema.value, tableName: props.tableName };
   invalidateTableMetadataCache(metadataMatch);
@@ -1075,7 +1337,14 @@ async function reloadStructureFromDatabase() {
     ddlFetched.value = false;
     await fetchDdl(true);
   } else {
-    await loadStructure(false, visibleTableStructureRefreshScope(activeTab.value), true, { blockSecondaryMetadata: true, forceMetadata: true });
+    await loadStructure(false, visibleTableStructureRefreshScope(baseStructureRefreshTab(activeTab.value)), true, { blockSecondaryMetadata: true, forceMetadata: true });
+    if (activeTab.value === "checks") {
+      await loadChecksMetadata(true);
+      markDraftHydratedAndSync();
+    } else if (activeTab.value === "partitions" || activeTab.value === "options") {
+      await loadOpenGaussOptionsAndPartitionsMetadata(true);
+      markDraftHydratedAndSync();
+    }
   }
 }
 
@@ -1103,7 +1372,7 @@ function loadCachedTableComment(request: ReturnType<typeof ddlRequest>, force = 
   return loadObjectMetadataFacet(request, "comment", () => fetchTableCommentValue(request.connectionId, request.database, request.schema, request.tableName, request.catalog), { force });
 }
 
-async function loadStructure(silent = false, scope: TableStructureRefreshScope = visibleTableStructureRefreshScope(activeTab.value), showErrors = true, options: { blockSecondaryMetadata?: boolean; preserveDraft?: boolean; forceMetadata?: boolean } = {}) {
+async function loadStructure(silent = false, scope: TableStructureRefreshScope = visibleTableStructureRefreshScope(baseStructureRefreshTab(activeTab.value)), showErrors = true, options: { blockSecondaryMetadata?: boolean; preserveDraft?: boolean; forceMetadata?: boolean } = {}) {
   const connectionId = props.connectionId;
   const database = props.database;
   const catalog = props.catalog;
@@ -1209,9 +1478,22 @@ async function loadStructure(silent = false, scope: TableStructureRefreshScope =
   }
 }
 
-async function refreshStructureAfterSave(scope: TableStructureRefreshScope) {
+interface ExtraStructureRefreshScope {
+  checks: boolean;
+  options: boolean;
+  partitions: boolean;
+}
+
+async function refreshStructureAfterSave(scope: TableStructureRefreshScope, extraScope?: ExtraStructureRefreshScope) {
   try {
     await loadStructure(true, scope, false, { blockSecondaryMetadata: true });
+    if (extraScope?.checks || activeTab.value === "checks") {
+      await loadChecksMetadata(true);
+    }
+    if (extraScope?.options || extraScope?.partitions || activeTab.value === "options" || activeTab.value === "partitions") {
+      await loadOpenGaussOptionsAndPartitionsMetadata(true);
+    }
+    markDraftHydratedAndSync();
   } catch (e) {
     console.warn("[ogdeveloper][structure-editor:post-save-refresh-failed]", e);
   } finally {
@@ -1883,6 +2165,244 @@ function canEditTriggerDraft(trigger: EditableStructureTrigger): boolean {
   return !triggersLoading.value && canEditTriggers.value && !trigger.markedForDrop && canEditStructuredTriggerDraft(databaseType.value, trigger);
 }
 
+// ============================================================================
+// Check Constraints & openGauss Storage / Partition UI Helpers
+// ============================================================================
+
+function addCheckConstraint() {
+  if (!tableMetadataCapabilities.value.checks || checksLoading.value) return;
+  activeTab.value = "checks";
+  const existingNames = checks.value.filter((c) => !c.markedForDrop).map((c) => c.name);
+  checks.value.push({
+    id: `new:${uuid()}`,
+    name: generateCheckConstraintName(structureIndexTableName(), existingNames),
+    expression: "",
+    nameEdited: false,
+    markedForDrop: false,
+  });
+}
+
+function removeNewCheckConstraint(check: EditableTableCheckConstraint) {
+  checks.value = checks.value.filter((item) => item.id !== check.id);
+}
+
+function toggleDropCheckConstraint(check: EditableTableCheckConstraint) {
+  if (checksLoading.value || !check.original) return;
+  check.markedForDrop = !check.markedForDrop;
+}
+
+const openGaussCompressionOptions = computed((): { value: OpenGaussCompression; label: string }[] => {
+  const isCol = openGaussOptions.value.orientation === "column";
+  const base: { value: OpenGaussCompression; label: string }[] = [
+    { value: "no", label: t("structureEditor.opengauss.compressionNo", "NO（不压缩）") },
+    { value: "yes", label: t("structureEditor.opengauss.compressionYes", "YES（启用压缩）") },
+  ];
+  if (isCol) {
+    base.push(
+      { value: "low", label: t("structureEditor.opengauss.compressionLow", "LOW（低压缩比，列存推荐默认）") },
+      { value: "middle", label: t("structureEditor.opengauss.compressionMiddle", "MIDDLE（中压缩比）") },
+      { value: "high", label: t("structureEditor.opengauss.compressionHigh", "HIGH（高压缩比）") },
+    );
+  }
+  return base;
+});
+
+function onOpenGaussOrientationChange(value: unknown) {
+  const next = String(value ?? "row") as OpenGaussOrientation;
+  openGaussOptions.value.orientation = next;
+  if (next === "column") {
+    openGaussOptions.value.storageType = "astore";
+    openGaussOptions.value.fillfactor = null;
+    if (openGaussPartitions.value.enabled && openGaussPartitions.value.strategy !== "range") {
+      openGaussPartitions.value.strategy = "range";
+    }
+    if (openGaussPartitions.value.enabled && openGaussPartitions.value.interval) {
+      openGaussPartitions.value.interval = "";
+    }
+  } else if (openGaussOptions.value.compression === "low" || openGaussOptions.value.compression === "middle" || openGaussOptions.value.compression === "high") {
+    openGaussOptions.value.compression = "yes";
+  }
+}
+
+function onOpenGaussStorageTypeChange(value: unknown) {
+  openGaussOptions.value.storageType = String(value ?? "astore") as OpenGaussStorageType;
+}
+
+function onOpenGaussCompressionChange(value: unknown) {
+  openGaussOptions.value.compression = String(value ?? "no") as OpenGaussCompression;
+}
+
+function onOpenGaussFillfactorInput(value: string | number) {
+  const trimmed = String(value ?? "").trim();
+  if (!trimmed) {
+    openGaussOptions.value.fillfactor = null;
+    return;
+  }
+  const num = Number(trimmed);
+  openGaussOptions.value.fillfactor = Number.isFinite(num) ? Math.trunc(num) : null;
+}
+
+function resetOpenGaussFillfactor() {
+  openGaussOptions.value.fillfactor = null;
+}
+
+const partKeySearch = ref("");
+function filteredPartitionKeyColumns(): string[] {
+  return filterStructureIndexColumnOptions(availableColumnNames.value, openGaussPartitions.value.partitionKeys, partKeySearch.value);
+}
+
+function toggleCreatePartitionKey(col: string) {
+  const idx = openGaussPartitions.value.partitionKeys.indexOf(col);
+  if (idx >= 0) openGaussPartitions.value.partitionKeys.splice(idx, 1);
+  else openGaussPartitions.value.partitionKeys.push(col);
+}
+
+function onToggleCreatePartitionedTable(event: Event) {
+  const checked = (event.target as HTMLInputElement).checked;
+  openGaussPartitions.value.enabled = checked;
+  if (checked && openGaussPartitions.value.partitions.length === 0 && openGaussPartitions.value.strategy !== "hash") {
+    addCreatePartitionItem();
+  }
+  if (checked && openGaussPartitions.value.partitionKeys.length === 0 && availableColumnNames.value.length > 0) {
+    openGaussPartitions.value.partitionKeys = [availableColumnNames.value[0]];
+  }
+}
+
+function onCreatePartitionStrategyChange(value: unknown) {
+  const strategy = String(value ?? "range") as OpenGaussCreatePartitionStrategy;
+  openGaussPartitions.value.strategy = strategy;
+  if (strategy !== "range") {
+    openGaussPartitions.value.interval = "";
+  }
+  if (strategy === "hash" && openGaussPartitions.value.hashPartitionCount === null) {
+    openGaussPartitions.value.hashPartitionCount = 4;
+  }
+}
+
+function addCreatePartitionItem() {
+  activeTab.value = "partitions";
+  const nextIndex = openGaussPartitions.value.partitions.length + 1;
+  const strategy = openGaussPartitions.value.strategy;
+  openGaussPartitions.value.partitions.push({
+    id: `new-part:${uuid()}`,
+    name: `p_${nextIndex}`,
+    boundary: strategy === "range" ? (nextIndex === 1 && !openGaussPartitions.value.interval.trim() ? "MAXVALUE" : "") : strategy === "list" ? "DEFAULT" : "",
+    tablespace: "",
+  });
+}
+
+function removeCreatePartitionItem(id: string) {
+  openGaussPartitions.value.partitions = openGaussPartitions.value.partitions.filter((item) => item.id !== id);
+}
+
+const canAddOpenGaussPartition = computed(() => {
+  const meta = originalOpenGaussPartitions.value;
+  if (!meta) return false;
+  return meta.strategy === "range" || meta.strategy === "list";
+});
+
+const canSplitOpenGaussPartition = computed(() => {
+  const meta = originalOpenGaussPartitions.value;
+  if (!meta) return false;
+  const orientation = originalOpenGaussOptions.value?.orientation ?? "row";
+  return (meta.strategy === "range" || meta.strategy === "interval") && orientation === "row";
+});
+
+function addPendingPartitionAddOp() {
+  if (!canAddOpenGaussPartition.value) return;
+  activeTab.value = "partitions";
+  const count = (originalOpenGaussPartitions.value?.partitions.length ?? 0) + openGaussPartitions.value.pendingOps.filter((op) => op.type === "add").length + 1;
+  openGaussPartitions.value.pendingOps.push({
+    id: `op:${uuid()}`,
+    type: "add",
+    partitionName: `p_${count}`,
+    boundary: "",
+    tablespace: "",
+  });
+}
+
+function queueOrFocusRenamePartitionOp(partitionName: string) {
+  const existing = openGaussPartitions.value.pendingOps.find((op) => op.type === "rename" && op.partitionName === partitionName);
+  if (existing) {
+    removePendingPartitionOp(existing.id);
+    return;
+  }
+  openGaussPartitions.value.pendingOps.push({
+    id: `op:${uuid()}`,
+    type: "rename",
+    partitionName,
+    newPartitionName: `${partitionName}_new`,
+  });
+}
+
+function queueOrFocusSplitPartitionOp(partitionName: string) {
+  if (!canSplitOpenGaussPartition.value) return;
+  const existing = openGaussPartitions.value.pendingOps.find((op) => op.type === "split" && op.partitionName === partitionName);
+  if (existing) {
+    removePendingPartitionOp(existing.id);
+    return;
+  }
+  openGaussPartitions.value.pendingOps.push({
+    id: `op:${uuid()}`,
+    type: "split",
+    partitionName,
+    atValue: "",
+    firstPartitionName: `${partitionName}_a`,
+    secondPartitionName: `${partitionName}_b`,
+  });
+}
+
+function toggleTruncatePartitionOp(partitionName: string) {
+  const existing = openGaussPartitions.value.pendingOps.find((op) => op.type === "truncate" && op.partitionName === partitionName);
+  if (existing) {
+    removePendingPartitionOp(existing.id);
+    return;
+  }
+  openGaussPartitions.value.pendingOps.push({
+    id: `op:${uuid()}`,
+    type: "truncate",
+    partitionName,
+  });
+}
+
+function toggleDropPartitionOp(partitionName: string) {
+  const existing = openGaussPartitions.value.pendingOps.find((op) => op.type === "drop" && op.partitionName === partitionName);
+  if (existing) {
+    removePendingPartitionOp(existing.id);
+    return;
+  }
+  openGaussPartitions.value.pendingOps.push({
+    id: `op:${uuid()}`,
+    type: "drop",
+    partitionName,
+  });
+}
+
+function removePendingPartitionOp(id: string) {
+  openGaussPartitions.value.pendingOps = openGaussPartitions.value.pendingOps.filter((op) => op.id !== id);
+}
+
+function clearPendingPartitionOps() {
+  openGaussPartitions.value.pendingOps = [];
+}
+
+function isPartitionMarkedForDrop(partitionName: string): boolean {
+  return openGaussPartitions.value.pendingOps.some((op) => op.type === "drop" && op.partitionName === partitionName);
+}
+
+function isPartitionMarkedForTruncate(partitionName: string): boolean {
+  return openGaussPartitions.value.pendingOps.some((op) => op.type === "truncate" && op.partitionName === partitionName);
+}
+
+function pendingRenameForPartition(partitionName: string): string | undefined {
+  const op = openGaussPartitions.value.pendingOps.find((item): item is Extract<OpenGaussPartitionPendingOp, { type: "rename" }> => item.type === "rename" && item.partitionName === partitionName);
+  return op?.newPartitionName;
+}
+
+function isPartitionMarkedForSplit(partitionName: string): boolean {
+  return openGaussPartitions.value.pendingOps.some((op) => op.type === "split" && op.partitionName === partitionName);
+}
+
 function primarySqlOperation(sql: string): string {
   const statement = sql
     .split(";")
@@ -1955,6 +2475,11 @@ async function applyChanges() {
   saving.value = true;
   errorMessage.value = "";
   const refreshScope = captureStructureRefreshScope();
+  const extraRefreshScope: ExtraStructureRefreshScope = {
+    checks: hasPendingCheckChanges(),
+    options: hasPendingOpenGaussOptionsChanges(),
+    partitions: hasPendingOpenGaussPartitionChanges(),
+  };
   const startedAt = Date.now();
   try {
     const result = await api.executeBatch(props.connectionId, props.database, pendingStatements.value, props.schema, queryTimeoutSecsForConnection(connection));
@@ -1980,7 +2505,7 @@ async function applyChanges() {
       postSaveRefreshing.value = true;
       skipNextRefreshVersion = true;
       emit("saved", tableComment.value !== originalTableComment.value);
-      await refreshStructureAfterSave(refreshScope);
+      await refreshStructureAfterSave(refreshScope, extraRefreshScope);
     }
     return true;
   } catch (e: any) {
@@ -2006,6 +2531,20 @@ function addItemForActiveTab(): boolean {
   if (activeTab.value === "foreignKeys" && canEditForeignKeys.value) {
     addForeignKey();
     return true;
+  }
+  if (activeTab.value === "checks" && tableMetadataCapabilities.value.checks && !checksLoading.value) {
+    addCheckConstraint();
+    return true;
+  }
+  if (activeTab.value === "partitions" && tableMetadataCapabilities.value.partitions) {
+    if (isCreateMode.value && openGaussPartitions.value.enabled) {
+      addCreatePartitionItem();
+      return true;
+    }
+    if (!isCreateMode.value && canAddOpenGaussPartition.value && !openGaussPartitionsLoading.value) {
+      addPendingPartitionAddOp();
+      return true;
+    }
   }
   if (activeTab.value === "triggers" && canEditTriggers.value && !triggersLoading.value) {
     addTrigger();
@@ -2071,7 +2610,10 @@ onMounted(() => {
   } else if (activeTab.value === "ddl") {
     void fetchDdl();
   } else {
-    void loadStructure(false, visibleTableStructureRefreshScope(activeTab.value), true, { blockSecondaryMetadata: true }).then(() => applyInitialStructureTarget());
+    void loadStructure(false, visibleTableStructureRefreshScope(baseStructureRefreshTab(activeTab.value)), true, { blockSecondaryMetadata: true }).then(() => {
+      applyInitialStructureTarget();
+      void loadActiveTableStructureMetadataIfNeeded();
+    });
   }
 });
 
@@ -2174,7 +2716,7 @@ watch([() => props.connectionId, () => props.database, databaseType], () => {
 });
 
 watch(
-  [isCreateMode, () => props.connectionId, () => props.database, databaseType, () => props.schema, () => props.tableName, newTableName, tableComment, columns, indexes, foreignKeys, triggers],
+  [isCreateMode, () => props.connectionId, () => props.database, databaseType, () => props.schema, () => props.tableName, newTableName, tableComment, columns, indexes, foreignKeys, triggers, checks, openGaussOptions, openGaussPartitions],
   () => {
     scheduleSqlPreviewRefresh();
     syncDraftToParent();
@@ -2221,7 +2763,19 @@ watch(refreshVersion, (version, previous) => {
     triggers.value = [];
     triggersLoaded.value = false;
   }
-  void loadStructure(true, visibleTableStructureRefreshScope(activeTab.value));
+  if (activeTab.value !== "checks") {
+    checks.value = [];
+    checksLoaded.value = false;
+  } else {
+    void loadChecksMetadata(true);
+  }
+  if (activeTab.value !== "partitions" && activeTab.value !== "options") {
+    openGaussOptionsLoaded.value = false;
+    openGaussPartitionsLoaded.value = false;
+  } else {
+    void loadOpenGaussOptionsAndPartitionsMetadata(true);
+  }
+  void loadStructure(true, visibleTableStructureRefreshScope(baseStructureRefreshTab(activeTab.value)));
 });
 
 async function loadActiveTableStructureMetadataIfNeeded() {
@@ -2231,10 +2785,20 @@ async function loadActiveTableStructureMetadataIfNeeded() {
     return;
   }
   if (loading.value || secondaryMetadataLoading.value) return;
-  const scope = unloadedTableStructureRefreshScope(activeTab.value, loadedMetadataFacets);
-  if (!hasTableStructureRefreshWork(scope)) return;
-  await loadStructure(true, scope, true, { blockSecondaryMetadata: true, preserveDraft: true });
-  applyInitialStructureTarget();
+  const scope = unloadedTableStructureRefreshScope(baseStructureRefreshTab(activeTab.value), loadedMetadataFacets);
+  if (hasTableStructureRefreshWork(scope)) {
+    await loadStructure(true, scope, true, { blockSecondaryMetadata: true, preserveDraft: true });
+    applyInitialStructureTarget();
+  }
+  if (activeTab.value === "checks" && tableMetadataCapabilities.value.checks && !checksLoaded.value) {
+    await loadChecksMetadata();
+    markDraftHydratedAndSync();
+    return;
+  }
+  if ((activeTab.value === "partitions" && tableMetadataCapabilities.value.partitions && !openGaussPartitionsLoaded.value) || (activeTab.value === "options" && tableMetadataCapabilities.value.options && !openGaussOptionsLoaded.value)) {
+    await loadOpenGaussOptionsAndPartitionsMetadata();
+    markDraftHydratedAndSync();
+  }
 }
 
 watch([activeTab, loading, secondaryMetadataLoading], () => void loadActiveTableStructureMetadataIfNeeded(), { flush: "sync" });
@@ -2290,6 +2854,9 @@ watch([activeTab, ddlLoading], ([tab, loading]) => {
               <TabsTrigger v-if="tableMetadataCapabilities.columns" value="columns">{{ t("structureEditor.columns") }}</TabsTrigger>
               <TabsTrigger v-if="tableMetadataCapabilities.indexes" value="indexes">{{ t("structureEditor.indexes") }}</TabsTrigger>
               <TabsTrigger v-if="tableMetadataCapabilities.foreignKeys" value="foreignKeys">{{ t("structureEditor.foreignKeys") }}</TabsTrigger>
+              <TabsTrigger v-if="tableMetadataCapabilities.checks" value="checks">{{ t("structureEditor.opengauss.checksTab", "检查约束") }}</TabsTrigger>
+              <TabsTrigger v-if="tableMetadataCapabilities.partitions" value="partitions">{{ t("structureEditor.opengauss.partitionsTab", "分区") }}</TabsTrigger>
+              <TabsTrigger v-if="tableMetadataCapabilities.options" value="options">{{ t("structureEditor.opengauss.optionsTab", "表选项") }}</TabsTrigger>
               <TabsTrigger v-if="tableMetadataCapabilities.triggers" value="triggers">{{ t("structureEditor.triggers") }}</TabsTrigger>
             </TabsList>
             <div class="flex shrink-0 items-center gap-1.5">
@@ -2382,6 +2949,27 @@ watch([activeTab, ddlLoading], ([tab, loading]) => {
                 <Plus :class="structureIconClass" />
                 {{ t("structureEditor.addForeignKey") }}
               </Button>
+              <Button v-if="activeTab === 'checks'" size="sm" :class="structureToolbarButtonClass" :disabled="checksLoading" @click="addCheckConstraint">
+                <Plus :class="structureIconClass" />
+                {{ t("structureEditor.opengauss.addCheck", "新增检查约束") }}
+              </Button>
+              <Button v-if="isCreateMode && activeTab === 'partitions' && openGaussPartitions.enabled" size="sm" :class="structureToolbarButtonClass" @click="addCreatePartitionItem">
+                <Plus :class="structureIconClass" />
+                {{ t("structureEditor.opengauss.addPartition", "新增分区") }}
+              </Button>
+              <Tooltip v-if="!isCreateMode && activeTab === 'partitions' && originalOpenGaussPartitions">
+                <TooltipTrigger as-child>
+                  <span class="inline-flex">
+                    <Button size="sm" :class="structureToolbarButtonClass" :disabled="!canAddOpenGaussPartition || openGaussPartitionsLoading" @click="addPendingPartitionAddOp">
+                      <Plus :class="structureIconClass" />
+                      {{ t("structureEditor.opengauss.addPartition", "新增分区") }}
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent v-if="!canAddOpenGaussPartition">
+                  {{ t("structureEditor.opengauss.addPartitionUnsupportedTooltip", "openGauss 不支持对 HASH 或 INTERVAL 分区表手动新增分区") }}
+                </TooltipContent>
+              </Tooltip>
               <Button v-if="activeTab === 'triggers'" size="sm" :class="structureToolbarButtonClass" :disabled="!canEditTriggers || triggersLoading" @click="addTrigger">
                 <Plus :class="structureIconClass" />
                 {{ t("structureEditor.addTrigger") }}
@@ -2763,6 +3351,438 @@ watch([activeTab, ddlLoading], ([tab, loading]) => {
                   </Select>
                   <div class="truncate font-mono text-muted-foreground">{{ fk.column }} -> {{ fk.refSchema ? `${fk.refSchema}.` : "" }}{{ fk.refTable }}.{{ fk.refColumn }}</div>
                 </div>
+              </div>
+            </div>
+          </TabsContent>
+
+          <TabsContent ref="checksScrollerRef" v-if="tableMetadataCapabilities.checks" value="checks" class="m-0 min-h-0 flex-1 overflow-auto p-[var(--structure-cell-px)]" @scroll.passive="onStructureContentScroll('checks', $event)">
+            <div v-if="checksLoading" class="flex items-center justify-center gap-2 py-10 text-muted-foreground">
+              <Loader2 class="h-4 w-4 animate-spin" />
+              {{ t("common.loading") }}
+            </div>
+            <div v-else-if="checks.length === 0" class="py-10 text-center text-muted-foreground">
+              {{ t("structureEditor.opengauss.checksEmpty", "暂无 CHECK 检查约束，可点击右上角按钮新增") }}
+            </div>
+            <div v-else class="space-y-1.5">
+              <div v-for="check in checks" :key="check.id" class="rounded-md border px-[var(--structure-cell-px)] py-[var(--structure-header-py)] text-[length:var(--structure-font-size)]" :class="check.markedForDrop ? 'bg-destructive/5 opacity-60' : ''">
+                <div class="grid grid-cols-[minmax(160px,0.7fr)_auto_minmax(220px,1.6fr)_auto] items-center gap-1.5">
+                  <Input v-model="check.name" :class="structureControlClass" :placeholder="t('structureEditor.opengauss.checkNamePlaceholder', '约束名称，如 chk_age_positive')" :disabled="check.markedForDrop || checksLoading" />
+                  <Badge variant="outline" class="font-mono">CHECK</Badge>
+                  <Input v-model="check.expression" :class="structureMonoControlClass" :placeholder="t('structureEditor.opengauss.checkExpressionPlaceholder', '布尔表达式，如 age >= 0 AND status IN (1, 2)')" :disabled="check.markedForDrop || checksLoading" />
+                  <div class="flex items-center justify-end gap-1">
+                    <Button v-if="check.original" variant="ghost" size="sm" :class="structureToolbarButtonClass" :disabled="checksLoading" @click="toggleDropCheckConstraint(check)">
+                      <RefreshCw v-if="check.markedForDrop" :class="structureIconClass" />
+                      <Trash2 v-else :class="structureIconClass" />
+                      {{ check.markedForDrop ? t("structureEditor.restore") : t("structureEditor.drop") }}
+                    </Button>
+                    <Button v-else variant="ghost" size="sm" :class="structureToolbarButtonClass" @click="removeNewCheckConstraint(check)">
+                      <X :class="structureIconClass" />
+                      {{ t("structureEditor.remove") }}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </TabsContent>
+
+          <TabsContent ref="partitionsScrollerRef" v-if="tableMetadataCapabilities.partitions" value="partitions" class="m-0 min-h-0 flex-1 overflow-auto p-[var(--structure-cell-px)]" @scroll.passive="onStructureContentScroll('partitions', $event)">
+            <div v-if="openGaussPartitionsLoading" class="flex items-center justify-center gap-2 py-10 text-muted-foreground">
+              <Loader2 class="h-4 w-4 animate-spin" />
+              {{ t("common.loading") }}
+            </div>
+
+            <!-- Create Mode: Partitioned Table Builder -->
+            <div v-else-if="isCreateMode" class="space-y-2.5">
+              <div class="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/15 px-[var(--structure-cell-px)] py-[var(--structure-header-py)]">
+                <label class="flex cursor-pointer items-center gap-2 font-medium">
+                  <input :checked="openGaussPartitions.enabled" type="checkbox" :class="structureCheckboxClass" @change="onToggleCreatePartitionedTable" />
+                  <span>{{ t("structureEditor.opengauss.enablePartitionedTable", "启用分区表 (Partitioned Table)") }}</span>
+                </label>
+                <label v-if="openGaussPartitions.enabled" class="flex cursor-pointer items-center gap-1.5 text-muted-foreground">
+                  <input v-model="openGaussPartitions.enableRowMovement" type="checkbox" :class="structureCheckboxClass" />
+                  <span>{{ t("structureEditor.opengauss.enableRowMovement", "允许跨分区行迁移 (ENABLE ROW MOVEMENT)") }}</span>
+                </label>
+              </div>
+
+              <template v-if="openGaussPartitions.enabled">
+                <div class="grid grid-cols-1 gap-2 rounded-md border p-[var(--structure-cell-px)] md:grid-cols-3">
+                  <div class="space-y-1">
+                    <label class="block font-medium text-muted-foreground">{{ t("structureEditor.opengauss.partitionStrategy", "分区策略") }}</label>
+                    <Select :model-value="openGaussPartitions.strategy" @update:model-value="onCreatePartitionStrategyChange">
+                      <SelectTrigger class="h-[var(--structure-control-height)] w-full rounded-[6px] px-[var(--structure-control-px)] font-mono text-[length:var(--structure-font-size)]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="range">RANGE</SelectItem>
+                        <SelectItem value="list" :disabled="openGaussOptions.orientation === 'column'">LIST</SelectItem>
+                        <SelectItem value="hash" :disabled="openGaussOptions.orientation === 'column'">HASH</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div class="space-y-1">
+                    <label class="block font-medium text-muted-foreground">{{ t("structureEditor.opengauss.partitionKeyColumns", "分区键列") }}</label>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger as-child>
+                        <Button variant="outline" :class="[structureMonoControlClass, 'w-full justify-between']">
+                          <span class="truncate">{{ openGaussPartitions.partitionKeys.join(", ") || t("structureEditor.opengauss.selectPartitionKeys", "选择分区键列...") }}</span>
+                          <ChevronDown :class="[structureIconClass, 'ml-1 shrink-0 opacity-50']" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent class="max-h-56 min-w-44 overflow-y-auto" side="bottom" :side-offset="2" :avoid-collisions="false" @interactOutside="partKeySearch = ''">
+                        <div class="px-[var(--structure-cell-px)] pb-1 pt-0.5">
+                          <Input v-model="partKeySearch" :class="structureControlClass" :placeholder="t('grid.search')" @click.stop />
+                        </div>
+                        <DropdownMenuCheckboxItem v-for="col in filteredPartitionKeyColumns()" :key="col" :checked="openGaussPartitions.partitionKeys.includes(col)" :class="openGaussPartitions.partitionKeys.includes(col) ? 'bg-primary/10' : ''" @select.prevent @click="toggleCreatePartitionKey(col)">
+                          {{ col }}
+                        </DropdownMenuCheckboxItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+
+                  <div v-if="openGaussPartitions.strategy === 'range'" class="space-y-1">
+                    <label class="block font-medium text-muted-foreground">{{ t("structureEditor.opengauss.intervalExpr", "自动间隔 (INTERVAL，可选)") }}</label>
+                    <Input v-model="openGaussPartitions.interval" :class="structureMonoControlClass" :disabled="openGaussOptions.orientation === 'column'" :placeholder="t('structureEditor.opengauss.intervalPlaceholder', '如 1 month 或 1 day')" />
+                  </div>
+
+                  <div v-else-if="openGaussPartitions.strategy === 'hash' && openGaussPartitions.partitions.length === 0" class="space-y-1">
+                    <label class="block font-medium text-muted-foreground">{{ t("structureEditor.opengauss.hashPartitionCount", "HASH 分区数量 (PARTITIONS)") }}</label>
+                    <Input :model-value="openGaussPartitions.hashPartitionCount?.toString() ?? '4'" type="number" min="1" :class="structureMonoControlClass" @update:model-value="(v: string | number) => (openGaussPartitions.hashPartitionCount = v ? Math.max(1, Math.trunc(Number(v))) : null)" />
+                  </div>
+                </div>
+
+                <div class="rounded-md border">
+                  <div class="flex items-center justify-between border-b bg-muted/15 px-[var(--structure-cell-px)] py-[var(--structure-header-py)] font-medium">
+                    <span>{{ t("structureEditor.opengauss.initialPartitions", "初始分区定义") }}</span>
+                    <span v-if="openGaussPartitions.strategy === 'hash' && openGaussPartitions.partitions.length === 0" class="text-muted-foreground">
+                      {{ t("structureEditor.opengauss.hashCountModeHint", "当前按 PARTITIONS 数量自动生成，也可点击右上角「新增分区」自定义分区名") }}
+                    </span>
+                  </div>
+                  <div v-if="openGaussPartitions.partitions.length === 0" class="py-6 text-center text-muted-foreground">
+                    {{
+                      openGaussPartitions.strategy === "hash" ? `${t("structureEditor.opengauss.hashAutoGeneratedSummary", "将自动创建 HASH 分区数")}: ${openGaussPartitions.hashPartitionCount ?? 4}` : t("structureEditor.opengauss.noInitialPartitions", "请点击右上角「新增分区」定义至少一个初始分区")
+                    }}
+                  </div>
+                  <div v-else class="divide-y">
+                    <div
+                      v-for="(part, idx) in openGaussPartitions.partitions"
+                      :key="part.id"
+                      class="grid items-center gap-1.5 px-[var(--structure-cell-px)] py-[var(--structure-cell-py)]"
+                      :class="openGaussPartitions.strategy === 'hash' ? 'grid-cols-[28px_minmax(140px,1fr)_minmax(140px,0.8fr)_auto]' : 'grid-cols-[28px_minmax(140px,0.8fr)_minmax(200px,1.4fr)_minmax(130px,0.7fr)_auto]'"
+                    >
+                      <span class="text-muted-foreground">{{ idx + 1 }}</span>
+                      <Input v-model="part.name" :class="structureMonoControlClass" :placeholder="t('structureEditor.opengauss.partitionNamePlaceholder', '分区名，如 p_2026_01')" />
+                      <Input
+                        v-if="openGaussPartitions.strategy !== 'hash'"
+                        v-model="part.boundary"
+                        :class="structureMonoControlClass"
+                        :placeholder="openGaussPartitions.strategy === 'range' ? t('structureEditor.opengauss.rangeBoundaryPlaceholder', 'VALUES LESS THAN，如 \'2026-01-01\' 或 MAXVALUE') : t('structureEditor.opengauss.listBoundaryPlaceholder', 'VALUES，如 \'BJ\', \'SH\' 或 DEFAULT')"
+                      />
+                      <Input v-model="part.tablespace" :class="structureMonoControlClass" :placeholder="t('structureEditor.opengauss.tablespaceOptionalPlaceholder', '表空间（可选）')" />
+                      <Button variant="ghost" size="icon" :class="structureActionButtonClass" :title="t('structureEditor.remove')" @click="removeCreatePartitionItem(part.id)">
+                        <X :class="structureIconClass" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </template>
+            </div>
+
+            <!-- Edit Mode: Non-partitioned Table Empty State -->
+            <div v-else-if="!originalOpenGaussPartitions" class="flex flex-col items-center justify-center gap-2 py-12 text-center text-muted-foreground">
+              <Info class="h-5 w-5 opacity-60" />
+              <p class="max-w-lg">{{ t("structureEditor.opengauss.nonPartitionedTableEmpty", "当前表为普通非分区表。openGauss 需要在建表 (CREATE TABLE) 时指定分区策略，已有普通表不支持直接原地转换为分区表。") }}</p>
+            </div>
+
+            <!-- Edit Mode: Existing Partitioned Table Manager -->
+            <div v-else class="space-y-2.5">
+              <div class="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/15 px-[var(--structure-cell-px)] py-[var(--structure-header-py)]">
+                <div class="flex flex-wrap items-center gap-1.5">
+                  <Badge>{{ originalOpenGaussPartitions.strategy.toUpperCase() }}</Badge>
+                  <Badge variant="secondary" class="font-mono"> {{ t("structureEditor.opengauss.partitionKeyBadge", "分区键") }}: ({{ originalOpenGaussPartitions.partitionKeys.join(", ") }}) </Badge>
+                  <Badge v-if="originalOpenGaussPartitions.interval" variant="outline" class="font-mono"> INTERVAL ({{ originalOpenGaussPartitions.interval }}) </Badge>
+                  <Badge v-if="originalOpenGaussPartitions.subpartitionCount > 0" variant="outline"> {{ t("structureEditor.opengauss.subpartitionsCount", "二级分区") }}: {{ originalOpenGaussPartitions.subpartitionCount }} </Badge>
+                </div>
+
+                <Tooltip>
+                  <TooltipTrigger as-child>
+                    <label class="flex cursor-pointer items-center gap-1.5">
+                      <input v-model="openGaussPartitions.updateGlobalIndex" type="checkbox" :class="structureCheckboxClass" />
+                      <span class="font-medium">{{ t("structureEditor.opengauss.updateGlobalIndex", "UPDATE GLOBAL INDEX") }}</span>
+                    </label>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    {{ t("structureEditor.opengauss.updateGlobalIndexTooltip", "执行 DROP / TRUNCATE / SPLIT PARTITION 时同步维护全局分区索引，避免全局索引失效") }}
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+
+              <div class="overflow-x-auto rounded-md border">
+                <table class="w-full border-separate border-spacing-0 text-[length:var(--structure-font-size)] leading-[var(--structure-line-height)]">
+                  <thead class="bg-muted/20">
+                    <tr>
+                      <th :class="[structureHeaderCellClass, 'w-9']">#</th>
+                      <th :class="structureHeaderCellClass">{{ t("structureEditor.opengauss.partitionNameCol", "分区名称") }}</th>
+                      <th :class="structureHeaderCellClass">{{ t("structureEditor.opengauss.partitionBoundaryCol", "分区边界") }}</th>
+                      <th :class="structureHeaderCellClass">{{ t("structureEditor.opengauss.tablespaceCol", "表空间") }}</th>
+                      <th :class="[structureHeaderCellClass, 'text-right']">{{ t("structureEditor.opengauss.estimatedRowsCol", "预估行数") }}</th>
+                      <th :class="[structureHeaderCellClass, 'text-right']">{{ t("structureEditor.opengauss.partitionSizeCol", "大小") }}</th>
+                      <th v-if="originalOpenGaussPartitions.subpartitionCount > 0" :class="[structureHeaderCellClass, 'text-right']">
+                        {{ t("structureEditor.opengauss.subpartitionsCount", "二级分区") }}
+                      </th>
+                      <th :class="[structureHeaderCellClass, 'border-r-0 text-right']">{{ t("structureEditor.actions") }}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="(part, idx) in originalOpenGaussPartitions.partitions" :key="part.oid || part.name" :class="isPartitionMarkedForDrop(part.name) ? 'bg-destructive/5 opacity-60' : ''">
+                      <td :class="[structureCellClass, 'text-muted-foreground']">{{ idx + 1 }}</td>
+                      <td :class="structureCellClass">
+                        <div class="flex flex-wrap items-center gap-1">
+                          <span class="font-mono font-medium">{{ part.name }}</span>
+                          <Badge v-if="pendingRenameForPartition(part.name)" variant="secondary" class="font-mono"> -> {{ pendingRenameForPartition(part.name) }} </Badge>
+                          <Badge v-if="isPartitionMarkedForSplit(part.name)" variant="outline">
+                            {{ t("structureEditor.opengauss.pendingSplitBadge", "待拆分") }}
+                          </Badge>
+                          <Badge v-if="isPartitionMarkedForTruncate(part.name)" variant="outline">
+                            {{ t("structureEditor.opengauss.pendingTruncateBadge", "待清空") }}
+                          </Badge>
+                          <Badge v-if="isPartitionMarkedForDrop(part.name)" variant="destructive">
+                            {{ t("structureEditor.opengauss.pendingDropBadge", "待删除") }}
+                          </Badge>
+                        </div>
+                      </td>
+                      <td :class="[structureCellClass, 'font-mono text-muted-foreground']">{{ part.boundaryDisplay }}</td>
+                      <td :class="[structureCellClass, 'font-mono text-muted-foreground']">{{ part.tablespace || "pg_default" }}</td>
+                      <td :class="[structureCellClass, 'text-right font-mono text-muted-foreground']">
+                        {{ part.estimatedRows !== null ? part.estimatedRows.toLocaleString() : "—" }}
+                      </td>
+                      <td :class="[structureCellClass, 'text-right font-mono text-muted-foreground']">
+                        {{ formatByteSize(part.sizeBytes) }}
+                      </td>
+                      <td v-if="originalOpenGaussPartitions.subpartitionCount > 0" :class="[structureCellClass, 'text-right font-mono text-muted-foreground']">
+                        {{ part.subpartitionCount }}
+                      </td>
+                      <td :class="[structureLastCellClass, 'text-right']">
+                        <div class="inline-flex items-center justify-end gap-0.5">
+                          <Button variant="ghost" size="sm" :class="structureToolbarButtonClass" :title="t('structureEditor.opengauss.renamePartition', '重命名分区')" @click="queueOrFocusRenamePartitionOp(part.name)">
+                            <Pencil :class="structureIconClass" />
+                            {{ t("structureEditor.opengauss.renameShort", "重命名") }}
+                          </Button>
+
+                          <Tooltip>
+                            <TooltipTrigger as-child>
+                              <span class="inline-flex">
+                                <Button variant="ghost" size="sm" :class="structureToolbarButtonClass" :disabled="!canSplitOpenGaussPartition" :title="t('structureEditor.opengauss.splitPartition', '拆分分区')" @click="queueOrFocusSplitPartitionOp(part.name)">
+                                  <Split :class="structureIconClass" />
+                                  {{ t("structureEditor.opengauss.splitShort", "拆分") }}
+                                </Button>
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent v-if="!canSplitOpenGaussPartition">
+                              {{ t("structureEditor.opengauss.splitUnsupportedTooltip", "SPLIT PARTITION 仅支持行存 RANGE / INTERVAL 分区表") }}
+                            </TooltipContent>
+                          </Tooltip>
+
+                          <Button variant="ghost" size="sm" :class="structureToolbarButtonClass" :title="t('structureEditor.opengauss.truncatePartition', '清空分区数据')" @click="toggleTruncatePartitionOp(part.name)">
+                            <Eraser :class="structureIconClass" />
+                            {{ isPartitionMarkedForTruncate(part.name) ? t("structureEditor.restore") : t("structureEditor.opengauss.truncateShort", "清空") }}
+                          </Button>
+
+                          <Button variant="ghost" size="sm" :class="structureToolbarButtonClass" :title="t('structureEditor.opengauss.dropPartition', '删除分区')" @click="toggleDropPartitionOp(part.name)">
+                            <RefreshCw v-if="isPartitionMarkedForDrop(part.name)" :class="structureIconClass" />
+                            <Trash2 v-else :class="structureIconClass" />
+                            {{ isPartitionMarkedForDrop(part.name) ? t("structureEditor.restore") : t("structureEditor.drop") }}
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <!-- Pending Partition Operations Queue -->
+              <div v-if="openGaussPartitions.pendingOps.length > 0" class="rounded-md border">
+                <div class="flex items-center justify-between border-b bg-muted/20 px-[var(--structure-cell-px)] py-[var(--structure-header-py)]">
+                  <div class="flex items-center gap-1.5 font-medium">
+                    <span>{{ t("structureEditor.opengauss.pendingPartitionOps", "待执行的分区变更操作") }}</span>
+                    <Badge variant="secondary">{{ openGaussPartitions.pendingOps.length }}</Badge>
+                  </div>
+                  <Button variant="ghost" size="sm" :class="structureToolbarButtonClass" @click="clearPendingPartitionOps">
+                    <X :class="structureIconClass" />
+                    {{ t("structureEditor.opengauss.clearPendingOps", "清空队列") }}
+                  </Button>
+                </div>
+
+                <div class="divide-y">
+                  <div v-for="op in openGaussPartitions.pendingOps" :key="op.id" class="flex flex-wrap items-center gap-1.5 px-[var(--structure-cell-px)] py-[var(--structure-cell-py)]">
+                    <Badge variant="outline" class="font-mono uppercase">{{ op.type }}</Badge>
+
+                    <template v-if="op.type === 'add'">
+                      <Input v-model="op.partitionName" :class="[structureMonoControlClass, 'w-40']" :placeholder="t('structureEditor.opengauss.partitionNamePlaceholder', '分区名')" />
+                      <Input
+                        v-model="op.boundary"
+                        :class="[structureMonoControlClass, 'min-w-[200px] flex-1']"
+                        :placeholder="originalOpenGaussPartitions.strategy === 'list' ? t('structureEditor.opengauss.listBoundaryPlaceholder', 'VALUES，如 \'BJ\', \'SH\' 或 DEFAULT') : t('structureEditor.opengauss.rangeBoundaryPlaceholder', 'VALUES LESS THAN，如 \'2027-01-01\' 或 MAXVALUE')"
+                      />
+                      <Input v-model="op.tablespace" :class="[structureMonoControlClass, 'w-36']" :placeholder="t('structureEditor.opengauss.tablespaceOptionalPlaceholder', '表空间（可选）')" />
+                    </template>
+
+                    <template v-else-if="op.type === 'split'">
+                      <span class="font-mono text-muted-foreground">{{ op.partitionName }}</span>
+                      <span class="text-muted-foreground">AT</span>
+                      <Input v-model="op.atValue" :class="[structureMonoControlClass, 'w-40']" :placeholder="t('structureEditor.opengauss.splitAtPlaceholder', '拆分点，如 \'2026-07-01\'')" />
+                      <span class="text-muted-foreground">INTO</span>
+                      <Input v-model="op.firstPartitionName" :class="[structureMonoControlClass, 'w-36']" :placeholder="t('structureEditor.opengauss.splitPart1Placeholder', '子分区 1')" />
+                      <Input v-model="op.secondPartitionName" :class="[structureMonoControlClass, 'w-36']" :placeholder="t('structureEditor.opengauss.splitPart2Placeholder', '子分区 2')" />
+                    </template>
+
+                    <template v-else-if="op.type === 'rename'">
+                      <span class="font-mono text-muted-foreground">{{ op.partitionName }}</span>
+                      <span class="text-muted-foreground">TO</span>
+                      <Input v-model="op.newPartitionName" :class="[structureMonoControlClass, 'w-48']" :placeholder="t('structureEditor.opengauss.newPartitionNamePlaceholder', '新分区名')" />
+                    </template>
+
+                    <template v-else-if="op.type === 'truncate'">
+                      <span class="font-mono">{{ op.partitionName }}</span>
+                      <span class="text-muted-foreground">({{ t("structureEditor.opengauss.truncatePartitionDesc", "清空该分区全部数据，保留分区结构") }})</span>
+                    </template>
+
+                    <template v-else-if="op.type === 'drop'">
+                      <span class="font-mono text-destructive">{{ op.partitionName }}</span>
+                      <span class="text-muted-foreground">({{ t("structureEditor.opengauss.dropPartitionDesc", "删除该分区及其全部数据") }})</span>
+                    </template>
+
+                    <div class="ml-auto">
+                      <Button variant="ghost" size="icon" :class="structureActionButtonClass" :title="t('structureEditor.remove')" @click="removePendingPartitionOp(op.id)">
+                        <X :class="structureIconClass" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </TabsContent>
+
+          <TabsContent ref="optionsScrollerRef" v-if="tableMetadataCapabilities.options" value="options" class="m-0 min-h-0 flex-1 overflow-auto p-[var(--structure-cell-px)]" @scroll.passive="onStructureContentScroll('options', $event)">
+            <div v-if="openGaussOptionsLoading" class="flex items-center justify-center gap-2 py-10 text-muted-foreground">
+              <Loader2 class="h-4 w-4 animate-spin" />
+              {{ t("common.loading") }}
+            </div>
+
+            <!-- Create Mode: Full openGauss Storage & Engine Options -->
+            <div v-else-if="isCreateMode" class="grid max-w-3xl grid-cols-1 gap-3 md:grid-cols-2">
+              <div class="space-y-1 rounded-md border p-[var(--structure-cell-px)]">
+                <label class="block font-medium">{{ t("structureEditor.opengauss.orientationLabel", "存储方向 (ORIENTATION)") }}</label>
+                <Select :model-value="openGaussOptions.orientation" @update:model-value="onOpenGaussOrientationChange">
+                  <SelectTrigger class="h-[var(--structure-control-height)] w-full rounded-[6px] px-[var(--structure-control-px)] text-[length:var(--structure-font-size)]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="row">{{ t("structureEditor.opengauss.orientationRow", "ROW（行存表，适合 OLTP 点查与事务）") }}</SelectItem>
+                    <SelectItem value="column">{{ t("structureEditor.opengauss.orientationColumn", "COLUMN（列存表，适合 OLAP 批量分析）") }}</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p class="text-xs text-muted-foreground">{{ t("structureEditor.opengauss.orientationHint", "行列存方式仅可在建表时指定，建表后不可修改。") }}</p>
+              </div>
+
+              <div class="space-y-1 rounded-md border p-[var(--structure-cell-px)]">
+                <label class="block font-medium">{{ t("structureEditor.opengauss.storageTypeLabel", "存储引擎 (STORAGE_TYPE)") }}</label>
+                <Select :model-value="openGaussOptions.storageType" :disabled="openGaussOptions.orientation === 'column'" @update:model-value="onOpenGaussStorageTypeChange">
+                  <SelectTrigger class="h-[var(--structure-control-height)] w-full rounded-[6px] px-[var(--structure-control-px)] text-[length:var(--structure-font-size)]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="astore">{{ t("structureEditor.opengauss.storageTypeAstore", "ASTORE（追加写存储引擎，默认）") }}</SelectItem>
+                    <SelectItem value="ustore">{{ t("structureEditor.opengauss.storageTypeUstore", "USTORE（原位更新存储引擎，适合高频更新）") }}</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p class="text-xs text-muted-foreground">{{ t("structureEditor.opengauss.storageTypeHint", "USTORE 原位更新引擎仅支持行存表 (orientation = row)。") }}</p>
+              </div>
+
+              <div class="space-y-1 rounded-md border p-[var(--structure-cell-px)]">
+                <label class="block font-medium">{{ t("structureEditor.opengauss.compressionLabel", "数据压缩 (COMPRESSION)") }}</label>
+                <Select :model-value="openGaussOptions.compression" @update:model-value="onOpenGaussCompressionChange">
+                  <SelectTrigger class="h-[var(--structure-control-height)] w-full rounded-[6px] px-[var(--structure-control-px)] text-[length:var(--structure-font-size)]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem v-for="opt in openGaussCompressionOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p class="text-xs text-muted-foreground">{{ t("structureEditor.opengauss.compressionHint", "列存表支持 low / middle / high 多级压缩；行存表支持 no / yes。") }}</p>
+              </div>
+
+              <div class="space-y-1 rounded-md border p-[var(--structure-cell-px)]">
+                <div class="flex items-center justify-between">
+                  <label class="block font-medium">{{ t("structureEditor.opengauss.fillfactorLabel", "填充因子 (FILLFACTOR)") }}</label>
+                  <Button v-if="openGaussOptions.fillfactor !== null" variant="ghost" size="sm" :class="structureToolbarButtonClass" @click="resetOpenGaussFillfactor">
+                    {{ t("structureEditor.opengauss.resetFillfactor", "重置默认") }}
+                  </Button>
+                </div>
+                <Input
+                  :model-value="openGaussOptions.fillfactor?.toString() ?? ''"
+                  type="number"
+                  min="10"
+                  max="100"
+                  :class="structureMonoControlClass"
+                  :disabled="openGaussOptions.orientation === 'column'"
+                  :placeholder="t('structureEditor.opengauss.fillfactorPlaceholder', '默认 (100)，范围 10-100')"
+                  @update:model-value="onOpenGaussFillfactorInput"
+                />
+                <p class="text-xs text-muted-foreground">{{ t("structureEditor.opengauss.fillfactorHint", "预留页面空间比例以减少 UPDATE 跨页迁移，仅对行存表生效。") }}</p>
+              </div>
+
+              <div class="space-y-1 rounded-md border p-[var(--structure-cell-px)] md:col-span-2">
+                <label class="block font-medium">{{ t("structureEditor.opengauss.tablespaceLabel", "表空间 (TABLESPACE)") }}</label>
+                <Input v-model="openGaussOptions.tablespace" :class="structureMonoControlClass" :placeholder="t('structureEditor.opengauss.tablespacePlaceholder', '留空使用默认表空间 (pg_default)')" />
+              </div>
+            </div>
+
+            <!-- Edit Mode: Read-only Engine Badges + Mutable Fillfactor & Row Movement -->
+            <div v-else class="max-w-3xl space-y-3">
+              <div class="space-y-2 rounded-md border bg-muted/15 p-[var(--structure-cell-px)]">
+                <div class="flex flex-wrap items-center gap-1.5">
+                  <Badge>{{ (originalOpenGaussOptions?.orientation ?? "row").toUpperCase() }}</Badge>
+                  <Badge v-if="(originalOpenGaussOptions?.orientation ?? 'row') === 'row'" variant="secondary">
+                    {{ (originalOpenGaussOptions?.storageType ?? "astore").toUpperCase() }}
+                  </Badge>
+                  <Badge variant="outline" class="font-mono"> COMPRESSION={{ (originalOpenGaussOptions?.compression ?? "no").toUpperCase() }} </Badge>
+                  <Badge v-if="originalOpenGaussOptions?.tablespace" variant="outline" class="font-mono"> TABLESPACE={{ originalOpenGaussOptions.tablespace }} </Badge>
+                </div>
+                <div class="flex items-start gap-1.5 text-muted-foreground">
+                  <Info :class="[structureIconClass, 'mt-0.5 shrink-0']" />
+                  <span>{{ t("structureEditor.opengauss.immutableStorageHint", "openGauss 的行列存方向 (ORIENTATION)、存储引擎 (ASTORE/USTORE) 与压缩级别需在建表 (CREATE TABLE) 时指定，建表后不支持原地修改。") }}</span>
+                </div>
+              </div>
+
+              <div class="space-y-1.5 rounded-md border p-[var(--structure-cell-px)]">
+                <div class="flex items-center justify-between gap-2">
+                  <label class="font-medium">{{ t("structureEditor.opengauss.fillfactorLabel", "填充因子 (FILLFACTOR)") }}</label>
+                  <Button v-if="openGaussOptions.fillfactor !== null" variant="ghost" size="sm" :class="structureToolbarButtonClass" @click="resetOpenGaussFillfactor">
+                    {{ t("structureEditor.opengauss.resetFillfactor", "重置默认 (RESET)") }}
+                  </Button>
+                </div>
+                <Input
+                  :model-value="openGaussOptions.fillfactor?.toString() ?? ''"
+                  type="number"
+                  min="10"
+                  max="100"
+                  :class="[structureMonoControlClass, 'max-w-xs']"
+                  :disabled="originalOpenGaussOptions?.orientation === 'column'"
+                  :placeholder="t('structureEditor.opengauss.fillfactorPlaceholder', '默认 (100)，范围 10-100')"
+                  @update:model-value="onOpenGaussFillfactorInput"
+                />
+                <p class="text-xs text-muted-foreground">{{ t("structureEditor.opengauss.fillfactorEditHint", "修改后将生成 ALTER TABLE ... SET (fillfactor = ...) 或 RESET (fillfactor)。") }}</p>
+              </div>
+
+              <div v-if="originalOpenGaussPartitions" class="space-y-1 rounded-md border p-[var(--structure-cell-px)]">
+                <label class="flex cursor-pointer items-center gap-2 font-medium">
+                  <input v-model="openGaussOptions.enableRowMovement" type="checkbox" :class="structureCheckboxClass" />
+                  <span>{{ t("structureEditor.opengauss.enableRowMovement", "允许跨分区行迁移 (ENABLE ROW MOVEMENT)") }}</span>
+                </label>
+                <p class="text-xs text-muted-foreground">
+                  {{ t("structureEditor.opengauss.enableRowMovementHint", "开启后更新分区键导致数据跨越分区边界时，openGauss 将自动把行迁移至目标分区。") }}
+                </p>
               </div>
             </div>
           </TabsContent>

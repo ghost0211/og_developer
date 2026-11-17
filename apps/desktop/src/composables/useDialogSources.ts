@@ -14,6 +14,7 @@ const showTableDataGenerateDialog = ref(false);
 const showFieldLineageDialog = ref(false);
 const showDatabaseSearchDialog = ref(false);
 const showDatabaseExportDialog = ref(false);
+const showRecycleBinDialog = ref(false);
 const showImportLayoutConfirm = ref(false);
 const pendingImportLayout = ref<SidebarLayout | null>(null);
 const showConfigPassphraseDialog = ref(false);
@@ -32,6 +33,9 @@ const transferPrefillTargetSchema = ref("");
 const schemaDiffPrefillConnectionId = ref("");
 const schemaDiffPrefillDatabase = ref("");
 const schemaDiffPrefillSchema = ref("");
+const recycleBinPrefillConnectionId = ref("");
+const recycleBinPrefillDatabase = ref("");
+const recycleBinPrefillSchema = ref("");
 const dataComparePrefillConnectionId = ref("");
 const dataComparePrefillDatabase = ref("");
 const dataComparePrefillSchema = ref("");
@@ -139,6 +143,27 @@ export function useDialogSources() {
         }
       },
     );
+
+    watch(
+      () => connectionStore.recycleBinSource,
+      (v) => {
+        if (v) {
+          recycleBinPrefillConnectionId.value = v.connectionId;
+          recycleBinPrefillDatabase.value = v.database;
+          recycleBinPrefillSchema.value = v.schema ?? "";
+          showRecycleBinDialog.value = true;
+          connectionStore.recycleBinSource = null;
+        }
+      },
+    );
+
+    watch(showRecycleBinDialog, (open) => {
+      if (!open) {
+        recycleBinPrefillConnectionId.value = "";
+        recycleBinPrefillDatabase.value = "";
+        recycleBinPrefillSchema.value = "";
+      }
+    });
 
     watch(
       () => connectionStore.dataCompareSource,
@@ -352,6 +377,7 @@ export function useDialogSources() {
     showFieldLineageDialog,
     showDatabaseSearchDialog,
     showDatabaseExportDialog,
+    showRecycleBinDialog,
     showImportLayoutConfirm,
     pendingImportLayout,
     showConfigPassphraseDialog,
@@ -369,6 +395,9 @@ export function useDialogSources() {
     schemaDiffPrefillConnectionId,
     schemaDiffPrefillDatabase,
     schemaDiffPrefillSchema,
+    recycleBinPrefillConnectionId,
+    recycleBinPrefillDatabase,
+    recycleBinPrefillSchema,
     dataComparePrefillConnectionId,
     dataComparePrefillDatabase,
     dataComparePrefillSchema,

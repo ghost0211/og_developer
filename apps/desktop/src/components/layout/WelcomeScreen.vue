@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useI18n } from "vue-i18n";
-import { FilePlus2, Plus, History, Download, Database, Search, ShieldCheck } from "@lucide/vue";
+import { FilePlus2, Plus, History, Download, Database, Search, ShieldCheck, Terminal, Stethoscope, Activity, RotateCcw } from "@lucide/vue";
 import DatabaseIcon from "@/components/icons/DatabaseIcon.vue";
 import TruncatedTextTooltip from "@/components/ui/TruncatedTextTooltip.vue";
 import { connectionDriverLabel, connectionIconType, connectionRedactedNameLabel, connectionRedactedOptionSubtitle } from "@/lib/connection/connectionPresentation";
@@ -28,6 +28,10 @@ const emit = defineEmits<{
   "open-saved-sql": [fileId: string];
   "new-connection": [];
   "new-query": [];
+  "open-command-window": [];
+  "open-invalid-objects": [];
+  "open-sessions": [];
+  "open-recycle-bin": [];
   "show-history": [];
   "import-config": [];
   "open-about": [];
@@ -87,8 +91,20 @@ function welcomeConnectionSubtitle(connection: ConnectionConfig): string {
             <button class="flex min-w-0 items-center gap-2 overflow-hidden rounded-md px-3 py-2 text-left text-sm hover:bg-muted/50" @click="emit('new-connection')">
               <Plus class="h-4 w-4 shrink-0" /> <span class="min-w-0 truncate">{{ t("toolbar.newConnection") }}</span>
             </button>
-            <button class="flex min-w-0 items-center gap-2 overflow-hidden rounded-md px-3 py-2 text-left text-sm hover:bg-muted/50" :disabled="!hasConnections" @click="emit('new-query')">
+            <button class="flex min-w-0 items-center gap-2 overflow-hidden rounded-md px-3 py-2 text-left text-sm hover:bg-muted/50 disabled:pointer-events-none disabled:opacity-45" :disabled="!hasConnections" @click="emit('new-query')">
               <FilePlus2 class="h-4 w-4 shrink-0" /> <span class="min-w-0 truncate">{{ t("toolbar.newQuery") }}</span>
+            </button>
+            <button class="flex min-w-0 items-center gap-2 overflow-hidden rounded-md px-3 py-2 text-left text-sm hover:bg-muted/50 disabled:pointer-events-none disabled:opacity-45" :disabled="!hasConnections" @click="emit('open-command-window')">
+              <Terminal class="h-4 w-4 shrink-0 text-emerald-500" /> <span class="min-w-0 truncate">{{ t("commandWindow.title") }}</span>
+            </button>
+            <button class="flex min-w-0 items-center gap-2 overflow-hidden rounded-md px-3 py-2 text-left text-sm hover:bg-muted/50 disabled:pointer-events-none disabled:opacity-45" :disabled="!hasConnections" @click="emit('open-invalid-objects')">
+              <Stethoscope class="h-4 w-4 shrink-0 text-primary" /> <span class="min-w-0 truncate">{{ t("invalidObjects.title") }}</span>
+            </button>
+            <button class="flex min-w-0 items-center gap-2 overflow-hidden rounded-md px-3 py-2 text-left text-sm hover:bg-muted/50 disabled:pointer-events-none disabled:opacity-45" :disabled="!hasConnections" @click="emit('open-sessions')">
+              <Activity class="h-4 w-4 shrink-0 text-sky-500" /> <span class="min-w-0 truncate">{{ t("processList.title") }}</span>
+            </button>
+            <button class="flex min-w-0 items-center gap-2 overflow-hidden rounded-md px-3 py-2 text-left text-sm hover:bg-muted/50 disabled:pointer-events-none disabled:opacity-45" :disabled="!hasConnections" @click="emit('open-recycle-bin')">
+              <RotateCcw class="h-4 w-4 shrink-0 text-amber-500" /> <span class="min-w-0 truncate">{{ t("recycleBin.menuTitle") }}</span>
             </button>
             <button class="flex min-w-0 items-center gap-2 overflow-hidden rounded-md px-3 py-2 text-left text-sm hover:bg-muted/50" @click="emit('show-history')">
               <History class="h-4 w-4 shrink-0" /> <span class="min-w-0 truncate">{{ t("history.title") }}</span>

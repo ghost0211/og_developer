@@ -699,3 +699,24 @@ describe("supportsExecutionTargetPicker", () => {
     expect(supportsExecutionTargetPicker(undefined)).toBe(false);
   });
 });
+
+describe("fullwidth semicolon (；) compatibility", () => {
+  it("splits top-level statements separated by Chinese fullwidth semicolons while keeping literals intact", () => {
+    const sql = "SELECT 'a；b' FROM dual；\nSELECT 2；";
+    const ranges = splitSqlStatementRanges(sql, "opengauss");
+    expect(ranges.map((r) => r.sql)).toEqual(["SELECT 'a；b' FROM dual", "SELECT 2"]);
+    expect(hasMultipleExecutionTargets(sql, "opengauss")).toBe(true);
+  });
+
+  it("attributes cursor right after a trailing fullwidth semicolon to that statement", () => {
+    const sql = "SELECT 1；\nSELECT 2；";
+    const firstSemiEnd = sql.indexOf("；") + 1;
+    expect(statementRangeAtCursor(sql, firstSemiEnd, "opengauss")?.sql).toBe("SELECT 1");
+  });
+
+  it("keeps openGauss PL/SQL blocks with internal fullwidth semicolons intact", () => {
+    const sql = "BEGIN\n  UPDATE t SET a = 1；\nEND；\nSELECT 2；";
+    const ranges = splitSqlStatementRanges(sql, "opengauss");
+    expect(ranges.map((r) => r.sql)).toEqual(["BEGIN\n  UPDATE t SET a = 1；\nEND；", "SELECT 2"]);
+  });
+});

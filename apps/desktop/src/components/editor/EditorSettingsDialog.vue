@@ -259,6 +259,7 @@ const editInsertSpaceAfterCompletion = ref(settingsStore.editorSettings.insertSp
 const editWordWrap = ref(settingsStore.editorSettings.wordWrap);
 const editVimModeEnabled = ref(settingsStore.editorSettings.vimModeEnabled);
 const editAutoCloseBrackets = ref(settingsStore.editorSettings.autoCloseBrackets);
+const editSqlSyntaxDiagnosticsEnabled = ref(settingsStore.editorSettings.sqlSyntaxDiagnosticsEnabled);
 const editSqlSemanticDiagnosticsMode = ref<SqlSemanticDiagnosticsMode>(settingsStore.editorSettings.sqlSemanticDiagnosticsMode);
 const editSqlSemanticDiagnosticsEnabled = ref(settingsStore.editorSettings.sqlSemanticDiagnosticsEnabled);
 const editConfirmDangerousSqlExecution = ref(settingsStore.editorSettings.confirmDangerousSqlExecution);
@@ -390,6 +391,7 @@ function currentEditorSettingsDraft(): EditorSettingsDraft {
     wordWrap: editWordWrap.value,
     vimModeEnabled: editVimModeEnabled.value,
     autoCloseBrackets: editAutoCloseBrackets.value,
+    sqlSyntaxDiagnosticsEnabled: editSqlSyntaxDiagnosticsEnabled.value,
     sqlSemanticDiagnosticsMode: editSqlSemanticDiagnosticsMode.value,
     confirmDangerousSqlExecution: editConfirmDangerousSqlExecution.value,
     continueOnErrorOnBatch: editContinueOnErrorOnBatch.value,
@@ -627,6 +629,7 @@ function syncEditorSettingsDraftFromStore() {
   editWordWrap.value = settingsStore.editorSettings.wordWrap;
   editVimModeEnabled.value = settingsStore.editorSettings.vimModeEnabled;
   editAutoCloseBrackets.value = settingsStore.editorSettings.autoCloseBrackets;
+  editSqlSyntaxDiagnosticsEnabled.value = settingsStore.editorSettings.sqlSyntaxDiagnosticsEnabled;
   editSqlSemanticDiagnosticsMode.value = settingsStore.editorSettings.sqlSemanticDiagnosticsMode;
   editSqlSemanticDiagnosticsEnabled.value = settingsStore.editorSettings.sqlSemanticDiagnosticsEnabled;
   editConfirmDangerousSqlExecution.value = settingsStore.editorSettings.confirmDangerousSqlExecution;
@@ -796,6 +799,7 @@ function resetDefaultsForTab(tab: SettingsCategory) {
     editWordWrap.value = DEFAULT_EDITOR_SETTINGS.wordWrap;
     editVimModeEnabled.value = DEFAULT_EDITOR_SETTINGS.vimModeEnabled;
     editAutoCloseBrackets.value = DEFAULT_EDITOR_SETTINGS.autoCloseBrackets;
+    editSqlSyntaxDiagnosticsEnabled.value = DEFAULT_EDITOR_SETTINGS.sqlSyntaxDiagnosticsEnabled;
     editSqlSemanticDiagnosticsMode.value = DEFAULT_EDITOR_SETTINGS.sqlSemanticDiagnosticsMode;
     editSqlSemanticDiagnosticsEnabled.value = DEFAULT_EDITOR_SETTINGS.sqlSemanticDiagnosticsEnabled;
     editConfirmDangerousSqlExecution.value = DEFAULT_EDITOR_SETTINGS.confirmDangerousSqlExecution;
@@ -882,6 +886,7 @@ function resetAllDefaults() {
   editWordWrap.value = DEFAULT_EDITOR_SETTINGS.wordWrap;
   editVimModeEnabled.value = DEFAULT_EDITOR_SETTINGS.vimModeEnabled;
   editAutoCloseBrackets.value = DEFAULT_EDITOR_SETTINGS.autoCloseBrackets;
+  editSqlSyntaxDiagnosticsEnabled.value = DEFAULT_EDITOR_SETTINGS.sqlSyntaxDiagnosticsEnabled;
   editSqlSemanticDiagnosticsMode.value = DEFAULT_EDITOR_SETTINGS.sqlSemanticDiagnosticsMode;
   editSqlSemanticDiagnosticsEnabled.value = DEFAULT_EDITOR_SETTINGS.sqlSemanticDiagnosticsEnabled;
   editConfirmDangerousSqlExecution.value = DEFAULT_EDITOR_SETTINGS.confirmDangerousSqlExecution;
@@ -2326,11 +2331,11 @@ let previewRunHighlightTimer: ReturnType<typeof setTimeout> | null = null;
 let buildPreviewRunGutterExtension: () => import("@codemirror/state").Extension = () => [];
 
 function currentPreviewSql(): string {
-  return editSqlSemanticDiagnosticsEnabled.value ? previewSqlWithSyntaxError : previewSqlNormal;
+  return editSqlSyntaxDiagnosticsEnabled.value || editSqlSemanticDiagnosticsEnabled.value ? previewSqlWithSyntaxError : previewSqlNormal;
 }
 
 function previewDiagnosticsForSql(sql: string): PreviewSqlDiagnostic[] {
-  if (!editSqlSemanticDiagnosticsEnabled.value) return [];
+  if (!editSqlSyntaxDiagnosticsEnabled.value && !editSqlSemanticDiagnosticsEnabled.value) return [];
   const from = sql.indexOf("FOM");
   return from >= 0 ? [{ from, to: from + 3, message: "Syntax error: expected FROM" }] : [];
 }
@@ -2494,7 +2499,7 @@ watch(
   { deep: true },
 );
 
-watch(editSqlSemanticDiagnosticsEnabled, () => {
+watch([editSqlSyntaxDiagnosticsEnabled, editSqlSemanticDiagnosticsEnabled], () => {
   updatePreviewSqlDiagnostics();
 });
 
@@ -2534,7 +2539,7 @@ watch(previewRef, async (el) => {
   previewInitialized = true;
   if (previewView.value) return;
 
-  const [{ EditorView, Decoration, ViewPlugin, gutter, GutterMarker }, { EditorState, Compartment, StateEffect, StateField }, { sql, MySQL }, { basicSetup }] = await Promise.all([import("@codemirror/view"), import("@codemirror/state"), import("@codemirror/lang-sql"), import("codemirror")]);
+  const [{ EditorView, Decoration, ViewPlugin, gutter, GutterMarker }, { EditorState, Compartment, StateEffect, StateField }, { sql, PostgreSQL }, { basicSetup }] = await Promise.all([import("@codemirror/view"), import("@codemirror/state"), import("@codemirror/lang-sql"), import("codemirror")]);
 
   editorViewModule = {
     Decoration,
@@ -2634,7 +2639,7 @@ watch(previewRef, async (el) => {
     doc: currentPreviewSql(),
     extensions: [
       basicSetup,
-      sql({ dialect: MySQL }),
+      sql({ dialect: PostgreSQL }),
       themeComp.of(themeExt),
       fontThemeComp.of(editorFontTheme(EditorView, ss.fontSize, ss.fontFamily)),
       previewRunGutterComp.of(buildPreviewRunGutterExtension()),
@@ -2956,6 +2961,16 @@ onUnmounted(() => {
                       <SelectItem value="current">{{ t("settings.savedSqlOpenTargetCurrent") }}</SelectItem>
                     </SelectContent>
                   </Select>
+                </div>
+
+                <div class="flex items-center justify-between gap-4 rounded-md border bg-muted/20 px-3 py-2">
+                  <div class="space-y-1">
+                    <Label for="editor-sql-syntax-diagnostics">{{ t("settings.sqlSyntaxDiagnosticsEnabled") }}</Label>
+                    <p class="text-xs text-muted-foreground">
+                      {{ t("settings.sqlSyntaxDiagnosticsEnabledDescription") }}
+                    </p>
+                  </div>
+                  <Switch id="editor-sql-syntax-diagnostics" v-model="editSqlSyntaxDiagnosticsEnabled" class="mt-0.5" />
                 </div>
 
                 <div class="flex items-center justify-between gap-4 rounded-md border bg-muted/20 px-3 py-2">
@@ -3927,7 +3942,7 @@ onUnmounted(() => {
                       </p>
                     </div>
                     <div class="flex items-center gap-2">
-                      <Select v-model="editTableColumnTemplateDatabaseType">
+                      <Select v-if="settingsTableColumnTemplateDatabaseTypes.length > 1" v-model="editTableColumnTemplateDatabaseType">
                         <SelectTrigger class="h-8 w-44 px-2 text-xs">
                           <SelectValue />
                         </SelectTrigger>

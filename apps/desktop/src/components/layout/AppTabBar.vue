@@ -630,6 +630,15 @@ function onOverflowItemKeydown(event: KeyboardEvent, tabId: string, kind: "regul
                       <span v-if="isDirtyTab(tab)" aria-hidden="true" class="dirty-tab-marker">*</span>
                       <span class="min-w-0 flex-1 truncate" :style="tabTitleStyle(tab)">{{ tabTitleText(tab) }}</span>
                     </span>
+                    <Tooltip v-if="tab.txnSessionId">
+                      <TooltipTrigger as-child>
+                        <span data-tab-uncommitted-txn class="inline-flex shrink-0 items-center gap-0.5 rounded bg-amber-500/15 px-1 py-0.5 text-[10px] font-semibold leading-none text-amber-700 dark:text-amber-300">
+                          <span class="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
+                          <span>Tx</span>
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent>{{ t("tabs.uncommittedTransactionTooltip") }}</TooltipContent>
+                    </Tooltip>
                     <Tooltip v-if="isConnectionReadonly(tab.connectionId)">
                       <TooltipTrigger as-child>
                         <Lock class="h-3 w-3 text-muted-foreground shrink-0" />
@@ -795,6 +804,15 @@ function onOverflowItemKeydown(event: KeyboardEvent, tabId: string, kind: "regul
                       <span v-if="isDirtyTab(tab)" aria-hidden="true" class="dirty-tab-marker">*</span>
                       <span class="min-w-0 flex-1 truncate" :style="tabTitleStyle(tab)">{{ tabTitleText(tab) }}</span>
                     </span>
+                    <Tooltip v-if="tab.txnSessionId">
+                      <TooltipTrigger as-child>
+                        <span data-tab-uncommitted-txn class="inline-flex shrink-0 items-center gap-0.5 rounded bg-amber-500/15 px-1 py-0.5 text-[10px] font-semibold leading-none text-amber-700 dark:text-amber-300">
+                          <span class="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
+                          <span>Tx</span>
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent>{{ t("tabs.uncommittedTransactionTooltip") }}</TooltipContent>
+                    </Tooltip>
                     <Tooltip v-if="isConnectionReadonly(tab.connectionId)">
                       <TooltipTrigger as-child>
                         <Lock class="h-3 w-3 text-muted-foreground shrink-0" />

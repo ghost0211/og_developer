@@ -927,7 +927,7 @@ export interface TableNameFilter {
   excludePatterns: string[];
 }
 
-export type TableInfoTab = "columns" | "indexes" | "foreignKeys" | "triggers" | "ddl";
+export type TableInfoTab = "columns" | "indexes" | "foreignKeys" | "triggers" | "checks" | "partitions" | "options" | "ddl";
 
 export interface TableStructureEditorTarget {
   kind: "column" | "index";
@@ -944,6 +944,14 @@ export interface TableStructureEditorDraft {
   indexes: import("@/lib/table/tableStructureEditorSql").EditableStructureIndex[];
   foreignKeys: import("@/lib/table/tableStructureEditorSql").EditableStructureForeignKey[];
   triggers: import("@/lib/table/tableStructureEditorSql").EditableStructureTrigger[];
+  checks?: import("@/lib/table/opengaussTableStructure").EditableTableCheckConstraint[];
+  checksLoaded?: boolean;
+  openGaussOptions?: import("@/lib/table/opengaussTableStructure").EditableOpenGaussTableOptions;
+  originalOpenGaussOptions?: import("@/lib/table/opengaussTableStructure").OpenGaussTableOptionsSnapshot;
+  openGaussOptionsLoaded?: boolean;
+  openGaussPartitions?: import("@/lib/table/opengaussTableStructure").EditableOpenGaussPartitionDraft;
+  originalOpenGaussPartitions?: import("@/lib/table/opengaussTableStructure").OpenGaussTablePartitionMetadata | null;
+  openGaussPartitionsLoaded?: boolean;
   triggersLoaded?: boolean;
   loadedMetadataFacets?: import("@/lib/metadata/objectMetadataCache").ObjectMetadataFacet[];
   scrollPositions?: Partial<Record<TableInfoTab, TableStructureEditorViewport>>;

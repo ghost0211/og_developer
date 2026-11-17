@@ -244,6 +244,7 @@ const contentAreaRef = ref<InstanceType<typeof ContentArea> | null>(null);
 
 const selectedSql = ref("");
 const cursorPos = ref(0);
+const diagnosticCountsByTab = ref<Record<string, number>>({});
 const formatSqlRequest = ref<{ id: number; tabId: string } | null>(null);
 const compressSqlRequest = ref<{ id: number; tabId: string } | null>(null);
 const activeOutputView = ref<"result" | "output" | "summary" | "explain" | "chart">("result");
@@ -271,6 +272,7 @@ const pendingAppCloseAction = ref<AppCloseAction | null>(null);
 const pendingCloseActionChoice = ref(false);
 
 const activeTab = computed(() => queryStore.tabs.find((t) => t.id === queryStore.activeTabId));
+const activeTabDiagnosticCount = computed(() => (activeTab.value ? (diagnosticCountsByTab.value[activeTab.value.id] ?? 0) : 0));
 const routineHealthTabs = computed(() => queryStore.tabs.filter((tab) => tab.mode === "routine-health"));
 // Debug sessions must not be evicted by the normal four-tab ContentArea cache:
 // eviction unmounts the panel, stops the parked routine, and a later remount
@@ -349,6 +351,8 @@ const {
   sqlParameterDatabaseType,
   sqlParameterEnabledSyntaxes,
   onSqlParametersConfirm,
+  onSqlParametersReplaceInEditor,
+  openSqlParameterBuilder,
   explainMode,
 } = useSqlExecution({
   activeTab,
@@ -1936,6 +1940,20 @@ function openRoutineHealthFromMenu() {
   queryStore.openRoutineHealth({ connectionId: connection.id, database: current?.database || resolveDefaultDatabase(connection, []), schema: current?.schema });
 }
 
+function openRecycleBinFromMenu() {
+  const connection = defaultToolTarget("pg-stats");
+  if (!connection) {
+    toast(t("recycleBin.noConnections"), 2500);
+    return;
+  }
+  const current = activeTab.value?.connectionId === connection.id ? activeTab.value : undefined;
+  connectionStore.recycleBinSource = {
+    connectionId: connection.id,
+    database: current?.database || resolveDefaultDatabase(connection, []),
+    schema: current?.schema,
+  };
+}
+
 function openTopSqlFromMenu() {
   const connection = defaultToolTarget("pg-stats");
   if (!connection) {
@@ -2481,6 +2499,7 @@ onUnmounted(() => {
           @search-table-data="openMenuSearch('data')"
           @open-sessions="openProcessListFromMenu"
           @open-invalid-objects="openRoutineHealthFromMenu"
+          @open-recycle-bin="openRecycleBinFromMenu"
           @open-top-sql="openTopSqlFromMenu"
           @open-command-window="openCommandWindowFromMenu"
           @open-table-import="void openTableImportFromMenu()"
@@ -2538,7 +2557,8 @@ onUnmounted(() => {
                     :auto-commit="activeTab.autoCommit ?? true"
                     :txn-session-id="activeTab?.txnSessionId"
                     :txn-auto-rolled-back="activeTab?.txnAutoRolledBack"
-                    @update:explain-mode="(m: 'explain' | 'autotrace') => (explainMode = m)"
+                    @update:explain-mode="(m) => (explainMode = m)"
+                    @open-parameters="void openSqlParameterBuilder()"
                     @update:auto-commit="
                       (v: boolean) => {
                         if (activeTab) queryStore.setAutoCommit(activeTab.id, v);
@@ -2594,6 +2614,7 @@ onUnmounted(() => {
                       @editor-update="(tabId: string, v: string) => queryStore.updateSql(tabId, v)"
                       @editor-selection-change="(v: string) => (selectedSql = v)"
                       @editor-cursor-change="(p: number) => (cursorPos = p)"
+                      @editor-diagnostics-count-change="(tabId: string, count: number) => (diagnosticCountsByTab = { ...diagnosticCountsByTab, [tabId]: count })"
                       @editor-viewport-change="(tabId: string, viewport: { scrollTop: number; scrollLeft: number }) => queryStore.updateEditorViewport(tabId, viewport)"
                       @editor-selection-state-change="(tabId: string, selection: { anchor: number; head: number }) => queryStore.updateEditorSelection(tabId, selection)"
                       @format-error="toast(t('toolbar.formatSqlFailed'))"
@@ -2670,6 +2691,10 @@ onUnmounted(() => {
                   @open-saved-sql="openSavedSqlFromWelcome"
                   @new-connection="showConnectionDialog = true"
                   @new-query="newQuery"
+                  @open-command-window="openCommandWindowFromMenu"
+                  @open-invalid-objects="openRoutineHealthFromMenu"
+                  @open-sessions="openProcessListFromMenu"
+                  @open-recycle-bin="openRecycleBinFromMenu"
                   @show-history="openToolPanel('history')"
                   @import-config="dialogs.onImportClick"
                   @open-about="openAbout"
@@ -2737,9 +2762,11 @@ onUnmounted(() => {
           :active-connection="activeConnection"
           :connected="!!activeConnection && connectionStore.connectedIds.has(activeConnection.id)"
           :cursor-pos="cursorPos"
+          :diagnostic-count="activeTabDiagnosticCount"
           :ui-scale="settingsStore.editorSettings.uiScale"
           @change-schema="changeActiveSchema"
           @toggle-auto-commit="() => activeTab && queryStore.setAutoCommit(activeTab.id, !(activeTab.autoCommit ?? true))"
+          @jump-next-diagnostic="() => contentAreaRef?.jumpToNextDiagnostic()"
           @set-ui-scale="setGlobalUiScale"
         />
 
@@ -2765,6 +2792,7 @@ onUnmounted(() => {
           @update:show-sql-parameter-dialog="showSqlParameterDialog = $event"
           @danger-confirm="onDangerConfirm"
           @sql-parameters-confirm="onSqlParametersConfirm"
+          @sql-parameters-replace-in-editor="onSqlParametersReplaceInEditor"
           @connect-started="(name: string) => toast(t('connection.connecting', { name }), 30000)"
           @connect-succeeded="(name: string) => toast(t('connection.connectSuccess', { name }), 2000)"
           @connect-failed="

@@ -180,4 +180,110 @@ END;`;
 
     expect(twice).toBe(once);
   });
+
+  it("formats Oracle-compatible openGauss PACKAGE and PACKAGE BODY cleanly and idempotently", async () => {
+    const pkgSpec = "CREATE OR REPLACE PACKAGE hr.emp_pkg IS g_ver CONSTANT VARCHAR2(10) := '1.0'; PROCEDURE hire_emp(p_id INT, p_name VARCHAR2); FUNCTION get_name(p_id INT) RETURN VARCHAR2; END emp_pkg;";
+    const formattedSpec = await formatSqlText(pkgSpec, "postgres");
+    expect(formattedSpec).toBe(["CREATE OR REPLACE PACKAGE hr.emp_pkg IS", "  g_ver CONSTANT VARCHAR2(10) := '1.0';", "  PROCEDURE hire_emp(p_id INT, p_name VARCHAR2);", "  FUNCTION get_name(p_id INT) RETURN VARCHAR2;", "END emp_pkg;"].join("\n"));
+
+    const pkgBody = [
+      "CREATE OR REPLACE PACKAGE BODY hr.emp_pkg IS",
+      "PROCEDURE log_msg(p_msg VARCHAR2);",
+      "PROCEDURE hire_emp(p_id INT, p_name VARCHAR2) IS",
+      "v_cnt INT := 0;",
+      "BEGIN",
+      "IF p_id <= 0 THEN",
+      "RAISE EXCEPTION 'bad id -- keep literal';",
+      "ELSIF p_name IS NULL THEN",
+      "log_msg('missing');",
+      "ELSE",
+      "FOR i IN 1..3 LOOP",
+      "v_cnt := v_cnt + i;",
+      "END LOOP;",
+      "END IF;",
+      "EXCEPTION",
+      "WHEN OTHERS THEN",
+      "log_msg('err');",
+      "END hire_emp;",
+      "PROCEDURE log_msg(p_msg VARCHAR2) IS",
+      "BEGIN",
+      "NULL;",
+      "END log_msg;",
+      "END emp_pkg;",
+    ].join("\n");
+
+    const formattedBody = await formatSqlText(pkgBody, "postgres");
+    expect(formattedBody).toBe(
+      [
+        "CREATE OR REPLACE PACKAGE BODY hr.emp_pkg IS",
+        "  PROCEDURE log_msg(p_msg VARCHAR2);",
+        "  PROCEDURE hire_emp(p_id INT, p_name VARCHAR2) IS",
+        "    v_cnt INT := 0;",
+        "  BEGIN",
+        "    IF p_id <= 0 THEN",
+        "      RAISE EXCEPTION 'bad id -- keep literal';",
+        "    ELSIF p_name IS NULL THEN",
+        "      log_msg('missing');",
+        "    ELSE",
+        "      FOR i IN 1..3 LOOP",
+        "        v_cnt := v_cnt + i;",
+        "      END LOOP;",
+        "    END IF;",
+        "  EXCEPTION",
+        "    WHEN OTHERS THEN",
+        "      log_msg('err');",
+        "  END hire_emp;",
+        "  PROCEDURE log_msg(p_msg VARCHAR2) IS",
+        "  BEGIN",
+        "    NULL;",
+        "  END log_msg;",
+        "END emp_pkg;",
+      ].join("\n"),
+    );
+
+    await expect(formatSqlText(formattedBody, "postgres")).resolves.toBe(formattedBody);
+  });
+
+  it("formats Oracle-style CREATE PROCEDURE/FUNCTION with IS, CASE...END CASE, and preserves comments and multiline strings", async () => {
+    const oracleFunc = [
+      "CREATE OR REPLACE FUNCTION hr.calc_grade(p_score INT) RETURN VARCHAR2 IS",
+      "v_label VARCHAR2(32) := 'BEGIN",
+      "UNTOUCHED STRING'; -- inline comment",
+      'v_quoted INT := "END";',
+      "BEGIN",
+      "CASE",
+      "WHEN p_score >= 90 THEN v_label := 'A';",
+      "ELSE v_label := 'B';",
+      "END CASE;",
+      "RETURN v_label;",
+      "END calc_grade;",
+    ].join("\n");
+
+    const formatted = await formatSqlText(oracleFunc, "postgres");
+    expect(formatted).toBe(
+      [
+        "CREATE OR REPLACE FUNCTION hr.calc_grade(p_score INT) RETURN VARCHAR2 IS",
+        "  v_label VARCHAR2(32) := 'BEGIN",
+        "UNTOUCHED STRING'; -- inline comment",
+        '  v_quoted INT := "END";',
+        "BEGIN",
+        "  CASE",
+        "    WHEN p_score >= 90 THEN",
+        "      v_label := 'A';",
+        "    ELSE",
+        "      v_label := 'B';",
+        "  END CASE;",
+        "  RETURN v_label;",
+        "END calc_grade;",
+      ].join("\n"),
+    );
+  });
+
+  it("formats procedural bodies inside $tag$...$tag$ while preserving exact delimiters and nested literals", async () => {
+    const dollarFn = "CREATE OR REPLACE FUNCTION app.trg_check() RETURNS trigger AS $body$ DECLARE v_cnt int := 0; BEGIN IF NEW.id IS NULL THEN v_cnt := 1; ELSE EXECUTE $sql$ SELECT 1 $sql$; END IF; RETURN NEW; EXCEPTION WHEN OTHERS THEN RETURN NULL; END; $body$ LANGUAGE plpgsql;";
+    const formatted = await formatSqlText(dollarFn, "postgres");
+
+    expect(formatted).toContain("AS $body$\nDECLARE\n  v_cnt int := 0;\nBEGIN\n  IF NEW.id IS NULL THEN\n    v_cnt := 1;\n  ELSE\n    EXECUTE $sql$ SELECT 1 $sql$;\n  END IF;\n  RETURN NEW;\nEXCEPTION\n  WHEN OTHERS THEN\n    RETURN NULL;\nEND;\n$body$ LANGUAGE plpgsql;");
+    await expect(formatSqlText(formatted, "postgres")).resolves.toBe(formatted);
+  });
 });

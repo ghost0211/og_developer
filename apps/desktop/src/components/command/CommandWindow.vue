@@ -10,6 +10,7 @@ import { useToast } from "@/composables/useToast";
 import { copyToClipboard } from "@/lib/common/clipboard";
 import { displayWidth, padEndToWidth, truncateToWidth } from "@/lib/common/displayWidth";
 import { databaseOptionsForConnection } from "@/composables/useDatabaseOptions";
+import { normalizeSqlFullwidthPunctuation } from "@/lib/sql/sqlSyntaxLint";
 import type { DatabaseType, QueryResult } from "@/types/database";
 import * as api from "@/lib/backend/api";
 
@@ -331,8 +332,8 @@ async function executeCommand() {
 
   try {
     const lowerRaw = raw.toLowerCase();
-    const normalizedMetaCommand = lowerRaw.replace(/;\s*$/, "").trim();
-    const commandForMeta = raw.replace(/;\s*$/, "").trim();
+    const normalizedMetaCommand = lowerRaw.replace(/[;；]\s*$/, "").trim();
+    const commandForMeta = raw.replace(/[;；]\s*$/, "").trim();
     const isMeta = raw.startsWith("\\") || /^(desc|describe)(\s|$)/.test(normalizedMetaCommand) || normalizedMetaCommand === "help" || normalizedMetaCommand === "clear" || normalizedMetaCommand === "cls" || normalizedMetaCommand === "show errors" || normalizedMetaCommand === "show user";
 
     if (isMeta) {
@@ -367,7 +368,7 @@ async function executeCommand() {
     } else {
       // Regular SQL execution
       const schema = currentSchema.value;
-      const cleanSql = raw.endsWith("/") ? raw.slice(0, -1).trim() : raw;
+      const cleanSql = normalizeSqlFullwidthPunctuation(raw.endsWith("/") ? raw.slice(0, -1).trim() : raw);
       const result = await api.executeQuery(props.connectionId, props.database, cleanSql, schema);
       const elapsed = Math.round(performance.now() - startTime);
 

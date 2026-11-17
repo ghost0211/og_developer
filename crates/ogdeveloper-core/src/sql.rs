@@ -414,7 +414,7 @@ impl SqlStatementSplitter {
                     self.in_backtick = !self.in_backtick;
                     self.buffer.push(ch);
                 }
-                ';' if !self.in_single_quote && !self.in_double_quote && !self.in_backtick => {
+                ';' | '；' if !self.in_single_quote && !self.in_double_quote && !self.in_backtick => {
                     if (self.options.profile.supports_custom_delimiter_commands && self.on_delimiter_line())
                         || self.custom_delimiter.is_some()
                     {
@@ -423,31 +423,39 @@ impl SqlStatementSplitter {
                         && starts_with_mysql_routine_block(&self.buffer)
                     {
                         let mut candidate = self.buffer.clone();
-                        candidate.push(ch);
+                        candidate.push(';');
                         if mysql_routine_block_is_complete(&candidate) {
                             // The final semicolon is the client-side statement delimiter.
                             // Keep semicolons inside BEGIN...END, but do not send the
                             // delimiter after END to the MySQL server.
                             self.push_current_statement(&mut statements);
                         } else {
-                            self.buffer.push(ch);
+                            self.buffer.push(';');
                         }
                     } else if self.options.profile.supports_oracle_plsql_blocks
                         && !self.postgres_dollar_quoted_routine
                         && starts_with_oracle_plsql_block(&self.buffer)
                     {
-                        self.buffer.push(ch);
+                        self.buffer.push(';');
                         if oracle_plsql_block_is_complete(&self.buffer) {
                             self.push_current_statement(&mut statements);
                         }
                     } else if self.options.profile.supports_hana_do_blocks && starts_with_hana_do_block(&self.buffer) {
-                        self.buffer.push(ch);
+                        self.buffer.push(';');
                         if hana_do_block_is_complete(&self.buffer) {
                             self.push_current_statement(&mut statements);
                         }
                     } else {
                         self.push_current_statement(&mut statements);
                     }
+                }
+                '，' if !self.in_single_quote
+                    && !self.in_double_quote
+                    && !self.in_backtick
+                    && !(self.options.profile.supports_custom_delimiter_commands && self.on_delimiter_line())
+                    && self.custom_delimiter.is_none() =>
+                {
+                    self.buffer.push(',');
                 }
                 _ => self.buffer.push(ch),
             }
@@ -845,11 +853,12 @@ fn split_sql_statement_ranges_with_options(sql: &str, options: SqlParsingOptions
                 in_backtick = !in_backtick;
                 i += ch.len_utf8();
             }
-            ';' if !(in_single_quote
-                || in_double_quote
-                || in_backtick
-                || custom_delimiter.is_some()
-                || (options.profile.supports_custom_delimiter_commands && is_on_delimiter_line(sql, start, i))) =>
+            ';' | '；'
+                if !(in_single_quote
+                    || in_double_quote
+                    || in_backtick
+                    || custom_delimiter.is_some()
+                    || (options.profile.supports_custom_delimiter_commands && is_on_delimiter_line(sql, start, i))) =>
             {
                 let is_mysql_routine =
                     options.profile.supports_mysql_routine_blocks && starts_with_mysql_routine_block(&sql[start..i]);
@@ -2264,9 +2273,11 @@ fn next_word_token(tokens: &[OraclePlSqlToken], index: usize) -> Option<&str> {
 }
 
 fn oracle_plsql_tokens(sql: &str) -> Vec<OraclePlSqlToken> {
-    let dialect = OracleDialect {};
-    if let Ok(tokens) = Tokenizer::new(&dialect, sql).tokenize() {
-        return tokens.into_iter().filter_map(OraclePlSqlToken::from_sqlparser_token).collect();
+    if !sql.contains('；') {
+        let dialect = OracleDialect {};
+        if let Ok(tokens) = Tokenizer::new(&dialect, sql).tokenize() {
+            return tokens.into_iter().filter_map(OraclePlSqlToken::from_sqlparser_token).collect();
+        }
     }
 
     oracle_plsql_tokens_fallback(sql)
@@ -2325,7 +2336,7 @@ fn oracle_plsql_tokens_fallback(sql: &str) -> Vec<OraclePlSqlToken> {
             continue;
         }
 
-        if ch == ';' {
+        if ch == ';' || ch == '；' {
             tokens.push(OraclePlSqlToken::Semicolon);
             continue;
         }
@@ -2527,5 +2538,28 @@ mod tests {
         let sql = "CREATE PROCEDURE p() AS $$ BEGIN NULL; END; $$ LANGUAGE plpgsql; SELECT 1;";
         let statements = split_sql_statements_for_database(sql, DatabaseType::Opengauss);
         assert_eq!(statements.len(), 2);
+    }
+
+    #[test]
+    fn splits_fullwidth_semicolons_outside_strings_and_comments_only() {
+        let sql = "SELECT id， 'a，b；c' AS msg -- 注释，测试；\nFROM dual； SELECT 2， 3；";
+        let statements = split_sql_statements_for_database(sql, DatabaseType::OpenGauss);
+        assert_eq!(statements, vec!["SELECT id, 'a，b；c' AS msg -- 注释，测试；\nFROM dual", "SELECT 2, 3"]);
+    }
+
+    #[test]
+    fn normalizes_fullwidth_semicolons_inside_opengauss_plsql_blocks() {
+        let sql = "BEGIN\n  UPDATE t SET a = 1；\n  INSERT INTO t(x) VALUES ('中；文')；\nEND；\nSELECT 2；";
+        let statements = split_sql_statements_for_database(sql, DatabaseType::OpenGauss);
+        assert_eq!(statements.len(), 2);
+        assert_eq!(statements[0], "BEGIN\n  UPDATE t SET a = 1;\n  INSERT INTO t(x) VALUES ('中；文');\nEND;");
+        assert_eq!(statements[1], "SELECT 2");
+    }
+
+    #[test]
+    fn finds_statement_at_cursor_across_fullwidth_semicolons() {
+        let sql = "SELECT '中；文'；\nSELECT 200；";
+        let cursor = sql.encode_utf16().count() - 2;
+        assert_eq!(find_statement_at_cursor_for_database(sql, cursor, DatabaseType::OpenGauss), "SELECT 200");
     }
 }

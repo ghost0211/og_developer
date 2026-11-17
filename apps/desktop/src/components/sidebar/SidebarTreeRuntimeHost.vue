@@ -51,6 +51,7 @@ import {
   Power,
   X,
   Settings2,
+  RotateCcw,
 } from "@lucide/vue";
 import type { ContextMenuItem } from "@/components/ui/CustomContextMenu.vue";
 import { CONNECTION_ATTEMPT_CANCELLED_MESSAGE, useConnectionStore } from "@/stores/connectionStore";
@@ -289,7 +290,7 @@ const { copyStructureAs, copyStructureDocText, copyStructurePreview, exportData,
   acceptedSelectionIds: () => acceptedSelectionIds,
 });
 
-const { openAllDatabasesExport, openDataCompare, openDatabaseExport, openDatabaseSearch, openDiagram, openFieldLineage, openSchemaDiff, openSqlFileExecution, openStructureEditor, openTableImport, openTransfer } = useSidebarTreeToolRuntime({
+const { openAllDatabasesExport, openDataCompare, openDatabaseExport, openDatabaseSearch, openDiagram, openFieldLineage, openRecycleBin, openSchemaDiff, openSqlFileExecution, openStructureEditor, openTableImport, openTransfer } = useSidebarTreeToolRuntime({
   activeNode,
   connectionStore,
   queryStore,
@@ -3714,6 +3715,9 @@ function buildDatabaseSidebarMenu(context: SidebarMenuFactoryContext): boolean {
     items.push({ label: t("diff.title"), action: openSchemaDiff, icon: ArrowRightLeft });
     items.push({ label: t("dataCompare.title"), action: openDataCompare, icon: ArrowRightLeft });
     items.push({ label: t("contextMenu.exportDatabase"), action: openDatabaseExport, icon: Upload });
+    if (currentDatabaseType() === "opengauss") {
+      items.push({ label: t("recycleBin.menuTitle"), action: openRecycleBin, icon: RotateCcw });
+    }
     const destructiveActions: ContextMenuItem[] = [];
     if (canDropDatabase.value) {
       destructiveActions.push({
@@ -4426,6 +4430,13 @@ function buildObjectGroupSidebarMenu(context: SidebarMenuFactoryContext): boolea
         action: () => emit("open-table-name-filters", node),
         icon: ListFilter,
       });
+      if (currentDatabaseType() === "opengauss") {
+        items.push({
+          label: t("recycleBin.menuTitle"),
+          action: openRecycleBin,
+          icon: RotateCcw,
+        });
+      }
     }
     if (node.type !== "group-partitions") {
       items.push({

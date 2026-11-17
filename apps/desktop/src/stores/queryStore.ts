@@ -25,6 +25,7 @@ import { beginDataGridNativeSelectionBlock, finishDataGridNativeSelectionBlock }
 import { simpleDataGridOrderByReferencesMissingColumn, sortDataGridRowIndexes, type DataGridSortDirection } from "@/lib/dataGrid/dataGridSort";
 import { MAX_RESULT_PAGE_SIZE } from "@/lib/dataGrid/paginationPageSize";
 import { splitSqlStatementRanges } from "@/lib/sql/sqlStatementRanges";
+import { normalizeSqlFullwidthPunctuation } from "@/lib/sql/sqlSyntaxLint";
 import { externalSqlFileDisplayTitles, normalizeExternalSqlPath } from "@/lib/sql/sqlFileOpen";
 import { clearDataGridPendingSnapshotsForTab } from "@/composables/useDataGridEditor";
 import { buildTabResultSnapshot, deleteTabResultSnapshot, pruneTabResultSnapshots, readTabResultSnapshot, tabResultCacheKey, writeTabResultSnapshot } from "@/lib/tabs/tabResultCache";
@@ -3240,6 +3241,7 @@ export const useQueryStore = defineStore("query", () => {
   ) {
     const tab = tabs.value.find((t) => t.id === id);
     if (!tab || !sql.trim()) return;
+    sql = normalizeSqlFullwidthPunctuation(sql);
 
     const openInNewResultTab = tab.mode === "query" && options?.openInNewResultTab === true;
     if (openInNewResultTab && tab.activeResultRunId && !tab.result) {
@@ -3290,7 +3292,7 @@ export const useQueryStore = defineStore("query", () => {
       sourceTraceId: options?.sourceTraceId,
       sqlLength: sql.length,
     });
-    const queryBaseSql = options?.resultBaseSql ?? sql;
+    const queryBaseSql = normalizeSqlFullwidthPunctuation(options?.resultBaseSql ?? sql);
     let sqlToExecute = sql;
     let resultSortedSql = options?.resultSortedSql;
     let queryMetadataSql = queryBaseSql;
@@ -3677,6 +3679,7 @@ export const useQueryStore = defineStore("query", () => {
   async function explainTabSql(id: string, sql: string, requestedDatabaseType?: DatabaseType, explainMode?: string) {
     const tab = tabs.value.find((t) => t.id === id);
     if (!tab) return { ok: false as const, reason: "empty" as const };
+    sql = normalizeSqlFullwidthPunctuation(sql);
     const conn = useConnectionStore().getConfig(tab.connectionId);
     const databaseType = requestedDatabaseType === undefined || requestedDatabaseType === conn?.db_type ? (effectiveDatabaseTypeForConnection(conn) ?? requestedDatabaseType) : requestedDatabaseType;
     const queryTimeoutSecs = queryTimeoutSecsForConnection(conn);
@@ -3702,12 +3705,13 @@ export const useQueryStore = defineStore("query", () => {
       return { ok: false as const, reason: tab.explainError };
     }
 
-    const postgresAnalyze = explainMode === "autotrace";
+    const postgresSandbox = explainMode === "sandbox";
+    const postgresAnalyze = explainMode === "autotrace" || postgresSandbox;
     // External JDBC plugins execute each request independently and do not expose
     // the native checkout/rollback wrapper. Keep EXPLAIN ANALYZE enabled there,
     // but only request the native read-only transaction mode for native pools.
     const usesExternalJdbc = conn?.db_type === "jdbc" || opengaussConnectionMode(conn) === "jdbc";
-    const useReadOnlyTransaction = postgresAnalyze && !usesExternalJdbc;
+    const useReadOnlyTransaction = explainMode === "autotrace" && !usesExternalJdbc;
     const built = postgresAnalyze ? await buildExplainSql(databaseType, sql, "json", true) : await buildExplainSql(databaseType, sql);
     if (!built.ok) {
       tab.explainPlan = undefined;
@@ -3718,6 +3722,37 @@ export const useQueryStore = defineStore("query", () => {
     }
 
     tab.explainSql = built.sql;
+    if (postgresSandbox) {
+      let sandboxTxnId: string | undefined;
+      try {
+        sandboxTxnId = await api.beginManualTransaction(tab.connectionId, tab.database, tab.schema, tab.catalog);
+        const results = await api.executeInManualTransaction(sandboxTxnId, built.sql, tab.database, tab.schema, 5000);
+        const result = results[results.length - 1];
+        const current = tabs.value.find((t) => t.id === id);
+        if (current?.explainExecutionId === executionId && result) {
+          const explainParserDatabaseType = databaseType === "opengauss" ? "opengauss" : "postgres";
+          current.explainPlan = parseExplainResult(explainParserDatabaseType, result);
+          current.explainError = undefined;
+        }
+      } catch (e: any) {
+        const current = tabs.value.find((t) => t.id === id);
+        if (current?.explainExecutionId === executionId) {
+          current.explainPlan = undefined;
+          current.explainError = String(e?.message || e);
+        }
+      } finally {
+        if (sandboxTxnId) {
+          await api.rollbackManualTransaction(sandboxTxnId).catch(() => undefined);
+        }
+        const current = tabs.value.find((t) => t.id === id);
+        if (current?.explainExecutionId === executionId) {
+          current.isExplaining = false;
+          current.explainExecutionId = undefined;
+        }
+      }
+      return { ok: true as const, sql: built.sql };
+    }
+
     const clientSessionId = useReadOnlyTransaction ? `${tabClientSessionId(tab, "explain")}:${executionId}` : tabClientSessionId(tab, "explain");
     if (useReadOnlyTransaction) tab.explainClientSessionId = clientSessionId;
     try {

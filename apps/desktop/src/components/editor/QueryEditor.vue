@@ -66,8 +66,9 @@ import {
   type SqlObjectNavigationTarget,
 } from "@/lib/sql/sqlNavigation";
 import { buildHoverTableSql, ddlForHoverPreview, hoverTableMatchesScope, quoteQualifiedName, reformatHoverDdl, scopeHoverTables, type HoverTableScope } from "@/lib/editor/hoverTableSql";
-import { createSqlHoverController, createSqlHoverDom } from "@/lib/editor/sqlHoverTooltip";
+import { createSqlDiagnosticHoverDom, createSqlHoverController, createSqlHoverDom, type SqlDiagnosticHoverAction } from "@/lib/editor/sqlHoverTooltip";
 import { lineColumnToOffset, parseSqlErrorLocation } from "@/lib/sql/sqlDiagnostics";
+import { formatSqlSyntaxDiagnosticMessage, lintSqlSyntax, type SqlSyntaxDiagnostic, type SqlSyntaxDiagnosticMessages } from "@/lib/sql/sqlSyntaxLint";
 import {
   DBX_TABLE_REFERENCE_MIME,
   DBX_TABLE_REFERENCE_DROP_EVENT,
@@ -183,6 +184,7 @@ const emit = defineEmits<{
   viewportChange: [viewport: { scrollTop: number; scrollLeft: number }];
   selectionStateChange: [selection: { anchor: number; head: number }];
   sendSelectionToAi: [sql: string];
+  diagnosticsCountChange: [count: number];
 }>();
 
 const editorRef = ref<HTMLDivElement>();
@@ -328,6 +330,7 @@ interface SelectStarExpansionTarget {
 }
 
 const selectStarExpansionTarget = ref<SelectStarExpansionTarget | null>(null);
+const contextSyntaxQuickFix = ref<{ label: string; apply: () => void } | null>(null);
 
 const hasSelectedSql = computed(() => selectedSql.value.trim().length > 0);
 const canCopySelectedSql = computed(() => selectedSql.value.length > 0);
@@ -446,6 +449,8 @@ let semanticDiagnostics: SqlSemanticDiagnostic[] = [];
 let semanticDiagnosticTimer: ReturnType<typeof setTimeout> | null = null;
 let semanticDiagnosticRunId = 0;
 let pendingSemanticDiagnosticPreserveOutsideRanges = false;
+let syntaxDiagnostics: SqlSyntaxDiagnostic[] = [];
+let syntaxDiagnosticTimer: ReturnType<typeof setTimeout> | null = null;
 let editorIsActive = true;
 let tableReferenceDropListenerRegistered = false;
 let imeCompositionActive = false;
@@ -909,6 +914,7 @@ function selectStarExpansionTargetForView(currentView: EditorViewType, position?
 function syncContextMenuStateAtEvent(currentView: EditorViewType, event: MouseEvent) {
   const pos = currentView.posAtCoords({ x: event.clientX, y: event.clientY });
   syncContextMenuState(currentView, pos ?? undefined);
+  contextSyntaxQuickFix.value = pos == null ? null : resolveContextSyntaxQuickFixAt(currentView, pos);
   if (pos == null) {
     contextObjectTarget.value = null;
     return;
@@ -1439,7 +1445,19 @@ const contextMenuItems = computed<ContextMenuItem[]>(() => {
   // The menu closes before running its action, so retain this right-click's
   // resolved target instead of reading state after the close handler runs.
   const starExpansionTarget = selectStarExpansionTarget.value;
+  const quickFix = contextSyntaxQuickFix.value;
   return [
+    ...(quickFix
+      ? [
+          {
+            label: quickFix.label,
+            action: quickFix.apply,
+            icon: Sparkles,
+            shortcut: shortcuts.quickFixSql,
+          },
+          { label: "", separator: true },
+        ]
+      : []),
     ...(props.hideExecutionControls
       ? []
       : [
@@ -1596,6 +1614,9 @@ function runKeymapExtension(codeMirrorKeymap: (typeof import("@codemirror/view")
           if (sql.trim()) emit("sendSelectionToAi", sql);
           return true;
         }),
+        ...binding(shortcuts.nextDiagnostic, () => jumpToNextDiagnostic(false)),
+        ...binding("Shift+F8", () => jumpToNextDiagnostic(true)),
+        ...binding(shortcuts.quickFixSql, () => applyQuickFixAtCursor()),
         ...createQueryEditorSearchKeymap({
           openSearch,
           openReplace,
@@ -2020,8 +2041,146 @@ function createHoverDom(title: string, detail: string, sqlContent?: string, rows
   });
 }
 
-async function resolveSqlHoverTooltip(currentView: EditorViewType, pos: number) {
-  if (!props.connectionId || props.database == null || contextMenuOpen.value || !editorIsActive) return null;
+function syntaxDiagnosticMessages(): SqlSyntaxDiagnosticMessages {
+  return {
+    fullwidthSemicolon: t("editor.syntaxDiagnostics.fullwidthSemicolon"),
+    fullwidthComma: t("editor.syntaxDiagnostics.fullwidthComma"),
+    fullwidthLeftParen: t("editor.syntaxDiagnostics.fullwidthLeftParen"),
+    fullwidthRightParen: t("editor.syntaxDiagnostics.fullwidthRightParen"),
+    unclosedSingleQuote: t("editor.syntaxDiagnostics.unclosedSingleQuote"),
+    unclosedDoubleQuote: t("editor.syntaxDiagnostics.unclosedDoubleQuote"),
+    unclosedBacktick: t("editor.syntaxDiagnostics.unclosedBacktick"),
+    unclosedDollarQuote: (tag) => t("editor.syntaxDiagnostics.unclosedDollarQuote", { tag }),
+    unclosedBlockComment: t("editor.syntaxDiagnostics.unclosedBlockComment"),
+    unmatchedBlockCommentEnd: t("editor.syntaxDiagnostics.unmatchedBlockCommentEnd"),
+    unclosedLeftParen: t("editor.syntaxDiagnostics.unclosedLeftParen"),
+    unmatchedRightParen: t("editor.syntaxDiagnostics.unmatchedRightParen"),
+    keywordTypo: (token, suggestion) => t("editor.syntaxDiagnostics.keywordTypo", { token, suggestion }),
+  };
+}
+
+function positionMatchesDiagnosticRange(sql: string, from: number, to: number, pos: number, side: -1 | 1 = 1): boolean {
+  if (side < 0) {
+    return (from < pos && pos <= to) || (from <= pos && pos < to);
+  }
+  if (from <= pos && pos < to) return true;
+  return from < pos && pos === to && (pos >= sql.length || /\s/.test(sql[pos] ?? ""));
+}
+
+function findSyntaxDiagnosticAt(sql: string, pos: number, side: -1 | 1 = 1): SqlSyntaxDiagnostic | null {
+  for (const diagnostic of syntaxDiagnostics) {
+    if (diagnostic.from < 0 || diagnostic.to > sql.length || diagnostic.to <= diagnostic.from) continue;
+    if (positionMatchesDiagnosticRange(sql, diagnostic.from, diagnostic.to, pos, side)) {
+      return diagnostic;
+    }
+  }
+  return null;
+}
+
+function applySyntaxQuickFix(currentView: EditorViewType, changes: { from: number; to: number; insert: string } | Array<{ from: number; to: number; insert: string }>) {
+  if (props.readOnly) return;
+  sqlHoverController.dismiss(currentView);
+  const changeList = Array.isArray(changes) ? changes : [changes];
+  if (changeList.length === 0) return;
+  const docLen = currentView.state.doc.length;
+  if (changeList.some((change) => change.from < 0 || change.to > docLen || change.from > change.to)) return;
+  const first = changeList[0]!;
+  currentView.dispatch({
+    changes: changeList,
+    selection: { anchor: first.from + first.insert.length },
+    userEvent: "input.complete",
+  });
+  clearScheduledSyntaxDiagnostics();
+  refreshSyntaxDiagnostics({ activeCursorPos: null });
+  currentView.focus();
+}
+
+function resolveContextSyntaxQuickFixAt(currentView: EditorViewType, pos: number): { label: string; apply: () => void } | null {
+  if (props.readOnly) return null;
+  const sql = currentView.state.doc.toString();
+  const diagnostic = findSyntaxDiagnosticAt(sql, pos, 1) ?? findSyntaxDiagnosticAt(sql, pos, -1);
+  const qf = diagnostic?.quickFix;
+  if (!qf) return null;
+  return {
+    label: t("editor.syntaxDiagnostics.contextMenuQuickFix", { replacement: qf.replacement }),
+    apply: () => applySyntaxQuickFix(currentView, { from: qf.from, to: qf.to, insert: qf.replacement }),
+  };
+}
+
+function resolveDiagnosticHoverTooltip(currentView: EditorViewType, pos: number, side: -1 | 1) {
+  const sql = currentView.state.doc.toString();
+  const syntaxDiag = findSyntaxDiagnosticAt(sql, pos, side);
+  if (syntaxDiag) {
+    const hoverRange = { from: syntaxDiag.from, to: syntaxDiag.to };
+    const requestId = sqlHoverController.beginRequest(pos, hoverRange, currentView);
+    if (!sqlHoverController.isValid(requestId, currentView, hoverRange)) return null;
+    const message = formatSqlSyntaxDiagnosticMessage(syntaxDiag, syntaxDiagnosticMessages());
+    const actions: SqlDiagnosticHoverAction[] = [];
+    if (!props.readOnly && syntaxDiag.quickFix) {
+      const qf = syntaxDiag.quickFix;
+      actions.push({
+        label: t("editor.syntaxDiagnostics.quickFixReplace", { replacement: qf.replacement }),
+        primary: true,
+        onSelect: () => applySyntaxQuickFix(currentView, { from: qf.from, to: qf.to, insert: qf.replacement }),
+      });
+      if (qf.replaceAllChanges && (qf.replaceAllCount ?? 0) > 1) {
+        const batchChanges = qf.replaceAllChanges;
+        actions.push({
+          label: t("editor.syntaxDiagnostics.quickFixReplaceAll", { count: qf.replaceAllCount }),
+          onSelect: () => applySyntaxQuickFix(currentView, batchChanges),
+        });
+      }
+    }
+    return {
+      pos: hoverRange.from,
+      end: hoverRange.to,
+      create: (targetView: EditorViewType) =>
+        sqlHoverController.attachTooltipView(
+          targetView,
+          createSqlDiagnosticHoverDom({
+            title: t("editor.syntaxDiagnostics.title"),
+            message,
+            severity: syntaxDiag.severity,
+            actions,
+            editorId: sqlHoverController.editorId,
+          }),
+          hoverRange,
+        ),
+    };
+  }
+
+  for (const range of [...sqlSemanticDecorationRanges(currentView.state), ...sqlErrorDecorationRange(currentView.state).map((item) => ({ ...item, severity: "error" as const }))]) {
+    if (!positionMatchesDiagnosticRange(sql, range.from, range.to, pos, side)) continue;
+    const hoverRange = { from: range.from, to: range.to };
+    const requestId = sqlHoverController.beginRequest(pos, hoverRange, currentView);
+    if (!sqlHoverController.isValid(requestId, currentView, hoverRange)) return null;
+    return {
+      pos: hoverRange.from,
+      end: hoverRange.to,
+      create: (targetView: EditorViewType) =>
+        sqlHoverController.attachTooltipView(
+          targetView,
+          createSqlDiagnosticHoverDom({
+            title: t("editor.syntaxDiagnostics.title"),
+            message: range.message,
+            severity: range.severity,
+            editorId: sqlHoverController.editorId,
+          }),
+          hoverRange,
+        ),
+    };
+  }
+
+  return null;
+}
+
+async function resolveSqlHoverTooltip(currentView: EditorViewType, pos: number, side: -1 | 1 = 1) {
+  if (contextMenuOpen.value || !editorIsActive) return null;
+
+  const diagnosticTooltip = resolveDiagnosticHoverTooltip(currentView, pos, side);
+  if (diagnosticTooltip) return diagnosticTooltip;
+
+  if (!props.connectionId || props.database == null) return null;
 
   const sql = currentView.state.doc.toString();
   const range = identifierRangeAt(sql, pos);
@@ -2249,7 +2408,169 @@ function sqlSemanticDecorationRanges(currentState: import("@codemirror/state").E
     );
 }
 
+function sqlSyntaxDecorationRanges(currentState: import("@codemirror/state").EditorState) {
+  const docLen = currentState.doc.length;
+  const messages = syntaxDiagnosticMessages();
+  return syntaxDiagnostics
+    .filter((diagnostic) => diagnostic.from >= 0 && diagnostic.to <= docLen && diagnostic.to > diagnostic.from)
+    .map((diagnostic) => ({
+      from: diagnostic.from,
+      to: diagnostic.to,
+      message: formatSqlSyntaxDiagnosticMessage(diagnostic, messages),
+      severity: diagnostic.severity,
+    }));
+}
+
+function areSqlSyntaxDiagnosticsEqual(left: readonly SqlSyntaxDiagnostic[], right: readonly SqlSyntaxDiagnostic[]): boolean {
+  if (left.length !== right.length) return false;
+  return left.every((item, idx) => {
+    const other = right[idx];
+    return !!other && item.code === other.code && item.from === other.from && item.to === other.to && item.severity === other.severity && item.token === other.token && item.suggestion === other.suggestion && item.quickFix?.replaceAllCount === other.quickFix?.replaceAllCount;
+  });
+}
+
+function setSyntaxDiagnostics(next: SqlSyntaxDiagnostic[]) {
+  if (areSqlSyntaxDiagnosticsEqual(syntaxDiagnostics, next)) return;
+  syntaxDiagnostics = next;
+  reconfigureDiagnostics();
+}
+
+function clearScheduledSyntaxDiagnostics() {
+  if (syntaxDiagnosticTimer) clearTimeout(syntaxDiagnosticTimer);
+  syntaxDiagnosticTimer = null;
+}
+
+let lastEmittedDiagnosticCount = 0;
+
+function emitCurrentDiagnosticCount() {
+  const currentView = view.value;
+  if (!currentView) {
+    if (lastEmittedDiagnosticCount !== 0) {
+      lastEmittedDiagnosticCount = 0;
+      emit("diagnosticsCountChange", 0);
+    }
+    return;
+  }
+  const ranges = collectSortedDiagnosticRanges(currentView);
+  if (ranges.length !== lastEmittedDiagnosticCount) {
+    lastEmittedDiagnosticCount = ranges.length;
+    emit("diagnosticsCountChange", ranges.length);
+  }
+}
+
+function collectSortedDiagnosticRanges(currentView: EditorViewType): Array<{ from: number; to: number }> {
+  const combined = [...sqlSyntaxDecorationRanges(currentView.state), ...sqlSemanticDecorationRanges(currentView.state)].sort((a, b) => a.from - b.from || a.to - b.to);
+  const deduped: Array<{ from: number; to: number }> = [];
+  for (const item of combined) {
+    const prev = deduped[deduped.length - 1];
+    if (prev && prev.from === item.from && prev.to === item.to) continue;
+    deduped.push({ from: item.from, to: item.to });
+  }
+  return deduped;
+}
+
+function jumpToNextDiagnostic(reverse = false): boolean {
+  const currentView = view.value;
+  if (!currentView) return false;
+  // Ensure fresh syntax diagnostics without active-cursor suppression when jumping explicitly
+  if (!shouldSkipSqlSyntaxDiagnostics()) {
+    refreshSyntaxDiagnostics({ activeCursorPos: null });
+  }
+  const ranges = collectSortedDiagnosticRanges(currentView);
+  if (ranges.length === 0) return false;
+
+  const sel = currentView.state.selection.main;
+  let target = ranges[0]!;
+  if (!reverse) {
+    const anchorPos = Math.max(sel.from, sel.to);
+    const next = ranges.find((range) => range.from > anchorPos || (range.from === sel.from && range.to > sel.to && !(sel.from === range.from && sel.to === range.to)));
+    target = next ?? ranges[0]!;
+  } else {
+    const anchorPos = Math.min(sel.from, sel.to);
+    for (let i = ranges.length - 1; i >= 0; i -= 1) {
+      if (ranges[i]!.from < anchorPos) {
+        target = ranges[i]!;
+        break;
+      }
+    }
+    if (target === ranges[0] && ranges[0]!.from >= anchorPos) {
+      target = ranges[ranges.length - 1]!;
+    }
+  }
+
+  currentView.dispatch({
+    selection: { anchor: target.from, head: target.to },
+    scrollIntoView: true,
+    userEvent: "select",
+  });
+  currentView.focus();
+  emit("cursorChange", target.from);
+  return true;
+}
+
+function applyQuickFixAtCursor(): boolean {
+  const currentView = view.value;
+  if (!currentView || props.readOnly) return false;
+  if (!shouldSkipSqlSyntaxDiagnostics()) {
+    refreshSyntaxDiagnostics({ activeCursorPos: null });
+  }
+  const sel = currentView.state.selection.main;
+  const quickFix = resolveContextSyntaxQuickFixAt(currentView, sel.head) ?? (sel.from !== sel.to ? resolveContextSyntaxQuickFixAt(currentView, sel.from) : null);
+  if (!quickFix) return false;
+  quickFix.apply();
+  return true;
+}
+
+function invalidateSyntaxDiagnosticsForDocumentChange() {
+  syntaxDiagnostics = [];
+  emitCurrentDiagnosticCount();
+}
+
+function shouldSkipSqlSyntaxDiagnostics() {
+  return !!props.readOnly || !settingsStore.editorSettings.sqlSyntaxDiagnosticsEnabled;
+}
+
+function refreshSyntaxDiagnostics(options: { activeCursorPos?: number | null } = {}) {
+  const currentView = view.value;
+  if (!currentView || shouldSkipSqlSyntaxDiagnostics()) {
+    setSyntaxDiagnostics([]);
+    return;
+  }
+  const sql = currentView.state.doc.toString();
+  if (!sql.trim()) {
+    setSyntaxDiagnostics([]);
+    return;
+  }
+  const next = lintSqlSyntax(sql, {
+    databaseType: props.databaseType,
+    parameterOptions: sqlStatementParameterOptions(),
+    activeCursorPos: options.activeCursorPos,
+  });
+  setSyntaxDiagnostics(next);
+}
+
+function scheduleSyntaxDiagnostics(delay = 220, options: { activeCursorPos?: number | null } = {}) {
+  if (!editorIsActive) return;
+  if (shouldSkipSqlSyntaxDiagnostics()) {
+    clearScheduledSyntaxDiagnostics();
+    setSyntaxDiagnostics([]);
+    return;
+  }
+  if (syntaxDiagnosticTimer) clearTimeout(syntaxDiagnosticTimer);
+  if (delay <= 0) {
+    syntaxDiagnosticTimer = null;
+    refreshSyntaxDiagnostics(options);
+    return;
+  }
+  syntaxDiagnosticTimer = setTimeout(() => {
+    syntaxDiagnosticTimer = null;
+    const activeCursorPos = options.activeCursorPos !== undefined ? options.activeCursorPos : (view.value?.state.selection.main.head ?? null);
+    refreshSyntaxDiagnostics({ activeCursorPos });
+  }, delay);
+}
+
 function reconfigureDiagnostics() {
+  emitCurrentDiagnosticCount();
   if (!view.value) return;
   if (setSqlDiagnosticsEffect) {
     view.value.dispatch({
@@ -2279,6 +2600,7 @@ function clearScheduledSemanticDiagnostics() {
 function invalidateSemanticDiagnosticsForDocumentChange() {
   semanticDiagnosticRunId++;
   semanticDiagnostics = [];
+  emitCurrentDiagnosticCount();
 }
 
 function shouldSkipSqlSemanticDiagnostics() {
@@ -2923,6 +3245,8 @@ function flushImeComposition() {
   if (!currentView || !pendingImeModelEmit) return;
   pendingImeModelEmit = false;
   emit("update:modelValue", currentView.state.doc.toString());
+  invalidateSyntaxDiagnosticsForDocumentChange();
+  scheduleSyntaxDiagnostics();
   invalidateSemanticDiagnosticsForDocumentChange();
   scheduleSemanticDiagnostics();
   syncContextMenuState(currentView);
@@ -3808,19 +4132,30 @@ onMounted(async () => {
   buildSqlDiagnosticExtension = () => {
     const diagnosticEffect = setSqlDiagnosticsEffect;
     const buildDecorations = (state: import("@codemirror/state").EditorState) => {
-      const errorDecorations = sqlErrorDecorationRange(state).map((range) =>
-        Decoration.mark({
-          class: "cm-sql-error",
-          attributes: { title: range.message },
-        }).range(range.from, range.to),
-      );
-      const semanticDecorations = sqlSemanticDecorationRanges(state).map((range) =>
-        Decoration.mark({
-          class: range.severity === "error" ? "cm-sql-error" : "cm-sql-semantic-warning",
-          attributes: { title: range.message },
-        }).range(range.from, range.to),
-      );
-      return Decoration.set([...errorDecorations, ...semanticDecorations], true);
+      const seenRanges = new Set<string>();
+      const pushDecoration = (list: import("@codemirror/state").Range<import("@codemirror/view").Decoration>[], range: { from: number; to: number; message: string; severity: "error" | "warning" }) => {
+        const key = `${range.from}:${range.to}`;
+        if (seenRanges.has(key)) return;
+        seenRanges.add(key);
+        list.push(
+          Decoration.mark({
+            class: range.severity === "error" ? "cm-sql-error" : "cm-sql-semantic-warning",
+            attributes: { "data-sql-diagnostic": range.message },
+          }).range(range.from, range.to),
+        );
+      };
+
+      const decorations: import("@codemirror/state").Range<import("@codemirror/view").Decoration>[] = [];
+      for (const range of sqlSyntaxDecorationRanges(state)) {
+        pushDecoration(decorations, range);
+      }
+      for (const range of sqlErrorDecorationRange(state)) {
+        pushDecoration(decorations, { ...range, severity: "error" });
+      }
+      for (const range of sqlSemanticDecorationRanges(state)) {
+        pushDecoration(decorations, range);
+      }
+      return Decoration.set(decorations, true);
     };
 
     const field = StateField.define({
@@ -4304,7 +4639,7 @@ onMounted(async () => {
           return true;
         }),
       ),
-      ...sqlHoverController.createExtension(hoverTooltip, (currentView, pos) => resolveSqlHoverTooltip(currentView, pos)),
+      ...sqlHoverController.createExtension(hoverTooltip, (currentView, pos, side) => resolveSqlHoverTooltip(currentView, pos, side)),
       sqlSignatureComp.of(buildSqlSignatureExtension()),
       diagnosticComp.of(buildSqlDiagnosticExtension()),
       createInsertValueHintsExtension({
@@ -4352,6 +4687,8 @@ onMounted(async () => {
             completionEpoch++;
           } else {
             emit("update:modelValue", update.state.doc.toString());
+            invalidateSyntaxDiagnosticsForDocumentChange();
+            scheduleSyntaxDiagnostics();
             invalidateSemanticDiagnosticsForDocumentChange();
             scheduleSemanticDiagnostics();
             let insertedText = "";
@@ -4365,6 +4702,9 @@ onMounted(async () => {
               scheduleSqlCompletionStart(update.view);
             }
           }
+        }
+        if (update.selectionSet && !update.docChanged) {
+          scheduleSyntaxDiagnostics(250, { activeCursorPos: update.state.selection.main.head });
         }
         if (update.selectionSet || update.docChanged) {
           syncContextMenuState(update.view);
@@ -4691,6 +5031,7 @@ onMounted(async () => {
 
   cachedTables = [];
   cachedCompletionObjectsByScope.clear();
+  scheduleSyntaxDiagnostics(0, { activeCursorPos: null });
   scheduleSemanticDiagnostics();
 
   if (props.autoFocus) {
@@ -4722,6 +5063,7 @@ watch(
       view.value.dispatch({
         changes: { from: 0, to: view.value.state.doc.length, insert: val },
       });
+      scheduleSyntaxDiagnostics(0, { activeCursorPos: null });
       scheduleSemanticDiagnostics();
     }
   },
@@ -4892,6 +5234,30 @@ watch(
 );
 
 watch(
+  () => settingsStore.editorSettings.sqlSyntaxDiagnosticsEnabled,
+  (enabled) => {
+    if (!shouldSkipSqlSyntaxDiagnostics() && enabled) {
+      scheduleSyntaxDiagnostics(0, { activeCursorPos: null });
+      return;
+    }
+    clearScheduledSyntaxDiagnostics();
+    setSyntaxDiagnostics([]);
+  },
+);
+
+watch(
+  () => props.readOnly,
+  () => {
+    if (shouldSkipSqlSyntaxDiagnostics()) {
+      clearScheduledSyntaxDiagnostics();
+      setSyntaxDiagnostics([]);
+    } else {
+      scheduleSyntaxDiagnostics(0, { activeCursorPos: null });
+    }
+  },
+);
+
+watch(
   () => settingsStore.editorSettings.sqlSemanticDiagnosticsEnabled,
   (enabled) => {
     if (!shouldSkipSqlSemanticDiagnostics() && enabled) {
@@ -4925,6 +5291,7 @@ function pauseQueryEditorBackgroundWork() {
   clearTableNavigationHover();
   clearPendingCompletionTab();
   editorIsActive = false;
+  clearScheduledSyntaxDiagnostics();
   clearScheduledSemanticDiagnostics();
   completionEpoch++;
   unregisterTableReferenceDropListener();
@@ -4934,6 +5301,7 @@ function resumeQueryEditorBackgroundWork() {
   editorIsActive = true;
   sqlHoverController.resume();
   registerTableReferenceDropListener();
+  scheduleSyntaxDiagnostics(0, { activeCursorPos: null });
   scheduleSemanticDiagnostics();
   restoreEditorSelection();
   restoreEditorFocus();
@@ -5155,6 +5523,8 @@ defineExpose({
   openReplace,
   scrollCursorIntoView,
   focusLine,
+  jumpToNextDiagnostic,
+  applyQuickFixAtCursor,
   requestExecute,
   requestExecuteCurrent,
   requestExecuteInNewResultTab,

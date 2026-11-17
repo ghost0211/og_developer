@@ -287,7 +287,7 @@ export function splitSqlStatementRanges(sql: string, databaseType?: DatabaseType
       }
     }
 
-    if (ch === ";") {
+    if (ch === ";" || ch === "；") {
       if (oraclePlSqlStatementEnd === undefined && isOracleLikeDatabase(databaseType) && !postgresDollarQuotedRoutine && statementStart !== -1) {
         const statementSoFar = sql.slice(statementStart, i);
         oraclePlSqlStatementEnd = startsWithOraclePlSqlBlock(statementSoFar) ? statementStart + (oraclePlSqlBlockEnd(sql.slice(statementStart)) ?? sql.length - statementStart) : null;
@@ -1373,7 +1373,7 @@ function oraclePlSqlTokens(sql: string): OraclePlSqlToken[] {
       i += 1;
       continue;
     }
-    if (ch === ";") {
+    if (ch === ";" || ch === "；") {
       tokens.push({ kind: "semicolon", value: ";", from: i, to: i + 1 });
       i += 1;
       continue;
@@ -1475,7 +1475,10 @@ export function fullSqlRange(sql: string): SqlTextRange | null {
 }
 
 function normalizeSql(sql: string): string {
-  return sql.replace(/\s+/g, " ").replace(/;\s*$/, "").trim();
+  return sql
+    .replace(/\s+/g, " ")
+    .replace(/[;；]\s*$/, "")
+    .trim();
 }
 
 /**

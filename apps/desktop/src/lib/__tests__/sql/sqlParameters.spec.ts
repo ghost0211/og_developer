@@ -38,6 +38,20 @@ describe("extractSqlParameters", () => {
     expect(extractSqlParameters(sql)).toEqual(["real_param"]);
   });
 
+  it("extracts PostgreSQL/openGauss $n positional parameters and deduplicates by number", () => {
+    const sql = "select * from users where (id = $1 or parent_id = $1) and dept_id = $2 and tag_id = $12 and created_at >= $1::timestamp";
+    expect(extractSqlParameterDescriptors(sql)).toEqual([
+      { key: "$1", name: "$1", syntax: "postgres", token: "$1" },
+      { key: "$2", name: "$2", syntax: "postgres", token: "$2" },
+      { key: "$12", name: "$12", syntax: "postgres", token: "$12" },
+    ]);
+  });
+
+  it("enforces strict lexical safety for $n against dollar-quotes, identifiers, zero-indexed tokens, and literals", () => {
+    const sql = ["select $$body $1$$,", "$fn$select $2$fn$,", "$1$ body $3 :ignored $1$,", "a$1, col_$2, 9$3, $0, $01, $4a, $5_, $6$, '$7.99', \"$8\",", "-- $9", "/* $10 */", "$11, ($12 + $11)"].join("\n");
+    expect(extractSqlParameters(sql)).toEqual(["$11", "$12"]);
+  });
+
   it("extracts supported placeholder syntaxes in order", () => {
     const sql = "select ? as a, :named as b, ${shell_name} as c, #{mybatis_name} as d, @sql_server_name as e";
     expect(extractSqlParameters(sql)).toEqual(["?1", "named", "shell_name", "mybatis_name", "sql_server_name"]);
@@ -404,6 +418,17 @@ describe("substituteSqlParameters", () => {
     ).toBe("select 'same', 'same', 1, 2");
   });
 
+  it("replaces repeated $n placeholders in all positions without clobbering multi-digit $10/$12", () => {
+    const sql = "select $1::bigint, $10, $1, $2 from t where a = $10 and b = $2";
+    expect(
+      substituteSqlParameters(sql, {
+        $1: { kind: "number", value: "7" },
+        $2: { kind: "string", value: "active" },
+        $10: { kind: "string", value: "ten" },
+      }),
+    ).toBe("select 7::bigint, 'ten', 7, 'active' from t where a = 'ten' and b = 'active'");
+  });
+
   it("leaves declared SQL Server variables untouched while replacing undeclared variables", () => {
     const sql = "DECLARE @id int = 1; SELECT * FROM users WHERE id = @id AND tenant_id = @tenant_id";
     expect(substituteSqlParameters(sql, { tenant_id: { kind: "number", value: "7" } })).toBe("DECLARE @id int = 1; SELECT * FROM users WHERE id = @id AND tenant_id = 7");
@@ -487,6 +512,16 @@ describe("enabledSyntaxes option", () => {
     expect(extractSqlParameters(sql, { enabledSyntaxes: ["shell"] })).toEqual(["shell_name"]);
     expect(extractSqlParameters(sql, { enabledSyntaxes: ["mybatis"] })).toEqual(["mybatis_name"]);
     expect(substituteSqlParameters(sql, { shell_name: { kind: "string", value: "a" }, mybatis_name: { kind: "string", value: "b" } }, { enabledSyntaxes: ["named"] })).toBe(sql);
+  });
+
+  it("supports explicit postgres syntax and openGauss/PostgreSQL positional toggle mapping", () => {
+    const sql = "select ? as q, $1 as p1, :named as n";
+    expect(extractSqlParameters(sql, { enabledSyntaxes: ["postgres"] })).toEqual(["$1"]);
+    expect(extractSqlParameters(sql, { enabledSyntaxes: ["positional"] })).toEqual(["?1"]);
+    expect(extractSqlParameters(sql, { databaseType: "opengauss", enabledSyntaxes: ["positional", "named", "shell", "mybatis", "sqlserver"] })).toEqual(["?1", "$1", "named"]);
+    expect(extractSqlParameters(sql, { databaseType: "postgres", enabledSyntaxes: ["positional"] })).toEqual(["?1", "$1"]);
+    expect(extractSqlParameters(sql, { databaseType: "opengauss", enabledSyntaxes: ["named"] })).toEqual(["named"]);
+    expect(substituteSqlParameters(sql, { $1: { kind: "number", value: "99" } }, { enabledSyntaxes: ["postgres"] })).toBe("select ? as q, 99 as p1, :named as n");
   });
 });
 

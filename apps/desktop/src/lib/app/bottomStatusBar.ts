@@ -13,6 +13,31 @@ export interface QueryExecutionFeedback {
 
 export type SqlLineEnding = "LF" | "CRLF";
 
+export interface OpenGaussCompatibilityBadge {
+  code: string;
+  label: string;
+  tooltipKey: string;
+}
+
+export function formatOpenGaussCompatibilityBadge(rawMode?: string | null): OpenGaussCompatibilityBadge | undefined {
+  const code = rawMode?.trim().toUpperCase();
+  if (!code) return undefined;
+  switch (code) {
+    case "A":
+      return { code: "A", label: "A (Oracle)", tooltipKey: "statusBar.compatTooltipA" };
+    case "B":
+      return { code: "B", label: "B (MySQL)", tooltipKey: "statusBar.compatTooltipB" };
+    case "C":
+      return { code: "C", label: "C (TD)", tooltipKey: "statusBar.compatTooltipC" };
+    case "PG":
+      return { code: "PG", label: "PG", tooltipKey: "statusBar.compatTooltipPG" };
+    case "M":
+      return { code: "M", label: "M (MySQL)", tooltipKey: "statusBar.compatTooltipM" };
+    default:
+      return { code, label: code, tooltipKey: "statusBar.compatTooltipGeneric" };
+  }
+}
+
 /** Converts a CodeMirror document offset into the one-based IDE status position. */
 export function editorCursorLocation(text: string, offset: number): EditorCursorLocation {
   const cursor = Math.min(text.length, Math.max(0, Number.isFinite(offset) ? Math.trunc(offset) : 0));

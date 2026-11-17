@@ -1,12 +1,16 @@
 <script setup lang="ts">
 import { computed, watchEffect } from "vue";
-import { Loader2, Minus, Plus, ShieldAlert, ShieldCheck, Zap } from "@lucide/vue";
+import { AlertTriangle, Loader2, Minus, Plus, ShieldAlert, ShieldCheck, Zap } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useSchemaOptions } from "@/composables/useSchemaOptions";
+import { useConnectionStore } from "@/stores/connectionStore";
+import { useSettingsStore } from "@/stores/settingsStore";
 import { isSingleDatabase, supportsClearableQuerySchema, supportsTransaction } from "@/lib/database/databaseCapabilities";
+import { effectiveDatabaseTypeForConnection } from "@/lib/database/jdbcDialect";
 import { productionContextForDatabase } from "@/lib/database/productionSafety";
-import { editorCursorLocation, latestQueryExecutionFeedback, sqlLineEnding, statusBarConnectionLabel } from "@/lib/app/bottomStatusBar";
+import { editorCursorLocation, formatOpenGaussCompatibilityBadge, latestQueryExecutionFeedback, sqlLineEnding, statusBarConnectionLabel } from "@/lib/app/bottomStatusBar";
+import { formatShortcutDisplay } from "@/lib/editor/shortcutDisplay";
 import type { ConnectionConfig, QueryTab } from "@/types/database";
 
 const props = defineProps<{
@@ -14,18 +18,42 @@ const props = defineProps<{
   activeConnection?: ConnectionConfig;
   connected: boolean;
   cursorPos: number;
+  diagnosticCount?: number;
   uiScale: number;
 }>();
 
 const emit = defineEmits<{
   changeSchema: [schema: string | undefined];
   toggleAutoCommit: [];
+  jumpNextDiagnostic: [];
   setUiScale: [scale: number];
 }>();
 
 const { t } = useI18n();
+const connectionStore = useConnectionStore();
+const settingsStore = useSettingsStore();
 const { loadSchemaOptions, getSchemaOptionsForDb, isLoadingSchemas, isSchemaAware } = useSchemaOptions();
 const connectionLabel = computed(() => statusBarConnectionLabel(props.activeConnection));
+const isOpenGaussConnection = computed(() => effectiveDatabaseTypeForConnection(props.activeConnection) === "opengauss");
+const compatBadge = computed(() => {
+  const conn = props.activeConnection;
+  if (!conn || !isOpenGaussConnection.value) return undefined;
+  const raw = connectionStore.databaseCompatMode(conn.id, props.activeTab?.database, conn);
+  return formatOpenGaussCompatibilityBadge(raw);
+});
+const compatBadgeTooltip = computed(() => {
+  const badge = compatBadge.value;
+  if (!badge) return "";
+  return t(badge.tooltipKey, { mode: badge.code });
+});
+const nextDiagnosticShortcutLabel = computed(() => {
+  const shortcut = settingsStore.editorSettings.shortcuts.nextDiagnostic;
+  return shortcut ? formatShortcutDisplay(shortcut) : "F8";
+});
+const quickFixShortcutLabel = computed(() => {
+  const shortcut = settingsStore.editorSettings.shortcuts.quickFixSql;
+  return shortcut ? formatShortcutDisplay(shortcut) : "Alt+Enter";
+});
 const productionContext = computed(() => productionContextForDatabase(props.activeConnection, props.activeTab?.database));
 const isQueryTab = computed(() => props.activeTab?.mode === "query");
 const schemaDatabaseKey = computed(() => props.activeTab?.database || (isSingleDatabase(props.activeConnection?.db_type) ? "_" : ""));
@@ -50,6 +78,13 @@ watchEffect(() => {
   void loadSchemaOptions(connection.id, schemaDatabaseKey.value).catch(() => {});
 });
 
+watchEffect(() => {
+  const connection = props.activeConnection;
+  const database = props.activeTab?.database;
+  if (!props.connected || !connection || !database || !isOpenGaussConnection.value) return;
+  connectionStore.ensureDatabaseCompatMode(connection.id, database);
+});
+
 function onSchemaChange(event: Event) {
   const value = (event.target as HTMLSelectElement).value;
   emit("changeSchema", value || undefined);
@@ -68,6 +103,11 @@ function formatDuration(durationMs: number): string {
         <span class="h-1.5 w-1.5 shrink-0 rounded-full" :class="connected ? 'bg-emerald-500 shadow-[0_0_4px_rgba(16,185,129,0.65)]' : 'bg-muted-foreground/45'" />
         <span class="truncate font-medium text-foreground/85">{{ connectionLabel || t("statusBar.noConnection") }}</span>
       </div>
+
+      <span v-if="compatBadge" data-status-bar-compat-badge class="flex h-full shrink-0 items-center gap-1 border-r border-border/70 px-2 font-mono text-[10.5px] font-medium text-indigo-700 dark:text-indigo-300" :title="compatBadgeTooltip">
+        <span class="text-muted-foreground/80 font-sans">{{ t("statusBar.compatLabel") }}:</span>
+        <span>{{ compatBadge.label }}</span>
+      </span>
 
       <label v-if="showSchemaSelector" class="flex h-full min-w-0 max-w-52 items-center gap-1 border-r border-border/70 px-1.5" :title="t('statusBar.schemaTooltip')">
         <span class="shrink-0 text-muted-foreground/80">{{ t("statusBar.schema") }}:</span>
@@ -102,6 +142,17 @@ function formatDuration(durationMs: number): string {
     </div>
 
     <div class="ml-auto flex h-full shrink-0 items-center justify-end">
+      <button
+        v-if="isQueryTab && (diagnosticCount ?? 0) > 0"
+        type="button"
+        data-status-bar-diagnostics
+        class="flex h-full items-center gap-1 border-l border-border/70 bg-amber-500/10 px-2 font-mono font-medium text-amber-700 transition-colors hover:bg-amber-500/20 dark:text-amber-300"
+        :title="t('statusBar.diagnosticsTooltip', { count: diagnosticCount ?? 0, jumpShortcut: nextDiagnosticShortcutLabel, fixShortcut: quickFixShortcutLabel })"
+        @click="emit('jumpNextDiagnostic')"
+      >
+        <AlertTriangle class="h-3 w-3 shrink-0" />
+        <span>{{ diagnosticCount }}</span>
+      </button>
       <span v-if="isQueryTab" class="flex h-full items-center border-l border-border/70 px-2 font-mono text-foreground/75" :title="t('statusBar.cursorTooltip')">
         {{ t("statusBar.cursor", { line: cursorLocation.line, column: cursorLocation.column }) }}
       </span>

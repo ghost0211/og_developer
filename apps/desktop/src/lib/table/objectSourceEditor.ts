@@ -1,4 +1,5 @@
 import type { DatabaseType, ObjectSourceKind } from "@/types/database";
+import { normalizeSqlFullwidthPunctuation } from "@/lib/sql/sqlSyntaxLint";
 import * as api from "@/lib/backend/api";
 
 export type BuildEditableObjectSourceSqlInput = {
@@ -70,7 +71,8 @@ export async function executeObjectSourceSave(connectionId: string, database: st
   const nonEmptyStatements = statements.filter((sql) => sql.trim().length > 0);
   if (nonEmptyStatements.length === 0) return;
 
-  for (const sql of nonEmptyStatements) {
+  for (const rawSql of nonEmptyStatements) {
+    const sql = normalizeSqlFullwidthPunctuation(rawSql);
     if (objectSourceSaveExecutionMode(databaseType) === "single") {
       await api.executeQuery(connectionId, database, sql, schema);
     } else {

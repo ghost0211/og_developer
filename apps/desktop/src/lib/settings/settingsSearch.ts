@@ -73,6 +73,7 @@ export const SETTINGS_SEARCH_DEFINITIONS: readonly SettingsSearchDefinition[] = 
   { id: "editor-auto-alias", category: "editor", titleKey: "settings.autoAliasTables", descriptionKey: "settings.autoAliasTablesDescription", targetId: "editor" },
   { id: "editor-unsaved-close", category: "editor", titleKey: "settings.confirmUnsavedSqlClose", descriptionKey: "settings.confirmUnsavedSqlCloseDescription", targetId: "editor" },
   { id: "editor-prefill-query", category: "editor", titleKey: "settings.prefillNewQueryWithSelect", descriptionKey: "settings.prefillNewQueryWithSelectDescription", targetId: "editor" },
+  { id: "editor-syntax-diagnostics", category: "editor", titleKey: "settings.sqlSyntaxDiagnosticsEnabled", descriptionKey: "settings.sqlSyntaxDiagnosticsEnabledDescription", targetId: "editor" },
   { id: "editor-diagnostics", category: "editor", titleKey: "settings.sqlSemanticDiagnosticsEnabled", descriptionKey: "settings.sqlSemanticDiagnosticsEnabledDescription", targetId: "editor" },
   { id: "editor-saved-sql-target", category: "editor", titleKey: "settings.savedSqlOpenTarget", targetId: "editor" },
   { id: "editor-confirm-dangerous-sql", category: "editor", titleKey: "settings.confirmDangerousSqlExecution", descriptionKey: "settings.confirmDangerousSqlExecutionDescription", targetId: "editor" },

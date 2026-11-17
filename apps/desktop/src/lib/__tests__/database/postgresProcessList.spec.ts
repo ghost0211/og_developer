@@ -1,6 +1,23 @@
 import { describe, expect, it } from "vitest";
 import type { QueryResult } from "@/types/database";
-import { buildPgCancelSql, buildPgKillSql, isPgProcessListCompatibilityError, mapPgBlockingLockRows, mapPgLockRows, mapPgProcessRows, OPENGAUSS_OWN_SESSION_SQL, OPENGAUSS_PROCESS_LIST_SQL, pgKillResultError, PG_PROCESS_LIST_LEGACY_SQL, PG_PROCESS_LIST_SQL } from "@/lib/database/postgresProcessList";
+import {
+  buildBlockingLockForest,
+  buildPgCancelSql,
+  buildPgKillSql,
+  isPgProcessListCompatibilityError,
+  mapPgBlockingLockRows,
+  mapPgLockRows,
+  mapPgProcessRows,
+  OPENGAUSS_BLOCKING_LOCKS_SQL,
+  OPENGAUSS_OWN_SESSION_SQL,
+  OPENGAUSS_PROCESS_LIST_SQL,
+  parseBlockingLocksResult,
+  PG_BLOCKING_LOCKS_SQL,
+  pgKillResultError,
+  PG_PROCESS_LIST_LEGACY_SQL,
+  PG_PROCESS_LIST_SQL,
+  type BlockingLockRow,
+} from "@/lib/database/postgresProcessList";
 import { connectionSupportsProcessList, resolveProcessListDriver, resolveProcessListDriverForConnection, supportsProcessList } from "@/lib/database/processListDrivers";
 import type { ConnectionConfig } from "@/types/database";
 
@@ -77,6 +94,38 @@ describe("mapPgBlockingLockRows and mapPgLockRows", () => {
       requestedMode: "ExclusiveLock",
       grantedMode: "ExclusiveLock",
       waitTime: 45,
+    });
+  });
+
+  it("maps extended blocking_state, blocking_xact_time, and blocked_state columns when present", () => {
+    expect(PG_BLOCKING_LOCKS_SQL).toContain("blocking_state");
+    expect(PG_BLOCKING_LOCKS_SQL).toContain("blocking_xact_time");
+    expect(PG_BLOCKING_LOCKS_SQL).toContain("blocked_state");
+    expect(OPENGAUSS_BLOCKING_LOCKS_SQL).toBe(PG_BLOCKING_LOCKS_SQL);
+
+    const res = result(
+      ["blocked_pid", "blocked_user", "blocked_db", "blocked_state", "blocked_query", "blocking_pid", "blocking_user", "blocking_db", "blocking_state", "blocking_xact_time", "blocking_query", "locktype", "relation", "requested_mode", "granted_mode", "wait_time"],
+      [[102, "app_waiter", "shop", "active", "UPDATE orders SET status='paid'", 101, "app_root", "shop", "idle in transaction", 180, "UPDATE orders SET status='pending'", "tuple", "orders", "ExclusiveLock", "ExclusiveLock", 42]],
+    );
+    const rows = parseBlockingLocksResult(res);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toEqual({
+      blockedPid: 102,
+      blockedUser: "app_waiter",
+      blockedDb: "shop",
+      blockedState: "active",
+      blockedQuery: "UPDATE orders SET status='paid'",
+      blockingPid: 101,
+      blockingUser: "app_root",
+      blockingDb: "shop",
+      blockingState: "idle in transaction",
+      blockingXactTime: 180,
+      blockingQuery: "UPDATE orders SET status='pending'",
+      lockType: "tuple",
+      relation: "orders",
+      requestedMode: "ExclusiveLock",
+      grantedMode: "ExclusiveLock",
+      waitTime: 42,
     });
   });
 
@@ -169,5 +218,293 @@ describe("resolveProcessListDriverForConnection", () => {
   it("returns the pg driver for a JDBC Postgres connection", () => {
     expect(resolveProcessListDriverForConnection(conn({ db_type: "jdbc", connection_string: "jdbc:postgresql://db/app" }))?.buildKillSql(9)).toBe("SELECT pg_terminate_backend(9)");
     expect(resolveProcessListDriverForConnection(conn({ db_type: "jdbc", connection_string: "jdbc:unknown://db/app" }))).toBeNull();
+  });
+});
+
+describe("buildBlockingLockForest", () => {
+  it("returns an empty forest when there are no blocking rows", () => {
+    expect(buildBlockingLockForest([])).toEqual({
+      roots: [],
+      rootBlockerCount: 0,
+      blockedSessionCount: 0,
+      idleInTransactionRootCount: 0,
+      hasIdleInTransactionRoot: false,
+      hasDeadlock: false,
+      maxWaitTime: 0,
+    });
+  });
+
+  it("builds a multi-level lock waiting chain (101 -> 102 -> 103) with accurate downstream counts and wait times", () => {
+    const rows: BlockingLockRow[] = [
+      {
+        blockingPid: 101,
+        blockingUser: "erp_batch",
+        blockingDb: "erp",
+        blockingState: "active",
+        blockingXactTime: 95,
+        blockingQuery: "ALTER TABLE invoices ADD COLUMN flag boolean",
+        blockedPid: 102,
+        blockedUser: "erp_api",
+        blockedDb: "erp",
+        blockedState: "active",
+        blockedQuery: "UPDATE invoices SET paid = true WHERE id = 9",
+        lockType: "relation",
+        relation: "invoices",
+        grantedMode: "AccessExclusiveLock",
+        requestedMode: "RowExclusiveLock",
+        waitTime: 40,
+      },
+      {
+        blockingPid: 102,
+        blockingUser: "erp_api",
+        blockingDb: "erp",
+        blockingState: "active",
+        blockingXactTime: 41,
+        blockingQuery: "UPDATE invoices SET paid = true WHERE id = 9",
+        blockedPid: 103,
+        blockedUser: "erp_report",
+        blockedDb: "erp",
+        blockedState: "active",
+        blockedQuery: "SELECT * FROM customer_ledger WHERE id = 9 FOR UPDATE",
+        lockType: "tuple",
+        relation: "customer_ledger",
+        grantedMode: "ExclusiveLock",
+        requestedMode: "ShareLock",
+        waitTime: 65,
+      },
+    ];
+
+    const forest = buildBlockingLockForest(rows);
+    expect(forest.rootBlockerCount).toBe(1);
+    expect(forest.blockedSessionCount).toBe(2);
+    expect(forest.hasDeadlock).toBe(false);
+    expect(forest.hasIdleInTransactionRoot).toBe(false);
+    expect(forest.maxWaitTime).toBe(65);
+
+    const root = forest.roots[0];
+    expect(root.pid).toBe(101);
+    expect(root.isRootBlocker).toBe(true);
+    expect(root.isDeadlockCycle).toBe(false);
+    expect(root.holdOrWaitSeconds).toBe(95);
+    expect(root.incomingLock).toBeUndefined();
+    expect(root.directBlockedCount).toBe(1);
+    expect(root.totalDownstreamCount).toBe(2);
+    expect(root.maxDownstreamWaitTime).toBe(65);
+
+    const mid = root.children[0];
+    expect(mid.pid).toBe(102);
+    expect(mid.isRootBlocker).toBe(false);
+    expect(mid.holdOrWaitSeconds).toBe(40);
+    expect(mid.incomingLock).toEqual({
+      lockType: "relation",
+      relation: "invoices",
+      grantedMode: "AccessExclusiveLock",
+      requestedMode: "RowExclusiveLock",
+      waitTime: 40,
+    });
+    expect(mid.directBlockedCount).toBe(1);
+    expect(mid.totalDownstreamCount).toBe(1);
+    expect(mid.maxDownstreamWaitTime).toBe(65);
+
+    const leaf = mid.children[0];
+    expect(leaf.pid).toBe(103);
+    expect(leaf.isRootBlocker).toBe(false);
+    expect(leaf.holdOrWaitSeconds).toBe(65);
+    expect(leaf.directBlockedCount).toBe(0);
+    expect(leaf.totalDownstreamCount).toBe(0);
+    expect(leaf.maxDownstreamWaitTime).toBe(0);
+    expect(leaf.children).toEqual([]);
+  });
+
+  it("detects idle in transaction on root blockers from blockingState and from fallback sessions list", () => {
+    const directRows: BlockingLockRow[] = [
+      {
+        blockingPid: 301,
+        blockingUser: "dev_user",
+        blockingDb: "app",
+        blockingState: "idle in transaction (aborted)",
+        blockingXactTime: 320,
+        blockingQuery: "UPDATE accounts SET balance = balance - 100 WHERE id = 1",
+        blockedPid: 302,
+        blockedUser: "api_worker",
+        blockedDb: "app",
+        blockedState: "active",
+        blockedQuery: "UPDATE accounts SET balance = balance + 50 WHERE id = 1",
+        lockType: "transactionid",
+        relation: "-",
+        grantedMode: "ExclusiveLock",
+        requestedMode: "ShareLock",
+        waitTime: 75,
+      },
+    ];
+
+    const directForest = buildBlockingLockForest(directRows);
+    expect(directForest.hasIdleInTransactionRoot).toBe(true);
+    expect(directForest.idleInTransactionRootCount).toBe(1);
+    expect(directForest.roots[0].isIdleInTransaction).toBe(true);
+    expect(directForest.roots[0].holdOrWaitSeconds).toBe(320);
+
+    const legacyRowsWithoutState: BlockingLockRow[] = [
+      {
+        blockingPid: 401,
+        blockingUser: "legacy_blocker",
+        blockingDb: "app",
+        blockingQuery: "BEGIN",
+        blockedPid: 402,
+        blockedUser: "legacy_waiter",
+        blockedDb: "app",
+        blockedQuery: "DELETE FROM sessions WHERE id = 7",
+        lockType: "relation",
+        relation: "sessions",
+        grantedMode: "RowExclusiveLock",
+        requestedMode: "AccessExclusiveLock",
+        waitTime: 22,
+      },
+    ];
+
+    const fallbackForest = buildBlockingLockForest(legacyRowsWithoutState, [
+      { id: 401, user: "legacy_blocker", db: "app", state: "idle in transaction", time: 510, query: "UPDATE sessions SET active = false" },
+      { id: 402, user: "legacy_waiter", db: "app", state: "active", time: 22 },
+    ]);
+    expect(fallbackForest.hasIdleInTransactionRoot).toBe(true);
+    expect(fallbackForest.idleInTransactionRootCount).toBe(1);
+    expect(fallbackForest.roots[0].isIdleInTransaction).toBe(true);
+    expect(fallbackForest.roots[0].state).toBe("idle in transaction");
+    expect(fallbackForest.roots[0].holdOrWaitSeconds).toBe(510);
+  });
+
+  it("deduplicates multiple lock rows between the same (blockingPid, blockedPid) pair", () => {
+    const duplicateEdgeRows: BlockingLockRow[] = [
+      {
+        blockingPid: 501,
+        blockingUser: "u1",
+        blockingDb: "shop",
+        blockingState: "idle in transaction",
+        blockingXactTime: 90,
+        blockingQuery: "UPDATE orders SET total = 10",
+        blockedPid: 502,
+        blockedUser: "u2",
+        blockedDb: "shop",
+        blockedState: "active",
+        blockedQuery: "UPDATE orders SET total = 20",
+        lockType: "transactionid",
+        relation: "-",
+        grantedMode: "ExclusiveLock",
+        requestedMode: "ShareLock",
+        waitTime: 18,
+      },
+      {
+        blockingPid: 501,
+        blockingUser: "u1",
+        blockingDb: "shop",
+        blockingState: "idle in transaction",
+        blockingXactTime: 90,
+        blockingQuery: "UPDATE orders SET total = 10",
+        blockedPid: 502,
+        blockedUser: "u2",
+        blockedDb: "shop",
+        blockedState: "active",
+        blockedQuery: "UPDATE orders SET total = 20",
+        lockType: "tuple",
+        relation: "orders",
+        grantedMode: "ExclusiveLock",
+        requestedMode: "ExclusiveLock",
+        waitTime: 44,
+      },
+      {
+        blockingPid: 501,
+        blockingUser: "u1",
+        blockingDb: "shop",
+        blockingState: "idle in transaction",
+        blockingXactTime: 90,
+        blockingQuery: "UPDATE orders SET total = 10",
+        blockedPid: 502,
+        blockedUser: "u2",
+        blockedDb: "shop",
+        blockedState: "active",
+        blockedQuery: "UPDATE orders SET total = 20",
+        lockType: "relation",
+        relation: "order_items",
+        grantedMode: "RowExclusiveLock",
+        requestedMode: "AccessExclusiveLock",
+        waitTime: 31,
+      },
+    ];
+
+    const forest = buildBlockingLockForest(duplicateEdgeRows);
+    expect(forest.rootBlockerCount).toBe(1);
+    expect(forest.blockedSessionCount).toBe(1);
+    expect(forest.roots[0].children).toHaveLength(1);
+    expect(forest.roots[0].directBlockedCount).toBe(1);
+    expect(forest.roots[0].totalDownstreamCount).toBe(1);
+
+    const child = forest.roots[0].children[0];
+    expect(child.pid).toBe(502);
+    expect(child.incomingLock).toEqual({
+      lockType: "transactionid, tuple, relation",
+      relation: "orders, order_items",
+      grantedMode: "ExclusiveLock, RowExclusiveLock",
+      requestedMode: "ShareLock, ExclusiveLock, AccessExclusiveLock",
+      waitTime: 44,
+    });
+  });
+
+  it("terminates deadlock cycles (201 -> 202 -> 201) deterministically at lowest PID with isDeadlockCycle: true", () => {
+    const cycleRows: BlockingLockRow[] = [
+      {
+        blockingPid: 202,
+        blockingUser: "tx_b",
+        blockingDb: "bank",
+        blockingState: "active",
+        blockingXactTime: 19,
+        blockingQuery: "UPDATE accounts SET balance = balance - 10 WHERE id = 1",
+        blockedPid: 201,
+        blockedUser: "tx_a",
+        blockedDb: "bank",
+        blockedState: "active",
+        blockedQuery: "UPDATE accounts SET balance = balance - 10 WHERE id = 2",
+        lockType: "transactionid",
+        relation: "accounts",
+        grantedMode: "ExclusiveLock",
+        requestedMode: "ShareLock",
+        waitTime: 14,
+      },
+      {
+        blockingPid: 201,
+        blockingUser: "tx_a",
+        blockingDb: "bank",
+        blockingState: "active",
+        blockingXactTime: 23,
+        blockingQuery: "UPDATE accounts SET balance = balance - 10 WHERE id = 2",
+        blockedPid: 202,
+        blockedUser: "tx_b",
+        blockedDb: "bank",
+        blockedState: "active",
+        blockedQuery: "UPDATE accounts SET balance = balance - 10 WHERE id = 1",
+        lockType: "transactionid",
+        relation: "accounts",
+        grantedMode: "ExclusiveLock",
+        requestedMode: "ShareLock",
+        waitTime: 17,
+      },
+    ];
+
+    const forest = buildBlockingLockForest(cycleRows);
+    expect(forest.hasDeadlock).toBe(true);
+    expect(forest.rootBlockerCount).toBe(1);
+    expect(forest.blockedSessionCount).toBe(2);
+
+    const cycleRoot = forest.roots[0];
+    expect(cycleRoot.pid).toBe(201);
+    expect(cycleRoot.isRootBlocker).toBe(true);
+    expect(cycleRoot.isDeadlockCycle).toBe(true);
+    expect(cycleRoot.directBlockedCount).toBe(1);
+    expect(cycleRoot.totalDownstreamCount).toBe(1);
+    expect(cycleRoot.maxDownstreamWaitTime).toBe(17);
+
+    const cyclePartner = cycleRoot.children[0];
+    expect(cyclePartner.pid).toBe(202);
+    expect(cyclePartner.isDeadlockCycle).toBe(true);
+    expect(cyclePartner.children).toEqual([]);
   });
 });

@@ -471,6 +471,7 @@ export interface EditorSettings {
   wordWrap: boolean;
   vimModeEnabled: boolean;
   autoCloseBrackets: boolean;
+  sqlSyntaxDiagnosticsEnabled: boolean;
   sqlSemanticDiagnosticsMode: SqlSemanticDiagnosticsMode;
   sqlSemanticDiagnosticsEnabled: boolean;
   confirmDangerousSqlExecution: boolean;
@@ -614,6 +615,7 @@ export const DEFAULT_EDITOR_SETTINGS: EditorSettings = {
   wordWrap: false,
   vimModeEnabled: false,
   autoCloseBrackets: true,
+  sqlSyntaxDiagnosticsEnabled: true,
   sqlSemanticDiagnosticsMode: "auto",
   sqlSemanticDiagnosticsEnabled: SQL_SEMANTIC_DIAGNOSTICS_AUTO_ENABLED,
   confirmDangerousSqlExecution: true,
@@ -918,6 +920,7 @@ export function normalizeEditorSettings(settings: Partial<EditorSettings>, exist
     wordWrap: settings.wordWrap ?? DEFAULT_EDITOR_SETTINGS.wordWrap,
     vimModeEnabled: typeof settings.vimModeEnabled === "boolean" ? settings.vimModeEnabled : DEFAULT_EDITOR_SETTINGS.vimModeEnabled,
     autoCloseBrackets: typeof settings.autoCloseBrackets === "boolean" ? settings.autoCloseBrackets : DEFAULT_EDITOR_SETTINGS.autoCloseBrackets,
+    sqlSyntaxDiagnosticsEnabled: typeof settings.sqlSyntaxDiagnosticsEnabled === "boolean" ? settings.sqlSyntaxDiagnosticsEnabled : DEFAULT_EDITOR_SETTINGS.sqlSyntaxDiagnosticsEnabled,
     sqlSemanticDiagnosticsMode,
     sqlSemanticDiagnosticsEnabled: sqlSemanticDiagnosticsEnabledForMode(sqlSemanticDiagnosticsMode),
     confirmDangerousSqlExecution: settings.confirmDangerousSqlExecution ?? DEFAULT_EDITOR_SETTINGS.confirmDangerousSqlExecution,
@@ -1377,6 +1380,7 @@ export const useSettingsStore = defineStore("settings", () => {
     if (partial.wordWrap !== undefined) editorSettings.value.wordWrap = partial.wordWrap;
     if (partial.vimModeEnabled !== undefined) editorSettings.value.vimModeEnabled = partial.vimModeEnabled === true;
     if (partial.autoCloseBrackets !== undefined) editorSettings.value.autoCloseBrackets = partial.autoCloseBrackets === true;
+    if (partial.sqlSyntaxDiagnosticsEnabled !== undefined) editorSettings.value.sqlSyntaxDiagnosticsEnabled = partial.sqlSyntaxDiagnosticsEnabled === true;
     if (partial.sqlSemanticDiagnosticsMode !== undefined || partial.sqlSemanticDiagnosticsEnabled !== undefined) {
       const nextMode = normalizeSqlSemanticDiagnosticsMode(partial.sqlSemanticDiagnosticsMode, partial.sqlSemanticDiagnosticsEnabled);
       editorSettings.value.sqlSemanticDiagnosticsMode = nextMode;

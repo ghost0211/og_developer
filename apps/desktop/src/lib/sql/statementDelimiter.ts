@@ -5,6 +5,10 @@ export interface StatementDelimiterDocument {
 
 type StatementDelimiterSource = string | StatementDelimiterDocument;
 
+export function isStatementDelimiterChar(char: string): boolean {
+  return char === ";" || char === "；";
+}
+
 export function trailingStatementDelimiterPosition(source: StatementDelimiterSource, rangeTo: number): number | null {
   let delimiterPos = rangeTo;
   let lineBreakCount = 0;
@@ -14,7 +18,7 @@ export function trailingStatementDelimiterPosition(source: StatementDelimiterSou
     if (char === "\n" && ++lineBreakCount > 1) return null;
     delimiterPos += 1;
   }
-  return sliceSource(source, delimiterPos, delimiterPos + 1) === ";" ? delimiterPos : null;
+  return isStatementDelimiterChar(sliceSource(source, delimiterPos, delimiterPos + 1)) ? delimiterPos : null;
 }
 
 export function cursorBelongsToTrailingStatementDelimiter(source: StatementDelimiterSource, rangeTo: number, cursorPos: number): boolean {

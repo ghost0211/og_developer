@@ -298,6 +298,7 @@ export const useConnectionStore = defineStore("connection", () => {
     targetSchema?: string;
   } | null>(null);
   const schemaDiffSource = ref<{ connectionId: string; database: string; schema?: string } | null>(null);
+  const recycleBinSource = ref<{ connectionId: string; database: string; schema?: string } | null>(null);
   const dataCompareSource = ref<{
     connectionId: string;
     database: string;
@@ -1225,7 +1226,7 @@ export const useConnectionStore = defineStore("connection", () => {
 
   function ensureDatabaseCompatMode(connectionId: string, database: string) {
     const config = getConfig(connectionId);
-    if (config?.db_type !== "opengauss" || !database) return;
+    if (effectiveDatabaseTypeForConnection(config) !== "opengauss" || !database) return;
     const key = `${connectionId}|${database}`;
     if (databaseCompatModes.value.has(key) || databaseCompatProbeInflight.has(key)) return;
     databaseCompatProbeInflight.add(key);
@@ -1247,7 +1248,7 @@ export const useConnectionStore = defineStore("connection", () => {
   // are built with the correct mode on the very first expansion.
   async function awaitDatabaseCompatMode(connectionId: string, database: string) {
     const config = getConfig(connectionId);
-    if (config?.db_type !== "opengauss" || !database) return;
+    if (effectiveDatabaseTypeForConnection(config) !== "opengauss" || !database) return;
     const key = `${connectionId}|${database}`;
     if (databaseCompatModes.value.has(key)) return;
     ensureDatabaseCompatMode(connectionId, database);
@@ -6000,6 +6001,9 @@ export const useConnectionStore = defineStore("connection", () => {
     fieldLineageSource,
     databaseSearchSource,
     databaseExportSource,
+    recycleBinSource,
+    databaseCompatMode,
+    ensureDatabaseCompatMode,
     sidebarSearchQuery,
     sidebarTableSearchQueries,
     sidebarTableSearchIndexEpoch,

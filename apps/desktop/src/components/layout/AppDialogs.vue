@@ -18,6 +18,7 @@ const DatabaseSearchDialog = defineAsyncComponent(() => import("@/components/sea
 const SshHostKeyPromptDialog = defineAsyncComponent(() => import("@/components/ssh/SshHostKeyPromptDialog.vue"));
 const DatabaseExportDialog = defineAsyncComponent(() => import("@/components/export/DatabaseExportDialog.vue"));
 const DataGenerateDialog = defineAsyncComponent(() => import("@/components/generate/DataGenerateDialog.vue"));
+const RecycleBinDialog = defineAsyncComponent(() => import("@/components/maintenance/RecycleBinDialog.vue"));
 import { useConnectionStore } from "@/stores/connectionStore";
 import { useProductionSafetyStore } from "@/stores/productionSafetyStore";
 import { useDialogSources } from "@/composables/useDialogSources";
@@ -52,6 +53,7 @@ const emit = defineEmits<{
   "update:showSqlParameterDialog": [value: boolean];
   dangerConfirm: [];
   sqlParametersConfirm: [sql: string];
+  sqlParametersReplaceInEditor: [sql: string];
   connectStarted: [name: string];
   connectSucceeded: [name: string];
   connectFailed: [message: string];
@@ -174,6 +176,7 @@ watch(
     :enabled-syntaxes="sqlParameterEnabledSyntaxes"
     @update:open="emit('update:showSqlParameterDialog', $event)"
     @execute="emit('sqlParametersConfirm', $event)"
+    @replace-in-editor="emit('sqlParametersReplaceInEditor', $event)"
   />
   <DataTransferDialog
     v-model:open="dialogs.showTransferDialog.value"
@@ -249,6 +252,14 @@ watch(
     :prefill-table="dialogs.databaseExportPrefillTable.value"
     :prefill-tables="dialogs.databaseExportPrefillTables.value"
     :prefill-all-databases="dialogs.databaseExportAllDatabases.value"
+  />
+  <RecycleBinDialog
+    v-if="dialogs.showRecycleBinDialog.value"
+    v-model:open="dialogs.showRecycleBinDialog.value"
+    :prefill-connection-id="dialogs.recycleBinPrefillConnectionId.value"
+    :prefill-database="dialogs.recycleBinPrefillDatabase.value"
+    :prefill-schema="dialogs.recycleBinPrefillSchema.value"
+    @restored="({ connectionId, database, schema }) => void connectionStore.refreshObjectListTreeNode(connectionId, database, schema)"
   />
   <ConfigPassphraseDialog
     v-if="dialogs.showConfigPassphraseDialog.value"

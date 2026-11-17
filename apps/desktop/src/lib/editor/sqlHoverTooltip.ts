@@ -67,6 +67,73 @@ export function createSqlHoverDom(options: SqlHoverDomOptions): HTMLElement {
   return dom;
 }
 
+export interface SqlDiagnosticHoverAction {
+  label: string;
+  primary?: boolean;
+  onSelect: () => void;
+}
+
+export interface SqlDiagnosticHoverDomOptions {
+  title: string;
+  message: string;
+  severity?: "error" | "warning";
+  actions?: SqlDiagnosticHoverAction[];
+  editorId?: string;
+}
+
+/** Interactive hover card for SQL syntax/semantic diagnostics with optional one-click quick-fix actions. */
+export function createSqlDiagnosticHoverDom(options: SqlDiagnosticHoverDomOptions): HTMLElement {
+  const dom = document.createElement("div");
+  dom.className = "max-w-md rounded-md border bg-popover px-3 py-2 text-xs text-popover-foreground shadow-md select-text";
+  dom.dataset.queryEditorHoverTooltip = "true";
+  dom.dataset.queryEditorDiagnosticTooltip = "true";
+  if (options.editorId) dom.dataset.queryEditorId = options.editorId;
+  dom.style.pointerEvents = "auto";
+
+  const isWarning = options.severity === "warning";
+  const heading = document.createElement("div");
+  heading.className = `flex items-center gap-1.5 font-medium select-text ${isWarning ? "text-amber-500" : "text-destructive"}`;
+  const dot = document.createElement("span");
+  dot.className = `inline-block h-1.5 w-1.5 shrink-0 rounded-full ${isWarning ? "bg-amber-500" : "bg-destructive"}`;
+  heading.appendChild(dot);
+  const titleSpan = document.createElement("span");
+  titleSpan.textContent = options.title;
+  heading.appendChild(titleSpan);
+  dom.appendChild(heading);
+
+  const detail = document.createElement("div");
+  detail.className = "mt-1 leading-relaxed text-foreground/90 select-text whitespace-pre-wrap";
+  detail.textContent = options.message;
+  dom.appendChild(detail);
+
+  if (options.actions && options.actions.length > 0) {
+    const actionsBar = document.createElement("div");
+    actionsBar.className = "mt-2 flex flex-wrap items-center gap-1.5 border-t border-border/60 pt-2";
+    for (const action of options.actions) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.dataset.diagnosticQuickFix = "true";
+      button.className = action.primary
+        ? "inline-flex items-center rounded bg-primary px-2 py-0.5 text-[11px] font-medium text-primary-foreground transition-colors hover:bg-primary/90 cursor-pointer"
+        : "inline-flex items-center rounded border border-border bg-muted/50 px-2 py-0.5 text-[11px] font-medium text-foreground transition-colors hover:bg-muted cursor-pointer";
+      button.textContent = action.label;
+      button.addEventListener("mousedown", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      });
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        action.onSelect();
+      });
+      actionsBar.appendChild(button);
+    }
+    dom.appendChild(actionsBar);
+  }
+
+  return dom;
+}
+
 /** Cancels stale asynchronous hovers and owns listeners/DOM for one editor only. */
 export class SqlHoverController {
   readonly editorId: string;
