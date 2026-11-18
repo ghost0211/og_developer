@@ -946,10 +946,15 @@ export function buildSqlCompletionThemeRules(): CodeMirrorStyleSpec {
       padding: "0",
     },
     ".cm-tooltip.cm-tooltip-hover > .cm-tooltip-section": {
-      background: "transparent",
-      border: "none",
+      backgroundColor: "var(--popover)",
+      backgroundClip: "padding-box",
+      border: colorMixValue("1px solid var(--border)", "1px solid color-mix(in oklch, var(--border) 82%, var(--foreground) 18%)"),
+      borderRadius: "var(--ogdeveloper-radius-md)",
+      boxShadow: "0 10px 28px rgb(0 0 0 / 0.16), 0 2px 6px rgb(0 0 0 / 0.08)",
+      boxSizing: "border-box",
+      color: "var(--popover-foreground)",
       maxWidth: "100%",
-      padding: "0",
+      padding: "8px 12px",
     },
     ".cm-tooltip.cm-tooltip-autocomplete": {
       background: "var(--popover)",

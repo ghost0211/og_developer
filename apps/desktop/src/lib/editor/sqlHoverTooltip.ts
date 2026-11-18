@@ -46,12 +46,25 @@ export interface SqlHoverControllerOptions {
 /** An interactive, owned hover section, portaled outside the editor by CodeMirror. */
 export function createSqlHoverDom(options: SqlHoverDomOptions): HTMLElement {
   const dom = document.createElement("div");
+  const fallbackBg = options.isDark ? "rgb(30, 30, 32)" : "rgb(255, 255, 255)";
+  const fallbackFg = options.isDark ? "rgb(245, 245, 245)" : "rgb(10, 10, 10)";
+  const fallbackBorder = options.isDark ? "rgb(63, 63, 70)" : "rgb(229, 229, 229)";
   dom.className = "max-w-[min(760px,calc(100vw-24px))] rounded-md border bg-popover px-3 py-2 text-xs text-popover-foreground shadow-md select-text";
   dom.dataset.queryEditorHoverTooltip = "true";
   if (options.editorId) dom.dataset.queryEditorId = options.editorId;
   dom.style.pointerEvents = "auto";
   dom.style.maxWidth = SQL_HOVER_TOOLTIP_MAX_WIDTH;
   dom.style.boxSizing = "border-box";
+  dom.style.backgroundColor = fallbackBg;
+  dom.style.setProperty("background-color", `var(--popover, ${fallbackBg})`);
+  dom.style.color = fallbackFg;
+  dom.style.setProperty("color", `var(--popover-foreground, ${fallbackFg})`);
+  dom.style.border = `1px solid ${fallbackBorder}`;
+  dom.style.setProperty("border-color", `var(--border, ${fallbackBorder})`);
+  dom.style.borderRadius = "6px";
+  dom.style.setProperty("border-radius", "var(--ogdeveloper-radius-md, 6px)");
+  dom.style.padding = "8px 12px";
+  dom.style.boxShadow = "0 10px 28px rgb(0 0 0 / 0.16), 0 2px 6px rgb(0 0 0 / 0.08)";
 
   const heading = document.createElement("div");
   heading.className = "font-medium select-text break-words";
@@ -69,7 +82,7 @@ export function createSqlHoverDom(options: SqlHoverDomOptions): HTMLElement {
     dom.appendChild(separator);
 
     const sql = document.createElement("div");
-    sql.className = "mt-1.5 max-h-64 max-w-full overflow-x-auto overflow-y-auto text-[11px] leading-5 whitespace-pre font-mono select-text cursor-text";
+    sql.className = "mt-1.5 max-h-64 max-w-full rounded bg-muted/35 px-2 py-1.5 overflow-x-auto overflow-y-auto text-[11px] leading-5 whitespace-pre font-mono select-text cursor-text";
     sql.style.pointerEvents = "auto";
     if (options.highlighter) {
       sql.innerHTML = options.highlighter(options.sqlContent, options.isDark ? "dark" : "light");
@@ -100,12 +113,16 @@ export interface SqlDiagnosticHoverDomOptions {
   message: string;
   severity?: "error" | "warning";
   actions?: SqlDiagnosticHoverAction[];
+  isDark?: boolean;
   editorId?: string;
 }
 
 /** Interactive hover card for SQL syntax/semantic diagnostics with optional one-click quick-fix actions. */
 export function createSqlDiagnosticHoverDom(options: SqlDiagnosticHoverDomOptions): HTMLElement {
   const dom = document.createElement("div");
+  const fallbackBg = options.isDark ? "rgb(30, 30, 32)" : "rgb(255, 255, 255)";
+  const fallbackFg = options.isDark ? "rgb(245, 245, 245)" : "rgb(10, 10, 10)";
+  const fallbackBorder = options.isDark ? "rgb(63, 63, 70)" : "rgb(229, 229, 229)";
   dom.className = "max-w-[min(448px,calc(100vw-24px))] rounded-md border bg-popover px-3 py-2 text-xs text-popover-foreground shadow-md select-text";
   dom.dataset.queryEditorHoverTooltip = "true";
   dom.dataset.queryEditorDiagnosticTooltip = "true";
@@ -113,6 +130,16 @@ export function createSqlDiagnosticHoverDom(options: SqlDiagnosticHoverDomOption
   dom.style.pointerEvents = "auto";
   dom.style.maxWidth = SQL_DIAGNOSTIC_TOOLTIP_MAX_WIDTH;
   dom.style.boxSizing = "border-box";
+  dom.style.backgroundColor = fallbackBg;
+  dom.style.setProperty("background-color", `var(--popover, ${fallbackBg})`);
+  dom.style.color = fallbackFg;
+  dom.style.setProperty("color", `var(--popover-foreground, ${fallbackFg})`);
+  dom.style.border = `1px solid ${fallbackBorder}`;
+  dom.style.setProperty("border-color", `var(--border, ${fallbackBorder})`);
+  dom.style.borderRadius = "6px";
+  dom.style.setProperty("border-radius", "var(--ogdeveloper-radius-md, 6px)");
+  dom.style.padding = "8px 12px";
+  dom.style.boxShadow = "0 10px 28px rgb(0 0 0 / 0.16), 0 2px 6px rgb(0 0 0 / 0.08)";
 
   const isWarning = options.severity === "warning";
   const heading = document.createElement("div");

@@ -3,6 +3,7 @@
 import { EditorState } from "@codemirror/state";
 import { activateHover, EditorView, hasHoverTooltips, hoverTooltip, tooltips, type Tooltip } from "@codemirror/view";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { sqlCompletionTheme } from "../editorThemes";
 import { SQL_HOVER_TOOLTIP_MAX_WIDTH, computeSqlTooltipSpace, createSqlDiagnosticHoverDom, createSqlHoverController, createSqlHoverDom, type SqlHoverController } from "../sqlHoverTooltip";
 
 describe("SQL Editor Hover Tooltip runtime & DOM lifecycle", () => {
@@ -472,7 +473,7 @@ describe("SQL Editor Hover Tooltip runtime & DOM lifecycle", () => {
     expect(onReplaceAll).toHaveBeenCalledTimes(1);
   });
 
-  it("caps hover DDL card width to viewport bounds and enables horizontal scrolling for long lines", () => {
+  it("caps hover DDL card width to viewport bounds and enables horizontal scrolling for long lines", async () => {
     const dom = createSqlHoverDom({
       title: "app_menu",
       detail: "table in yi_app",
@@ -481,11 +482,43 @@ describe("SQL Editor Hover Tooltip runtime & DOM lifecycle", () => {
     });
 
     expect(dom.style.maxWidth).toBe(SQL_HOVER_TOOLTIP_MAX_WIDTH);
+    expect(dom.style.backgroundColor).toBeTruthy();
+    expect(dom.style.backgroundColor).not.toBe("transparent");
+    expect(dom.style.backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
+    expect(dom.style.padding).toBe("8px 12px");
     const sqlContainer = dom.querySelector(".overflow-y-auto") as HTMLElement;
     expect(sqlContainer.className).toContain("overflow-x-auto");
     expect(sqlContainer.className).toContain("max-w-full");
 
-    const { view } = setupEditor();
+    const { controller: themeController } = setupEditor();
+    view?.destroy();
+    view = new EditorView({
+      parent: editorParent,
+      state: EditorState.create({
+        doc: "SELECT * FROM prod_product;",
+        extensions: [
+          tooltips({ parent: hostElement }),
+          sqlCompletionTheme(EditorView),
+          ...themeController.createExtension(hoverTooltip, () => ({
+            pos: 14,
+            end: 26,
+            create: (targetView) => themeController.attachTooltipView(targetView, dom, { from: 14, to: 26 }),
+          })),
+        ],
+      }),
+    });
+    activateHover(view, 16, 1);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const mountedSection = hostElement.querySelector<HTMLElement>(".cm-tooltip-section")!;
+    expect(mountedSection).toBe(dom);
+    const computed = getComputedStyle(mountedSection);
+    expect(computed.backgroundColor).not.toBe("transparent");
+    expect(computed.backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
+    expect(computed.paddingTop).toBe("8px");
+    expect(computed.paddingLeft).toBe("12px");
+
     Object.defineProperty(view.dom.ownerDocument.documentElement, "clientWidth", { value: 1280, configurable: true });
     Object.defineProperty(view.dom.ownerDocument.documentElement, "clientHeight", { value: 800, configurable: true });
     expect(computeSqlTooltipSpace(view)).toEqual({

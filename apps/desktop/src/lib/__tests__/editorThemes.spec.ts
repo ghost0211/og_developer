@@ -71,6 +71,14 @@ describe("SQL completion theme", () => {
       maxWidth: "min(760px, calc(100vw - 24px))",
       padding: "0",
     });
+    expect(rules[".cm-tooltip.cm-tooltip-hover > .cm-tooltip-section"]).toMatchObject({
+      backgroundColor: "var(--popover)",
+      borderRadius: "var(--ogdeveloper-radius-md)",
+      color: "var(--popover-foreground)",
+      maxWidth: "100%",
+      padding: "8px 12px",
+    });
+    expect(rules[".cm-tooltip.cm-tooltip-hover > .cm-tooltip-section"]?.background).not.toBe("transparent");
   });
 
   it("keeps completion labels ahead of long detail text", () => {
