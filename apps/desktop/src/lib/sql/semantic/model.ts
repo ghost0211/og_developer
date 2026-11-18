@@ -690,10 +690,10 @@ function wordBeforePosition(tokens: readonly SqlSemanticToken[], position: numbe
   return nearestPreviousSyntaxWord(before);
 }
 
-function wordBeforeTrailingIdentifier(tokens: readonly SqlSemanticToken[], cursor: number, trailing: TrailingIdentifier): string {
-  const before = tokens.filter((item) => item.span.end <= cursor && item.kind !== "comment");
+function wordBeforeTrailingIdentifier(tokens: readonly SqlSemanticToken[], _cursor: number, trailing: TrailingIdentifier): string {
+  const before = tokens.filter((item) => item.span.end <= trailing.replacementRange.start && item.kind !== "comment");
   let index = before.length - 1;
-  let identifiersToSkip = trailing.qualifierParts.length + (trailing.prefix ? 1 : 0);
+  let identifiersToSkip = trailing.qualifierParts.length;
   while (index >= 0 && identifiersToSkip > 0) {
     if (before[index]?.text === ".") {
       index -= 1;

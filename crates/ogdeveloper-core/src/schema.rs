@@ -790,6 +790,78 @@ async fn completion_assistant_fallback(
         }
     }
 
+    if candidates.len() < limit && kinds.iter().any(|kind| matches!(kind, db::CompletionAssistantObjectKind::Synonym)) {
+        if let Ok(PoolKind::ExternalDriver { config, session, .. }) =
+            get_schema_pool(state, &request.connection_id, &request.database).await
+        {
+            let db_config = connection_config(state, &request.connection_id).await;
+            if db_config.as_ref().is_some_and(is_opengauss_family_config) {
+                let has_synonym = external_opengauss_query(
+                    session.clone(),
+                    config.as_ref(),
+                    &request.database,
+                    if schema.is_empty() { None } else { Some(schema) },
+                    "SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'pg_catalog' AND c.relname = 'pg_synonym' LIMIT 1",
+                    1,
+                )
+                .await
+                .map(|res| !res.rows.is_empty())
+                .unwrap_or(false);
+                if has_synonym {
+                    let schema_clause = if schema.is_empty() {
+                        "n.nspname NOT LIKE 'pg_%' AND n.nspname <> 'information_schema'".to_string()
+                    } else {
+                        format!("n.nspname = {}", sql_string(schema))
+                    };
+                    let fetch_limit = if filter.is_empty() { (limit - candidates.len()).max(1) } else { 5_000 };
+                    let syn_sql = format!(
+                        "SELECT s.synname::text, n.nspname::text, s.synobjschema::text, s.synobjname::text \
+                         FROM pg_catalog.pg_synonym s \
+                         JOIN pg_catalog.pg_namespace n ON n.oid = s.synnamespace \
+                         WHERE {schema_clause} \
+                         ORDER BY s.synname LIMIT {fetch_limit}"
+                    );
+                    if let Ok(result) = external_opengauss_query(
+                        session,
+                        config.as_ref(),
+                        &request.database,
+                        if schema.is_empty() { None } else { Some(schema) },
+                        &syn_sql,
+                        fetch_limit,
+                    )
+                    .await
+                    {
+                        for row in result.rows {
+                            let Some(syn_name) = row.first().and_then(serde_json::Value::as_str) else {
+                                continue;
+                            };
+                            if !completion_name_matches(syn_name, filter, request.match_mode.as_ref()) {
+                                continue;
+                            }
+                            let syn_schema = row.get(1).and_then(serde_json::Value::as_str).map(str::to_string);
+                            let target_schema = row.get(2).and_then(serde_json::Value::as_str).map(str::to_string);
+                            let target_name = row.get(3).and_then(serde_json::Value::as_str).map(str::to_string);
+                            candidates.push(db::CompletionAssistantCandidate {
+                                name: syn_name.to_string(),
+                                kind: db::CompletionAssistantCandidateKind::Synonym,
+                                database: Some(request.database.clone()),
+                                schema: syn_schema,
+                                parent_schema: target_schema,
+                                parent_name: target_name,
+                                comment: None,
+                                data_type: None,
+                                signature: None,
+                            });
+                            if candidates.len() >= limit {
+                                return Ok(candidates);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     if kinds.iter().any(|kind| matches!(kind, db::CompletionAssistantObjectKind::Column)) {
         if let Some(table) = request.parent_name.as_deref().filter(|table| !table.trim().is_empty()) {
             let columns = get_columns_core(state, &request.connection_id, &request.database, schema, table).await?;
@@ -1864,6 +1936,97 @@ fn query_result_string_values(result: db::QueryResult) -> Vec<String> {
         .collect()
 }
 
+async fn external_opengauss_synonym_ddl(
+    session: std::sync::Arc<crate::plugins::PluginDriverSession>,
+    config: &ConnectionConfig,
+    database: &str,
+    schema: &str,
+    table: &str,
+) -> Option<String> {
+    let has_synonym = external_opengauss_query(
+        session.clone(),
+        config,
+        database,
+        Some(schema),
+        "SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'pg_catalog' AND c.relname = 'pg_synonym' LIMIT 1",
+        1,
+    )
+    .await
+    .map(|res| !res.rows.is_empty())
+    .unwrap_or(false);
+    if !has_synonym {
+        return None;
+    }
+    if external_opengauss_relation_kind(session.clone(), config, database, schema, table).await.ok().flatten().is_some()
+    {
+        return None;
+    }
+
+    let mut ddl = String::new();
+    let mut current_schema = schema.to_string();
+    let mut current_name = table.to_string();
+    for _ in 0..5 {
+        let syn_sql = format!(
+            "SELECT s.synobjschema::text, s.synobjname::text \
+             FROM pg_catalog.pg_synonym s \
+             JOIN pg_catalog.pg_namespace n ON n.oid = s.synnamespace \
+             WHERE s.synname = {} AND n.nspname = {} \
+             LIMIT 1",
+            sql_string(&current_name),
+            sql_string(&current_schema)
+        );
+        let Ok(result) =
+            external_opengauss_query(session.clone(), config, database, Some(&current_schema), &syn_sql, 1).await
+        else {
+            break;
+        };
+        let Some(row) = result.rows.first() else { break };
+        let target_schema = row.first().and_then(serde_json::Value::as_str).unwrap_or_default().to_string();
+        let target_name = row.get(1).and_then(serde_json::Value::as_str).unwrap_or_default().to_string();
+        if target_schema.is_empty() || target_name.is_empty() {
+            break;
+        }
+        if !ddl.is_empty() {
+            ddl.push('\n');
+        }
+        ddl.push_str(&format_opengauss_synonym_ddl_line(&current_schema, &current_name, &target_schema, &target_name));
+
+        let target_kind =
+            external_opengauss_relation_kind(session.clone(), config, database, &target_schema, &target_name)
+                .await
+                .ok()
+                .flatten();
+        match target_kind.as_deref() {
+            Some("r") | Some("p") | Some("f") | Some("v") | Some("m") => {
+                if let Ok(target_ddl) = Box::pin(external_opengauss_table_ddl(
+                    session.clone(),
+                    config,
+                    database,
+                    &target_schema,
+                    &target_name,
+                ))
+                .await
+                {
+                    ddl.push_str("\n\n");
+                    ddl.push_str(&target_ddl);
+                }
+                return Some(ddl);
+            }
+            Some(_) => return Some(ddl),
+            None => {
+                current_schema = target_schema;
+                current_name = target_name;
+            }
+        }
+    }
+
+    if ddl.is_empty() {
+        None
+    } else {
+        Some(ddl)
+    }
+}
+
 async fn external_opengauss_table_ddl(
     session: std::sync::Arc<crate::plugins::PluginDriverSession>,
     config: &ConnectionConfig,
@@ -1871,6 +2034,9 @@ async fn external_opengauss_table_ddl(
     schema: &str,
     table: &str,
 ) -> Result<String, String> {
+    if let Some(synonym_ddl) = external_opengauss_synonym_ddl(session.clone(), config, database, schema, table).await {
+        return Ok(synonym_ddl);
+    }
     // Detect views before pg_get_tabledef: some drivers/servers return a
     // table-shaped definition rather than failing for a view.
     if let Some(ddl) = external_opengauss_view_ddl(session.clone(), config, database, schema, table).await? {

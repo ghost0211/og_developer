@@ -938,6 +938,19 @@ export function editorFontTheme(EditorView: typeof import("@codemirror/view").Ed
 
 export function buildSqlCompletionThemeRules(): CodeMirrorStyleSpec {
   return {
+    ".cm-tooltip.cm-tooltip-hover": {
+      background: "transparent",
+      border: "none",
+      boxSizing: "border-box",
+      maxWidth: "min(760px, calc(100vw - 24px))",
+      padding: "0",
+    },
+    ".cm-tooltip.cm-tooltip-hover > .cm-tooltip-section": {
+      background: "transparent",
+      border: "none",
+      maxWidth: "100%",
+      padding: "0",
+    },
     ".cm-tooltip.cm-tooltip-autocomplete": {
       background: "var(--popover)",
       backgroundClip: "padding-box",

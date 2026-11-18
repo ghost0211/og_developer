@@ -1,5 +1,25 @@
 import type { Extension, Text } from "@codemirror/state";
-import { EditorView, ViewPlugin, closeHoverTooltips, hoverTooltip, type Tooltip, type TooltipView } from "@codemirror/view";
+import { EditorView, ViewPlugin, closeHoverTooltips, hoverTooltip, tooltips, type Tooltip, type TooltipView } from "@codemirror/view";
+
+export const SQL_HOVER_TOOLTIP_MAX_WIDTH = "min(760px, calc(100vw - 24px))";
+export const SQL_DIAGNOSTIC_TOOLTIP_MAX_WIDTH = "min(448px, calc(100vw - 24px))";
+
+export function computeSqlTooltipSpace(view: EditorView): { top: number; left: number; bottom: number; right: number } {
+  const docElt = view.dom.ownerDocument.documentElement;
+  const clientWidth = docElt.clientWidth || (typeof window !== "undefined" ? window.innerWidth : 0);
+  const clientHeight = docElt.clientHeight || (typeof window !== "undefined" ? window.innerHeight : 0);
+  if (clientWidth <= 0 || clientHeight <= 0) {
+    return { top: 0, left: 0, bottom: clientHeight, right: clientWidth };
+  }
+  const marginX = Math.min(12, Math.floor(clientWidth / 8));
+  const marginY = Math.min(12, Math.floor(clientHeight / 8));
+  return {
+    top: marginY,
+    left: marginX,
+    bottom: Math.max(marginY, clientHeight - marginY),
+    right: Math.max(marginX, clientWidth - marginX),
+  };
+}
 
 interface HoverRange {
   from: number;
@@ -26,18 +46,20 @@ export interface SqlHoverControllerOptions {
 /** An interactive, owned hover section, portaled outside the editor by CodeMirror. */
 export function createSqlHoverDom(options: SqlHoverDomOptions): HTMLElement {
   const dom = document.createElement("div");
-  dom.className = "rounded-md border bg-popover px-3 py-2 text-xs text-popover-foreground shadow-md select-text";
+  dom.className = "max-w-[min(760px,calc(100vw-24px))] rounded-md border bg-popover px-3 py-2 text-xs text-popover-foreground shadow-md select-text";
   dom.dataset.queryEditorHoverTooltip = "true";
   if (options.editorId) dom.dataset.queryEditorId = options.editorId;
   dom.style.pointerEvents = "auto";
+  dom.style.maxWidth = SQL_HOVER_TOOLTIP_MAX_WIDTH;
+  dom.style.boxSizing = "border-box";
 
   const heading = document.createElement("div");
-  heading.className = "font-medium select-text";
+  heading.className = "font-medium select-text break-words";
   heading.textContent = options.title;
   dom.appendChild(heading);
 
   const detail = document.createElement("div");
-  detail.className = "mt-1 text-muted-foreground select-text";
+  detail.className = "mt-1 text-muted-foreground select-text break-words";
   detail.textContent = options.detail;
   dom.appendChild(detail);
 
@@ -47,7 +69,7 @@ export function createSqlHoverDom(options: SqlHoverDomOptions): HTMLElement {
     dom.appendChild(separator);
 
     const sql = document.createElement("div");
-    sql.className = "mt-1.5 max-h-64 overflow-y-auto text-[11px] leading-5 whitespace-pre font-mono select-text cursor-text";
+    sql.className = "mt-1.5 max-h-64 max-w-full overflow-x-auto overflow-y-auto text-[11px] leading-5 whitespace-pre font-mono select-text cursor-text";
     sql.style.pointerEvents = "auto";
     if (options.highlighter) {
       sql.innerHTML = options.highlighter(options.sqlContent, options.isDark ? "dark" : "light");
@@ -60,7 +82,7 @@ export function createSqlHoverDom(options: SqlHoverDomOptions): HTMLElement {
 
   for (const row of options.rows ?? []) {
     const rowNode = document.createElement("div");
-    rowNode.className = "mt-1 font-mono text-muted-foreground select-text";
+    rowNode.className = "mt-1 font-mono text-muted-foreground select-text break-words";
     rowNode.textContent = row;
     dom.appendChild(rowNode);
   }
@@ -84,11 +106,13 @@ export interface SqlDiagnosticHoverDomOptions {
 /** Interactive hover card for SQL syntax/semantic diagnostics with optional one-click quick-fix actions. */
 export function createSqlDiagnosticHoverDom(options: SqlDiagnosticHoverDomOptions): HTMLElement {
   const dom = document.createElement("div");
-  dom.className = "max-w-md rounded-md border bg-popover px-3 py-2 text-xs text-popover-foreground shadow-md select-text";
+  dom.className = "max-w-[min(448px,calc(100vw-24px))] rounded-md border bg-popover px-3 py-2 text-xs text-popover-foreground shadow-md select-text";
   dom.dataset.queryEditorHoverTooltip = "true";
   dom.dataset.queryEditorDiagnosticTooltip = "true";
   if (options.editorId) dom.dataset.queryEditorId = options.editorId;
   dom.style.pointerEvents = "auto";
+  dom.style.maxWidth = SQL_DIAGNOSTIC_TOOLTIP_MAX_WIDTH;
+  dom.style.boxSizing = "border-box";
 
   const isWarning = options.severity === "warning";
   const heading = document.createElement("div");
@@ -348,6 +372,7 @@ export class SqlHoverController {
 
   createExtension(hoverTooltipFn: typeof hoverTooltip, source: (view: EditorView, pos: number, side: -1 | 1) => Promise<Tooltip | null> | Tooltip | null, options?: { hoverTime?: number }): Extension[] {
     return [
+      tooltips({ tooltipSpace: computeSqlTooltipSpace }),
       hoverTooltipFn(
         async (view, pos, side) => {
           if (!this.isActive() || !this.hoverAllowed) return null;

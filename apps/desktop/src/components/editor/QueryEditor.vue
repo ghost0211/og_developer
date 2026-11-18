@@ -52,6 +52,7 @@ import { mergeSqlSemanticReferenceAnalysis, resolveSqlSemanticNavigationTarget }
 import { mergeSqlCompletionQualifierNames, resolveSqlCompletionRoutineLookupTarget, resolveSqlCompletionSchemaLookupDatabase, resolveSqlCompletionScope, resolveSqlCompletionTableLookupTarget, type SqlCompletionScope } from "@/lib/sql/sqlCompletionLookupTarget";
 import {
   extractIdentifierDetailsAt,
+  extractQualifiedIdentifierAt,
   isSqlKeyword,
   matchSqlObject,
   matchTable,
@@ -1784,18 +1785,16 @@ function sqlExecutionSnapshotForRange(currentView: EditorViewType, range: Pick<S
   };
 }
 
-function identifierRangeAt(sql: string, pos: number): { from: number; to: number; text: string } | null {
-  const isIdentifierChar = (ch: string | undefined) => !!ch && /[\w$.]/.test(ch);
-  if (!isIdentifierChar(sql[pos]) && !isIdentifierChar(sql[pos - 1])) return null;
-
-  let from = pos;
-  while (from > 0 && isIdentifierChar(sql[from - 1])) from--;
-  let to = pos;
-  while (to < sql.length && isIdentifierChar(sql[to])) to++;
-
-  const text = sql.slice(from, to).replace(/^\.+|\.+$/g, "");
-  if (!text || isSqlKeyword(text)) return null;
-  return { from, to, text };
+function identifierRangeAt(sql: string, pos: number, side: -1 | 1 = 1): { from: number; to: number; text: string; parts: string[] } | null {
+  const primaryPos = side < 0 && pos > 0 ? pos - 1 : pos;
+  const located = extractQualifiedIdentifierAt(sql, primaryPos) ?? extractQualifiedIdentifierAt(sql, pos) ?? (pos > 0 ? extractQualifiedIdentifierAt(sql, pos - 1) : null);
+  if (!located || located.parts.length === 0) return null;
+  if (pos < located.start || pos > located.end) return null;
+  const parts = located.parts.map((part) => part.value);
+  const text = parts.join(".");
+  const hasQuotedPart = located.parts.some((part) => part.quoted);
+  if (!text || (!hasQuotedPart && parts.length === 1 && isSqlKeyword(text))) return null;
+  return { from: located.start, to: located.end, text, parts };
 }
 
 type CompletionMetadataScope = Pick<SqlCompletionScope, "database" | "schema">;
@@ -2183,14 +2182,9 @@ async function resolveSqlHoverTooltip(currentView: EditorViewType, pos: number, 
   if (!props.connectionId || props.database == null) return null;
 
   const sql = currentView.state.doc.toString();
-  const range = identifierRangeAt(sql, pos);
+  const range = identifierRangeAt(sql, pos, side);
   if (!range) return null;
 
-  const requestId = sqlHoverController.beginRequest(pos, range, currentView);
-  const identifier = range.text;
-  const parts = splitQualifiedIdentifier(identifier);
-  const name = parts[parts.length - 1] ?? identifier;
-  const qualifier = parts.length > 1 ? parts[parts.length - 2] : undefined;
   let semanticModel: ReturnType<typeof buildSqlSemanticModel> | null = null;
   if (SEMANTIC_SQL_COMPLETION_ENABLED) {
     try {
@@ -2200,16 +2194,35 @@ async function resolveSqlHoverTooltip(currentView: EditorViewType, pos: number, 
       console.warn(`[ogdeveloper] Failed to build semantic model for hover tooltip:`, error);
     }
   }
+  if (semanticModel?.cursorIntent.kind === "suppressed") return null;
+
+  const requestId = sqlHoverController.beginRequest(pos, range, currentView);
+  const identifier = range.text;
+  const parts = range.parts.length > 0 ? range.parts : splitQualifiedIdentifier(identifier);
+  const name = parts[parts.length - 1] ?? identifier;
+  const qualifier = parts.length > 1 ? parts[parts.length - 2] : undefined;
   const semanticTarget = semanticModel ? resolveSqlSemanticNavigationTarget(semanticModel, parts) : null;
-  const semanticQualifierIsRowSource = !!qualifier && !!semanticTarget && (semanticTarget.alias?.toLowerCase() === qualifier.toLowerCase() || semanticTarget.source.name.toLowerCase() === qualifier.toLowerCase());
-  const tableLookupName = semanticTarget && !semanticQualifierIsRowSource ? semanticTarget.name : name;
-  const qualifiedTableLookup = semanticTarget?.schema ? `${semanticTarget.schema}.${semanticTarget.name}` : identifier;
+  const isDirectQualifiedTableMatch = !!qualifier && !!semanticTarget && semanticTarget.schema?.toLowerCase() === qualifier.toLowerCase() && semanticTarget.name.toLowerCase() === name.toLowerCase();
+  const semanticQualifierIsRowSource = !!qualifier && !!semanticTarget && !isDirectQualifiedTableMatch && (semanticTarget.alias?.toLowerCase() === qualifier.toLowerCase() || semanticTarget.source.name.toLowerCase() === qualifier.toLowerCase());
+  const legacyContext = getSqlCompletionContext(sql, pos, sqlCompletionDialectOptions());
+  const context = semanticModel ? sqlCompletionContextFromSemantic(semanticModel, legacyContext) : legacyContext;
+  const qualifierMatchesContextRowSource =
+    !semanticTarget &&
+    !!qualifier &&
+    parts.length === 2 &&
+    context.referencedTables.some((rt) => rt.alias?.toLowerCase() === qualifier.toLowerCase() || (rt.name.toLowerCase() === qualifier.toLowerCase() && !(rt.schema?.toLowerCase() === qualifier.toLowerCase() && rt.name.toLowerCase() === name.toLowerCase())));
+  const treatQualifierAsRowSource = semanticQualifierIsRowSource || qualifierMatchesContextRowSource;
+  const tableLookupName = semanticTarget && !treatQualifierAsRowSource ? semanticTarget.name : name;
+  const fallbackDatabase = !treatQualifierAsRowSource && supportsDatabaseSchemaQualifierCompletion() && parts.length >= 3 ? parts[parts.length - 3] : undefined;
+  const fallbackSchema = !treatQualifierAsRowSource && qualifier ? qualifier : undefined;
+  const resolvedLookupSchema = semanticTarget?.schema ?? fallbackSchema;
+  const qualifiedTableLookup = resolvedLookupSchema ? `${resolvedLookupSchema}.${tableLookupName}` : identifier;
 
   const hoverTarget = completionMetadataTarget({
     name: tableLookupName,
     catalog: props.catalog,
-    database: semanticTarget?.database,
-    schema: semanticTarget?.schema,
+    database: semanticTarget?.database ?? fallbackDatabase,
+    schema: resolvedLookupSchema,
   });
   if (!hoverTarget) return null;
   const hoverScope: HoverTableScope = {
@@ -2238,7 +2251,7 @@ async function resolveSqlHoverTooltip(currentView: EditorViewType, pos: number, 
       cachedTables = mergeCompletionTables(cachedTables, remoteHoverTables);
       table = matchTable(qualifiedTableLookup, hoverTables) ?? matchTable(tableLookupName, hoverTables) ?? matchTable(identifier, hoverTables) ?? matchTable(name, hoverTables);
     }
-    if (table && !semanticQualifierIsRowSource && (!qualifier || table.schema?.toLowerCase() === qualifier.toLowerCase() || table.name === name)) {
+    if (table && !treatQualifierAsRowSource && (!qualifier || table.schema?.toLowerCase() === qualifier.toLowerCase() || table.name === name)) {
       const hoverDatabase = hoverScope.database;
       const hoverSchema = hoverScope.schema ?? table.schema ?? "";
       const hoverQualifiedName = [hoverScope.catalog, hoverDatabase, hoverSchema, table.name].filter(Boolean).join(".");
@@ -2269,32 +2282,41 @@ async function resolveSqlHoverTooltip(currentView: EditorViewType, pos: number, 
       // Fallback path: rebuild the DDL from cached table metadata when the
       // backend DDL is unavailable (empty result or request failure).
       if (!sqlContent) {
+        const fallbackMetadataSchema = table.synonymTarget?.name ? (table.synonymTarget.schema ?? hoverSchema) : hoverSchema;
+        const fallbackMetadataTable = table.synonymTarget?.name ?? table.name;
+        const fallbackMetadataRequest = {
+          ...objectMetadataRequest,
+          schema: fallbackMetadataSchema,
+          tableName: fallbackMetadataTable,
+        };
         let fullColumns: ColumnInfo[] = [];
         let fullIndexes: IndexInfo[] = [];
         let tableComment: string | undefined;
         try {
           const [columnsResult, indexesResult] = await Promise.all([
-            loadObjectMetadataFacet(objectMetadataRequest, "columns", () => api.getColumns(props.connectionId!, hoverDatabase, hoverSchema, table.name, hoverScope.catalog)),
-            loadObjectMetadataFacet(objectMetadataRequest, "indexes", () => api.listIndexes(props.connectionId!, hoverDatabase, hoverSchema, table.name, hoverScope.catalog).catch(() => [])),
+            loadObjectMetadataFacet(fallbackMetadataRequest, "columns", () => api.getColumns(props.connectionId!, hoverDatabase, fallbackMetadataSchema, fallbackMetadataTable, hoverScope.catalog)),
+            loadObjectMetadataFacet(fallbackMetadataRequest, "indexes", () => api.listIndexes(props.connectionId!, hoverDatabase, fallbackMetadataSchema, fallbackMetadataTable, hoverScope.catalog).catch(() => [])),
           ]);
           if (!sqlHoverController.isValid(requestId, currentView, range)) return null;
           fullColumns = columnsResult.value;
           fullIndexes = indexesResult.value;
         } catch (error) {
           metadataLoadFailed = true;
-          console.warn(`[ogdeveloper] Failed to load table metadata for ${hoverDatabase}.${hoverSchema}.${table.name}:`, error);
+          console.warn(`[ogdeveloper] Failed to load table metadata for ${hoverDatabase}.${fallbackMetadataSchema}.${fallbackMetadataTable}:`, error);
         }
         if (!metadataLoadFailed) {
           try {
-            const commentResult = await loadObjectMetadataFacet(objectMetadataRequest, "comment", () => api.getTableComment(props.connectionId!, hoverDatabase, hoverSchema, table.name, hoverScope.catalog));
+            const commentResult = await loadObjectMetadataFacet(fallbackMetadataRequest, "comment", () => api.getTableComment(props.connectionId!, hoverDatabase, fallbackMetadataSchema, fallbackMetadataTable, hoverScope.catalog));
             if (!sqlHoverController.isValid(requestId, currentView, range)) return null;
             if (commentResult.value) tableComment = commentResult.value;
           } catch (error) {
-            console.warn(`[ogdeveloper] Failed to load table comment for ${hoverDatabase}.${hoverSchema}.${table.name}:`, error);
+            console.warn(`[ogdeveloper] Failed to load table comment for ${hoverDatabase}.${fallbackMetadataSchema}.${fallbackMetadataTable}:`, error);
           }
         }
         if (fullColumns.length > 0) {
-          sqlContent = buildHoverTableSql(quoteQualifiedName(hoverQualifiedName), fullColumns, fullIndexes, tableComment);
+          const fallbackQualifiedName = [hoverScope.catalog, hoverDatabase, fallbackMetadataSchema, fallbackMetadataTable].filter(Boolean).join(".");
+          const synonymPrefix = table.synonymTarget?.name ? `create or replace synonym ${quoteQualifiedName([hoverSchema, table.name].filter(Boolean).join("."))} for ${quoteQualifiedName([fallbackMetadataSchema, fallbackMetadataTable].filter(Boolean).join("."))};\n\n` : "";
+          sqlContent = synonymPrefix + buildHoverTableSql(quoteQualifiedName(fallbackQualifiedName), fullColumns, fullIndexes, tableComment);
           metadataLoadFailed = false;
         }
       }
@@ -2309,8 +2331,6 @@ async function resolveSqlHoverTooltip(currentView: EditorViewType, pos: number, 
       };
     }
 
-    const legacyContext = getSqlCompletionContext(sql, pos, sqlCompletionDialectOptions());
-    const context = semanticModel ? sqlCompletionContextFromSemantic(semanticModel, legacyContext) : legacyContext;
     const candidates = qualifier ? context.referencedTables.filter((rt) => rt.alias?.toLowerCase() === qualifier.toLowerCase() || rt.name.toLowerCase() === qualifier.toLowerCase()) : context.referencedTables;
 
     for (const refTable of candidates) {

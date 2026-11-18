@@ -59,4 +59,25 @@ describe("sqlSemanticReferences shared consumers", () => {
 
     expect(target).toEqual(expect.objectContaining({ name: "orders", database: "DatabaseB", schema: "OUT", alias: "b" }));
   });
+
+  it("resolves cross-schema table hover whether pointer is inside schema prefix, dot, object name, or alias", () => {
+    const insideObject = sqlFixtureCursor("SELECT * FROM yi_app.app_|menu m;");
+    const modelInsideObject = buildSqlSemanticModel(insideObject.sql, insideObject.cursor, { databaseType: "opengauss" });
+    expect(modelInsideObject.cursorIntent.kind).toBe("table");
+    expect(resolveSqlSemanticNavigationTarget(modelInsideObject, ["yi_app", "app_menu"])).toEqual(expect.objectContaining({ name: "app_menu", schema: "yi_app", alias: "m" }));
+
+    const insideSchema = sqlFixtureCursor("SELECT * FROM yi_|app.app_menu m;");
+    const modelInsideSchema = buildSqlSemanticModel(insideSchema.sql, insideSchema.cursor, { databaseType: "opengauss" });
+    expect(resolveSqlSemanticNavigationTarget(modelInsideSchema, ["yi_app", "app_menu"])).toEqual(expect.objectContaining({ name: "app_menu", schema: "yi_app", alias: "m" }));
+
+    const insideAlias = sqlFixtureCursor("SELECT * FROM yi_app.app_menu |m;");
+    const modelInsideAlias = buildSqlSemanticModel(insideAlias.sql, insideAlias.cursor, { databaseType: "opengauss" });
+    expect(resolveSqlSemanticNavigationTarget(modelInsideAlias, ["m"])).toEqual(expect.objectContaining({ name: "app_menu", schema: "yi_app", alias: "m" }));
+  });
+
+  it("suppresses semantic navigation inside string literals and comments", () => {
+    const inString = sqlFixtureCursor("SELECT 'yi_app.app_|menu' FROM yi_app.app_menu;");
+    const modelInString = buildSqlSemanticModel(inString.sql, inString.cursor, { databaseType: "opengauss" });
+    expect(resolveSqlSemanticNavigationTarget(modelInString, ["yi_app", "app_menu"])).toBeNull();
+  });
 });

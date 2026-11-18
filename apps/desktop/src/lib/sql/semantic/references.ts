@@ -134,7 +134,7 @@ export function sqlSemanticCompletionReferenceTables(model: SqlSemanticModel): S
 }
 
 export function resolveSqlSemanticNavigationTarget(model: SqlSemanticModel, identifierParts: readonly string[]): SqlSemanticNavigationTarget | null {
-  if (model.cursorIntent.kind === "suppressed" || model.cursorIntent.confidence === "low" || identifierParts.length === 0) return null;
+  if (model.cursorIntent.kind === "suppressed" || identifierParts.length === 0) return null;
   const normalizedParts = identifierParts.map(normalized).filter(Boolean);
   const name = normalizedParts[normalizedParts.length - 1];
   const qualifier = normalizedParts.length > 1 ? normalizedParts[normalizedParts.length - 2] : undefined;

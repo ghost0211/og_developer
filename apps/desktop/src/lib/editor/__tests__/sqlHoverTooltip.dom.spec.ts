@@ -3,7 +3,7 @@
 import { EditorState } from "@codemirror/state";
 import { activateHover, EditorView, hasHoverTooltips, hoverTooltip, tooltips, type Tooltip } from "@codemirror/view";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createSqlDiagnosticHoverDom, createSqlHoverController, createSqlHoverDom, type SqlHoverController } from "../sqlHoverTooltip";
+import { SQL_HOVER_TOOLTIP_MAX_WIDTH, computeSqlTooltipSpace, createSqlDiagnosticHoverDom, createSqlHoverController, createSqlHoverDom, type SqlHoverController } from "../sqlHoverTooltip";
 
 describe("SQL Editor Hover Tooltip runtime & DOM lifecycle", () => {
   let hostElement: HTMLElement;
@@ -470,5 +470,29 @@ describe("SQL Editor Hover Tooltip runtime & DOM lifecycle", () => {
     expect(onReplaceOne).toHaveBeenCalledTimes(1);
     buttons[1]!.click();
     expect(onReplaceAll).toHaveBeenCalledTimes(1);
+  });
+
+  it("caps hover DDL card width to viewport bounds and enables horizontal scrolling for long lines", () => {
+    const dom = createSqlHoverDom({
+      title: "app_menu",
+      detail: "table in yi_app",
+      sqlContent: `CREATE TABLE "yi_app"."app_menu" (\n  "scope_context_dict" character varying(64) NOT NULL DEFAULT '${"X".repeat(400)}'\n);`,
+      editorId: "editor-wide-1",
+    });
+
+    expect(dom.style.maxWidth).toBe(SQL_HOVER_TOOLTIP_MAX_WIDTH);
+    const sqlContainer = dom.querySelector(".overflow-y-auto") as HTMLElement;
+    expect(sqlContainer.className).toContain("overflow-x-auto");
+    expect(sqlContainer.className).toContain("max-w-full");
+
+    const { view } = setupEditor();
+    Object.defineProperty(view.dom.ownerDocument.documentElement, "clientWidth", { value: 1280, configurable: true });
+    Object.defineProperty(view.dom.ownerDocument.documentElement, "clientHeight", { value: 800, configurable: true });
+    expect(computeSqlTooltipSpace(view)).toEqual({
+      top: 12,
+      left: 12,
+      bottom: 788,
+      right: 1268,
+    });
   });
 });

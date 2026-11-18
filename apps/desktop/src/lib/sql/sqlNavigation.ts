@@ -211,7 +211,19 @@ export function isSqlObjectNavigationRoutineType(type?: SqlObjectNavigationType)
   return type === "procedure" || type === "function" || type === "package" || type === "trigger";
 }
 
-export function sqlObjectHoverDetail(table: SqlObjectNavigationTarget): string {
+export function sqlObjectHoverDetail(
+  table: SqlObjectNavigationTarget & {
+    synonymTarget?: { schema?: string; name?: string; kind?: string };
+  },
+): string {
+  if (table.synonymTarget) {
+    const base = table.schema ? `synonym in ${table.schema}` : "synonym";
+    if (table.synonymTarget.name) {
+      const target = table.synonymTarget.schema ? `${table.synonymTarget.schema}.${table.synonymTarget.name}` : table.synonymTarget.name;
+      return `${base} \u2192 ${target}`;
+    }
+    return base;
+  }
   const objectType = table.type === "materialized_view" ? "materialized view" : table.type === "view" ? "view" : table.type === "procedure" ? "procedure" : table.type === "function" ? "function" : table.type === "package" ? "package" : table.type === "trigger" ? "trigger" : "table";
   if (table.parentName) {
     const owner = table.parentSchema ? `${table.parentSchema}.${table.parentName}` : table.parentName;

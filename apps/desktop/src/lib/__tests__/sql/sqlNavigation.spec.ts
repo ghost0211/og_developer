@@ -143,6 +143,8 @@ describe("SQL object navigation metadata", () => {
     expect(sqlObjectHoverDetail({ name: "users", schema: "dbo", type: "table" })).toBe("table in dbo");
     expect(sqlObjectHoverDetail({ name: "calc_tax", schema: "hr", type: "procedure" })).toBe("procedure in hr");
     expect(sqlObjectHoverDetail({ name: "calc_tax", type: "procedure", parentName: "payroll", parentSchema: "hr" })).toBe("procedure in hr.payroll");
+    expect(sqlObjectHoverDetail({ name: "prod_menu", schema: "yi_dbo", synonymTarget: { schema: "yi_prod", name: "prod_menu" } })).toBe("synonym in yi_dbo \u2192 yi_prod.prod_menu");
+    expect(sqlObjectHoverDetail({ name: "prod_menu", synonymTarget: {} })).toBe("synonym");
   });
 
   it("maps navigation types to table metadata types", () => {
