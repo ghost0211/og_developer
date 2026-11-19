@@ -1811,6 +1811,56 @@ async function handleQuickOpenSelect(item: any) {
     return;
   }
 
+  if (item.type === "open_tab" && item.tabId) {
+    activateQueryTab(item.tabId);
+    return;
+  }
+
+  if (item.type === "command" && item.commandId) {
+    switch (item.commandId) {
+      case "new-query":
+        void newQuery();
+        break;
+      case "new-command-window":
+        openCommandWindowFromMenu();
+        break;
+      case "open-process-list":
+        openProcessListFromMenu();
+        break;
+      case "open-server-dashboard":
+        openServerDashboardFromMenu();
+        break;
+      case "open-top-sql":
+        openTopSqlFromMenu();
+        break;
+      case "open-storage-bloat":
+        openStorageBloatFromMenu();
+        break;
+      case "open-guc-parameters":
+        openGucParametersFromMenu();
+        break;
+      case "open-recycle-bin":
+        openRecycleBinFromMenu();
+        break;
+      case "open-invalid-objects":
+        openRoutineHealthFromMenu();
+        break;
+      case "open-schema-diff":
+        dialogs.showSchemaDiffDialog.value = true;
+        break;
+      case "open-data-compare":
+        dialogs.showDataCompareDialog.value = true;
+        break;
+      case "open-settings":
+        openSettings("appearance");
+        break;
+      case "new-connection":
+        showConnectionDialog.value = true;
+        break;
+    }
+    return;
+  }
+
   // For all other types, set the active connection
   connectionStore.activeConnectionId = item.connectionId;
 
@@ -1868,17 +1918,32 @@ async function handleQuickOpenSelect(item: any) {
       tableName: item.objectName || item.tableName,
       tableType: item.type === "view" ? "VIEW" : item.type === "materialized_view" ? "MATERIALIZED_VIEW" : "TABLE",
     });
-  } else if (item.type === "procedure" || item.type === "function" || item.type === "trigger" || item.type === "sequence" || item.type === "package" || item.type === "package-body" || item.type === "type" || item.type === "type-body") {
+  } else if (
+    item.type === "procedure" ||
+    item.type === "function" ||
+    item.type === "trigger" ||
+    item.type === "sequence" ||
+    item.type === "synonym" ||
+    item.type === "package" ||
+    item.type === "package-body" ||
+    item.type === "type" ||
+    item.type === "type-body" ||
+    item.type === "job" ||
+    item.type === "scheduler"
+  ) {
     // Open the object source in a source tab
     const objectTypeMap: Record<string, ObjectSourceKind> = {
       procedure: "PROCEDURE",
       function: "FUNCTION",
       trigger: "TRIGGER",
       sequence: "SEQUENCE",
+      synonym: "SYNONYM",
       package: "PACKAGE",
       "package-body": "PACKAGE_BODY",
       type: "TYPE",
       "type-body": "TYPE_BODY",
+      job: "JOB",
+      scheduler: "SCHEDULER",
     };
 
     const objectType = objectTypeMap[item.type];
@@ -1897,10 +1962,11 @@ async function handleQuickOpenSelect(item: any) {
         objectType,
         databaseType,
         signature: item.signature,
+        relationName: item.relationName,
       });
       const tabId = queryStore.createTab(item.connectionId, item.database, `Source - ${objectName}`);
       queryStore.updateSql(tabId, editableSource);
-      if (item.type !== "sequence" && item.type !== "trigger" && item.type !== "type" && item.type !== "type-body") {
+      if (item.type !== "sequence" && item.type !== "trigger" && item.type !== "synonym" && item.type !== "type" && item.type !== "type-body" && item.type !== "job" && item.type !== "scheduler") {
         queryStore.setObjectSource(tabId, {
           schema,
           name: objectName,
@@ -1954,14 +2020,35 @@ function openRecycleBinFromMenu() {
   };
 }
 
-function openTopSqlFromMenu() {
+function openPgStatsToolFromMenu(emptyMessageKey: string, openPanel: (options: { connectionId: string; database?: string; schema?: string }) => void) {
   const connection = defaultToolTarget("pg-stats");
   if (!connection) {
-    toast(t("topSql.noConnections"), 2500);
+    toast(t(emptyMessageKey), 2500);
     return;
   }
   const current = activeTab.value?.connectionId === connection.id ? activeTab.value : undefined;
-  queryStore.openTopSqlPanel({ connectionId: connection.id, database: current?.database || resolveDefaultDatabase(connection, []), schema: current?.schema });
+  openPanel({ connectionId: connection.id, database: current?.database || resolveDefaultDatabase(connection, []), schema: current?.schema });
+}
+
+function openServerDashboardFromMenu() {
+  const connection = defaultToolTarget("pg-stats");
+  if (!connection) {
+    toast(t("serverDashboard.noConnections"), 2500);
+    return;
+  }
+  queryStore.openPostgresDashboard(connection.id);
+}
+
+function openTopSqlFromMenu() {
+  openPgStatsToolFromMenu("topSql.noConnections", (options) => queryStore.openTopSqlPanel(options));
+}
+
+function openStorageBloatFromMenu() {
+  openPgStatsToolFromMenu("storageBloat.noConnections", (options) => queryStore.openStorageBloatPanel(options));
+}
+
+function openGucParametersFromMenu() {
+  openPgStatsToolFromMenu("gucParams.noConnections", (options) => queryStore.openGucParametersPanel(options));
 }
 
 function openCommandWindowFromMenu() {
@@ -2501,6 +2588,8 @@ onUnmounted(() => {
           @open-invalid-objects="openRoutineHealthFromMenu"
           @open-recycle-bin="openRecycleBinFromMenu"
           @open-top-sql="openTopSqlFromMenu"
+          @open-storage-bloat="openStorageBloatFromMenu"
+          @open-guc-parameters="openGucParametersFromMenu"
           @open-command-window="openCommandWindowFromMenu"
           @open-table-import="void openTableImportFromMenu()"
           @open-database-export="dialogs.showDatabaseExportDialog.value = true"
@@ -2511,6 +2600,7 @@ onUnmounted(() => {
           @open-shortcuts="openSettings('shortcuts')"
           @open-docs="openDocs"
           @export-debug-logs="downloadDebugLogs"
+          @check-updates="void appUpdater.checkUpdates()"
           @open-about="openAbout"
         />
 

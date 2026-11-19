@@ -904,6 +904,8 @@ async fn execute_explain_query(
         database_type: Some(*db_type),
         format: None,
         analyze: None,
+        performance: None,
+        sandbox: None,
         sql: sql.to_string(),
     });
 

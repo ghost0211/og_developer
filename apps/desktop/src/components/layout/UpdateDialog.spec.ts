@@ -274,4 +274,61 @@ describe("UpdateDialog close protection", () => {
     expect(installDownloaded).toHaveBeenCalledOnce();
     expect(downloadAndInstall).not.toHaveBeenCalled();
   });
+
+  it("renders bundled per-version release notes inside the dialog body when release_notes is empty", async () => {
+    await mountDialog(0);
+
+    const panel = document.body.querySelector("[data-release-notes-panel]");
+    expect(panel).not.toBeNull();
+    expect(panel?.textContent).toContain("0.3.3");
+  });
+
+  it("allows toggling full release history when incoming release_notes are shown", async () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const app = createApp(
+      defineComponent({
+        setup() {
+          return () =>
+            h(UpdateDialog, {
+              open: true,
+              "onUpdate:open": () => {},
+              updateInfo: {
+                current_version: "0.3.2",
+                latest_version: "0.3.3",
+                update_available: true,
+                portable_mode: false,
+                manual_update_only: false,
+                release_name: "OG Developer v0.3.3",
+                release_url: "https://github.com/ghost0211/og_developer/releases/tag/v0.3.3",
+                release_notes: "### Added\n- Selection stats popover",
+              },
+              updateCheckMessage: "",
+              isDownloadingUpdate: false,
+              downloadProgress: 0,
+              updateDownloaded: false,
+              isInstallingUpdate: false,
+              updateReady: false,
+              activeTaskCount: 0,
+            });
+        },
+      }),
+    );
+    mountedApps.push(app);
+    app.use(i18n);
+    app.mount(container);
+    await flushDialog();
+
+    await vi.waitFor(() => {
+      expect(document.body.textContent).toContain("Selection stats popover");
+    });
+    expect(document.body.querySelector("[data-release-notes-panel]")).toBeNull();
+
+    const toggleBtn = buttonWithText("View full release history") ?? buttonWithText("查看历史版本更新说明");
+    expect(toggleBtn).toBeDefined();
+    toggleBtn?.click();
+    await flushDialog();
+
+    expect(document.body.querySelector("[data-release-notes-panel]")).not.toBeNull();
+  });
 });

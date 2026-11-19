@@ -74,7 +74,7 @@ export function useSqlExecution(deps: {
   const pendingDangerSql = ref("");
   const showDangerDialog = ref(false);
   const suppressDangerConfirm = ref(false);
-  const explainMode = ref<"explain" | "autotrace" | "sandbox">("explain");
+  const explainMode = ref<"explain" | "autotrace" | "sandbox" | "performance">("explain");
   const showSqlParameterDialog = ref(false);
   const sqlParameterSourceSql = ref("");
   const sqlParameterNames = ref<SqlParameterDescriptor[]>([]);
@@ -239,9 +239,14 @@ export function useSqlExecution(deps: {
       effectiveMode = "sandbox";
       toast(t("explain.autoSandboxNotice"), 3500);
     }
+    let queryExplainMode: string = effectiveMode;
+    if (effectiveMode === "performance" && isWriteDml) {
+      queryExplainMode = "performance-sandbox";
+      toast(t("explain.autoSandboxPerfNotice"), 3500);
+    }
 
     deps.activeOutputView.value = "explain";
-    const result = await queryStore.explainTabSql(tab.id, sql, deps.activeConnection.value?.db_type, effectiveMode);
+    const result = await queryStore.explainTabSql(tab.id, sql, deps.activeConnection.value?.db_type, queryExplainMode);
     if (!result.ok) {
       toast(explainReasonMessage(result.reason), 5000);
       return;

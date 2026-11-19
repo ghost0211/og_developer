@@ -58,6 +58,26 @@ jobs:
             pnpm tauri build
           }
 
+      # 从 CHANGELOG.md 提取当前版本更新说明（写入 release-notes.md 与 latest.json），
+      # 确保 GitHub Release 与应用内更新弹窗都能展示各版本更新内容。
+      - name: Extract release notes from CHANGELOG.md
+        shell: pwsh
+        run: |
+          $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          $bundleDir = "target/release/bundle"
+          New-Item -ItemType Directory -Path $bundleDir -Force | Out-Null
+          $notesPath = Join-Path $bundleDir "release-notes.md"
+          $notes = ""
+          if (Test-Path "CHANGELOG.md") {
+            $changelog = Get-Content "CHANGELOG.md" -Raw
+            $pattern = "(?ms)^##\s+v" + [regex]::Escape($version) + "\b[^\r\n]*\r?\n(.*?)(?=^##\s+v|\z)"
+            $match = [regex]::Match($changelog, $pattern)
+            if ($match.Success) {
+              $notes = $match.Groups[1].Value.Trim()
+            }
+          }
+          Set-Content -Path $notesPath -Value $notes -Encoding utf8
+
       # tauri build 只生成 .sig 签名，不生成 latest.json 清单（该清单通常由 tauri-action 生成）。
       # 这里手动汇总 .sig 生成 latest.json，供应用内“检查更新/下载并安装”使用。
       - name: Generate updater manifest (latest.json)
@@ -69,9 +89,11 @@ jobs:
           $installer = "ogdeveloper_${version}_x64-setup.exe"
           $sigPath = "target/release/bundle/nsis/$installer.sig"
           if (!(Test-Path $sigPath)) { Write-Error "Missing updater signature: $sigPath"; exit 1 }
+          $notesPath = "target/release/bundle/release-notes.md"
+          $notes = if (Test-Path $notesPath) { (Get-Content $notesPath -Raw).Trim() } else { "" }
           $manifest = [ordered]@{
             version   = $version
-            notes     = ""
+            notes     = $notes
             pub_date  = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
             platforms = [ordered]@{
               "windows-x86_64" = [ordered]@{
@@ -85,6 +107,7 @@ jobs:
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          body_path: target/release/bundle/release-notes.md
           generate_release_notes: true
           fail_on_unmatched_files: true
           files: |

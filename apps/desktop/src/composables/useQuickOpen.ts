@@ -1,9 +1,12 @@
 import { computed, ref, watch } from "vue";
-import type { ConnectionConfig } from "@/types/database";
+import { getActivePinia } from "pinia";
+import type { ConnectionConfig, QueryTab } from "@/types/database";
 import type { SqlCompletionTable } from "@/lib/sql/sqlCompletion";
 import { resolveDefaultDatabase } from "@/lib/database/defaultDatabase";
 import { useConnectionStore } from "@/stores/connectionStore";
 import { useSavedSqlStore } from "@/stores/savedSqlStore";
+import { useQueryStore } from "@/stores/queryStore";
+import { tabDisplayTitle } from "@/lib/tabs/tabPresentation";
 import * as api from "@/lib/backend/api";
 import type { SqlFileEntry } from "@/lib/backend/api";
 import { getSqlFileFolderPaths, sqlFileFoldersVersion } from "@/lib/sqlFile/sqlFileFolders";
@@ -21,18 +24,39 @@ const INITIAL_SQL_FILE_LIMIT = 20;
 
 const REMOTE_SEARCH_UNSUPPORTED_TYPES = new Set<ConnectionConfig["db_type"]>();
 
+export type QuickOpenCommandId =
+  | "new-query"
+  | "new-command-window"
+  | "open-process-list"
+  | "open-server-dashboard"
+  | "open-top-sql"
+  | "open-storage-bloat"
+  | "open-guc-parameters"
+  | "open-recycle-bin"
+  | "open-invalid-objects"
+  | "open-schema-diff"
+  | "open-data-compare"
+  | "open-settings"
+  | "new-connection";
+
 export interface QuickOpenItem {
   id: string;
-  type: "connection" | "database" | "schema" | "table" | "view" | "materialized_view" | "procedure" | "function" | "sequence" | "package" | "package-body" | "sql_file" | "sql_library_file";
+  type: "connection" | "database" | "schema" | "table" | "view" | "materialized_view" | "procedure" | "function" | "sequence" | "package" | "package-body" | "synonym" | "trigger" | "job" | "scheduler" | "open_tab" | "command" | "sql_file" | "sql_library_file";
   label: string;
   description?: string;
   connectionId: string;
   database?: string;
   schema?: string;
-  objectName?: string; // For non-table objects (views, procedures, functions, sequences, packages)
+  objectName?: string; // For non-table objects (views, procedures, functions, sequences, packages, synonyms, triggers, jobs)
   tableName?: string; // Kept for backward compatibility
+  relationName?: string; // Owning table name for triggers
+  signature?: string; // Overload signature for PostgreSQL/openGauss routines
+  targetSchema?: string; // Resolved synonym target schema
+  targetName?: string; // Resolved synonym target name
+  tabId?: string;
+  commandId?: QuickOpenCommandId;
   connectionName?: string;
-  searchText: string; // Lowercase text for searching
+  searchText: string; // Searchable text
   filePath?: string; // For external SQL files
   sqlFileId?: string; // For saved SQL library files
 }
@@ -106,7 +130,15 @@ function collectSqlFileEntries(entries: SqlFileEntry[], results: SqlFileEntry[])
 export function useQuickOpen() {
   const connectionStore = useConnectionStore();
   const savedSqlStore = useSavedSqlStore();
+  const queryStore = (() => {
+    try {
+      return getActivePinia() ? useQueryStore() : null;
+    } catch {
+      return null;
+    }
+  })();
   const searchQuery = ref("");
+  const isCommandMode = computed(() => searchQuery.value.trim().startsWith(">"));
   const selectedIndex = ref(0);
   const remoteItems = ref<QuickOpenItem[]>([]);
   const sqlFileItems = ref<QuickOpenItem[]>([]);
@@ -285,132 +317,9 @@ export function useQuickOpen() {
         continue;
       }
 
-      // Table nodes
-      if (node.type === "table" && node.database && node.label) {
-        items.push({
-          id: `table-${conn.id}-${node.database}-${node.schema || ""}-${node.label}`,
-          type: "table",
-          label: node.label,
-          description: `${conn.name} / ${node.database}${node.schema ? " / " + node.schema : ""}`,
-          connectionId: conn.id,
-          database: node.database,
-          schema: node.schema,
-          tableName: node.label,
-          connectionName: conn.name,
-          searchText: `${conn.name} ${node.database} ${node.schema || ""} ${node.label}`,
-        });
-      }
-
-      // View nodes
-      if (node.type === "view" && node.database && node.label) {
-        items.push({
-          id: `view-${conn.id}-${node.database}-${node.schema || ""}-${node.label}`,
-          type: "view",
-          label: node.label,
-          description: `${conn.name} / ${node.database}${node.schema ? " / " + node.schema : ""}`,
-          connectionId: conn.id,
-          database: node.database,
-          schema: node.schema,
-          objectName: node.label,
-          connectionName: conn.name,
-          searchText: `${conn.name} ${node.database} ${node.schema || ""} ${node.label}`,
-        });
-      }
-
-      // Materialized view nodes
-      if (node.type === "materialized_view" && node.database && node.label) {
-        items.push({
-          id: `mview-${conn.id}-${node.database}-${node.schema || ""}-${node.label}`,
-          type: "materialized_view",
-          label: node.label,
-          description: `${conn.name} / ${node.database}${node.schema ? " / " + node.schema : ""}`,
-          connectionId: conn.id,
-          database: node.database,
-          schema: node.schema,
-          objectName: node.label,
-          connectionName: conn.name,
-          searchText: `${conn.name} ${node.database} ${node.schema || ""} ${node.label}`,
-        });
-      }
-
-      // Procedure nodes
-      if (node.type === "procedure" && node.database && node.label) {
-        items.push({
-          id: `proc-${conn.id}-${node.database}-${node.schema || ""}-${node.label}`,
-          type: "procedure",
-          label: node.label,
-          description: `${conn.name} / ${node.database}${node.schema ? " / " + node.schema : ""}`,
-          connectionId: conn.id,
-          database: node.database,
-          schema: node.schema,
-          objectName: node.label,
-          connectionName: conn.name,
-          searchText: `${conn.name} ${node.database} ${node.schema || ""} ${node.label}`,
-        });
-      }
-
-      // Function nodes
-      if (node.type === "function" && node.database && node.label) {
-        items.push({
-          id: `func-${conn.id}-${node.database}-${node.schema || ""}-${node.label}`,
-          type: "function",
-          label: node.label,
-          description: `${conn.name} / ${node.database}${node.schema ? " / " + node.schema : ""}`,
-          connectionId: conn.id,
-          database: node.database,
-          schema: node.schema,
-          objectName: node.label,
-          connectionName: conn.name,
-          searchText: `${conn.name} ${node.database} ${node.schema || ""} ${node.label}`,
-        });
-      }
-
-      // Sequence nodes
-      if (node.type === "sequence" && node.database && node.label) {
-        items.push({
-          id: `seq-${conn.id}-${node.database}-${node.schema || ""}-${node.label}`,
-          type: "sequence",
-          label: node.label,
-          description: `${conn.name} / ${node.database}${node.schema ? " / " + node.schema : ""}`,
-          connectionId: conn.id,
-          database: node.database,
-          schema: node.schema,
-          objectName: node.label,
-          connectionName: conn.name,
-          searchText: `${conn.name} ${node.database} ${node.schema || ""} ${node.label}`,
-        });
-      }
-
-      // Package nodes
-      if (node.type === "package" && node.database && node.label) {
-        items.push({
-          id: `pkg-${conn.id}-${node.database}-${node.schema || ""}-${node.label}`,
-          type: "package",
-          label: node.label,
-          description: `${conn.name} / ${node.database}${node.schema ? " / " + node.schema : ""}`,
-          connectionId: conn.id,
-          database: node.database,
-          schema: node.schema,
-          objectName: node.label,
-          connectionName: conn.name,
-          searchText: `${conn.name} ${node.database} ${node.schema || ""} ${node.label}`,
-        });
-      }
-
-      // Package-body nodes
-      if (node.type === "package-body" && node.database && node.label) {
-        items.push({
-          id: `pkgbody-${conn.id}-${node.database}-${node.schema || ""}-${node.label}`,
-          type: "package-body",
-          label: node.label,
-          description: `${conn.name} / ${node.database}${node.schema ? " / " + node.schema : ""}`,
-          connectionId: conn.id,
-          database: node.database,
-          schema: node.schema,
-          objectName: node.label,
-          connectionName: conn.name,
-          searchText: `${conn.name} ${node.database} ${node.schema || ""} ${node.label}`,
-        });
+      const treeObjectEntry = treeObjectQuickOpenItem(node, conn);
+      if (treeObjectEntry) {
+        items.push(treeObjectEntry);
       }
 
       // Process children recursively
@@ -418,6 +327,55 @@ export function useQuickOpen() {
         processDatabaseTreeNodes(node.children, conn, items);
       }
     }
+  }
+
+  const TREE_OBJECT_ID_PREFIX: Partial<Record<QuickOpenItem["type"], string>> = {
+    table: "table",
+    view: "view",
+    materialized_view: "mview",
+    procedure: "proc",
+    function: "func",
+    sequence: "seq",
+    package: "pkg",
+    "package-body": "pkgbody",
+    synonym: "syn",
+    trigger: "trg",
+    job: "job",
+    scheduler: "sched",
+  };
+
+  function treeObjectQuickOpenItem(node: any, conn: ConnectionConfig): QuickOpenItem | null {
+    const objectType = node?.type as QuickOpenItem["type"] | undefined;
+    const prefix = objectType ? TREE_OBJECT_ID_PREFIX[objectType] : undefined;
+    if (!prefix || !objectType || !node.database || !node.label) return null;
+
+    const objectName = node.objectName || node.label;
+    const baseLocation = `${conn.name} / ${node.database}${node.schema ? ` / ${node.schema}` : ""}`;
+    let description = baseLocation;
+    if (objectType === "synonym" && node.targetName) {
+      const target = node.targetSchema ? `${node.targetSchema}.${node.targetName}` : node.targetName;
+      description = `${baseLocation} \u2192 ${target}`;
+    } else if (objectType === "trigger" && node.tableName) {
+      description = `${baseLocation} / ${node.tableName}`;
+    }
+
+    const extraSearchTerms = [objectType === "synonym" ? `${node.targetSchema || ""} ${node.targetName || ""}` : "", objectType === "trigger" ? node.tableName || "" : ""].filter(Boolean).join(" ");
+
+    return {
+      id: `${prefix}-${conn.id}-${node.database}-${node.schema || ""}-${node.tableName || ""}-${objectName}-${node.signature || ""}`,
+      type: objectType,
+      label: node.label,
+      description,
+      connectionId: conn.id,
+      database: node.database,
+      schema: node.schema,
+      ...(objectType === "table" ? { tableName: node.label } : { objectName }),
+      ...(objectType === "trigger" && node.tableName ? { relationName: node.tableName } : {}),
+      ...(node.signature ? { signature: node.signature } : {}),
+      ...(objectType === "synonym" && (node.targetSchema || node.targetName) ? { targetSchema: node.targetSchema, targetName: node.targetName } : {}),
+      connectionName: conn.name,
+      searchText: `${conn.name} ${node.database} ${node.schema || ""} ${objectName} ${extraSearchTerms}`.trim(),
+    };
   }
 
   function findConnectionTreeNode(nodes: any[], connectionId: string): any | undefined {
@@ -432,13 +390,31 @@ export function useQuickOpen() {
   }
 
   function quickOpenItemKey(item: QuickOpenItem): string {
-    if (item.type === "table" || item.type === "view" || item.type === "materialized_view") {
-      return `${item.connectionId}:${item.database ?? ""}:${item.schema ?? ""}:${item.tableName ?? item.objectName ?? item.label}`.toLowerCase();
+    if (item.type === "table" || item.type === "view" || item.type === "materialized_view" || item.type === "synonym") {
+      return `${item.type}:${item.connectionId}:${item.database ?? ""}:${item.schema ?? ""}:${item.tableName ?? item.objectName ?? item.label}`.toLowerCase();
     }
     return item.id.toLowerCase();
   }
 
   function remoteTableItem(table: SqlCompletionTable, conn: ConnectionConfig, database: string): QuickOpenItem {
+    if (table.synonymTarget) {
+      const target = table.synonymTarget.name ? (table.synonymTarget.schema ? `${table.synonymTarget.schema}.${table.synonymTarget.name}` : table.synonymTarget.name) : "";
+      const baseDesc = `${conn.name} / ${database}${table.schema ? ` / ${table.schema}` : ""}`;
+      return {
+        id: `syn-${conn.id}-${database}-${table.schema || ""}-${table.name}`,
+        type: "synonym",
+        label: table.name,
+        description: target ? `${baseDesc} \u2192 ${target}` : baseDesc,
+        connectionId: conn.id,
+        database,
+        schema: table.schema,
+        objectName: table.name,
+        targetSchema: table.synonymTarget.schema,
+        targetName: table.synonymTarget.name,
+        connectionName: conn.name,
+        searchText: `${conn.name} ${database} ${table.schema || ""} ${table.name} ${target}`.trim(),
+      };
+    }
     // Completion "tables" may carry routine navigation types; quick-open relation entries only accept relation kinds.
     const type = table.type === "view" || table.type === "materialized_view" ? table.type : "table";
     const prefix = type === "materialized_view" ? "mview" : type;
@@ -455,6 +431,67 @@ export function useQuickOpen() {
       searchText: `${conn.name} ${database} ${table.schema || ""} ${table.name}`,
     };
   }
+
+  const openTabItems = computed<QuickOpenItem[]>(() => {
+    const tabs: QueryTab[] = Array.isArray(queryStore?.tabs) ? queryStore.tabs : [];
+    const translator = (key: string, params?: Record<string, unknown>) => i18n.global.t(key, params ?? {});
+    return tabs.map((tab) => {
+      const label = tabDisplayTitle(tab, translator);
+      const connName = getConnectionLabel(tab.connectionId);
+      const description = [connName, tab.database, tab.schema].filter(Boolean).join(" / ");
+      return {
+        id: `open-tab-${tab.id}`,
+        type: "open_tab" as const,
+        label,
+        description: description || undefined,
+        connectionId: tab.connectionId,
+        database: tab.database,
+        schema: tab.schema,
+        tabId: tab.id,
+        connectionName: connName,
+        searchText: `${label} ${description}`.trim(),
+      };
+    });
+  });
+
+  interface QuickOpenCommandSpec {
+    commandId: QuickOpenCommandId;
+    labelKey: string;
+    descKey: string;
+    keywords: string;
+  }
+
+  const QUICK_OPEN_COMMANDS: QuickOpenCommandSpec[] = [
+    { commandId: "new-query", labelKey: "quickOpen.commands.newQuery", descKey: "quickOpen.commands.newQueryDesc", keywords: "new query sql editor 新建查询" },
+    { commandId: "new-command-window", labelKey: "quickOpen.commands.commandWindow", descKey: "quickOpen.commands.commandWindowDesc", keywords: "command window console shell gsql 命令行窗口" },
+    { commandId: "open-process-list", labelKey: "quickOpen.commands.processList", descKey: "quickOpen.commands.processListDesc", keywords: "process list sessions locks blocking 进程 锁 等待" },
+    { commandId: "open-server-dashboard", labelKey: "quickOpen.commands.serverDashboard", descKey: "quickOpen.commands.serverDashboardDesc", keywords: "server dashboard monitor tps qps 服务器 仪表盘 监控" },
+    { commandId: "open-top-sql", labelKey: "quickOpen.commands.topSql", descKey: "quickOpen.commands.topSqlDesc", keywords: "top sql dbe_perf pg_stat_statements 慢sql 性能" },
+    { commandId: "open-storage-bloat", labelKey: "quickOpen.commands.storageBloat", descKey: "quickOpen.commands.storageBloatDesc", keywords: "storage bloat vacuum dead tuples unused index tablespace 空间 膨胀 死元组 索引" },
+    { commandId: "open-guc-parameters", labelKey: "quickOpen.commands.gucParameters", descKey: "quickOpen.commands.gucParametersDesc", keywords: "guc pg_settings config parameters runtime 运行参数 配置" },
+    { commandId: "open-recycle-bin", labelKey: "quickOpen.commands.recycleBin", descKey: "quickOpen.commands.recycleBinDesc", keywords: "recyclebin flashback timecapsule 回收站 闪回" },
+    { commandId: "open-invalid-objects", labelKey: "quickOpen.commands.invalidObjects", descKey: "quickOpen.commands.invalidObjectsDesc", keywords: "invalid objects routine health 失效对象 健康检查" },
+    { commandId: "open-schema-diff", labelKey: "quickOpen.commands.schemaDiff", descKey: "quickOpen.commands.schemaDiffDesc", keywords: "schema diff compare 结构对比 同步" },
+    { commandId: "open-data-compare", labelKey: "quickOpen.commands.dataCompare", descKey: "quickOpen.commands.dataCompareDesc", keywords: "data compare diff 数据对比" },
+    { commandId: "open-settings", labelKey: "quickOpen.commands.settings", descKey: "quickOpen.commands.settingsDesc", keywords: "settings preferences 偏好 设置" },
+    { commandId: "new-connection", labelKey: "quickOpen.commands.newConnection", descKey: "quickOpen.commands.newConnectionDesc", keywords: "new connection 新建连接" },
+  ];
+
+  const commandItems = computed<QuickOpenItem[]>(() =>
+    QUICK_OPEN_COMMANDS.map((cmd) => {
+      const label = String(i18n.global.t(cmd.labelKey));
+      const description = String(i18n.global.t(cmd.descKey));
+      return {
+        id: `cmd-${cmd.commandId}`,
+        type: "command" as const,
+        label,
+        description,
+        connectionId: "",
+        commandId: cmd.commandId,
+        searchText: `${label} ${cmd.keywords}`,
+      };
+    }),
+  );
 
   function collectConnectionDatabases(nodes: any[], connectionId: string, databases: Set<string>): void {
     for (const node of nodes) {
@@ -577,6 +614,7 @@ export function useQuickOpen() {
       remoteItems.value = [];
 
       const normalizedQuery = query.trim();
+      if (normalizedQuery.startsWith(">")) return;
 
       // Ensure external SQL files are loaded when the user starts searching
       if (normalizedQuery.length > 0 && !sqlFilesLoaded && !sqlFilesLoadingPromise) {
@@ -596,54 +634,86 @@ export function useQuickOpen() {
   );
 
   const filteredItems = computed((): MatchedItem[] => {
-    if (!searchQuery.value.trim()) {
-      // Show all tree items plus a limited set of recent SQL library files and external SQL files
-      return [...allItems.value, ...sqlLibraryRecentItems.value, ...sqlFileRecentItems.value].map((item) => ({
+    const trimmed = searchQuery.value.trim();
+    if (!trimmed) {
+      // Show all tree items plus open tabs and a limited set of recent SQL library/external files
+      return [...openTabItems.value, ...allItems.value, ...sqlLibraryRecentItems.value, ...sqlFileRecentItems.value].map((item) => ({
         ...item,
         matchScore: Infinity,
         matchIndices: [],
       }));
     }
 
+    if (trimmed.startsWith(">")) {
+      const commandQuery = trimmed.slice(1).trim();
+      if (!commandQuery) {
+        return commandItems.value.map((item) => ({
+          ...item,
+          matchScore: Infinity,
+          matchIndices: [],
+        }));
+      }
+      const matchedCommands: MatchedItem[] = [];
+      for (const item of commandItems.value) {
+        const result = fuzzyMatch(commandQuery, item.searchText);
+        if (result) {
+          const labelMatch = fuzzyMatch(commandQuery, item.label);
+          matchedCommands.push({
+            ...item,
+            matchScore: labelMatch ? Math.min(result.score, labelMatch.score) : result.score,
+            matchIndices: labelMatch?.indices ?? [],
+          });
+        }
+      }
+      matchedCommands.sort((a, b) => a.matchScore - b.matchScore || a.label.localeCompare(b.label));
+      return matchedCommands.slice(0, QUICK_OPEN_MAX_RESULTS);
+    }
+
     const matched: MatchedItem[] = [];
 
     const seen = new Set<string>();
-    // When searching, include ALL SQL library files and external SQL files
-    for (const item of [...allItems.value, ...sqlLibraryAllItems.value, ...sqlFileItems.value, ...remoteItems.value]) {
+    // When searching without the `>` command prefix, include open tabs, database objects, SQL library files, and external SQL files
+    for (const item of [...openTabItems.value, ...allItems.value, ...sqlLibraryAllItems.value, ...sqlFileItems.value, ...remoteItems.value]) {
       const key = quickOpenItemKey(item);
       if (seen.has(key)) continue;
       seen.add(key);
       const result = fuzzyMatch(searchQuery.value, item.searchText);
       if (result) {
+        const labelMatch = fuzzyMatch(searchQuery.value, item.label);
         matched.push({
           ...item,
           matchScore: result.score,
-          matchIndices: result.indices,
+          matchIndices: labelMatch?.indices ?? [],
         });
       }
     }
 
-    // Sort by score and type (connections > databases > tables > other objects for equal scores)
+    // Sort by score and type
+    const typeOrder: Record<QuickOpenItem["type"], number> = {
+      open_tab: 0,
+      command: 1,
+      connection: 2,
+      database: 3,
+      schema: 4,
+      table: 5,
+      view: 6,
+      materialized_view: 7,
+      synonym: 8,
+      procedure: 9,
+      function: 10,
+      trigger: 11,
+      sequence: 12,
+      package: 13,
+      "package-body": 14,
+      job: 15,
+      scheduler: 16,
+      sql_library_file: 17,
+      sql_file: 18,
+    };
     matched.sort((a, b) => {
       if (a.matchScore !== b.matchScore) {
         return a.matchScore - b.matchScore; // Lower scores (better matches) come first
       }
-
-      const typeOrder = {
-        connection: 0,
-        database: 1,
-        schema: 2,
-        table: 3,
-        view: 4,
-        materialized_view: 5,
-        procedure: 6,
-        function: 7,
-        sequence: 8,
-        package: 9,
-        "package-body": 10,
-        sql_library_file: 11,
-        sql_file: 12,
-      };
       return typeOrder[a.type] - typeOrder[b.type];
     });
 
@@ -680,6 +750,7 @@ export function useQuickOpen() {
 
   return {
     searchQuery,
+    isCommandMode,
     filteredItems,
     selectedIndex,
     selectedItem,

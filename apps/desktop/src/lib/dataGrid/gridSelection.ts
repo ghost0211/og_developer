@@ -27,6 +27,59 @@ export interface SelectionSummary {
   rowCount: number;
   numericCount: number;
   sum: number;
+  nonNullCount: number;
+  nullCount: number;
+  distinctCount: number;
+  avg: number | null;
+  min: number | null;
+  max: number | null;
+}
+
+function normalizeZero(value: number): number {
+  return Object.is(value, -0) ? 0 : value;
+}
+
+/** Formats selection summary numbers, normalizing `-0` and capping decimals at 6 digits. */
+export function formatSelectionNumber(value: number): string {
+  const normalized = normalizeZero(value);
+  return Number.isInteger(normalized) ? String(normalized) : normalized.toLocaleString(undefined, { maximumFractionDigits: 6 });
+}
+
+/** Builds a multi-line `key: value` text summary suitable for copying to the clipboard. */
+export function formatSelectionSummaryText(
+  summary: Partial<SelectionSummary> & { cellCount: number; rowCount: number },
+  labels: {
+    cells: string;
+    rows: string;
+    nonNull: string;
+    nulls: string;
+    distinct: string;
+    numeric: string;
+    sum: string;
+    avg: string;
+    min: string;
+    max: string;
+  },
+): string {
+  const lines = [
+    `${labels.cells}: ${formatSelectionNumber(summary.cellCount)}`,
+    `${labels.rows}: ${formatSelectionNumber(summary.rowCount)}`,
+    `${labels.nonNull}: ${summary.nonNullCount != null ? formatSelectionNumber(summary.nonNullCount) : "-"}`,
+    `${labels.nulls}: ${formatSelectionNumber(summary.nullCount ?? 0)}`,
+    `${labels.distinct}: ${summary.distinctCount != null ? formatSelectionNumber(summary.distinctCount) : "-"}`,
+  ];
+
+  if ((summary.numericCount ?? 0) > 0) {
+    lines.push(
+      `${labels.numeric}: ${formatSelectionNumber(summary.numericCount!)}`,
+      `${labels.sum}: ${summary.sum != null ? formatSelectionNumber(summary.sum) : "-"}`,
+      `${labels.avg}: ${summary.avg != null ? formatSelectionNumber(summary.avg) : "-"}`,
+      `${labels.min}: ${summary.min != null ? formatSelectionNumber(summary.min) : "-"}`,
+      `${labels.max}: ${summary.max != null ? formatSelectionNumber(summary.max) : "-"}`,
+    );
+  }
+
+  return lines.join("\n");
 }
 
 export function parseClipboardTable(text: string): string[][] {
@@ -105,23 +158,48 @@ export function extractColumnsSelection(columns: readonly string[], rows: readon
 }
 
 export function summarizeSelection(selection: SelectionData): SelectionSummary {
+  let cellCount = 0;
+  let nullCount = 0;
   let numericCount = 0;
   let sum = 0;
+  let min: number | null = null;
+  let max: number | null = null;
+  // Track distinct non-null values by String(value), excluding null and undefined.
+  const distinctValues = new Set<string>();
 
   for (const row of selection.rows) {
     for (const value of row) {
+      cellCount += 1;
+      if (value === null || value === undefined) {
+        nullCount += 1;
+        continue;
+      }
+
+      distinctValues.add(String(value));
+
       const numericValue = typeof value === "number" ? value : typeof value === "string" && value.trim() !== "" ? Number(value) : Number.NaN;
       if (Number.isFinite(numericValue)) {
+        const normalized = normalizeZero(numericValue);
         numericCount += 1;
-        sum += numericValue;
+        sum += normalized;
+        min = min === null ? normalized : Math.min(min, normalized);
+        max = max === null ? normalized : Math.max(max, normalized);
       }
     }
   }
 
+  const normalizedSum = normalizeZero(sum);
+
   return {
-    cellCount: selection.rows.reduce((count, row) => count + row.length, 0),
+    cellCount,
     rowCount: selection.rows.length,
     numericCount,
-    sum,
+    sum: normalizedSum,
+    nonNullCount: cellCount - nullCount,
+    nullCount,
+    distinctCount: distinctValues.size,
+    avg: numericCount > 0 ? normalizeZero(normalizedSum / numericCount) : null,
+    min,
+    max,
   };
 }

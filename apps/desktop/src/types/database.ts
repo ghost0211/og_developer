@@ -1067,6 +1067,8 @@ export interface QueryTab {
     | "dameng-jobs"
     | "processlist"
     | "top-sql"
+    | "storage-bloat"
+    | "guc-parameters"
     | "mysql-dashboard"
     | "postgres-dashboard"
     | "routine-test"

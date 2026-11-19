@@ -47,6 +47,7 @@ import { orderAiConfigsForDisplay } from "@/lib/ai/aiConfigOrdering";
 import { MAX_AGENT_TURNS_DEFAULT, MAX_AGENT_TURNS_MAX, MAX_AGENT_TURNS_MIN, maxAgentTurnsOutOfRange, normalizeMaxAgentTurns } from "@/lib/ai/maxAgentTurns";
 import ThemeCustomizerDialog from "./ThemeCustomizerDialog.vue";
 import DangerConfirmDialog from "./DangerConfirmDialog.vue";
+import ReleaseNotesPanel from "@/components/common/ReleaseNotesPanel.vue";
 import { isTauriRuntime } from "@/lib/backend/tauriRuntime";
 import { useTheme } from "@/composables/useTheme";
 import { copyToClipboard } from "@/lib/common/clipboard";
@@ -4733,6 +4734,9 @@ onUnmounted(() => {
                 <Button variant="outline" size="sm" @click="emit('check-updates')">
                   {{ t("updates.check") }}
                 </Button>
+              </div>
+              <div class="mx-auto mt-2 max-w-2xl text-left">
+                <ReleaseNotesPanel :current-version="appVersion" />
               </div>
             </section>
           </div>

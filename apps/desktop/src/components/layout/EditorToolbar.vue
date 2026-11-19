@@ -12,7 +12,7 @@ import { hexToRgba } from "@/lib/common/color";
 import { productionContextForDatabase } from "@/lib/database/productionSafety";
 import type { QueryTab, ConnectionConfig } from "@/types/database";
 
-export type ToolbarExplainMode = "explain" | "autotrace" | "sandbox";
+export type ToolbarExplainMode = "explain" | "autotrace" | "sandbox" | "performance";
 
 const props = defineProps<{
   activeTab: QueryTab;
@@ -62,14 +62,17 @@ const supportsExplainAnalyze = computed(() => {
   const dbType = effectiveDatabaseTypeForConnection(props.activeConnection);
   return dbType === "postgres" || dbType === "opengauss";
 });
+const isOpenGaussExplain = computed(() => effectiveDatabaseTypeForConnection(props.activeConnection) === "opengauss");
 const explainModeBadge = computed(() => {
   if (!supportsExplainAnalyze.value) return "";
+  if (props.explainMode === "performance") return t("toolbar.explainModePerfShort");
   if (props.explainMode === "sandbox") return t("toolbar.explainModeSandboxShort");
   if (props.explainMode === "autotrace") return t("toolbar.explainModeAnalyzeShort");
   return "";
 });
 const explainPrimaryTooltip = computed(() => {
   if (props.activeTab.isExplaining) return t("toolbar.stopExplain");
+  if (props.explainMode === "performance") return t("toolbar.explainPerformance");
   if (props.explainMode === "sandbox") return t("toolbar.explainPlanSandbox");
   if (props.explainMode === "autotrace") return t("toolbar.explainAnalyze");
   return t("toolbar.explainPlan");
@@ -99,11 +102,11 @@ const executeButtonClass = computed(() => {
 const isTransactionActive = computed(() => !!props.txnSessionId);
 
 const toolbarStyle = computed(() => {
-  const color = props.activeConnection?.color;
-  if (!color) return undefined;
+  const accentColor = props.activeConnection?.color || (activeProductionContext.value.active ? "#ef4444" : "");
+  if (!accentColor) return undefined;
   return {
-    backgroundColor: hexToRgba(color, 0.1),
-    boxShadow: `inset 0 1px 0 ${hexToRgba(color, 0.18)}`,
+    backgroundColor: hexToRgba(accentColor, activeProductionContext.value.active ? 0.14 : 0.1),
+    boxShadow: `inset 0 2px 0 ${hexToRgba(accentColor, 0.85)}`,
   };
 });
 </script>
@@ -140,11 +143,13 @@ const toolbarStyle = computed(() => {
                 supportsExplainAnalyze ? 'rounded-r-none' : '',
                 activeTab.isExplaining
                   ? ''
-                  : props.explainMode === 'sandbox'
-                    ? 'text-emerald-700 hover:bg-emerald-500/15 dark:text-emerald-300'
-                    : props.explainMode === 'autotrace'
-                      ? 'text-amber-700 hover:bg-amber-500/15 dark:text-amber-300'
-                      : 'text-violet-600 hover:bg-violet-500/10 hover:text-violet-700 dark:text-violet-300 dark:hover:text-violet-200',
+                  : props.explainMode === 'performance'
+                    ? 'text-sky-700 hover:bg-sky-500/15 dark:text-sky-300'
+                    : props.explainMode === 'sandbox'
+                      ? 'text-emerald-700 hover:bg-emerald-500/15 dark:text-emerald-300'
+                      : props.explainMode === 'autotrace'
+                        ? 'text-amber-700 hover:bg-amber-500/15 dark:text-amber-300'
+                        : 'text-violet-600 hover:bg-violet-500/10 hover:text-violet-700 dark:text-violet-300 dark:hover:text-violet-200',
               ]"
               :disabled="activeTab.isExecuting || (!activeTab.isExplaining && !executableSql.trim())"
               @click="activeTab.isExplaining ? emit('cancel') : emit('explain')"
@@ -183,6 +188,13 @@ const toolbarStyle = computed(() => {
                 <span v-if="props.explainMode === 'sandbox'" class="text-primary">✓</span>
               </div>
               <span class="text-[11px] text-muted-foreground">{{ t("toolbar.explainModeSandboxDesc") }}</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem v-if="isOpenGaussExplain" class="flex flex-col items-start gap-0.5 py-1.5 text-xs cursor-pointer" @select="selectAndRunExplainMode('performance')">
+              <div class="flex w-full items-center justify-between font-medium text-sky-700 dark:text-sky-300">
+                <span>{{ t("toolbar.explainModePerf") }}</span>
+                <span v-if="props.explainMode === 'performance'" class="text-primary">✓</span>
+              </div>
+              <span class="text-[11px] text-muted-foreground">{{ t("toolbar.explainModePerfDesc") }}</span>
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { AlertTriangle, Loader2 } from "@lucide/vue";
+import { AlertTriangle, ChevronDown, Loader2 } from "@lucide/vue";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import ReleaseNotesPanel from "@/components/common/ReleaseNotesPanel.vue";
 import type { UpdateInfo } from "@/lib/backend/api";
 import { isTauriRuntime } from "@/lib/backend/tauriRuntime";
 import { canDownloadAndInstallUpdate } from "@/composables/useAppUpdater";
@@ -33,6 +34,7 @@ const { t } = useI18n();
 const isDesktop = isTauriRuntime();
 
 const renderedNotes = ref("");
+const showHistoryNotes = ref(false);
 // Only active file replacement (installation) must trap the dialog.
 const isCloseBlocked = computed(() => props.isInstallingUpdate);
 
@@ -66,6 +68,10 @@ function handleReleaseNotesClick(event: MouseEvent) {
   }
 }
 
+watch(open, (next) => {
+  if (!next) showHistoryNotes.value = false;
+});
+
 watch(
   () => props.updateInfo?.release_notes,
   async (notes) => {
@@ -84,7 +90,7 @@ watch(
 <template>
   <Dialog :open="open" @update:open="handleOpenChange">
     <DialogContent
-      class="sm:max-w-[520px]"
+      class="sm:max-w-[560px]"
       :show-close-button="!isCloseBlocked"
       @interact-outside="
         (e: Event) => {
@@ -112,12 +118,26 @@ watch(
         <p v-else class="text-muted-foreground">
           {{ updateCheckMessage || t("updates.upToDate", { version: updateInfo?.current_version || "" }) }}
         </p>
-        <div
-          v-if="updateInfo?.update_available && updateInfo.release_notes"
-          class="max-h-48 overflow-auto rounded-md border bg-muted/30 p-3 text-xs [&_h1]:text-sm [&_h1]:font-semibold [&_h1]:mb-1 [&_h2]:text-sm [&_h2]:font-semibold [&_h2]:mb-1 [&_h3]:text-xs [&_h3]:font-semibold [&_h3]:mb-1 [&_ul]:list-disc [&_ul]:pl-4 [&_ul]:my-1 [&_ol]:list-decimal [&_ol]:pl-4 [&_ol]:my-1 [&_li]:my-0.5 [&_p]:my-1 [&_code]:bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-[11px] [&_a]:text-primary [&_a]:underline"
-          v-html="renderedNotes"
-          @click="handleReleaseNotesClick"
-        />
+        <template v-if="updateInfo?.update_available && updateInfo.release_notes">
+          <div class="space-y-1.5">
+            <div class="text-xs font-semibold text-foreground">
+              {{ t("updates.whatsNewInVersion", { version: updateInfo.latest_version.replace(/^v/, "") }) }}
+            </div>
+            <div
+              class="max-h-48 overflow-auto rounded-md border bg-muted/30 p-3 text-xs [&_h1]:text-sm [&_h1]:font-semibold [&_h1]:mb-1 [&_h2]:text-sm [&_h2]:font-semibold [&_h2]:mb-1 [&_h3]:text-xs [&_h3]:font-semibold [&_h3]:mb-1 [&_ul]:list-disc [&_ul]:pl-4 [&_ul]:my-1 [&_ol]:list-decimal [&_ol]:pl-4 [&_ol]:my-1 [&_li]:my-0.5 [&_p]:my-1 [&_code]:bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-[11px] [&_a]:text-primary [&_a]:underline"
+              v-html="renderedNotes"
+              @click="handleReleaseNotesClick"
+            />
+          </div>
+          <div>
+            <button type="button" class="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline" @click="showHistoryNotes = !showHistoryNotes">
+              <ChevronDown class="h-3.5 w-3.5 transition-transform" :class="showHistoryNotes ? 'rotate-180' : ''" />
+              <span>{{ showHistoryNotes ? t("updates.hideAllReleaseNotes") : t("updates.viewAllReleaseNotes") }}</span>
+            </button>
+            <ReleaseNotesPanel v-if="showHistoryNotes" class="mt-2" compact :show-header="false" :current-version="updateInfo?.current_version" :default-expand-count="1" />
+          </div>
+        </template>
+        <ReleaseNotesPanel v-else compact :current-version="updateInfo?.current_version" :default-expand-count="1" />
         <p v-if="!isDesktop && updateInfo?.update_available" class="text-xs text-muted-foreground">
           {{ t("updates.dockerUsersRun") }}
           <code class="bg-muted px-1 py-0.5 rounded text-[11px]">docker compose pull && docker compose up -d</code>

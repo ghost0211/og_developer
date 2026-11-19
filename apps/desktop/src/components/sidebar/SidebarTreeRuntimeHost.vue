@@ -44,6 +44,8 @@ import {
   UsersRound,
   Activity,
   Gauge,
+  HardDrive,
+  SlidersHorizontal,
   FilePlus,
   SquarePen,
   ListX,
@@ -975,6 +977,31 @@ async function openServerDashboard() {
   } catch (e: any) {
     toast(t("connection.connectFailed", { message: translateBackendError(t, e) }), 5000);
   }
+}
+
+async function openNodePgStatsPanel(opener: (options: { connectionId: string; database?: string; schema?: string }) => void) {
+  const node = activeNode.value;
+  if (!node.connectionId) return;
+  try {
+    await connectionStore.ensureConnected(node.connectionId);
+    connectionStore.activeConnectionId = node.connectionId;
+    const config = connectionStore.getConfig(node.connectionId);
+    opener({
+      connectionId: node.connectionId,
+      database: node.database || (config ? resolveDefaultDatabase(config, []) : ""),
+      schema: node.schema,
+    });
+  } catch (e: any) {
+    toast(t("connection.connectFailed", { message: translateBackendError(t, e) }), 5000);
+  }
+}
+
+function openStorageBloat() {
+  return openNodePgStatsPanel((options) => queryStore.openStorageBloatPanel(options));
+}
+
+function openGucParameters() {
+  return openNodePgStatsPanel((options) => queryStore.openGucParametersPanel(options));
 }
 
 function scheduleOpenData(node: TreeNode) {
@@ -3548,6 +3575,8 @@ function buildConnectionSidebarMenu(context: SidebarMenuFactoryContext): boolean
     }
     if (node.connectionId && connectionSupportsPgServerDashboard(connectionStore.getConfig(node.connectionId))) {
       items.push({ label: t("contextMenu.serverDashboard"), action: openServerDashboard, icon: Gauge });
+      items.push({ label: t("contextMenu.storageBloat"), action: openStorageBloat, icon: HardDrive });
+      items.push({ label: t("contextMenu.gucParameters"), action: openGucParameters, icon: SlidersHorizontal });
     }
     if (canCopyFinalProxyPort.value) {
       items.push({ label: t("contextMenu.copyFinalProxyPort"), action: copyFinalProxyPort, icon: Network });

@@ -24,6 +24,10 @@ pub struct ExplainSqlOptions {
     /// rows/timings. Every other engine ignores the flag.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub analyze: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub performance: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sandbox: Option<bool>,
     pub sql: String,
 }
 
@@ -54,10 +58,13 @@ pub fn build_explain_sql(options: ExplainSqlOptions) -> ExplainSqlBuildResult {
     if source.is_empty() {
         return explain_err("empty");
     }
-    if !is_safe_explain_sql(&source) {
+    let safe_source =
+        if options.sandbox == Some(true) { is_safe_sandbox_explain_sql(&source) } else { is_safe_explain_sql(&source) };
+    if !safe_source {
         return explain_err("unsafe");
     }
-    if options.analyze == Some(true)
+    if (options.analyze == Some(true) || options.performance == Some(true))
+        && options.sandbox != Some(true)
         && options.database_type.is_some_and(|database_type| {
             matches!(database_type, DatabaseType::Postgres | DatabaseType::OpenGauss)
                 && is_write_sql_for_database(&source, database_type)
@@ -66,11 +73,21 @@ pub fn build_explain_sql(options: ExplainSqlOptions) -> ExplainSqlBuildResult {
         return explain_err("unsafe");
     }
 
-    let sql = match options.database_type {
-        Some(DatabaseType::Postgres | DatabaseType::OpenGauss) if options.analyze == Some(true) => {
-            format!("EXPLAIN (ANALYZE, FORMAT JSON) {source}")
+    let sql = if options.performance == Some(true) {
+        match options.database_type {
+            Some(DatabaseType::OpenGauss) => format!("EXPLAIN PERFORMANCE {source}"),
+            Some(DatabaseType::Postgres) => {
+                format!("EXPLAIN (ANALYZE, BUFFERS, VERBOSE, FORMAT JSON) {source}")
+            }
+            _ => format!("EXPLAIN (FORMAT JSON) {source}"),
         }
-        _ => format!("EXPLAIN (FORMAT JSON) {source}"),
+    } else {
+        match options.database_type {
+            Some(DatabaseType::Postgres | DatabaseType::OpenGauss) if options.analyze == Some(true) => {
+                format!("EXPLAIN (ANALYZE, FORMAT JSON) {source}")
+            }
+            _ => format!("EXPLAIN (FORMAT JSON) {source}"),
+        }
     };
     ExplainSqlBuildResult { ok: true, sql: Some(sql), reason: None }
 }
@@ -133,6 +150,29 @@ fn is_safe_explain_source(sql: &str) -> bool {
     ["select", "with", "table", "values"].iter().any(|keyword| {
         source == *keyword || source.starts_with(&format!("{keyword} ")) || source.starts_with(&format!("{keyword}\n"))
     })
+}
+
+fn is_safe_sandbox_explain_sql(sql: &str) -> bool {
+    let source = strip_trailing_semicolons(sql.trim());
+    !source.is_empty()
+        && !has_extra_statement_after_semicolon(&source)
+        && is_safe_sandbox_explain_source(&source)
+        && !contains_non_dml_dangerous_sql_keyword(&source)
+}
+
+fn is_safe_sandbox_explain_source(sql: &str) -> bool {
+    let source = strip_sql_comments(sql).trim_start().to_lowercase();
+    ["select", "with", "table", "values", "insert", "update", "delete", "merge"].iter().any(|keyword| {
+        source == *keyword
+            || source
+                .strip_prefix(keyword)
+                .is_some_and(|rest| rest.starts_with(char::is_whitespace) || rest.starts_with('('))
+    })
+}
+
+fn contains_non_dml_dangerous_sql_keyword(sql: &str) -> bool {
+    let source = strip_sql_comments_and_literals(sql).to_lowercase();
+    ["drop", "truncate", "alter", "replace", "create"].iter().any(|keyword| contains_word(&source, keyword))
 }
 
 pub fn contains_dangerous_sql_keyword(sql: &str) -> bool {
@@ -715,6 +755,8 @@ mod tests {
             database_type: Some(DatabaseType::Postgres),
             format: None,
             analyze: None,
+            performance: None,
+            sandbox: None,
             sql: " select * from users where id = 1; ".to_string(),
         });
         assert_eq!(result.sql.as_deref(), Some("EXPLAIN (FORMAT JSON) select * from users where id = 1"));
@@ -726,9 +768,131 @@ mod tests {
             database_type: Some(DatabaseType::Opengauss),
             format: None,
             analyze: Some(true),
+            performance: None,
+            sandbox: None,
             sql: "SELECT * FROM users;".to_string(),
         });
         assert_eq!(result.sql.as_deref(), Some("EXPLAIN (ANALYZE, FORMAT JSON) SELECT * FROM users"));
+    }
+
+    #[test]
+    fn builds_opengauss_explain_performance_sql() {
+        let result = build_explain_sql(ExplainSqlOptions {
+            database_type: Some(DatabaseType::OpenGauss),
+            format: None,
+            analyze: None,
+            performance: Some(true),
+            sandbox: None,
+            sql: "SELECT * FROM users WHERE id = 1;".to_string(),
+        });
+        assert!(result.ok);
+        assert_eq!(result.sql.as_deref(), Some("EXPLAIN PERFORMANCE SELECT * FROM users WHERE id = 1"));
+    }
+
+    #[test]
+    fn builds_postgres_explain_performance_sql() {
+        let result = build_explain_sql(ExplainSqlOptions {
+            database_type: Some(DatabaseType::Postgres),
+            format: None,
+            analyze: None,
+            performance: Some(true),
+            sandbox: None,
+            sql: "SELECT * FROM users WHERE id = 1;".to_string(),
+        });
+        assert!(result.ok);
+        assert_eq!(
+            result.sql.as_deref(),
+            Some("EXPLAIN (ANALYZE, BUFFERS, VERBOSE, FORMAT JSON) SELECT * FROM users WHERE id = 1")
+        );
+    }
+
+    #[test]
+    fn rejects_write_dml_explain_without_sandbox_and_allows_with_sandbox() {
+        for sql in [
+            "UPDATE orders SET status = 1 WHERE id = 10;",
+            "INSERT INTO orders (id) VALUES (10);",
+            "DELETE FROM orders WHERE id = 10;",
+            "SELECT * INTO temp_orders FROM orders;",
+        ] {
+            let blocked_perf = build_explain_sql(ExplainSqlOptions {
+                database_type: Some(DatabaseType::OpenGauss),
+                format: None,
+                analyze: None,
+                performance: Some(true),
+                sandbox: None,
+                sql: sql.to_string(),
+            });
+            assert!(!blocked_perf.ok, "expected rejection without sandbox for: {sql}");
+            assert_eq!(blocked_perf.reason.as_deref(), Some("unsafe"));
+
+            let blocked_analyze = build_explain_sql(ExplainSqlOptions {
+                database_type: Some(DatabaseType::Postgres),
+                format: None,
+                analyze: Some(true),
+                performance: None,
+                sandbox: Some(false),
+                sql: sql.to_string(),
+            });
+            assert!(!blocked_analyze.ok, "expected rejection when sandbox=false for: {sql}");
+            assert_eq!(blocked_analyze.reason.as_deref(), Some("unsafe"));
+
+            let allowed_og_perf = build_explain_sql(ExplainSqlOptions {
+                database_type: Some(DatabaseType::OpenGauss),
+                format: None,
+                analyze: None,
+                performance: Some(true),
+                sandbox: Some(true),
+                sql: sql.to_string(),
+            });
+            assert!(allowed_og_perf.ok, "expected sandbox EXPLAIN PERFORMANCE to succeed for: {sql}");
+            assert!(allowed_og_perf.sql.as_deref().unwrap().starts_with("EXPLAIN PERFORMANCE "));
+
+            let allowed_pg_perf = build_explain_sql(ExplainSqlOptions {
+                database_type: Some(DatabaseType::Postgres),
+                format: None,
+                analyze: None,
+                performance: Some(true),
+                sandbox: Some(true),
+                sql: sql.to_string(),
+            });
+            assert!(allowed_pg_perf.ok, "expected sandbox PG performance to succeed for: {sql}");
+            assert!(allowed_pg_perf
+                .sql
+                .as_deref()
+                .unwrap()
+                .starts_with("EXPLAIN (ANALYZE, BUFFERS, VERBOSE, FORMAT JSON) "));
+
+            let allowed_analyze = build_explain_sql(ExplainSqlOptions {
+                database_type: Some(DatabaseType::OpenGauss),
+                format: None,
+                analyze: Some(true),
+                performance: None,
+                sandbox: Some(true),
+                sql: sql.to_string(),
+            });
+            assert!(allowed_analyze.ok, "expected sandbox EXPLAIN ANALYZE to succeed for: {sql}");
+            assert!(allowed_analyze.sql.as_deref().unwrap().starts_with("EXPLAIN (ANALYZE, FORMAT JSON) "));
+        }
+
+        let blocked_ddl = build_explain_sql(ExplainSqlOptions {
+            database_type: Some(DatabaseType::OpenGauss),
+            format: None,
+            analyze: Some(true),
+            performance: Some(true),
+            sandbox: Some(true),
+            sql: "DROP TABLE orders;".to_string(),
+        });
+        assert!(!blocked_ddl.ok);
+        assert_eq!(blocked_ddl.reason.as_deref(), Some("unsafe"));
+    }
+
+    #[test]
+    fn deserializes_explain_sql_options_without_new_optional_fields() {
+        let parsed: ExplainSqlOptions =
+            serde_json::from_str(r#"{"databaseType":"opengauss","format":"json","analyze":true,"sql":"SELECT 1"}"#)
+                .expect("should deserialize legacy ExplainSqlOptions payload");
+        assert_eq!(parsed.performance, None);
+        assert_eq!(parsed.sandbox, None);
     }
 
     #[test]

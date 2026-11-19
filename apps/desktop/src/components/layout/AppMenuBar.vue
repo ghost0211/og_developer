@@ -26,6 +26,7 @@ import {
   GitBranch,
   GitCompareArrows,
   History,
+  HardDrive,
   Info,
   Keyboard,
   Layers,
@@ -35,10 +36,12 @@ import {
   Play,
   PlayCircle,
   Redo2,
+  RefreshCw,
   RotateCcw,
   Scissors,
   Search,
   ShieldCheck,
+  SlidersHorizontal,
   Sparkles,
   SunMoon,
   TableProperties,
@@ -117,6 +120,8 @@ const emit = defineEmits<{
   "open-invalid-objects": [];
   "open-recycle-bin": [];
   "open-top-sql": [];
+  "open-storage-bloat": [];
+  "open-guc-parameters": [];
   "open-command-window": [];
   "open-table-import": [];
   "open-database-export": [];
@@ -131,6 +136,7 @@ const emit = defineEmits<{
   "open-shortcuts": [];
   "open-docs": [];
   "export-debug-logs": [];
+  "check-updates": [];
   "open-about": [];
 }>();
 
@@ -481,6 +487,14 @@ const shortcutClass = "ml-auto pl-5 text-[10px] font-mono text-muted-foreground/
           <Gauge :class="menuIconClass" class="text-primary" />
           <span>{{ t("topSql.title") }}</span>
         </DropdownMenuItem>
+        <DropdownMenuItem :disabled="!hasConnections" :class="menuItemClass" @select="emit('open-storage-bloat')">
+          <HardDrive :class="menuIconClass" class="text-primary" />
+          <span>{{ t("storageBloat.title") }}</span>
+        </DropdownMenuItem>
+        <DropdownMenuItem :disabled="!hasConnections" :class="menuItemClass" @select="emit('open-guc-parameters')">
+          <SlidersHorizontal :class="menuIconClass" class="text-primary" />
+          <span>{{ t("gucParams.title") }}</span>
+        </DropdownMenuItem>
         <DropdownMenuItem :disabled="!hasConnections" :class="menuItemClass" @select="emit('open-table-import')">
           <Download :class="menuIconClass" />
           <span>{{ t("contextMenu.importData") }}...</span>
@@ -542,6 +556,10 @@ const shortcutClass = "ml-auto pl-5 text-[10px] font-mono text-muted-foreground/
           <span>{{ t("settings.debugLogsDownload") }}</span>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
+        <DropdownMenuItem :class="menuItemClass" @select="emit('check-updates')">
+          <RefreshCw :class="menuIconClass" />
+          <span>{{ t("updates.check") }}</span>
+        </DropdownMenuItem>
         <DropdownMenuItem :class="menuItemClass" @select="emit('open-about')">
           <Info :class="menuIconClass" />
           <span>{{ t("about.title") }}</span>

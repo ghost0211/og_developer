@@ -1,13 +1,19 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { AlertCircle, AlertOctagon, AlertTriangle, Bot, Braces, GitBranch, Info, Stethoscope, Table2, FileText, Workflow } from "@lucide/vue";
+import { AlertCircle, AlertOctagon, AlertTriangle, Bot, Braces, Check, Copy, ExternalLink, FileText, GitBranch, Info, Loader2, Sparkles, Stethoscope, Table2, Workflow, X } from "@lucide/vue";
 import type { ParsedExplainPlan, ExplainPlanNode } from "@/lib/diagram/explainPlan";
 import { flattenExplainPlanNodes } from "@/lib/diagram/explainPlan";
 import { analyzeExplainPlan } from "@/lib/diagram/explainPlanDiagnosis";
 import type { ExplainPlanFindingSeverity } from "@/lib/diagram/explainPlanDiagnosis";
 import { extractActualRows } from "@/lib/diagram/planCanvas";
 import { buildExplainPlanAiPrompt } from "@/lib/diagram/explainPlanAiAnalysis";
+import { buildOpenGaussIndexAdviseSql, classifyOpenGaussIndexAdviseError, isOpenGaussExplainPerformanceText, parseOpenGaussExplainPerformanceText, parseOpenGaussIndexAdviseResult, type OpenGaussIndexAdvice } from "@/lib/diagram/opengaussExplainPerformance";
+import { effectiveDatabaseTypeForConnection } from "@/lib/database/jdbcDialect";
+import { copyToClipboard } from "@/lib/common/clipboard";
+import { formatError } from "@/lib/backend/errorUtils";
+import * as api from "@/lib/backend/api";
+import { useQueryStore } from "@/stores/queryStore";
 import { Button } from "@/components/ui/button";
 import type { ConnectionConfig, QueryResult } from "@/types/database";
 import ExplainPlanNodeTree from "./ExplainPlanNodeTree.vue";
@@ -31,7 +37,14 @@ const emit = defineEmits<{
   analyzeAi: [prompt: string];
 }>();
 const activeView = ref<"canvas" | "tree" | "summary" | "raw" | "table">("canvas");
-const hasTableView = computed(() => !!props.tableResult || !!props.tableError);
+const effectiveTableResult = computed(() => {
+  if (props.tableResult) return props.tableResult;
+  if (typeof props.plan?.raw === "string" && isOpenGaussExplainPerformanceText(props.plan.raw)) {
+    return parseOpenGaussExplainPerformanceText(props.plan.raw).tableResult;
+  }
+  return undefined;
+});
+const hasTableView = computed(() => !!effectiveTableResult.value || !!props.tableError);
 
 watch(
   [hasTableView, () => !!props.tableResult, () => !!props.plan, () => props.loading],
@@ -69,6 +82,107 @@ const measuredRowsLabel = computed(() => {
   if (!flattenExplainPlanNodes(props.plan!.nodes).some((node) => extractActualRows(node) !== undefined)) return undefined;
   return "ANALYZE";
 });
+
+const isPerformancePlan = computed(() => /^\s*EXPLAIN\s+PERFORMANCE\b/i.test(props.explainSql ?? "") || (typeof props.plan?.raw === "string" && isOpenGaussExplainPerformanceText(props.plan.raw)));
+
+const canIndexAdvise = computed(() => effectiveDatabaseTypeForConnection(props.connection) === "opengauss" && !!props.sourceSql?.trim());
+
+const indexAdviseOpen = ref(false);
+const indexAdviseLoading = ref(false);
+const indexAdviseError = ref<string>();
+const indexAdviseErrorDetail = ref<string>();
+const indexAdvices = ref<OpenGaussIndexAdvice[]>([]);
+const indexAdviseDdlMode = ref<"standard" | "concurrent">("standard");
+const copiedAdviceIndex = ref<number>();
+let indexAdviseGeneration = 0;
+let copyResetTimer: ReturnType<typeof setTimeout> | undefined;
+
+function resetIndexAdviseState() {
+  indexAdviseGeneration += 1;
+  indexAdviseOpen.value = false;
+  indexAdviseLoading.value = false;
+  indexAdviseError.value = undefined;
+  indexAdviseErrorDetail.value = undefined;
+  indexAdvices.value = [];
+  copiedAdviceIndex.value = undefined;
+}
+
+watch(
+  () => [props.connection?.id, props.database, props.schema, props.sourceSql],
+  () => {
+    resetIndexAdviseState();
+  },
+);
+
+onBeforeUnmount(() => {
+  indexAdviseGeneration += 1;
+  if (copyResetTimer !== undefined) clearTimeout(copyResetTimer);
+});
+
+function adviceDdlSql(advice: OpenGaussIndexAdvice): string {
+  return indexAdviseDdlMode.value === "concurrent" ? advice.createConcurrentSql : advice.createSql;
+}
+
+async function runIndexAdvise() {
+  const connection = props.connection;
+  const sourceSql = props.sourceSql?.trim();
+  if (!connection || !sourceSql || indexAdviseLoading.value) return;
+
+  const generation = ++indexAdviseGeneration;
+  indexAdviseOpen.value = true;
+  indexAdviseLoading.value = true;
+  indexAdviseError.value = undefined;
+  indexAdviseErrorDetail.value = undefined;
+  indexAdvices.value = [];
+  copiedAdviceIndex.value = undefined;
+
+  try {
+    const adviseSql = buildOpenGaussIndexAdviseSql(sourceSql);
+    const result = await api.executeQuery(connection.id, props.database || "", adviseSql, props.schema || undefined, undefined, { maxRows: 200 });
+    if (generation !== indexAdviseGeneration) return;
+    if (result.execution_error) {
+      throw new Error(result.error ? formatError(result.error) : String(result.rows?.[0]?.[0] ?? "Query execution failed"));
+    }
+    indexAdvices.value = parseOpenGaussIndexAdviseResult(result);
+  } catch (err) {
+    if (generation !== indexAdviseGeneration) return;
+    const rawMessage = formatError(err);
+    const kind = classifyOpenGaussIndexAdviseError(rawMessage);
+    if (kind === "unsupported") {
+      indexAdviseError.value = t("explain.indexAdviseUnsupported");
+      indexAdviseErrorDetail.value = rawMessage;
+    } else if (kind === "permission") {
+      indexAdviseError.value = t("explain.indexAdvisePermission");
+      indexAdviseErrorDetail.value = rawMessage;
+    } else if (kind === "invalid_sql") {
+      indexAdviseError.value = t("explain.indexAdviseInvalidSql");
+      indexAdviseErrorDetail.value = rawMessage;
+    } else {
+      indexAdviseError.value = rawMessage;
+    }
+  } finally {
+    if (generation === indexAdviseGeneration) {
+      indexAdviseLoading.value = false;
+    }
+  }
+}
+
+async function copyAdviceSql(advice: OpenGaussIndexAdvice, index: number) {
+  await copyToClipboard(adviceDdlSql(advice));
+  copiedAdviceIndex.value = index;
+  if (copyResetTimer !== undefined) clearTimeout(copyResetTimer);
+  copyResetTimer = setTimeout(() => {
+    if (copiedAdviceIndex.value === index) copiedAdviceIndex.value = undefined;
+  }, 1800);
+}
+
+function openAdviceInQueryTab(advice: OpenGaussIndexAdvice) {
+  if (!props.connection) return;
+  const sql = adviceDdlSql(advice);
+  const queryStore = useQueryStore();
+  const tabId = queryStore.createTab(props.connection.id, props.database || "", advice.indexName, "query", props.schema || undefined, sql, undefined, { forceNew: true });
+  queryStore.updateSql(tabId, sql);
+}
 
 // 诊断器直接读原始 JSON（解析后的节点丢失了 Sort Method、Hash Batches 等字段）。
 const findings = computed(() => {
@@ -137,7 +251,13 @@ function analyzeWithAi() {
         {{ plan?.databaseType.toUpperCase() || "OPENGAUSS" }}<template v-if="plan"> · {{ t("explain.nodeCount", { count: nodeCount }) }}</template>
       </span>
       <span v-if="measuredRowsLabel" class="ml-1 inline-flex items-center gap-1 rounded bg-green-100 px-1.5 py-0.5 font-semibold text-green-700 dark:bg-green-900/30 dark:text-green-300" style="font-size: 10px">{{ measuredRowsLabel }}</span>
+      <span v-if="isPerformancePlan" class="ml-1 inline-flex items-center gap-1 rounded bg-violet-100 px-1.5 py-0.5 font-semibold text-violet-700 dark:bg-violet-900/30 dark:text-violet-300" style="font-size: 10px">{{ t("explain.performanceBadge") }}</span>
       <span class="flex-1" />
+      <Button v-if="canIndexAdvise" size="sm" variant="outline" class="h-7 gap-1.5 px-2 text-xs" :disabled="indexAdviseLoading" :title="t('explain.indexAdvise')" :aria-label="t('explain.indexAdvise')" @click="runIndexAdvise">
+        <Loader2 v-if="indexAdviseLoading" class="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+        <Sparkles v-else class="h-3.5 w-3.5" aria-hidden="true" />
+        {{ t("explain.indexAdvise") }}
+      </Button>
       <Button v-if="plan && sourceSql?.trim()" size="sm" variant="outline" class="h-7 gap-1.5 px-2 text-xs" :title="t('history.analyzeWithAi')" :aria-label="t('history.analyzeWithAi')" @click="analyzeWithAi">
         <Bot class="h-3.5 w-3.5" aria-hidden="true" />
         {{ t("history.analyzeWithAi") }}
@@ -179,17 +299,17 @@ function analyzeWithAi() {
         </div>
       </div>
 
-      <div v-else-if="tableResult" class="p-3">
+      <div v-else-if="effectiveTableResult" class="p-3">
         <div class="overflow-x-auto rounded border">
           <table class="min-w-full w-max text-left text-xs">
             <thead class="bg-muted/70 text-muted-foreground">
               <tr>
-                <th v-for="(column, columnIndex) in tableResult.columns" :key="columnIndex" class="whitespace-nowrap px-2 py-1.5 font-medium">{{ column }}</th>
+                <th v-for="(column, columnIndex) in effectiveTableResult.columns" :key="columnIndex" class="whitespace-nowrap px-2 py-1.5 font-medium">{{ column }}</th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="(row, rowIndex) in tableResult.rows" :key="rowIndex" class="border-t">
-                <td v-for="(_column, columnIndex) in tableResult.columns" :key="columnIndex" class="whitespace-nowrap px-2 py-1.5 text-muted-foreground">
+              <tr v-for="(row, rowIndex) in effectiveTableResult.rows" :key="rowIndex" class="border-t">
+                <td v-for="(_column, columnIndex) in effectiveTableResult.columns" :key="columnIndex" class="whitespace-nowrap px-2 py-1.5 text-muted-foreground">
                   {{ tableCellText(row[columnIndex]) }}
                 </td>
               </tr>
@@ -251,6 +371,72 @@ function analyzeWithAi() {
       </div>
 
       <pre v-else class="m-3 overflow-auto whitespace-pre rounded border bg-muted/30 p-3 font-mono text-xs leading-relaxed">{{ rawContent }}</pre>
+    </div>
+
+    <div v-if="indexAdviseOpen" class="shrink-0 border-t bg-muted/20" data-testid="index-advise-panel">
+      <div class="flex items-center gap-2 border-b border-border/60 px-3 py-1.5 text-xs">
+        <Sparkles class="h-3.5 w-3.5 text-violet-600 dark:text-violet-400" aria-hidden="true" />
+        <span class="font-medium">{{ t("explain.indexAdviseTitle") }}</span>
+        <div v-if="!indexAdviseLoading && !indexAdviseError && indexAdvices.length" class="ml-2 inline-flex rounded border bg-background p-0.5">
+          <Button size="xs" :variant="indexAdviseDdlMode === 'standard' ? 'secondary' : 'ghost'" class="h-5 px-2 text-[11px]" @click="indexAdviseDdlMode = 'standard'">
+            {{ t("explain.indexAdviseStandard") }}
+          </Button>
+          <Button size="xs" :variant="indexAdviseDdlMode === 'concurrent' ? 'secondary' : 'ghost'" class="h-5 px-2 text-[11px]" @click="indexAdviseDdlMode = 'concurrent'">
+            {{ t("explain.indexAdviseConcurrent") }}
+          </Button>
+        </div>
+        <span class="flex-1" />
+        <Button size="icon-xs" variant="ghost" class="h-5 w-5" :aria-label="t('common.close')" @click="indexAdviseOpen = false">
+          <X class="h-3.5 w-3.5" aria-hidden="true" />
+        </Button>
+      </div>
+
+      <div v-if="indexAdviseLoading" class="flex items-center gap-2 px-3 py-3 text-xs text-muted-foreground">
+        <Loader2 class="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+        <span>{{ t("explain.indexAdviseLoading") }}</span>
+      </div>
+
+      <div v-else-if="indexAdviseError" class="flex items-start gap-2 px-3 py-2.5 text-xs text-destructive">
+        <AlertCircle class="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+        <div class="min-w-0 space-y-0.5">
+          <div class="font-medium">{{ indexAdviseError }}</div>
+          <div v-if="indexAdviseErrorDetail" class="break-words text-[11px] text-muted-foreground">{{ indexAdviseErrorDetail }}</div>
+        </div>
+      </div>
+
+      <div v-else-if="!indexAdvices.length" class="px-3 py-2.5 text-xs text-muted-foreground">
+        {{ t("explain.indexAdviseEmpty") }}
+      </div>
+
+      <ul v-else class="max-h-52 space-y-2 overflow-auto px-3 py-2">
+        <li v-for="(advice, index) in indexAdvices" :key="`${advice.schema}.${advice.table}.${advice.indexName}-${index}`" class="rounded border bg-background p-2 text-xs">
+          <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span>
+              <span class="text-muted-foreground">{{ t("explain.indexAdviseTarget") }}:</span>
+              <span class="ml-1 font-medium">{{ advice.schema ? `${advice.schema}.${advice.table}` : advice.table }}</span>
+            </span>
+            <span>
+              <span class="text-muted-foreground">{{ t("explain.indexAdviseColumns") }}:</span>
+              <span class="ml-1 font-mono">{{ advice.columns.join(", ") }}</span>
+            </span>
+            <span v-if="advice.indexType">
+              <span class="text-muted-foreground">{{ t("explain.indexAdviseType") }}:</span>
+              <span class="ml-1 rounded bg-muted px-1 py-0.5 font-mono text-[11px]">{{ advice.indexType }}</span>
+            </span>
+            <span class="flex-1" />
+            <Button size="xs" variant="outline" class="h-6 gap-1 px-2 text-[11px]" @click="copyAdviceSql(advice, index)">
+              <Check v-if="copiedAdviceIndex === index" class="h-3 w-3 text-green-600" aria-hidden="true" />
+              <Copy v-else class="h-3 w-3" aria-hidden="true" />
+              {{ copiedAdviceIndex === index ? t("explain.indexAdviseCopied") : t("explain.indexAdviseCopySql") }}
+            </Button>
+            <Button size="xs" variant="outline" class="h-6 gap-1 px-2 text-[11px]" @click="openAdviceInQueryTab(advice)">
+              <ExternalLink class="h-3 w-3" aria-hidden="true" />
+              {{ t("explain.indexAdviseOpenQuery") }}
+            </Button>
+          </div>
+          <pre class="mt-1.5 overflow-x-auto rounded bg-muted/40 px-2 py-1 font-mono text-[11px] leading-relaxed select-text">{{ adviceDdlSql(advice) }}</pre>
+        </li>
+      </ul>
     </div>
 
     <div v-if="plan && findings.length" class="shrink-0 border-t bg-muted/20">

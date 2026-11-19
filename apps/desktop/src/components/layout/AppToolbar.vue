@@ -75,6 +75,8 @@ const emit = defineEmits<{
   "open-invalid-objects": [];
   "open-recycle-bin": [];
   "open-top-sql": [];
+  "open-storage-bloat": [];
+  "open-guc-parameters": [];
   "open-command-window": [];
   "open-table-import": [];
   "open-database-export": [];
@@ -85,6 +87,7 @@ const emit = defineEmits<{
   "open-shortcuts": [];
   "open-docs": [];
   "export-debug-logs": [];
+  "check-updates": [];
   "open-about": [];
 }>();
 
@@ -262,6 +265,8 @@ const toolbarStyle = computed(() => {
         @open-invalid-objects="emit('open-invalid-objects')"
         @open-recycle-bin="emit('open-recycle-bin')"
         @open-top-sql="emit('open-top-sql')"
+        @open-storage-bloat="emit('open-storage-bloat')"
+        @open-guc-parameters="emit('open-guc-parameters')"
         @open-command-window="emit('open-command-window')"
         @open-table-import="emit('open-table-import')"
         @open-database-export="emit('open-database-export')"
@@ -272,6 +277,7 @@ const toolbarStyle = computed(() => {
         @open-shortcuts="emit('open-shortcuts')"
         @open-docs="emit('open-docs')"
         @export-debug-logs="emit('export-debug-logs')"
+        @check-updates="emit('check-updates')"
         @open-about="emit('open-about')"
       />
     </span>

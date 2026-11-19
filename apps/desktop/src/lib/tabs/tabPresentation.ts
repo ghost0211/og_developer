@@ -65,12 +65,9 @@ export function tabDisplayTitle(tab: QueryTab, t: Translate): string {
   const settingsStore = useSettingsStore();
   const compact = settingsStore.editorSettings.compactTabTitle;
   if (isPreviewTab(tab)) return tab.title;
-  if (tab.mode === "routine-health") {
-    const title = t("invalidObjects.title");
-    return compact ? title : `${title}@${database}${tab.schema ? `.${tab.schema}` : ""}`;
-  }
-  if (tab.mode === "top-sql") {
-    const title = t("topSql.title");
+  const toolTitleKey = tab.mode === "routine-health" ? "invalidObjects.title" : tab.mode === "top-sql" ? "topSql.title" : tab.mode === "storage-bloat" ? "storageBloat.title" : tab.mode === "guc-parameters" ? "gucParams.title" : undefined;
+  if (toolTitleKey) {
+    const title = t(toolTitleKey);
     return compact ? title : `${title}@${database}${tab.schema ? `.${tab.schema}` : ""}`;
   }
   if (tab.mode === "data" && tab.tableMeta?.tableName) {
@@ -113,10 +110,7 @@ export function tabTooltipLines(tab: QueryTab, t: Translate): { label: string; v
   if (tab.mode === "objects" && tab.objectBrowser?.schema) {
     lines.push({ label: t("tabs.tooltipSchema"), value: tab.objectBrowser.schema });
   }
-  if (tab.mode === "routine-health" && tab.schema) {
-    lines.push({ label: t("tabs.tooltipSchema"), value: tab.schema });
-  }
-  if (tab.mode === "top-sql" && tab.schema) {
+  if ((tab.mode === "routine-health" || tab.mode === "top-sql" || tab.mode === "storage-bloat" || tab.mode === "guc-parameters") && tab.schema) {
     lines.push({ label: t("tabs.tooltipSchema"), value: tab.schema });
   }
   if (tab.mode === "routine-test" && tab.routineTest?.routineName) {

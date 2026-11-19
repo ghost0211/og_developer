@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch, nextTick } from "vue";
 import { useI18n } from "vue-i18n";
-import { Command, FileCode, FileText } from "@lucide/vue";
+import { CalendarClock, Command, FileCode, FileText, Layers, Link2, Terminal, Zap } from "@lucide/vue";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { useQuickOpen, type QuickOpenItem } from "@/composables/useQuickOpen";
@@ -16,8 +16,22 @@ const emit = defineEmits<{
 }>();
 
 const { t } = useI18n();
-const { searchQuery, filteredItems, selectedIndex, selectedItem, selectNext, selectPrevious, setQuery, loadExternalSqlFiles } = useQuickOpen();
-const inputRef = ref<HTMLInputElement | null>(null);
+const { searchQuery, isCommandMode, filteredItems, selectedIndex, selectedItem, selectNext, selectPrevious, setQuery, loadExternalSqlFiles } = useQuickOpen();
+const inputRef = ref<{ $el?: HTMLElement } | HTMLInputElement | null>(null);
+
+function focusSearchInput() {
+  nextTick(() => {
+    const target = inputRef.value instanceof HTMLInputElement ? inputRef.value : (inputRef.value?.$el?.querySelector<HTMLInputElement>("input") ?? (inputRef.value as any));
+    target?.focus?.();
+  });
+}
+
+function enterCommandMode() {
+  if (!searchQuery.value.trim().startsWith(">")) {
+    setQuery("> ");
+  }
+  focusSearchInput();
+}
 
 const dialogOpen = computed({
   get: () => props.open,
@@ -90,7 +104,7 @@ function getTypeLabel(type: string): string {
     case "database":
       return t("common.database");
     case "schema":
-      return t("common.schema");
+      return t("quickOpen.types.schema");
     case "table":
       return t("common.table");
     case "view":
@@ -107,6 +121,18 @@ function getTypeLabel(type: string): string {
       return t("common.package");
     case "package-body":
       return t("common.packageBody");
+    case "synonym":
+      return t("quickOpen.types.synonym");
+    case "trigger":
+      return t("quickOpen.types.trigger");
+    case "job":
+      return t("quickOpen.types.job");
+    case "scheduler":
+      return t("quickOpen.types.scheduler");
+    case "open_tab":
+      return t("quickOpen.types.openTab");
+    case "command":
+      return t("quickOpen.types.command");
     case "sql_file":
       return t("quickOpen.sqlFile");
     case "sql_library_file":
@@ -117,6 +143,11 @@ function getTypeLabel(type: string): string {
 }
 
 function getItemIcon(type: string) {
+  if (type === "command") return Terminal;
+  if (type === "open_tab") return Layers;
+  if (type === "synonym") return Link2;
+  if (type === "trigger") return Zap;
+  if (type === "job" || type === "scheduler") return CalendarClock;
   if (type === "sql_file") return FileCode;
   if (type === "sql_library_file") return FileText;
   return null;
@@ -129,9 +160,7 @@ watch(
       setQuery("");
       // Eagerly load external SQL files so they appear in the initial list
       void loadExternalSqlFiles();
-      nextTick(() => {
-        inputRef.value?.focus();
-      });
+      focusSearchInput();
     }
   },
 );
@@ -143,8 +172,18 @@ watch(
       <div class="flex flex-col bg-background">
         <!-- Search Input -->
         <div class="flex items-center gap-3 px-4 py-3 border-b">
-          <Command class="h-5 w-5 text-muted-foreground" />
+          <Terminal v-if="isCommandMode" class="h-5 w-5 text-primary" />
+          <Command v-else class="h-5 w-5 text-muted-foreground" />
           <Input ref="inputRef" v-model="searchQuery" type="text" :placeholder="t('quickOpen.placeholder')" class="flex-1 border-0 bg-transparent p-0 placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:outline-none" @keydown="handleKeyDown" />
+          <button
+            v-if="!isCommandMode"
+            type="button"
+            class="shrink-0 rounded border border-border bg-muted/60 px-2 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground cursor-pointer"
+            :title="t('quickOpen.commandHintTooltip')"
+            @click="enterCommandMode"
+          >
+            {{ t("quickOpen.commandHintButton") }}
+          </button>
         </div>
 
         <!-- Results List -->

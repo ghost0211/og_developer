@@ -6,6 +6,7 @@ import type { BatchSqlExecution, ConnectionConfig, DatabaseType, ObjectBrowserVi
 import { orderPinnedFirst } from "@/lib/app/pinnedItems";
 import { canCancelQueryExecution } from "@/lib/sql/queryExecutionState";
 import { buildExplainSql, parseExplainResult } from "@/lib/diagram/explainPlan";
+import { isOpenGaussExplainPerformanceText, parseOpenGaussExplainPerformanceText } from "@/lib/diagram/opengaussExplainPerformance";
 import { allEditableColumnsWriteable, allPrimaryKeysPresent, analyzeEditableQueryEditability, resolveMetadataColumnName, sourceColumnsForResult, type EditableQueryInfo, type EditableQuerySource } from "@/lib/sql/sqlAnalysis";
 import { buildQueryWithHiddenPrimaryKeys, hiddenResultColumnIndexes, type HiddenPrimaryKeyProjection } from "@/lib/sql/editableQueryHiddenKeys";
 import { ACTIVE_TAB_STORAGE_KEY, OPEN_TABS_STORAGE_KEY, restoreOpenTabsPayload, restoreOpenTabsState, serializeOpenTabs } from "@/lib/app/openTabsPersistence";
@@ -1610,19 +1611,19 @@ export const useQueryStore = defineStore("query", () => {
     return id;
   }
 
-  // Top SQL 面板：同一连接 + 库 + 模式只保留一个标签页。
-  function openTopSqlPanel(options: { connectionId: string; database?: string; schema?: string }) {
+  // 连接级运维诊断面板（Top SQL / 存储与膨胀体检 / GUC 参数）：同一连接 + 库 + 模式只保留一个标签页。
+  function openConnectionToolPanel(mode: "top-sql" | "storage-bloat" | "guc-parameters", titleKey: string, options: { connectionId: string; database?: string; schema?: string }) {
     const { connectionId, schema } = options;
     const conn = useConnectionStore().getConfig(connectionId);
     const database = options.database ?? conn?.database ?? "";
-    const existing = tabs.value.find((tab) => tab.mode === "top-sql" && tab.connectionId === connectionId && tab.database === database && (tab.schema || "") === (schema || ""));
+    const existing = tabs.value.find((tab) => tab.mode === mode && tab.connectionId === connectionId && tab.database === database && (tab.schema || "") === (schema || ""));
     if (existing) {
       switchTab(existing.id);
       return existing.id;
     }
 
     const id = uuid();
-    const title = t("topSql.title");
+    const title = t(titleKey);
     const tab: QueryTab = {
       id,
       title: conn?.name ? `${conn.name} - ${title}` : title,
@@ -1633,11 +1634,23 @@ export const useQueryStore = defineStore("query", () => {
       isExecuting: false,
       isCancelling: false,
       isExplaining: false,
-      mode: "top-sql",
+      mode,
     };
     tabs.value.push(tab);
     activeTabId.value = id;
     return id;
+  }
+
+  function openTopSqlPanel(options: { connectionId: string; database?: string; schema?: string }) {
+    return openConnectionToolPanel("top-sql", "topSql.title", options);
+  }
+
+  function openStorageBloatPanel(options: { connectionId: string; database?: string; schema?: string }) {
+    return openConnectionToolPanel("storage-bloat", "storageBloat.title", options);
+  }
+
+  function openGucParametersPanel(options: { connectionId: string; database?: string; schema?: string }) {
+    return openConnectionToolPanel("guc-parameters", "gucParams.title", options);
   }
 
   function applyTableStructureInitialTab(tab: QueryTab, initialTab?: TableInfoTab, initialTarget?: TableStructureEditorTarget) {
@@ -3705,20 +3718,36 @@ export const useQueryStore = defineStore("query", () => {
       return { ok: false as const, reason: tab.explainError };
     }
 
-    const postgresSandbox = explainMode === "sandbox";
-    const postgresAnalyze = explainMode === "autotrace" || postgresSandbox;
+    const isPerfMode = explainMode === "performance" || explainMode === "performance-sandbox";
+    const postgresSandbox = explainMode === "sandbox" || explainMode === "performance-sandbox";
     // External JDBC plugins execute each request independently and do not expose
     // the native checkout/rollback wrapper. Keep EXPLAIN ANALYZE enabled there,
     // but only request the native read-only transaction mode for native pools.
     const usesExternalJdbc = conn?.db_type === "jdbc" || opengaussConnectionMode(conn) === "jdbc";
-    const useReadOnlyTransaction = explainMode === "autotrace" && !usesExternalJdbc;
-    const built = postgresAnalyze ? await buildExplainSql(databaseType, sql, "json", true) : await buildExplainSql(databaseType, sql);
+    const useReadOnlyTransaction = (explainMode === "autotrace" || explainMode === "performance") && !usesExternalJdbc;
+    const built =
+      explainMode === "performance-sandbox"
+        ? await buildExplainSql(databaseType, sql, "json", true, { performance: true, sandbox: true })
+        : explainMode === "performance"
+          ? await buildExplainSql(databaseType, sql, "json", true, { performance: true })
+          : explainMode === "sandbox"
+            ? await buildExplainSql(databaseType, sql, "json", true, { sandbox: true })
+            : explainMode === "autotrace"
+              ? await buildExplainSql(databaseType, sql, "json", true)
+              : await buildExplainSql(databaseType, sql);
     if (!built.ok) {
       tab.explainPlan = undefined;
       tab.explainError = built.reason;
       tab.isExplaining = false;
       tab.explainExecutionId = undefined;
       return built;
+    }
+
+    function applyExplainResult(current: QueryTab, result: QueryResult) {
+      const explainParserDatabaseType = databaseType === "opengauss" ? "opengauss" : "postgres";
+      current.explainPlan = parseExplainResult(explainParserDatabaseType, result);
+      current.explainTableResult = isPerfMode && typeof current.explainPlan.raw === "string" && isOpenGaussExplainPerformanceText(current.explainPlan.raw) ? parseOpenGaussExplainPerformanceText(current.explainPlan.raw).tableResult : undefined;
+      current.explainError = undefined;
     }
 
     tab.explainSql = built.sql;
@@ -3730,9 +3759,7 @@ export const useQueryStore = defineStore("query", () => {
         const result = results[results.length - 1];
         const current = tabs.value.find((t) => t.id === id);
         if (current?.explainExecutionId === executionId && result) {
-          const explainParserDatabaseType = databaseType === "opengauss" ? "opengauss" : "postgres";
-          current.explainPlan = parseExplainResult(explainParserDatabaseType, result);
-          current.explainError = undefined;
+          applyExplainResult(current, result);
         }
       } catch (e: any) {
         const current = tabs.value.find((t) => t.id === id);
@@ -3764,9 +3791,7 @@ export const useQueryStore = defineStore("query", () => {
       });
       const current = tabs.value.find((t) => t.id === id);
       if (current?.explainExecutionId === executionId) {
-        const explainParserDatabaseType = databaseType === "opengauss" ? "opengauss" : "postgres";
-        current.explainPlan = parseExplainResult(explainParserDatabaseType, result);
-        current.explainError = undefined;
+        applyExplainResult(current, result);
       }
     } catch (e: any) {
       const current = tabs.value.find((t) => t.id === id);
@@ -4431,6 +4456,8 @@ export const useQueryStore = defineStore("query", () => {
     openUserAdmin,
     openProcessList,
     openTopSqlPanel,
+    openStorageBloatPanel,
+    openGucParametersPanel,
     openPostgresDashboard,
     openTableStructure,
     linkSavedSql,

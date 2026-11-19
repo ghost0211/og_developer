@@ -80,6 +80,8 @@ const DatabaseUserAdmin = defineAsyncComponent(() => import("@/components/admin/
 const ProcessListPanel = defineAsyncComponent(() => import("@/components/admin/ProcessListPanel.vue"));
 const PostgresDashboard = defineAsyncComponent(() => import("@/components/admin/PostgresDashboard.vue"));
 const TopSqlPanel = defineAsyncComponent(() => import("@/components/admin/TopSqlPanel.vue"));
+const StorageBloatPanel = defineAsyncComponent(() => import("@/components/admin/StorageBloatPanel.vue"));
+const GucParametersPanel = defineAsyncComponent(() => import("@/components/admin/GucParametersPanel.vue"));
 const RoutineTestPanel = defineAsyncComponent(() => import("@/components/objects/RoutineTestPanel.vue"));
 const RoutineDebugPanel = defineAsyncComponent(() => import("@/components/debug/RoutineDebugPanel.vue"));
 const ProgramWindowPanel = defineAsyncComponent(() => import("@/components/objects/ProgramWindowPanel.vue"));
@@ -112,6 +114,7 @@ import type { QueryTab, ConnectionConfig, TableInfoTab, ObjectBrowserViewport } 
 import type { SqlObjectNavigationTarget } from "@/lib/sql/sqlNavigation";
 import { sqlFormatDialectForDbType, type SqlFormatDialect } from "@/lib/sql/sqlFormatter";
 import { productionContextForDatabase } from "@/lib/database/productionSafety";
+import { hexToRgba } from "@/lib/common/color";
 
 type DataGridHandle = DataGridColumnLayoutHandle & {
   onToolbarRefresh: () => Promise<void> | void;
@@ -250,6 +253,14 @@ const activeDataTabTableMeta = computed(() => tableMetaForDataTab(props.activeTa
 const activeEffectiveDatabaseType = computed(() => effectiveDatabaseTypeForConnection(props.activeConnection));
 const activeDataTabExecutionDatabase = computed(() => dataTabExecutionDatabase(props.activeConnection, props.activeTab.database, activeDataTabTableMeta.value?.catalog));
 const activeProductionContext = computed(() => productionContextForDatabase(props.activeConnection, props.activeTab.database));
+const envAccentColor = computed(() => props.activeConnection?.color || (activeProductionContext.value.active ? "#ef4444" : ""));
+const dataHeaderStyle = computed(() => {
+  if (!envAccentColor.value) return undefined;
+  return {
+    backgroundColor: hexToRgba(envAccentColor.value, activeProductionContext.value.active ? 0.12 : 0.08),
+    boxShadow: `inset 0 2px 0 ${hexToRgba(envAccentColor.value, 0.85)}`,
+  };
+});
 const productionWatermarkText = computed(() => (locale.value.startsWith("zh") ? "生产环境" : "PROD"));
 const productionSessionDetail = computed(() => {
   if (!activeProductionContext.value.active) return "";
@@ -836,6 +847,7 @@ defineExpose({ focusSearch, refreshData, refreshQueryEditorCompletionCache, hand
       <span class="font-mono uppercase tracking-normal">{{ t("production.title") }}</span>
       <span v-if="productionSessionDetail" class="min-w-0 truncate rounded-md border border-red-500/25 bg-background/65 px-1.5 py-0.5 font-medium text-red-700 dark:text-red-200">{{ productionSessionDetail }}</span>
     </div>
+    <div v-else-if="envAccentColor && activeTab.mode !== 'query' && activeTab.mode !== 'data' && activeTab.mode !== 'settings'" class="h-0.5 w-full shrink-0" :style="{ backgroundColor: hexToRgba(envAccentColor, 0.85) }" aria-hidden="true" />
     <!-- Query mode: editor + results -->
     <template v-if="activeTab.mode === 'query'">
       <Splitpanes horizontal class="query-output-splitpanes flex-1 min-h-0 overflow-hidden" @resized="onResultsResized">
@@ -1529,7 +1541,7 @@ defineExpose({ focusSearch, refreshData, refreshQueryEditorCompletionCache, hand
     <!-- Data mode: full-height grid -->
     <template v-else-if="activeTab.mode === 'data'">
       <div class="flex-1 min-h-0 flex flex-col">
-        <div class="h-9 shrink-0 border-b bg-background/80 px-3 flex items-center gap-2 text-xs">
+        <div class="h-9 shrink-0 border-b bg-background/80 px-3 flex items-center gap-2 text-xs" :style="dataHeaderStyle">
           <span v-if="activeConnection?.name?.trim()" data-data-header-connection class="inline-flex max-w-48 min-w-0 items-center truncate rounded border border-border bg-muted/30 px-2 py-0.5 text-muted-foreground" :title="activeConnection.name">
             {{ activeConnection.name }}
           </span>
@@ -1870,6 +1882,18 @@ defineExpose({ focusSearch, refreshData, refreshQueryEditorCompletionCache, hand
     <template v-else-if="activeTab.mode === 'top-sql'">
       <div class="min-h-0 flex-1">
         <TopSqlPanel :key="activeTab.id" :connection-id="activeTab.connectionId" :database="activeTab.database" :schema="activeTab.schema" :tab-id="activeTab.id" />
+      </div>
+    </template>
+
+    <template v-else-if="activeTab.mode === 'storage-bloat'">
+      <div class="min-h-0 flex-1">
+        <StorageBloatPanel :key="activeTab.id" :connection-id="activeTab.connectionId" :database="activeTab.database" :schema="activeTab.schema" :tab-id="activeTab.id" />
+      </div>
+    </template>
+
+    <template v-else-if="activeTab.mode === 'guc-parameters'">
+      <div class="min-h-0 flex-1">
+        <GucParametersPanel :key="activeTab.id" :connection-id="activeTab.connectionId" :database="activeTab.database" :schema="activeTab.schema" :tab-id="activeTab.id" />
       </div>
     </template>
 

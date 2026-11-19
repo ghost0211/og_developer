@@ -254,6 +254,10 @@ export interface BuildExplainSqlOptions {
   format?: "json" | "standard";
   /** PostgreSQL only: run the statement so the plan carries measured rows and timings. */
   analyze?: boolean;
+  /** openGauss EXPLAIN PERFORMANCE / PostgreSQL EXPLAIN (ANALYZE, BUFFERS, VERBOSE, FORMAT JSON). */
+  performance?: boolean;
+  /** Allow write DML inside a rollback-only transaction sandbox. */
+  sandbox?: boolean;
 }
 
 export interface ExplainSqlBuildResult {

@@ -2,13 +2,15 @@
 import { computed, ref, watch, nextTick, onUnmounted } from "vue";
 import type { CSSProperties } from "vue";
 import { useI18n } from "vue-i18n";
-import { X, Pin, ChevronDown, Table2, Code2, TableProperties, PencilRuler, Pencil, Lock, Copy, AlertTriangle, Minimize2, Maximize2, Activity, Gauge, Terminal, TerminalSquare, Bug, FileCode, Settings, Stethoscope } from "@lucide/vue";
+import { X, Pin, ChevronDown, Table2, Code2, TableProperties, PencilRuler, Pencil, Lock, Copy, AlertTriangle, Minimize2, Maximize2, Activity, Gauge, HardDrive, SlidersHorizontal, Terminal, TerminalSquare, Bug, FileCode, Settings, Stethoscope } from "@lucide/vue";
 import CustomContextMenu, { type ContextMenuItem } from "@/components/ui/CustomContextMenu.vue";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { useQueryStore } from "@/stores/queryStore";
+import { useConnectionStore } from "@/stores/connectionStore";
+import { productionContextForDatabase } from "@/lib/database/productionSafety";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useTabScroll } from "@/composables/useTabScroll";
 import { useTabDrag } from "@/composables/useTabDrag";
@@ -37,6 +39,7 @@ const emit = defineEmits<{
 
 const { t } = useI18n();
 const queryStore = useQueryStore();
+const connectionStore = useConnectionStore();
 const settingsStore = useSettingsStore();
 const { toast } = useToast();
 const tabDrag = useTabDrag((draggedId, targetId, position) => {
@@ -411,8 +414,16 @@ watch(
   },
 );
 
+function tabEnvColor(tab: QueryTab): string | undefined {
+  const explicitColor = connectionColor(tab.connectionId);
+  if (explicitColor) return explicitColor;
+  if (!tab.connectionId) return undefined;
+  const prod = productionContextForDatabase(connectionStore.getConfig(tab.connectionId), tab.database);
+  return prod.active ? "#ef4444" : undefined;
+}
+
 function tabColorStyle(tab: QueryTab) {
-  const color = connectionColor(tab.connectionId);
+  const color = tabEnvColor(tab);
   const isActive = tab.id === queryStore.activeTabId && !props.driverStoreActive;
   const isClassic = isClassicLayout.value;
   if (!color) {
@@ -428,20 +439,21 @@ function tabColorStyle(tab: QueryTab) {
 
   if (isClassic) {
     return {
-      backgroundColor: hexToRgba(color, isActive ? 0.16 : 0.07),
-      boxShadow: isActive ? `inset 0 -2px 0 ${color}` : undefined,
+      backgroundColor: hexToRgba(color, isActive ? 0.18 : 0.08),
+      boxShadow: isActive ? `inset 0 2px 0 ${color}, inset 0 -2px 0 ${color}` : `inset 0 2px 0 ${hexToRgba(color, 0.65)}`,
     };
   }
 
   return {
-    backgroundColor: hexToRgba(color, isActive ? 0.16 : 0.09),
-    borderColor: isActive ? hexToRgba(color, 0.72) : hexToRgba(color, 0.18),
+    backgroundColor: hexToRgba(color, isActive ? 0.18 : 0.09),
+    borderColor: isActive ? hexToRgba(color, 0.78) : hexToRgba(color, 0.28),
+    boxShadow: `inset 0 2px 0 ${hexToRgba(color, isActive ? 0.95 : 0.6)}`,
   };
 }
 
 function tabIconClass(tab: QueryTab) {
   if (tab.mode === "command") return "text-emerald-500";
-  if (tab.mode === "routine-test" || tab.mode === "routine-health" || tab.mode === "top-sql") return "text-primary";
+  if (tab.mode === "routine-test" || tab.mode === "routine-health" || tab.mode === "top-sql" || tab.mode === "storage-bloat" || tab.mode === "guc-parameters") return "text-primary";
   if (tab.mode === "routine-debug") return "text-amber-500";
   if (tab.mode === "program-window") return "text-blue-500";
   if (tab.mode === "settings") return "text-muted-foreground";
@@ -471,6 +483,8 @@ function tabMenuIcon(tab: QueryTab) {
   if (tab.mode === "settings") return Settings;
   if (tab.mode === "postgres-dashboard") return Gauge;
   if (tab.mode === "top-sql") return Gauge;
+  if (tab.mode === "storage-bloat") return HardDrive;
+  if (tab.mode === "guc-parameters") return SlidersHorizontal;
   return Code2;
 }
 
@@ -599,6 +613,7 @@ function onOverflowItemKeydown(event: KeyboardEvent, tabId: string, kind: "regul
                     @mousemove="handleTabDragTarget($event, tab)"
                     @mouseleave="tabDrag.clearTarget(tab.id)"
                   >
+                    <span v-if="tabEnvColor(tab)" class="h-1.5 w-1.5 shrink-0 rounded-full" :style="{ backgroundColor: tabEnvColor(tab) }" aria-hidden="true" />
                     <span class="shrink-0" :class="tabIconClass(tab)">
                       <Table2 v-if="tab.mode === 'data'" class="h-3.5 w-3.5" />
                       <TableProperties v-else-if="tab.mode === 'objects'" class="h-3.5 w-3.5" />
@@ -611,6 +626,8 @@ function onOverflowItemKeydown(event: KeyboardEvent, tabId: string, kind: "regul
                       <FileCode v-else-if="tab.mode === 'program-window'" class="h-3.5 w-3.5 text-blue-500" />
                       <Gauge v-else-if="tab.mode === 'postgres-dashboard'" class="h-3.5 w-3.5" />
                       <Gauge v-else-if="tab.mode === 'top-sql'" class="h-3.5 w-3.5 text-primary" />
+                      <HardDrive v-else-if="tab.mode === 'storage-bloat'" class="h-3.5 w-3.5 text-primary" />
+                      <SlidersHorizontal v-else-if="tab.mode === 'guc-parameters'" class="h-3.5 w-3.5 text-primary" />
                       <Settings v-else-if="tab.mode === 'settings'" class="h-3.5 w-3.5 text-muted-foreground" />
                       <Code2 v-else class="h-3.5 w-3.5" />
                     </span>
@@ -773,6 +790,7 @@ function onOverflowItemKeydown(event: KeyboardEvent, tabId: string, kind: "regul
                     @mousemove="handleTabDragTarget($event, tab)"
                     @mouseleave="tabDrag.clearTarget(tab.id)"
                   >
+                    <span v-if="tabEnvColor(tab)" class="h-1.5 w-1.5 shrink-0 rounded-full" :style="{ backgroundColor: tabEnvColor(tab) }" aria-hidden="true" />
                     <span class="shrink-0" :class="tabIconClass(tab)">
                       <Table2 v-if="tab.mode === 'data'" class="h-3.5 w-3.5" />
                       <TableProperties v-else-if="tab.mode === 'objects'" class="h-3.5 w-3.5" />
@@ -785,6 +803,8 @@ function onOverflowItemKeydown(event: KeyboardEvent, tabId: string, kind: "regul
                       <FileCode v-else-if="tab.mode === 'program-window'" class="h-3.5 w-3.5 text-blue-500" />
                       <Gauge v-else-if="tab.mode === 'postgres-dashboard'" class="h-3.5 w-3.5" />
                       <Gauge v-else-if="tab.mode === 'top-sql'" class="h-3.5 w-3.5 text-primary" />
+                      <HardDrive v-else-if="tab.mode === 'storage-bloat'" class="h-3.5 w-3.5 text-primary" />
+                      <SlidersHorizontal v-else-if="tab.mode === 'guc-parameters'" class="h-3.5 w-3.5 text-primary" />
                       <Settings v-else-if="tab.mode === 'settings'" class="h-3.5 w-3.5 text-muted-foreground" />
                       <Code2 v-else class="h-3.5 w-3.5" />
                     </span>

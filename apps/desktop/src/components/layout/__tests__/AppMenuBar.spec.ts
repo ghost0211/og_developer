@@ -17,10 +17,13 @@ describe("AppMenuBar", () => {
   });
 
   it("does not expose placeholder routine targets or driver-store entries", () => {
-    expect(menuSource).not.toContain("check-updates");
     expect(menuSource).not.toContain("open-driver-store");
     expect(menuSource).not.toContain("test_routine");
     expect(menuSource).not.toContain("debug_routine");
+  });
+
+  it("exposes check-updates in the Help menu", () => {
+    expect(menuSource).toContain("@select=\"emit('check-updates')\"");
   });
 
   it("routes settings through the standalone settings action", () => {
@@ -53,7 +56,22 @@ describe("AppMenuBar", () => {
   });
 
   it("keeps the moved utilities in the Tools menu", () => {
-    for (const event of ["open-sessions", "open-invalid-objects", "open-command-window", "open-table-import", "open-database-export", "open-transfer", "open-sql-file", "open-schema-diff", "open-data-compare", "toggle-sql-library", "toggle-sql-file-panel"]) {
+    for (const event of [
+      "open-sessions",
+      "open-invalid-objects",
+      "open-top-sql",
+      "open-storage-bloat",
+      "open-guc-parameters",
+      "open-command-window",
+      "open-table-import",
+      "open-database-export",
+      "open-transfer",
+      "open-sql-file",
+      "open-schema-diff",
+      "open-data-compare",
+      "toggle-sql-library",
+      "toggle-sql-file-panel",
+    ]) {
       expect(menuSource).toContain(`@select="emit('${event}')"`);
     }
   });

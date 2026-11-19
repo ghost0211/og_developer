@@ -1,6 +1,7 @@
 import type { DatabaseType, QueryResult } from "@/types/database";
 import * as api from "@/lib/backend/api";
 import { supportsDatabaseFeature } from "@/lib/database/databaseDriverManifest";
+import { isOpenGaussExplainPerformanceText, parseOpenGaussExplainPerformanceText } from "@/lib/diagram/opengaussExplainPerformance";
 
 export interface ExplainPlanNode {
   id: string;
@@ -28,13 +29,28 @@ export function supportsExplainPlan(databaseType?: DatabaseType): databaseType i
   return !!databaseType && supportsDatabaseFeature(databaseType, "sqlExplain") && SUPPORTED_EXPLAIN_TYPES.has(databaseType);
 }
 
-/** `analyze` is honored by PostgreSQL-compatible engines server-side. */
-export function buildExplainSql(databaseType: DatabaseType | undefined, sql: string, format: "json" | "standard" = "json", analyze?: boolean): Promise<BuildExplainSqlResult> {
-  return api.buildExplainSql({ databaseType, sql, format, analyze }) as Promise<BuildExplainSqlResult>;
+/** `analyze` / `performance` / `sandbox` are honored by PostgreSQL-compatible engines server-side. */
+export function buildExplainSql(databaseType: DatabaseType | undefined, sql: string, format: "json" | "standard" = "json", analyze?: boolean, extra?: { performance?: boolean; sandbox?: boolean }): Promise<BuildExplainSqlResult> {
+  return api.buildExplainSql({
+    databaseType,
+    sql,
+    format,
+    analyze,
+    ...(extra?.performance !== undefined ? { performance: extra.performance } : {}),
+    ...(extra?.sandbox !== undefined ? { sandbox: extra.sandbox } : {}),
+  }) as Promise<BuildExplainSqlResult>;
 }
 
 export function parseExplainResult(databaseType: "postgres" | "opengauss", result: QueryResult): ParsedExplainPlan {
-  const raw = parseExplainCell(result.rows[0]?.[0]);
+  const rows = Array.isArray(result?.rows) ? result.rows : [];
+  if (rows.length > 0) {
+    const combined = rows.map((r) => String(r?.[0] ?? "")).join("\n");
+    if (isOpenGaussExplainPerformanceText(combined)) {
+      const parsed = parseOpenGaussExplainPerformanceText(combined);
+      return { databaseType, raw: combined, nodes: parsed.nodes };
+    }
+  }
+  const raw = parseExplainCell(rows[0]?.[0]);
   const nodes = parsePostgresExplain(raw);
   return { databaseType, raw, nodes };
 }
