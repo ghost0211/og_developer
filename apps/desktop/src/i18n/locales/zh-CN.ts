@@ -4906,6 +4906,8 @@ export const zhCNMessages = {
     menu: "书签",
     empty: "暂无书签",
     jumpTo: "跳转到第",
+    clearAll: "清空全部书签",
+    emptyLine: "(空行)",
   },
   dangerDialog: {
     title: "危险操作",

@@ -720,3 +720,36 @@ describe("fullwidth semicolon (；) compatibility", () => {
     expect(ranges.map((r) => r.sql)).toEqual(["BEGIN\n  UPDATE t SET a = 1；\nEND；", "SELECT 2"]);
   });
 });
+
+describe("unterminated non-keyword fragments before soft statements", () => {
+  it("isolates a statement that follows an unterminated non-keyword identifier line", () => {
+    const sql = "yi_app.app_menu\n\nselect * from yi_app.app_menu where menu_id = 100011;";
+    const selectStart = sql.indexOf("select *");
+    const selectCursor = sql.indexOf("menu_id = 100011");
+
+    expect(rangeSqlTexts(executableStatementRanges(sql, "opengauss"))).toEqual(["yi_app.app_menu", "select * from yi_app.app_menu where menu_id = 100011"]);
+    expect(statementRangeAtCursor(sql, selectCursor, "opengauss")?.from).toBe(selectStart);
+    expect(statementRangeAtCursor(sql, selectCursor, "opengauss")?.sql).toBe("select * from yi_app.app_menu where menu_id = 100011");
+    expect(currentExecutableStatementRange(sql, selectCursor, "opengauss")?.sql).toBe("select * from yi_app.app_menu where menu_id = 100011");
+    expect(candidateSummaries(buildExecutionCandidates(sql, selectCursor, "opengauss"))).toEqual(["cursor:select * from yi_app.app_menu where menu_id = 100011", `all:${sql}`]);
+  });
+
+  it("keeps leading optimizer hints attached to the first soft statement and splits subsequent ones", () => {
+    const sql = "/*+ SET(enable_seqscan off) */\nSELECT 1\nSELECT 2;";
+    const ranges = executableStatementRanges(sql, "opengauss");
+
+    expect(rangeSqlTexts(ranges)).toEqual(["/*+ SET(enable_seqscan off) */\nSELECT 1", "SELECT 2"]);
+    expect(statementRangeAtCursor(sql, indexOf(sql, "1"), "opengauss")?.sql).toBe("/*+ SET(enable_seqscan off) */\nSELECT 1");
+    expect(statementRangeAtCursor(sql, indexOf(sql, "2"), "opengauss")?.sql).toBe("SELECT 2");
+  });
+
+  it("keeps leading optimizer hints attached to WITH ... SELECT queries", () => {
+    const sql = "/*+ SET(enable_seqscan off) */\nWITH cte AS (SELECT 1)\nSELECT * FROM cte;";
+    expect(rangeSqlTexts(executableStatementRanges(sql, "opengauss"))).toEqual(["/*+ SET(enable_seqscan off) */\nWITH cte AS (SELECT 1)\nSELECT * FROM cte"]);
+  });
+
+  it("keeps parenthesized set-operation queries together", () => {
+    const sql = "(SELECT 1)\nUNION ALL\nSELECT 2;";
+    expect(rangeSqlTexts(executableStatementRanges(sql, "opengauss"))).toEqual(["(SELECT 1)\nUNION ALL\nSELECT 2"]);
+  });
+});

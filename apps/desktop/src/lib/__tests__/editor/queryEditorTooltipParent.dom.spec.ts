@@ -4,6 +4,7 @@ import { EditorState } from "@codemirror/state";
 import { EditorView, showTooltip, tooltips, type Tooltip } from "@codemirror/view";
 import { describe, expect, it } from "vitest";
 import { editorFontTheme } from "@/lib/editor/editorThemes";
+import { resolveQueryEditorTooltipParent } from "@/lib/editor/sqlHoverTooltip";
 
 function staticTooltip(label: string): Tooltip {
   return {
@@ -67,5 +68,17 @@ describe("CodeMirror tooltip host", () => {
 
     secondView.destroy();
     expect(secondContainer.isConnected).toBe(false);
+  });
+
+  it("resolves the global tooltip root even when the editor is detached or in a dialog portal", () => {
+    document.body.innerHTML = '<div id="root"><div id="ogdeveloper-query-editor-tooltip-root"></div><div data-editor="inside"></div></div><div data-dialog-portal><div data-editor="dialog"></div></div>';
+    const tooltipHost = document.getElementById("ogdeveloper-query-editor-tooltip-root")!;
+    const insideEditor = document.querySelector<HTMLElement>('[data-editor="inside"]')!;
+    const dialogEditor = document.querySelector<HTMLElement>('[data-editor="dialog"]')!;
+    const detachedEditor = document.createElement("div");
+
+    expect(resolveQueryEditorTooltipParent(insideEditor)).toBe(tooltipHost);
+    expect(resolveQueryEditorTooltipParent(dialogEditor)).toBe(tooltipHost);
+    expect(resolveQueryEditorTooltipParent(detachedEditor)).toBe(tooltipHost);
   });
 });

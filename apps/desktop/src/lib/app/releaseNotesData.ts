@@ -2,6 +2,26 @@ import type { ChangelogLang, ChangelogRelease } from "@/lib/app/changelog";
 
 const BUNDLED_RELEASES_CN: ChangelogRelease[] = [
   {
+    tag: "v0.3.4",
+    name: "OG Developer v0.3.4",
+    date: "2026-11-20",
+    sections: [
+      {
+        type: "improved",
+        title: "改进",
+        items: [{ title: "SQL 书签图标与右键管理菜单升级", desc: "升级为清晰端正的琥珀金矢量书签丝带并随字号缩放，子菜单新增数量徽章、行号标签、逐项删除及清空全部功能" }],
+      },
+      {
+        type: "fixed",
+        title: "问题修复",
+        items: [
+          { title: "SQL 悬浮 DDL 卡片穿透与遮挡修复", desc: "修复悬浮宿主在 KeepAlive 切换/弹窗中退化导致被结果工具栏穿透和表头遮挡的问题，提升浮窗层级并约束高度溢出" },
+          { title: "前置未封口片段合并及选区连击塌缩修复", desc: "修复非关键字前置残留文本吞并后续 SELECT 语句导致执行报错的问题，并避免双击/三击及行尾空白点击把选区折叠回单光标" },
+        ],
+      },
+    ],
+  },
+  {
     tag: "v0.3.3",
     name: "OG Developer v0.3.3",
     date: "2026-11-19",
@@ -154,6 +174,26 @@ const BUNDLED_RELEASES_CN: ChangelogRelease[] = [
 ];
 
 const BUNDLED_RELEASES_EN: ChangelogRelease[] = [
+  {
+    tag: "v0.3.4",
+    name: "OG Developer v0.3.4",
+    date: "2026-11-20",
+    sections: [
+      {
+        type: "improved",
+        title: "Improved",
+        items: [{ title: "Upgraded SQL bookmark icon & management menu", desc: "Replaced tiny emoji markers with a crisp font-scaled amber SVG ribbon (22px gutter) and added count badges, line pills, per-item remove, and clear-all actions" }],
+      },
+      {
+        type: "fixed",
+        title: "Fixed",
+        items: [
+          { title: "SQL hover DDL layering & result-pane occlusion", desc: "Prevented tooltip portal fallback inside KeepAlive tabs/dialogs so hover DDL cards always render above result toolbars and grid headers with bounded scroll height" },
+          { title: "Soft-statement isolation & multi-click selection collapse", desc: "Isolated statements following unterminated non-keyword fragments (preserving optimizer hints) and stopped selection drag from collapsing double/triple-clicks and trailing-space clicks" },
+        ],
+      },
+    ],
+  },
   {
     tag: "v0.3.3",
     name: "OG Developer v0.3.3",

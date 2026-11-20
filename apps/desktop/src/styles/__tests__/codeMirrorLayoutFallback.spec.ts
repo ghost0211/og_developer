@@ -16,7 +16,7 @@ describe("CodeMirror WebView layout fallback", () => {
 
   it("bounds the bookmark hit target to a narrow gutter", () => {
     const bookmarkRule = globalsCss.match(/:where\(\.cm-editor\) \.cm-sql-bookmark-gutter \{([\s\S]*?)\n\}/)?.[1] ?? "";
-    expect(bookmarkRule).toContain("flex: 0 0 18px;");
-    expect(bookmarkRule).toContain("max-width: 18px;");
+    expect(bookmarkRule).toContain("flex: 0 0 22px;");
+    expect(bookmarkRule).toContain("max-width: 22px;");
   });
 });

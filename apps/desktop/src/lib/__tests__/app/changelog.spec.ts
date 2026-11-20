@@ -20,11 +20,11 @@ describe("changelog & release notes helpers", () => {
     expect(changelogLangFromLocale("en-US")).toBe("en");
   });
 
-  it("includes curated bilingual bundled releases starting at v0.3.3", () => {
+  it("includes curated bilingual bundled releases starting at v0.3.4", () => {
     const cn = getBundledChangelogReleases("cn");
     const en = getBundledChangelogReleases("en");
-    expect(cn[0]?.tag).toBe("v0.3.3");
-    expect(en[0]?.tag).toBe("v0.3.3");
+    expect(cn[0]?.tag).toBe("v0.3.4");
+    expect(en[0]?.tag).toBe("v0.3.4");
     expect(cn.length).toBeGreaterThanOrEqual(8);
     expect(en.length).toBe(cn.length);
   });
@@ -34,13 +34,13 @@ describe("changelog & release notes helpers", () => {
     const merged = mergeChangelogReleases(
       [
         {
-          tag: "0.3.4",
-          name: "OG Developer v0.3.4",
+          tag: "0.3.5",
+          name: "OG Developer v0.3.5",
           date: "2026-11-25",
           sections: [{ type: "added", title: "Added", items: [{ title: "Online Feature", desc: "Fetched remotely" }] }],
         },
         {
-          tag: "v0.3.3",
+          tag: "v0.3.4",
           name: "Remote placeholder",
           date: "2026-11-20",
           sections: [],
@@ -49,10 +49,10 @@ describe("changelog & release notes helpers", () => {
       bundled,
     );
 
-    expect(merged[0]?.tag).toBe("v0.3.4");
-    expect(merged[1]?.tag).toBe("v0.3.3");
+    expect(merged[0]?.tag).toBe("v0.3.5");
+    expect(merged[1]?.tag).toBe("v0.3.4");
     expect(merged[1]?.sections.length).toBeGreaterThan(0);
-    expect(compareReleaseTagDesc("v0.3.10", "v0.3.3")).toBeLessThan(0);
+    expect(compareReleaseTagDesc("v0.3.10", "v0.3.4")).toBeLessThan(0);
   });
 
   it("falls back cleanly to bundled releases when remote fetch fails", async () => {
@@ -60,7 +60,7 @@ describe("changelog & release notes helpers", () => {
     const result = await fetchChangelog("cn", { force: true });
 
     expect(result.fromRemote).toBe(false);
-    expect(result.releases[0]?.tag).toBe("v0.3.3");
+    expect(result.releases[0]?.tag).toBe("v0.3.4");
   });
 
   it("merges remote releases when backend succeeds", async () => {
@@ -79,6 +79,6 @@ describe("changelog & release notes helpers", () => {
 
     expect(result.fromRemote).toBe(true);
     expect(result.releases[0]?.tag).toBe("v0.4.0");
-    expect(result.releases.some((item) => item.tag === "v0.3.3")).toBe(true);
+    expect(result.releases.some((item) => item.tag === "v0.3.4")).toBe(true);
   });
 });

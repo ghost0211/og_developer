@@ -9,6 +9,17 @@ export interface QueryEditorObjectNavigationModifierEvent {
   metaKey: boolean;
 }
 
+export interface QueryEditorSelectionDragPointerEvent {
+  altKey: boolean;
+  button: number;
+  detail: number;
+  shiftKey: boolean;
+}
+
+export function canStartQueryEditorSelectionDrag(event: QueryEditorSelectionDragPointerEvent): boolean {
+  return event.button === 0 && event.detail <= 1 && !event.altKey && !event.shiftKey;
+}
+
 export function startsQueryEditorRectangularSelection(event: QueryEditorPointerEvent): boolean {
   return event.altKey || event.button === 1;
 }

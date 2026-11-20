@@ -1655,10 +1655,10 @@ html.ogdeveloper-data-grid-native-selection-blocked [role="textbox"] * {
 /* Defense in depth for WebViews that also skip the bookmark extension's
  * dynamically mounted baseTheme rules. */
 :where(.cm-editor) .cm-sql-bookmark-gutter {
-  flex: 0 0 18px;
-  width: 18px;
-  min-width: 18px;
-  max-width: 18px;
+  flex: 0 0 22px;
+  width: 22px;
+  min-width: 22px;
+  max-width: 22px;
   overflow: hidden;
 }
 
@@ -1666,14 +1666,28 @@ html.ogdeveloper-data-grid-native-selection-blocked [role="textbox"] * {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  min-width: 18px;
-  max-width: 18px;
+  width: 22px;
+  min-width: 22px;
+  max-width: 22px;
 }
 
 :where(.cm-editor) .cm-announced {
   position: fixed;
   top: -10000px;
+}
+
+#ogdeveloper-query-editor-tooltip-root {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 120;
+  width: 0;
+  height: 0;
+  overflow: visible;
+}
+
+#ogdeveloper-query-editor-tooltip-root .cm-tooltip.cm-tooltip-hover {
+  z-index: 9999;
 }
 
 :root {

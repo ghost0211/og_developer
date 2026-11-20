@@ -4904,6 +4904,8 @@ export default {
     menu: "Bookmarks",
     empty: "No bookmarks yet",
     jumpTo: "Jump to line",
+    clearAll: "Clear all bookmarks",
+    emptyLine: "(empty line)",
   },
   dangerDialog: {
     title: "Dangerous Operation",

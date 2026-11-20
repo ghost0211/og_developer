@@ -395,7 +395,7 @@ function splitStatementRangeAtSoftStarts(sql: string, statement: RawStatement, d
   if (isOraclePlSqlStatement(statement.sql, databaseType)) return [statement];
 
   const lineStarts = topLevelSoftStatementLineStarts(sql, statement, databaseType, parameterOptions);
-  if (lineStarts.length <= 1) return [statement];
+  if (lineStarts.length === 0) return [statement];
 
   const boundaries: Array<{ hitFrom: number; from: number; keyword: string }> = [];
   let currentKeyword = softStatementKeywordAt(sql, statement.from, databaseType, parameterOptions);
@@ -408,6 +408,15 @@ function splitStatementRangeAtSoftStarts(sql: string, statement: RawStatement, d
 
   for (const lineStart of lineStarts) {
     if (lineStart.from <= statement.from) continue;
+
+    if (boundaries.length === 1 && currentKeyword === null && trimRangeEndBeforeNextBoundary(sql, statement.from, lineStart.from, parameterOptions) <= statement.from) {
+      // Preserve leading optimizer/tenant hint comments attached to the first soft statement.
+      currentKeyword = lineStart.keyword;
+      currentExplainTargetKeyword = explainLikeTargetKeywordAt(sql, lineStart.from, parameterOptions);
+      currentBodyKeyword = currentExplainTargetKeyword ?? currentKeyword;
+      boundaries[0].keyword = currentKeyword;
+      continue;
+    }
 
     if (currentBodyKeyword === "WITH" && !consumedWithMainStatement && WITH_MAIN_STATEMENT_KEYWORDS.has(lineStart.keyword)) {
       consumedWithMainStatement = true;

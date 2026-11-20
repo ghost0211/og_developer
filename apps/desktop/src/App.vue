@@ -3002,7 +3002,7 @@ onUnmounted(() => {
         @saved="onQueryEditorObjectSourceSaved"
       />
     </TooltipProvider>
-    <div id="ogdeveloper-query-editor-tooltip-root" class="fixed left-0 top-0 z-[70] h-0 w-0 overflow-visible" />
+    <div id="ogdeveloper-query-editor-tooltip-root" class="fixed left-0 top-0 z-[120] h-0 w-0 overflow-visible" />
   </div>
   <AboutDialog v-model:open="aboutDialogOpen" :app-version="appVersion" @check-updates="onAboutCheckUpdates" />
   <UpdateDialog

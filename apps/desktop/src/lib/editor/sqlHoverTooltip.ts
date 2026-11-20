@@ -3,6 +3,12 @@ import { EditorView, ViewPlugin, closeHoverTooltips, hoverTooltip, tooltips, typ
 
 export const SQL_HOVER_TOOLTIP_MAX_WIDTH = "min(760px, calc(100vw - 24px))";
 export const SQL_DIAGNOSTIC_TOOLTIP_MAX_WIDTH = "min(448px, calc(100vw - 24px))";
+export const QUERY_EDITOR_TOOLTIP_ROOT_ID = "ogdeveloper-query-editor-tooltip-root";
+
+/** Resolve the viewport-fixed tooltip portal even when an editor mounts while detached by KeepAlive. */
+export function resolveQueryEditorTooltipParent(editorElement: HTMLElement): HTMLElement {
+  return editorElement.closest<HTMLElement>("#root")?.querySelector<HTMLElement>(`#${QUERY_EDITOR_TOOLTIP_ROOT_ID}`) ?? editorElement.ownerDocument.getElementById(QUERY_EDITOR_TOOLTIP_ROOT_ID) ?? editorElement;
+}
 
 export function computeSqlTooltipSpace(view: EditorView): { top: number; left: number; bottom: number; right: number } {
   const docElt = view.dom.ownerDocument.documentElement;
@@ -55,6 +61,13 @@ export function createSqlHoverDom(options: SqlHoverDomOptions): HTMLElement {
   dom.style.pointerEvents = "auto";
   dom.style.maxWidth = SQL_HOVER_TOOLTIP_MAX_WIDTH;
   dom.style.boxSizing = "border-box";
+  dom.style.opacity = "1";
+  dom.style.display = "flex";
+  dom.style.flexDirection = "column";
+  dom.style.maxHeight = "100%";
+  dom.style.minHeight = "0";
+  dom.style.overflow = "hidden";
+  dom.style.isolation = "isolate";
   dom.style.backgroundColor = fallbackBg;
   dom.style.setProperty("background-color", `var(--popover, ${fallbackBg})`);
   dom.style.color = fallbackFg;
@@ -67,22 +80,22 @@ export function createSqlHoverDom(options: SqlHoverDomOptions): HTMLElement {
   dom.style.boxShadow = "0 10px 28px rgb(0 0 0 / 0.16), 0 2px 6px rgb(0 0 0 / 0.08)";
 
   const heading = document.createElement("div");
-  heading.className = "font-medium select-text break-words";
+  heading.className = "shrink-0 font-medium select-text break-words";
   heading.textContent = options.title;
   dom.appendChild(heading);
 
   const detail = document.createElement("div");
-  detail.className = "mt-1 text-muted-foreground select-text break-words";
+  detail.className = "mt-1 shrink-0 text-muted-foreground select-text break-words";
   detail.textContent = options.detail;
   dom.appendChild(detail);
 
   if (options.sqlContent) {
     const separator = document.createElement("div");
-    separator.className = "mt-2 border-t border-border/60";
+    separator.className = "mt-2 shrink-0 border-t border-border/60";
     dom.appendChild(separator);
 
     const sql = document.createElement("div");
-    sql.className = "mt-1.5 max-h-64 max-w-full rounded bg-muted/35 px-2 py-1.5 overflow-x-auto overflow-y-auto text-[11px] leading-5 whitespace-pre font-mono select-text cursor-text";
+    sql.className = "mt-1.5 min-h-0 flex-1 max-h-64 max-w-full rounded bg-muted/35 px-2 py-1.5 overflow-x-auto overflow-y-auto text-[11px] leading-5 whitespace-pre font-mono select-text cursor-text";
     sql.style.pointerEvents = "auto";
     if (options.highlighter) {
       sql.innerHTML = options.highlighter(options.sqlContent, options.isDark ? "dark" : "light");
@@ -95,7 +108,7 @@ export function createSqlHoverDom(options: SqlHoverDomOptions): HTMLElement {
 
   for (const row of options.rows ?? []) {
     const rowNode = document.createElement("div");
-    rowNode.className = "mt-1 font-mono text-muted-foreground select-text break-words";
+    rowNode.className = "mt-1 shrink-0 font-mono text-muted-foreground select-text break-words";
     rowNode.textContent = row;
     dom.appendChild(rowNode);
   }
@@ -130,6 +143,10 @@ export function createSqlDiagnosticHoverDom(options: SqlDiagnosticHoverDomOption
   dom.style.pointerEvents = "auto";
   dom.style.maxWidth = SQL_DIAGNOSTIC_TOOLTIP_MAX_WIDTH;
   dom.style.boxSizing = "border-box";
+  dom.style.opacity = "1";
+  dom.style.maxHeight = "100%";
+  dom.style.overflowY = "auto";
+  dom.style.isolation = "isolate";
   dom.style.backgroundColor = fallbackBg;
   dom.style.setProperty("background-color", `var(--popover, ${fallbackBg})`);
   dom.style.color = fallbackFg;

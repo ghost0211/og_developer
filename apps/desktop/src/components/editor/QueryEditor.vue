@@ -67,7 +67,7 @@ import {
   type SqlObjectNavigationTarget,
 } from "@/lib/sql/sqlNavigation";
 import { buildHoverTableSql, ddlForHoverPreview, hoverTableMatchesScope, quoteQualifiedName, reformatHoverDdl, scopeHoverTables, type HoverTableScope } from "@/lib/editor/hoverTableSql";
-import { createSqlDiagnosticHoverDom, createSqlHoverController, createSqlHoverDom, type SqlDiagnosticHoverAction } from "@/lib/editor/sqlHoverTooltip";
+import { createSqlDiagnosticHoverDom, createSqlHoverController, createSqlHoverDom, resolveQueryEditorTooltipParent, type SqlDiagnosticHoverAction } from "@/lib/editor/sqlHoverTooltip";
 import { lineColumnToOffset, parseSqlErrorLocation } from "@/lib/sql/sqlDiagnostics";
 import { formatSqlSyntaxDiagnosticMessage, lintSqlSyntax, type SqlSyntaxDiagnostic, type SqlSyntaxDiagnosticMessages } from "@/lib/sql/sqlSyntaxLint";
 import {
@@ -99,7 +99,7 @@ import { tags } from "@lezer/highlight";
 import { sqlSemanticTableNameSpansForSyntaxTree } from "@/lib/editor/codemirrorSqlSemanticHighlight";
 import { sqlBlockFolding } from "@/lib/editor/codemirrorSqlBlockFolding";
 import { sqlBlockMatching } from "@/lib/editor/codemirrorSqlBlockMatching";
-import { startsQueryEditorRectangularSelection, usesQueryEditorObjectNavigationModifier } from "@/lib/editor/queryEditorPointerSelection";
+import { canStartQueryEditorSelectionDrag, startsQueryEditorRectangularSelection, usesQueryEditorObjectNavigationModifier } from "@/lib/editor/queryEditorPointerSelection";
 import { LARGE_PASTE_HISTORY_USER_EVENT, normalizeQueryEditorPasteText, recoverableNativePasteSuffix, shouldRecoverLargeTauriPaste } from "@/lib/editor/queryEditorLargePaste";
 import { extendQueryEditorSelection, runQueryEditorAltExtendSelection } from "@/lib/editor/queryEditorExtendSelection";
 import type { StatementExecutionMarker } from "@/lib/tabs/tabPresentation";
@@ -213,6 +213,8 @@ const bookmarkMenuLabels = computed<SqlBookmarkMenuLabels>(() => ({
   menu: t("bookmark.menu"),
   empty: t("bookmark.empty"),
   jumpTo: t("bookmark.jumpTo"),
+  clearAll: t("bookmark.clearAll"),
+  emptyLine: t("bookmark.emptyLine"),
 }));
 watch(bookmarkMenuLabels, (labels) => setSqlBookmarkMenuLabels(labels), { immediate: true });
 const { toast } = useToast();
@@ -445,6 +447,8 @@ let buildPreviewRangeExtension: (() => import("@codemirror/state").Extension) | 
 let buildResultSourceRangeExtension: (() => import("@codemirror/state").Extension) | null = null;
 let buildRunStatementGutterExtension: (() => import("@codemirror/state").Extension) | null = null;
 let indentComp: import("@codemirror/state").Compartment | null = null;
+let tooltipComp: import("@codemirror/state").Compartment | null = null;
+let codeMirrorTooltips: typeof import("@codemirror/view").tooltips | null = null;
 let codeMirrorIndentUnit: typeof import("@codemirror/language").indentUnit | null = null;
 let semanticDiagnostics: SqlSemanticDiagnostic[] = [];
 let semanticDiagnosticTimer: ReturnType<typeof setTimeout> | null = null;
@@ -1022,11 +1026,11 @@ function registerEditorScrollbarPointerGuard(currentView: EditorViewType) {
 }
 
 function selectedRangeAtPointer(currentView: EditorViewType, event: MouseEvent) {
-  if (props.readOnly || event.button !== 0) return null;
+  if (props.readOnly || !canStartQueryEditorSelectionDrag(event)) return null;
   if (!currentView.contentDOM.contains(event.target as Node | null)) return null;
   const range = currentView.state.selection.main;
   if (range.empty) return null;
-  const pos = currentView.posAtCoords({ x: event.clientX, y: event.clientY }, false);
+  const pos = currentView.posAtCoords({ x: event.clientX, y: event.clientY });
   if (pos == null || pos < range.from || pos > range.to) return null;
   return {
     from: range.from,
@@ -4115,6 +4119,8 @@ onMounted(async () => {
   diagnosticComp = new Compartment();
   previewRangeComp = new Compartment();
   indentComp = new Compartment();
+  tooltipComp = new Compartment();
+  codeMirrorTooltips = tooltips;
   setSqlDiagnosticsEffect = StateEffect.define<SqlSemanticDiagnostic[]>();
   signaturePrefetchEffect = StateEffect.define<null>();
   signatureDismissEffect = StateEffect.define<null>();
@@ -4566,7 +4572,7 @@ onMounted(async () => {
 
   const editorElement = editorRef.value;
   if (!editorElement) return;
-  const tooltipParent = editorElement.closest<HTMLElement>("#root")?.querySelector<HTMLElement>("#ogdeveloper-query-editor-tooltip-root") ?? editorElement;
+  const tooltipParent = resolveQueryEditorTooltipParent(editorElement);
   queryEditorTooltipHost = tooltipParent;
   const state = EditorState.create({
     doc: props.modelValue,
@@ -4632,7 +4638,7 @@ onMounted(async () => {
       keymap.of([...defaultKeymap, ...searchKeymap, ...historyKeymap, ...foldKeymap, ...completionKeymap]),
       sqlLanguageComp.of(buildSqlLanguageExtension()),
       sqlSemanticHighlightComp.of(buildSqlSemanticHighlightExtension()),
-      tooltips({ parent: tooltipParent }),
+      tooltipComp.of(tooltips({ parent: tooltipParent })),
       completionComp.of(buildSqlCompletionExtension()),
       sqlCompletionTheme(EditorView),
       codeMirrorTheme.of(theme),
@@ -5319,8 +5325,19 @@ function pauseQueryEditorBackgroundWork() {
   unregisterTableReferenceDropListener();
 }
 
+function syncTooltipParentHost() {
+  const currentView = view.value;
+  const editorElement = editorRef.value;
+  if (!currentView || !editorElement || !tooltipComp || !codeMirrorTooltips) return;
+  const nextParent = resolveQueryEditorTooltipParent(editorElement);
+  if (nextParent === queryEditorTooltipHost) return;
+  queryEditorTooltipHost = nextParent;
+  currentView.dispatch({ effects: tooltipComp.reconfigure(codeMirrorTooltips({ parent: nextParent })) });
+}
+
 function resumeQueryEditorBackgroundWork() {
   editorIsActive = true;
+  syncTooltipParentHost();
   sqlHoverController.resume();
   registerTableReferenceDropListener();
   scheduleSyntaxDiagnostics(0, { activeCursorPos: null });
