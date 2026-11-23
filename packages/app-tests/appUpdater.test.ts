@@ -103,15 +103,16 @@ test("the app shell wires update installation", () => {
   assert.match(appSource, /useAppUpdater/);
   assert.match(appSource, /countActiveUpdateBlockingTasks/);
   assert.match(appSource, /UpdateDialog/);
-  assert.match(appSource, /checkUpdates/);
+  assert.match(appSource, /appUpdater\.checkUpdates\(\{ silent: true \}\)/);
+  assert.match(appSource, /@check-updates="void appUpdater\.checkUpdates\(\)"/);
 });
 
-test("the settings about page and about dialog expose a manual update check", () => {
+test("both About views show release notes without a duplicate update check", () => {
   const settingsSource = readFileSync("apps/desktop/src/components/editor/EditorSettingsDialog.vue", "utf8");
   const aboutSource = readFileSync("apps/desktop/src/components/common/AboutDialog.vue", "utf8");
 
-  assert.match(settingsSource, /check-updates/);
-  assert.match(settingsSource, /updates\.check/);
-  assert.match(aboutSource, /check-updates/);
-  assert.match(aboutSource, /updates\.check/);
+  for (const source of [settingsSource, aboutSource]) {
+    assert.match(source, /<ReleaseNotesPanel\b/);
+    assert.doesNotMatch(source, /check-updates|updates\.check/);
+  }
 });

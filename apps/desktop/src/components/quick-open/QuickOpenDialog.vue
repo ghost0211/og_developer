@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, ref, watch, nextTick } from "vue";
 import { useI18n } from "vue-i18n";
-import { CalendarClock, Command, FileCode, FileText, Layers, Link2, Terminal, Zap } from "@lucide/vue";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { CalendarClock, Command, FileCode, FileText, Layers, Link2, Terminal, XIcon, Zap } from "@lucide/vue";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogClose, DialogContent } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { useQuickOpen, type QuickOpenItem } from "@/composables/useQuickOpen";
 
@@ -168,12 +169,12 @@ watch(
 
 <template>
   <Dialog :open="dialogOpen" @update:open="dialogOpen = $event">
-    <DialogContent class="max-w-2xl p-0 gap-0 rounded-lg overflow-hidden">
+    <DialogContent :show-close-button="false" class="max-w-2xl p-0 gap-0 rounded-lg overflow-hidden">
       <div class="flex flex-col bg-background">
         <!-- Search Input -->
         <div class="flex items-center gap-3 px-4 py-3 border-b">
-          <Terminal v-if="isCommandMode" class="h-5 w-5 text-primary" />
-          <Command v-else class="h-5 w-5 text-muted-foreground" />
+          <Terminal v-if="isCommandMode" class="h-5 w-5 shrink-0 text-primary" />
+          <Command v-else class="h-5 w-5 shrink-0 text-muted-foreground" />
           <Input ref="inputRef" v-model="searchQuery" type="text" :placeholder="t('quickOpen.placeholder')" class="flex-1 border-0 bg-transparent p-0 placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:outline-none" @keydown="handleKeyDown" />
           <button
             v-if="!isCommandMode"
@@ -184,6 +185,11 @@ watch(
           >
             {{ t("quickOpen.commandHintButton") }}
           </button>
+          <DialogClose as-child>
+            <Button type="button" variant="ghost" size="icon-sm" :aria-label="t('quickOpen.close')">
+              <XIcon />
+            </Button>
+          </DialogClose>
         </div>
 
         <!-- Results List -->

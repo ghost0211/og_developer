@@ -2,7 +2,7 @@
 import { computed, ref, watch, nextTick, onUnmounted } from "vue";
 import type { CSSProperties } from "vue";
 import { useI18n } from "vue-i18n";
-import { X, Pin, ChevronDown, Table2, Code2, TableProperties, PencilRuler, Pencil, Lock, Copy, AlertTriangle, Minimize2, Maximize2, Activity, Gauge, HardDrive, SlidersHorizontal, Terminal, TerminalSquare, Bug, FileCode, Settings, Stethoscope } from "@lucide/vue";
+import { X, Pin, ChevronDown, Table2, Code2, TableProperties, PencilRuler, Pencil, Lock, Copy, AlertTriangle, Minimize2, Maximize2, Activity, Gauge, HardDrive, SlidersHorizontal, Terminal, TerminalSquare, Bug, FileCode, Settings, Stethoscope, Loader2 } from "@lucide/vue";
 import CustomContextMenu, { type ContextMenuItem } from "@/components/ui/CustomContextMenu.vue";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -147,6 +147,10 @@ function cancelRenameTab() {
 
 function isDirtyTab(tab: QueryTab) {
   return queryStore.isTabDirty(tab);
+}
+
+function isQueryTabRunning(tab: QueryTab) {
+  return tab.mode === "query" && (tab.isExecuting || tab.isExplaining === true);
 }
 
 function tabTitleLabel(tab: QueryTab) {
@@ -452,6 +456,7 @@ function tabColorStyle(tab: QueryTab) {
 }
 
 function tabIconClass(tab: QueryTab) {
+  if (isQueryTabRunning(tab)) return "text-emerald-600 dark:text-emerald-400 motion-safe:animate-spin";
   if (tab.mode === "command") return "text-emerald-500";
   if (tab.mode === "routine-test" || tab.mode === "routine-health" || tab.mode === "top-sql" || tab.mode === "storage-bloat" || tab.mode === "guc-parameters") return "text-primary";
   if (tab.mode === "routine-debug") return "text-amber-500";
@@ -471,6 +476,7 @@ const tabBarClass = computed(() => [isClassicLayout.value ? "bg-muted" : "border
 const regularTabRowClass = computed(() => [isClassicLayout.value ? "h-9 items-stretch" : "h-10 items-center px-2", isClassicLayout.value && !hasFixedTabs.value ? "border-b" : ""]);
 
 function tabMenuIcon(tab: QueryTab) {
+  if (isQueryTabRunning(tab)) return Loader2;
   if (tab.mode === "data") return Table2;
   if (tab.mode === "objects") return TableProperties;
   if (tab.mode === "structure") return PencilRuler;
@@ -605,6 +611,7 @@ function onOverflowItemKeydown(event: KeyboardEvent, tabId: string, kind: "regul
                     "
                     :style="[tabColorStyle(tab), tabDropStyle(tab.id)]"
                     :data-active-tab="tab.id === queryStore.activeTabId && !driverStoreActive"
+                    :data-query-running="isQueryTabRunning(tab) || undefined"
                     @click="handleTabClick(tab)"
                     @dblclick.stop="startRenameTab(tab)"
                     @mousedown.middle.prevent="queryStore.closeTab(tab.id)"
@@ -615,7 +622,8 @@ function onOverflowItemKeydown(event: KeyboardEvent, tabId: string, kind: "regul
                   >
                     <span v-if="tabEnvColor(tab)" class="h-1.5 w-1.5 shrink-0 rounded-full" :style="{ backgroundColor: tabEnvColor(tab) }" aria-hidden="true" />
                     <span class="shrink-0" :class="tabIconClass(tab)">
-                      <Table2 v-if="tab.mode === 'data'" class="h-3.5 w-3.5" />
+                      <Loader2 v-if="isQueryTabRunning(tab)" class="h-3.5 w-3.5" role="img" :aria-label="t('statusBar.executing')" />
+                      <Table2 v-else-if="tab.mode === 'data'" class="h-3.5 w-3.5" />
                       <TableProperties v-else-if="tab.mode === 'objects'" class="h-3.5 w-3.5" />
                       <PencilRuler v-else-if="tab.mode === 'structure'" class="h-3.5 w-3.5" />
                       <Activity v-else-if="tab.mode === 'processlist'" class="h-3.5 w-3.5" />
@@ -724,13 +732,14 @@ function onOverflowItemKeydown(event: KeyboardEvent, tabId: string, kind: "regul
                 class="group flex w-full items-center gap-2 rounded-md px-1.5 py-1.5 text-left text-sm outline-hidden hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground"
                 :class="tab.id === queryStore.activeTabId && !driverStoreActive ? 'bg-accent/70 text-accent-foreground' : ''"
                 :title="tabTitleLabel(tab)"
+                :data-query-running="isQueryTabRunning(tab) || undefined"
                 role="menuitem"
                 tabindex="0"
                 @click="activateTabFromOverflow(tab.id, 'regular')"
                 @contextmenu="onContextMenu"
                 @keydown="onOverflowItemKeydown($event, tab.id, 'regular')"
               >
-                <component :is="tabMenuIcon(tab)" :class="['h-3.5 w-3.5 shrink-0', tabIconClass(tab)]" />
+                <component :is="tabMenuIcon(tab)" :class="['h-3.5 w-3.5 shrink-0', tabIconClass(tab)]" :role="isQueryTabRunning(tab) ? 'img' : undefined" :aria-label="isQueryTabRunning(tab) ? t('statusBar.executing') : undefined" />
                 <span class="inline-flex min-w-0 flex-1 items-center gap-0.5 overflow-hidden">
                   <span v-if="isDirtyTab(tab)" aria-hidden="true" class="dirty-tab-marker">*</span>
                   <span class="min-w-0 flex-1 truncate" :style="tabTitleStyle(tab)">{{ tabTitleText(tab) }}</span>
@@ -782,6 +791,7 @@ function onOverflowItemKeydown(event: KeyboardEvent, tabId: string, kind: "regul
                     "
                     :style="[tabColorStyle(tab), tabDropStyle(tab.id)]"
                     :data-active-tab="tab.id === queryStore.activeTabId && !driverStoreActive"
+                    :data-query-running="isQueryTabRunning(tab) || undefined"
                     @click="handleTabClick(tab)"
                     @dblclick.stop="startRenameTab(tab)"
                     @mousedown.middle.prevent="queryStore.closeTab(tab.id)"
@@ -792,7 +802,8 @@ function onOverflowItemKeydown(event: KeyboardEvent, tabId: string, kind: "regul
                   >
                     <span v-if="tabEnvColor(tab)" class="h-1.5 w-1.5 shrink-0 rounded-full" :style="{ backgroundColor: tabEnvColor(tab) }" aria-hidden="true" />
                     <span class="shrink-0" :class="tabIconClass(tab)">
-                      <Table2 v-if="tab.mode === 'data'" class="h-3.5 w-3.5" />
+                      <Loader2 v-if="isQueryTabRunning(tab)" class="h-3.5 w-3.5" role="img" :aria-label="t('statusBar.executing')" />
+                      <Table2 v-else-if="tab.mode === 'data'" class="h-3.5 w-3.5" />
                       <TableProperties v-else-if="tab.mode === 'objects'" class="h-3.5 w-3.5" />
                       <PencilRuler v-else-if="tab.mode === 'structure'" class="h-3.5 w-3.5" />
                       <Activity v-else-if="tab.mode === 'processlist'" class="h-3.5 w-3.5" />
@@ -872,13 +883,14 @@ function onOverflowItemKeydown(event: KeyboardEvent, tabId: string, kind: "regul
                 class="group flex w-full items-center gap-2 rounded-md px-1.5 py-1.5 text-left text-sm outline-hidden hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground"
                 :class="tab.id === queryStore.activeTabId && !driverStoreActive ? 'bg-accent/70 text-accent-foreground' : ''"
                 :title="tabTitleLabel(tab)"
+                :data-query-running="isQueryTabRunning(tab) || undefined"
                 role="menuitem"
                 tabindex="0"
                 @click="activateTabFromOverflow(tab.id, 'fixed')"
                 @contextmenu="onContextMenu"
                 @keydown="onOverflowItemKeydown($event, tab.id, 'fixed')"
               >
-                <component :is="tabMenuIcon(tab)" :class="['h-3.5 w-3.5 shrink-0', tabIconClass(tab)]" />
+                <component :is="tabMenuIcon(tab)" :class="['h-3.5 w-3.5 shrink-0', tabIconClass(tab)]" :role="isQueryTabRunning(tab) ? 'img' : undefined" :aria-label="isQueryTabRunning(tab) ? t('statusBar.executing') : undefined" />
                 <span class="inline-flex min-w-0 flex-1 items-center gap-0.5 overflow-hidden">
                   <span v-if="isDirtyTab(tab)" aria-hidden="true" class="dirty-tab-marker">*</span>
                   <span class="min-w-0 flex-1 truncate" :style="tabTitleStyle(tab)">{{ tabTitleText(tab) }}</span>
@@ -996,6 +1008,11 @@ function onOverflowItemKeydown(event: KeyboardEvent, tabId: string, kind: "regul
 /* 经典布局下 h-full 在 height:auto 容器中失效，改为固定高度 */
 .app-tab-scroll.classic-wrap > div {
   height: 2rem;
+}
+
+[data-query-running] {
+  --query-running-tint: color-mix(in srgb, var(--color-emerald-500) 16%, transparent);
+  background-image: linear-gradient(var(--query-running-tint), var(--query-running-tint));
 }
 
 .dirty-tab-marker {

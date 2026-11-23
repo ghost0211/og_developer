@@ -142,7 +142,6 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   "update:open": [value: boolean];
-  "check-updates": [];
 }>();
 
 const isSettingsPage = computed(() => props.variant === "page");
@@ -4731,9 +4730,6 @@ onUnmounted(() => {
                   <FolderGit2 class="h-4 w-4" />
                   {{ t("about.repository") }}
                 </a>
-                <Button variant="outline" size="sm" @click="emit('check-updates')">
-                  {{ t("updates.check") }}
-                </Button>
               </div>
               <div class="mx-auto mt-2 max-w-2xl text-left">
                 <ReleaseNotesPanel :current-version="appVersion" />

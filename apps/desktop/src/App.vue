@@ -2405,11 +2405,6 @@ function scheduleStartupUpdateCheck() {
   }, 3000);
 }
 
-function onAboutCheckUpdates() {
-  aboutDialogOpen.value = false;
-  void appUpdater.checkUpdates();
-}
-
 function restoreActiveConnectionContext() {
   const activeConnectionId = activeTab.value?.connectionId || connectionStore.activeConnectionId;
   if (activeConnectionId && connectionStore.getConfig(activeConnectionId)) {
@@ -2766,7 +2761,6 @@ onUnmounted(() => {
                       @structure-editor-close="activeTab && queryStore.closeTab(activeTab.id)"
                       @open-settings="openSettings"
                       @open-connection-settings="openConnectionSettings"
-                      @check-updates="void appUpdater.checkUpdates()"
                     />
                   </KeepAlive>
                 </div>
@@ -3004,7 +2998,7 @@ onUnmounted(() => {
     </TooltipProvider>
     <div id="ogdeveloper-query-editor-tooltip-root" class="fixed left-0 top-0 z-[120] h-0 w-0 overflow-visible" />
   </div>
-  <AboutDialog v-model:open="aboutDialogOpen" :app-version="appVersion" @check-updates="onAboutCheckUpdates" />
+  <AboutDialog v-model:open="aboutDialogOpen" :app-version="appVersion" />
   <UpdateDialog
     v-model:open="showAppUpdateDialog"
     :update-info="appUpdateInfo"

@@ -3,6 +3,7 @@ import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import {
   Activity,
+  AlignLeft,
   ArrowLeftRight,
   BookMarked,
   BookOpen,
@@ -42,7 +43,6 @@ import {
   Search,
   ShieldCheck,
   SlidersHorizontal,
-  Sparkles,
   SunMoon,
   TableProperties,
   Terminal,
@@ -309,7 +309,7 @@ const shortcutClass = "ml-auto pl-5 text-[10px] font-mono text-muted-foreground/
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem :disabled="!hasActiveQuery" :class="menuItemClass" @select="emit('format-sql')">
-          <Sparkles :class="menuIconClass" />
+          <AlignLeft :class="menuIconClass" />
           <span>{{ t("toolbar.formatSql") }}</span>
           <span :class="shortcutClass">{{ shortcutLabel("formatSql") }}</span>
         </DropdownMenuItem>

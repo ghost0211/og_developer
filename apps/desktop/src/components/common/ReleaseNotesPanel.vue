@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { ChevronDown, ExternalLink, Loader2, RefreshCw, Sparkles, Tag } from "@lucide/vue";
+import { ChevronDown, ExternalLink, FileText, Loader2, RefreshCw, Tag } from "@lucide/vue";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { currentLocale } from "@/i18n";
@@ -163,7 +163,7 @@ watch(changelogLang, (lang) => {
   <div class="rounded-lg border border-border/80 bg-muted/15" :class="compact ? 'p-3' : 'p-4'" data-release-notes-panel>
     <div v-if="showHeader" class="flex flex-wrap items-center justify-between gap-2 pb-2.5">
       <div class="flex min-w-0 items-center gap-2">
-        <Sparkles class="h-3.5 w-3.5 shrink-0 text-primary" />
+        <FileText class="h-3.5 w-3.5 shrink-0 text-primary" />
         <span class="text-xs font-semibold text-foreground">{{ t("updates.releaseNotesTitle") }}</span>
         <span v-if="fromRemote === false" class="truncate text-[11px] text-muted-foreground">{{ t("updates.offlineNotesHint") }}</span>
       </div>
