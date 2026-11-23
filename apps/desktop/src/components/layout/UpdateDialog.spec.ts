@@ -280,7 +280,7 @@ describe("UpdateDialog close protection", () => {
 
     const panel = document.body.querySelector("[data-release-notes-panel]");
     expect(panel).not.toBeNull();
-    expect(panel?.textContent).toContain("0.3.4");
+    expect(panel?.textContent).toContain("0.3.5");
   });
 
   it("allows toggling full release history when incoming release_notes are shown", async () => {

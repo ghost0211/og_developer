@@ -20,12 +20,12 @@ describe("changelog & release notes helpers", () => {
     expect(changelogLangFromLocale("en-US")).toBe("en");
   });
 
-  it("includes curated bilingual bundled releases starting at v0.3.4", () => {
+  it("includes curated bilingual bundled releases starting at v0.3.5", () => {
     const cn = getBundledChangelogReleases("cn");
     const en = getBundledChangelogReleases("en");
-    expect(cn[0]?.tag).toBe("v0.3.4");
-    expect(en[0]?.tag).toBe("v0.3.4");
-    expect(cn.length).toBeGreaterThanOrEqual(8);
+    expect(cn[0]?.tag).toBe("v0.3.5");
+    expect(en[0]?.tag).toBe("v0.3.5");
+    expect(cn.length).toBeGreaterThanOrEqual(9);
     expect(en.length).toBe(cn.length);
   });
 
@@ -34,23 +34,23 @@ describe("changelog & release notes helpers", () => {
     const merged = mergeChangelogReleases(
       [
         {
-          tag: "0.3.5",
-          name: "OG Developer v0.3.5",
+          tag: "0.3.6",
+          name: "OG Developer v0.3.6",
           date: "2026-11-25",
           sections: [{ type: "added", title: "Added", items: [{ title: "Online Feature", desc: "Fetched remotely" }] }],
         },
         {
-          tag: "v0.3.4",
+          tag: "v0.3.5",
           name: "Remote placeholder",
-          date: "2026-11-20",
+          date: "2026-11-23",
           sections: [],
         },
       ],
       bundled,
     );
 
-    expect(merged[0]?.tag).toBe("v0.3.5");
-    expect(merged[1]?.tag).toBe("v0.3.4");
+    expect(merged[0]?.tag).toBe("v0.3.6");
+    expect(merged[1]?.tag).toBe("v0.3.5");
     expect(merged[1]?.sections.length).toBeGreaterThan(0);
     expect(compareReleaseTagDesc("v0.3.10", "v0.3.4")).toBeLessThan(0);
   });
@@ -60,7 +60,7 @@ describe("changelog & release notes helpers", () => {
     const result = await fetchChangelog("cn", { force: true });
 
     expect(result.fromRemote).toBe(false);
-    expect(result.releases[0]?.tag).toBe("v0.3.4");
+    expect(result.releases[0]?.tag).toBe("v0.3.5");
   });
 
   it("merges remote releases when backend succeeds", async () => {

@@ -2,6 +2,27 @@ import type { ChangelogLang, ChangelogRelease } from "@/lib/app/changelog";
 
 const BUNDLED_RELEASES_CN: ChangelogRelease[] = [
   {
+    tag: "v0.3.5",
+    name: "OG Developer v0.3.5",
+    date: "2026-11-23",
+    sections: [
+      {
+        type: "improved",
+        title: "改进",
+        items: [
+          { title: "SQL 标签执行状态", desc: "SQL 或 EXPLAIN 执行时，标签显示浅绿色底色和旋转图标，切到其他标签后也能看见。黑色星号用于提示未保存" },
+          { title: "编辑菜单图标", desc: "格式化 SQL 使用和编辑器工具栏一致的文本排版图标" },
+          { title: "更新入口和说明", desc: "手动检查更新集中到帮助菜单，更新说明使用文档图标" },
+        ],
+      },
+      {
+        type: "fixed",
+        title: "问题修复",
+        items: [{ title: "快速打开按钮重叠", desc: "命令模式与关闭按钮并排显示，窄窗口也能分别点击" }],
+      },
+    ],
+  },
+  {
     tag: "v0.3.4",
     name: "OG Developer v0.3.4",
     date: "2026-11-20",
@@ -174,6 +195,27 @@ const BUNDLED_RELEASES_CN: ChangelogRelease[] = [
 ];
 
 const BUNDLED_RELEASES_EN: ChangelogRelease[] = [
+  {
+    tag: "v0.3.5",
+    name: "OG Developer v0.3.5",
+    date: "2026-11-23",
+    sections: [
+      {
+        type: "improved",
+        title: "Improved",
+        items: [
+          { title: "SQL tab execution status", desc: "Tabs with a running SQL or EXPLAIN statement show a light green background and a spinner, visible even after switching tabs. The asterisk indicates unsaved changes" },
+          { title: "Edit menu icon", desc: "Format SQL uses the same text alignment icon as the SQL editor toolbar" },
+          { title: "Update controls and release notes", desc: "Use Help to check for updates. Release notes use a document icon" },
+        ],
+      },
+      {
+        type: "fixed",
+        title: "Fixed",
+        items: [{ title: "Overlapping Quick Open controls", desc: "The Commands and Close buttons have separate click targets even in narrow windows" }],
+      },
+    ],
+  },
   {
     tag: "v0.3.4",
     name: "OG Developer v0.3.4",
